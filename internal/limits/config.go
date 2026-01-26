@@ -12,9 +12,9 @@ import (
 type Action string
 
 const (
-	ActionLog    Action = "log"    // Log only, don't modify data
-	ActionSample Action = "sample" // Sample data at specified rate
-	ActionDrop   Action = "drop"   // Drop data entirely
+	ActionLog      Action = "log"      // Log only, don't modify data
+	ActionAdaptive Action = "adaptive" // Adaptive: drop top offenders to stay within limits
+	ActionDrop     Action = "drop"     // Drop all data when limit exceeded
 )
 
 // Config holds the complete limits configuration.
@@ -25,20 +25,24 @@ type Config struct {
 
 // DefaultLimits defines default limits when no rule matches.
 type DefaultLimits struct {
-	MaxDatapointsRate int64   `yaml:"max_datapoints_rate"` // per minute
-	MaxCardinality    int64   `yaml:"max_cardinality"`
-	Action            Action  `yaml:"action"`
-	SampleRate        float64 `yaml:"sample_rate"` // 0.0-1.0, used when action=sample
+	MaxDatapointsRate int64  `yaml:"max_datapoints_rate"` // per minute
+	MaxCardinality    int64  `yaml:"max_cardinality"`
+	Action            Action `yaml:"action"`
 }
 
 // Rule defines a limit rule with matching criteria.
 type Rule struct {
-	Name              string       `yaml:"name"`
-	Match             RuleMatch    `yaml:"match"`
-	MaxDatapointsRate int64        `yaml:"max_datapoints_rate"` // per minute, 0 = no limit
-	MaxCardinality    int64        `yaml:"max_cardinality"`     // 0 = no limit
-	Action            Action       `yaml:"action"`
-	SampleRate        float64      `yaml:"sample_rate"` // 0.0-1.0
+	Name              string    `yaml:"name"`
+	Match             RuleMatch `yaml:"match"`
+	MaxDatapointsRate int64     `yaml:"max_datapoints_rate"` // per minute, 0 = no limit
+	MaxCardinality    int64     `yaml:"max_cardinality"`     // 0 = no limit
+	Action            Action    `yaml:"action"`
+
+	// GroupBy specifies which labels to use for tracking top offenders.
+	// Datapoints and cardinality are tracked per unique combination of these labels.
+	// When limits are exceeded with action=adaptive, top offenders by these labels are dropped first.
+	// Example: ["service", "env"] tracks per service+env combination.
+	GroupBy []string `yaml:"group_by"`
 
 	// Compiled regex (internal)
 	metricRegex *regexp.Regexp
@@ -91,10 +95,6 @@ func LoadConfig(path string) (*Config, error) {
 			}
 		}
 
-		// Validate sample rate
-		if rule.Action == ActionSample && (rule.SampleRate <= 0 || rule.SampleRate > 1) {
-			return nil, fmt.Errorf("rule %q: sample_rate must be between 0 and 1", rule.Name)
-		}
 	}
 
 	return &cfg, nil

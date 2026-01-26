@@ -1,9 +1,15 @@
 # Example limits configuration for metrics-governor
 #
 # Actions:
-#   - log:    Log violation but pass through data (default)
-#   - sample: Sample data at specified rate when limit exceeded
-#   - drop:   Drop data entirely when limit exceeded
+#   - log:      Log violation but pass through data (default)
+#   - adaptive: Intelligently drop top offenders to stay within limits
+#   - drop:     Drop all data when limit exceeded
+#
+# GroupBy:
+#   When using adaptive action, group_by specifies which labels to use for
+#   tracking and identifying top offenders. The system will track datapoints
+#   and cardinality per unique combination of these labels, and when limits
+#   are exceeded, it will drop the groups with the highest contribution first.
 
 defaults:
   max_datapoints_rate: 1000000  # per minute
@@ -11,42 +17,42 @@ defaults:
   action: log
 
 rules:
-  # High-cardinality metric protection
-  - name: "high-cardinality-http-metrics"
-    match:
-      metric_name: "http_request_duration_.*"  # regex pattern
-    max_cardinality: 1000
-    action: drop
-
-  # Limit specific service in production
-  - name: "payment-service-prod-limits"
-    match:
-      labels:
-        service: "payment-api"
-        env: "prod"
-    max_datapoints_rate: 50000
-    max_cardinality: 2000
-    action: sample
-    sample_rate: 0.5
-
-  # Limit all services in production (wildcard)
-  - name: "all-services-prod"
+  # Adaptive limiting by service - drops highest cardinality services first
+  - name: "adaptive-service-limits"
     match:
       labels:
         service: "*"    # matches any service
         env: "prod"
     max_datapoints_rate: 100000
     max_cardinality: 5000
-    action: log
+    action: adaptive
+    group_by: ["service"]  # Track per service, drop worst offenders
 
-  # Protect against runaway metrics from any source
-  - name: "runaway-metric-protection"
+  # Adaptive limiting by service+endpoint combination
+  - name: "adaptive-http-metrics"
     match:
-      metric_name: ".*_total"  # all counter metrics
-    max_cardinality: 10000
+      metric_name: "http_request_.*"
+    max_cardinality: 2000
+    action: adaptive
+    group_by: ["service", "endpoint"]  # Track per service+endpoint
+
+  # High-cardinality metric - hard drop (no adaptive)
+  - name: "high-cardinality-protection"
+    match:
+      metric_name: "http_request_duration_.*"  # regex pattern
+    max_cardinality: 1000
     action: drop
 
-  # Debug/dev environment - more relaxed limits
+  # Adaptive for legacy app - track by request_id patterns
+  - name: "legacy-app-adaptive"
+    match:
+      metric_name: "legacy_app_.*"
+    max_cardinality: 100
+    max_datapoints_rate: 10000
+    action: adaptive
+    group_by: ["service", "env"]  # Group by service+env, drop worst first
+
+  # Debug/dev environment - log only, relaxed limits
   - name: "dev-environment"
     match:
       labels:
@@ -55,9 +61,10 @@ rules:
     max_cardinality: 50000
     action: log
 
-  # Specific problematic metric
-  - name: "known-problematic-metric"
+  # Protect against runaway counters
+  - name: "runaway-counter-protection"
     match:
-      metric_name: "legacy_app_request_count"
-    max_cardinality: 100
-    action: drop
+      metric_name: ".*_total"  # all counter metrics
+    max_cardinality: 10000
+    action: adaptive
+    group_by: ["service", "env"]  # Fair share by service+env

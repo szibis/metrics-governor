@@ -178,7 +178,7 @@ Limits are configured via a YAML file specified with `-limits-config`. See [exam
 defaults:
   max_datapoints_rate: 1000000  # per minute
   max_cardinality: 100000
-  action: log                   # log, sample, or drop
+  action: log                   # log, adaptive, or drop
 
 rules:
   - name: "rule-name"
@@ -189,35 +189,60 @@ rules:
         env: "*"                       # wildcard - any value
     max_datapoints_rate: 50000        # per minute, 0 = no limit
     max_cardinality: 2000             # 0 = no limit
-    action: drop                      # log, sample, or drop
-    sample_rate: 0.5                  # required when action=sample
+    action: adaptive                  # log, adaptive, or drop
+    group_by: ["service", "env"]      # labels for adaptive grouping
 ```
 
 ### Actions
 
 | Action | Description |
 |--------|-------------|
-| `log` | Log violation but pass through data (default, safe for dry-run) |
-| `sample` | Sample data at `sample_rate` when limit exceeded |
-| `drop` | Drop data entirely when limit exceeded |
+| `log` | Log violation but pass through all data (default, safe for dry-run) |
+| `adaptive` | **Intelligent limiting**: Track per-group stats, drop only top offenders to stay within limits |
+| `drop` | Drop all data when limit exceeded (nuclear option) |
+
+### Adaptive Limiting (Recommended)
+
+The `adaptive` action is the key feature of metrics-governor. Instead of dropping all metrics or randomly sampling, it:
+
+1. **Tracks statistics per group** defined by `group_by` labels
+2. **Identifies top offenders** when limits are exceeded
+3. **Drops only the worst groups** to bring totals within limits
+4. **Preserves smaller contributors** that are within reasonable bounds
+
+This ensures you get maximum data delivery while staying within your cardinality and datapoints budgets.
+
+#### How Adaptive Works
+
+```
+Example: max_cardinality: 1000, group_by: ["service"]
+
+Current state:
+  - service=api-a:     400 series  (40%)
+  - service=api-b:     300 series  (30%)
+  - service=api-c:     200 series  (20%)
+  - service=legacy:    500 series  (50%)  <- TOP OFFENDER
+                      -----
+  Total:             1400 series (over limit by 400)
+
+Adaptive action:
+  1. Sort groups by contribution (descending): legacy(500), api-a(400), api-b(300), api-c(200)
+  2. Mark "legacy" for dropping (500 >= 400 excess)
+  3. Keep api-a, api-b, api-c (within limit now: 900 series)
+
+Result: Only legacy service metrics are dropped for this window
+```
 
 ### Matching Rules
 
 - **metric_name**: Exact match or regex pattern (e.g., `http_request_.*`)
 - **labels**: Key-value pairs where `*` matches any value
+- **group_by**: Labels to use for tracking groups (required for adaptive)
 - Rules are evaluated in order; first match wins
-
-### Example: Limit Violation Log
-
-When a limit is exceeded, a warning is logged:
-
-```json
-{"timestamp":"2024-01-26T12:00:00Z","level":"warn","message":"limit exceeded","fields":{"rule":"payment-service-prod-limits","metric":"http_requests_total","reason":"cardinality","action":"drop","dry_run":false,"datapoints":10}}
-```
 
 ### Dry Run Mode
 
-By default, limits run in dry-run mode (`-limits-dry-run=true`). This logs all violations but doesn't actually drop or sample data. Use this to:
+By default, limits run in dry-run mode (`-limits-dry-run=true`). This logs all violations but doesn't actually drop data. Use this to:
 
 1. Understand your metrics cardinality before enforcing limits
 2. Tune limit thresholds based on actual traffic
@@ -231,105 +256,69 @@ metrics-governor -limits-config limits.yaml -limits-dry-run=false
 
 ### Action Examples
 
-#### Log Action (Monitoring Only)
+#### Adaptive Action (Intelligent Limiting)
 
-Use `action: log` to monitor limit violations without affecting data flow. Ideal for understanding traffic patterns before enforcing limits.
+Use `action: adaptive` to intelligently drop only the top offenders while preserving smaller contributors.
 
 ```yaml
-defaults:
-  max_datapoints_rate: 1000000
-  max_cardinality: 100000
-  action: log  # Global default: log only
-
 rules:
-  - name: "monitor-high-cardinality"
+  - name: "adaptive-by-service"
+    match:
+      labels:
+        env: "prod"
+        service: "*"
+    max_datapoints_rate: 100000
+    max_cardinality: 5000
+    action: adaptive
+    group_by: ["service"]  # Track and limit per service
+```
+
+**Log output when adaptive limiting kicks in:**
+```json
+{"timestamp":"2024-01-26T12:00:00Z","level":"warn","message":"limit exceeded","fields":{"rule":"adaptive-by-service","metric":"http_requests_total","group":"service=legacy-app","reason":"cardinality","action":"adaptive","dry_run":false,"datapoints":100}}
+{"timestamp":"2024-01-26T12:00:00Z","level":"info","message":"adaptive: marked group for dropping","fields":{"rule":"adaptive-by-service","group":"service=legacy-app","reason":"cardinality","contribution_datapoints":5000,"contribution_cardinality":3000}}
+```
+
+**Prometheus metrics exposed:**
+```
+metrics_governor_limit_cardinality_exceeded_total{rule="adaptive-by-service"} 42
+metrics_governor_limit_datapoints_dropped_total{rule="adaptive-by-service"} 5000
+metrics_governor_limit_datapoints_passed_total{rule="adaptive-by-service"} 95000
+metrics_governor_limit_groups_dropped_total{rule="adaptive-by-service"} 2
+metrics_governor_rule_current_cardinality{rule="adaptive-by-service"} 4500
+metrics_governor_rule_groups_total{rule="adaptive-by-service"} 15
+metrics_governor_rule_dropped_groups_total{rule="adaptive-by-service"} 2
+```
+
+#### Log Action (Monitoring Only)
+
+Use `action: log` to monitor limit violations without affecting data flow.
+
+```yaml
+rules:
+  - name: "monitor-only"
     match:
       metric_name: "http_request_duration_.*"
     max_cardinality: 5000
     action: log
 ```
 
-**Log output when limit is exceeded:**
-```json
-{"timestamp":"2024-01-26T12:00:00Z","level":"warn","message":"limit exceeded","fields":{"rule":"monitor-high-cardinality","metric":"http_request_duration_seconds","reason":"cardinality","action":"log","dry_run":true,"datapoints":15}}
-```
-
-**Prometheus metrics exposed:**
-```
-metrics_governor_limit_cardinality_exceeded_total{rule="monitor-high-cardinality"} 42
-```
-
-#### Sample Action (Rate Limiting)
-
-Use `action: sample` to reduce data volume by randomly sampling datapoints when limits are exceeded. Useful for high-volume metrics where some data loss is acceptable.
-
-```yaml
-defaults:
-  max_datapoints_rate: 1000000
-  max_cardinality: 100000
-  action: log
-
-rules:
-  - name: "sample-payment-service"
-    match:
-      labels:
-        service: "payment-api"
-        env: "prod"
-    max_datapoints_rate: 50000
-    max_cardinality: 2000
-    action: sample
-    sample_rate: 0.5  # Keep 50% of datapoints when limit exceeded
-```
-
-**Log output when sampling is applied:**
-```json
-{"timestamp":"2024-01-26T12:00:00Z","level":"warn","message":"limit exceeded","fields":{"rule":"sample-payment-service","metric":"payment_transactions_total","reason":"datapoints_rate","action":"sample","dry_run":false,"datapoints":100,"sample_rate":0.5}}
-```
-
-**Prometheus metrics exposed:**
-```
-metrics_governor_limit_datapoints_exceeded_total{rule="sample-payment-service"} 156
-metrics_governor_limit_datapoints_sampled_total{rule="sample-payment-service"} 7800
-```
-
 #### Drop Action (Hard Limit)
 
-Use `action: drop` to completely discard datapoints when limits are exceeded. Use for strict cardinality control or protecting against runaway metrics.
+Use `action: drop` when you want to completely block metrics that exceed limits. Use sparingly.
 
 ```yaml
-defaults:
-  max_datapoints_rate: 1000000
-  max_cardinality: 100000
-  action: log
-
 rules:
-  - name: "drop-runaway-metrics"
+  - name: "block-known-bad"
     match:
-      metric_name: "legacy_app_.*"
+      metric_name: "known_problematic_metric"
     max_cardinality: 100
     action: drop
-
-  - name: "protect-high-cardinality-http"
-    match:
-      metric_name: "http_request_duration_.*"
-    max_cardinality: 1000
-    action: drop
-```
-
-**Log output when datapoints are dropped:**
-```json
-{"timestamp":"2024-01-26T12:00:00Z","level":"warn","message":"limit exceeded","fields":{"rule":"drop-runaway-metrics","metric":"legacy_app_request_count","reason":"cardinality","action":"drop","dry_run":false,"datapoints":25}}
-```
-
-**Prometheus metrics exposed:**
-```
-metrics_governor_limit_cardinality_exceeded_total{rule="drop-runaway-metrics"} 89
-metrics_governor_limit_datapoints_dropped_total{rule="drop-runaway-metrics"} 2225
 ```
 
 #### Combined Example
 
-A complete configuration using all action types:
+A complete configuration using adaptive limiting as the primary strategy:
 
 ```yaml
 defaults:
@@ -338,26 +327,35 @@ defaults:
   action: log  # Safe default
 
 rules:
-  # Critical: Drop known problematic metrics
-  - name: "drop-legacy-metrics"
-    match:
-      metric_name: "legacy_.*"
-    max_cardinality: 100
-    action: drop
-
-  # Important: Sample high-volume production services
-  - name: "sample-prod-services"
+  # Production: Adaptive limiting by service
+  - name: "prod-service-limits"
     match:
       labels:
         env: "prod"
         service: "*"
     max_datapoints_rate: 100000
     max_cardinality: 5000
-    action: sample
-    sample_rate: 0.25
+    action: adaptive
+    group_by: ["service"]
 
-  # Monitor: Log violations for dev environment
-  - name: "monitor-dev"
+  # HTTP metrics: Adaptive by service+endpoint
+  - name: "http-endpoint-limits"
+    match:
+      metric_name: "http_request_.*"
+    max_cardinality: 2000
+    action: adaptive
+    group_by: ["service", "endpoint"]
+
+  # Legacy apps: Strict adaptive control
+  - name: "legacy-limits"
+    match:
+      metric_name: "legacy_.*"
+    max_cardinality: 100
+    action: adaptive
+    group_by: ["service", "env"]
+
+  # Dev: Just monitor
+  - name: "dev-monitor"
     match:
       labels:
         env: "dev"
