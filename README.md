@@ -383,6 +383,67 @@ rules:
                              :9090
 ```
 
+## Testing
+
+A complete test environment is provided using Docker Compose. It includes:
+
+- **metrics-governor**: The main proxy with limits configuration
+- **otel-collector**: OpenTelemetry Collector as the backend
+- **prometheus**: For scraping and visualizing metrics
+- **metrics-generator**: A Go application that generates test metrics
+
+### Quick Start
+
+```bash
+# Run the test environment
+./test/run-test.sh
+
+# Or manually with docker compose
+docker compose up --build
+```
+
+### Available Endpoints
+
+| Service | Endpoint | Description |
+|---------|----------|-------------|
+| metrics-governor gRPC | `localhost:4317` | OTLP gRPC receiver |
+| metrics-governor HTTP | `localhost:4318` | OTLP HTTP receiver |
+| metrics-governor stats | `http://localhost:9090/metrics` | Prometheus metrics |
+| OTel Collector | `localhost:14317` | Backend gRPC endpoint |
+| Prometheus UI | `http://localhost:9091` | Prometheus web interface |
+
+### Useful Commands
+
+```bash
+# View metrics-governor stats
+curl -s localhost:9090/metrics | grep metrics_governor
+
+# Check limit violations
+curl -s localhost:9090/metrics | grep limit
+
+# View logs
+docker compose logs -f metrics-governor
+docker compose logs -f metrics-generator
+
+# Stop all services
+docker compose down
+```
+
+### Test Scenarios
+
+The metrics generator creates various test scenarios:
+
+1. **Normal traffic**: HTTP request metrics for multiple services and environments
+2. **High cardinality**: Legacy app metrics with unique request IDs (triggers limits)
+3. **Multiple services**: payment-api, order-api, inventory-api, legacy-app
+4. **Multiple environments**: prod, staging, dev
+
+Watch the metrics-governor logs to see limit violations being triggered:
+
+```bash
+docker compose logs -f metrics-governor | grep "limit exceeded"
+```
+
 ## License
 
 See [LICENSE](LICENSE) file.

@@ -1,0 +1,56 @@
+version: "3.8"
+
+services:
+  # metrics-governor - the main proxy
+  metrics-governor:
+    build: .
+    ports:
+      - "4317:4317"   # gRPC receiver
+      - "4318:4318"   # HTTP receiver
+      - "9090:9090"   # Prometheus metrics
+    command:
+      - "-exporter-endpoint=otel-collector:4317"
+      - "-exporter-insecure=true"
+      - "-stats-labels=service,env"
+      - "-limits-config=/etc/metrics-governor/limits.yaml"
+      - "-limits-dry-run=false"
+    volumes:
+      - ./examples/limits.yaml:/etc/metrics-governor/limits.yaml:ro
+    depends_on:
+      - otel-collector
+
+  # OpenTelemetry Collector as the backend
+  otel-collector:
+    image: otel/opentelemetry-collector:0.92.0
+    ports:
+      - "14317:4317"   # OTLP gRPC (external)
+      - "14318:4318"   # OTLP HTTP (external)
+      - "8889:8889"    # Prometheus metrics export
+    volumes:
+      - ./test/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    command: ["--config=/etc/otelcol/config.yaml"]
+
+  # Prometheus for scraping metrics
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./test/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+
+  # Test metrics generator
+  metrics-generator:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.generator
+    environment:
+      - OTLP_ENDPOINT=metrics-governor:4317
+      - METRICS_INTERVAL=1s
+      - SERVICES=payment-api,order-api,inventory-api,legacy-app
+      - ENVIRONMENTS=prod,staging,dev
+    depends_on:
+      - metrics-governor
