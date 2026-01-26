@@ -30,6 +30,10 @@ type Config struct {
 	StatsAddr   string
 	StatsLabels string
 
+	// Limits settings
+	LimitsConfig string
+	LimitsDryRun bool
+
 	// Flags
 	ShowHelp    bool
 	ShowVersion bool
@@ -56,6 +60,10 @@ func ParseFlags() *Config {
 	// Stats flags
 	flag.StringVar(&cfg.StatsAddr, "stats-addr", ":9090", "Stats/metrics HTTP endpoint address")
 	flag.StringVar(&cfg.StatsLabels, "stats-labels", "", "Comma-separated labels to track for grouping (e.g., service,env,cluster)")
+
+	// Limits flags
+	flag.StringVar(&cfg.LimitsConfig, "limits-config", "", "Path to limits configuration YAML file")
+	flag.BoolVar(&cfg.LimitsDryRun, "limits-dry-run", true, "Dry run mode: log violations but don't drop/sample")
 
 	// Help and version
 	flag.BoolVar(&cfg.ShowHelp, "help", false, "Show help message")
@@ -100,6 +108,10 @@ OPTIONS:
         -stats-addr <addr>       Stats/metrics HTTP endpoint address (default: ":9090")
         -stats-labels <labels>   Comma-separated labels to track (e.g., service,env,cluster)
 
+    Limits:
+        -limits-config <path>    Path to limits configuration YAML file
+        -limits-dry-run          Dry run mode: log only, don't drop/sample (default: true)
+
     General:
         -h, -help                Show this help message
         -v, -version             Show version
@@ -119,6 +131,9 @@ EXAMPLES:
 
     # Enable stats tracking by service and environment
     metrics-governor -stats-labels service,env,cluster
+
+    # Enable limits enforcement with config file
+    metrics-governor -limits-config /etc/metrics-governor/limits.yaml -limits-dry-run=false
 
 `)
 }
@@ -141,5 +156,7 @@ func DefaultConfig() *Config {
 		MaxBatchSize:     1000,
 		StatsAddr:        ":9090",
 		StatsLabels:      "",
+		LimitsConfig:     "",
+		LimitsDryRun:     true,
 	}
 }

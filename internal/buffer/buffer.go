@@ -19,6 +19,11 @@ type StatsCollector interface {
 	Process(resourceMetrics []*metricspb.ResourceMetrics)
 }
 
+// LimitsEnforcer defines the interface for enforcing limits.
+type LimitsEnforcer interface {
+	Process(resourceMetrics []*metricspb.ResourceMetrics) []*metricspb.ResourceMetrics
+}
+
 // MetricsBuffer buffers incoming metrics and flushes them periodically.
 type MetricsBuffer struct {
 	mu            sync.Mutex
@@ -28,12 +33,13 @@ type MetricsBuffer struct {
 	flushInterval time.Duration
 	exporter      Exporter
 	stats         StatsCollector
+	limits        LimitsEnforcer
 	flushChan     chan struct{}
 	doneChan      chan struct{}
 }
 
 // New creates a new MetricsBuffer.
-func New(maxSize, maxBatchSize int, flushInterval time.Duration, exporter Exporter, stats StatsCollector) *MetricsBuffer {
+func New(maxSize, maxBatchSize int, flushInterval time.Duration, exporter Exporter, stats StatsCollector, limits LimitsEnforcer) *MetricsBuffer {
 	return &MetricsBuffer{
 		metrics:       make([]*metricspb.ResourceMetrics, 0, maxSize),
 		maxSize:       maxSize,
@@ -41,6 +47,7 @@ func New(maxSize, maxBatchSize int, flushInterval time.Duration, exporter Export
 		flushInterval: flushInterval,
 		exporter:      exporter,
 		stats:         stats,
+		limits:        limits,
 		flushChan:     make(chan struct{}, 1),
 		doneChan:      make(chan struct{}),
 	}
@@ -48,9 +55,18 @@ func New(maxSize, maxBatchSize int, flushInterval time.Duration, exporter Export
 
 // Add adds metrics to the buffer.
 func (b *MetricsBuffer) Add(resourceMetrics []*metricspb.ResourceMetrics) {
-	// Process stats before buffering
+	// Process stats before any filtering
 	if b.stats != nil {
 		b.stats.Process(resourceMetrics)
+	}
+
+	// Apply limits enforcement (may filter/sample metrics)
+	if b.limits != nil {
+		resourceMetrics = b.limits.Process(resourceMetrics)
+	}
+
+	if len(resourceMetrics) == 0 {
+		return
 	}
 
 	b.mu.Lock()

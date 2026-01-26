@@ -12,6 +12,7 @@ import (
 	"github.com/slawomirskowron/metrics-governor/internal/buffer"
 	"github.com/slawomirskowron/metrics-governor/internal/config"
 	"github.com/slawomirskowron/metrics-governor/internal/exporter"
+	"github.com/slawomirskowron/metrics-governor/internal/limits"
 	"github.com/slawomirskowron/metrics-governor/internal/logging"
 	"github.com/slawomirskowron/metrics-governor/internal/receiver"
 	"github.com/slawomirskowron/metrics-governor/internal/stats"
@@ -56,8 +57,23 @@ func main() {
 	// Create stats collector
 	statsCollector := stats.NewCollector(trackLabels)
 
-	// Create buffer with stats collector
-	buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, exp, statsCollector)
+	// Create limits enforcer (if configured)
+	var limitsEnforcer *limits.Enforcer
+	if cfg.LimitsConfig != "" {
+		limitsCfg, err := limits.LoadConfig(cfg.LimitsConfig)
+		if err != nil {
+			logging.Fatal("failed to load limits config", logging.F("error", err.Error(), "path", cfg.LimitsConfig))
+		}
+		limitsEnforcer = limits.NewEnforcer(limitsCfg, cfg.LimitsDryRun)
+		logging.Info("limits enforcer initialized", logging.F(
+			"config", cfg.LimitsConfig,
+			"dry_run", cfg.LimitsDryRun,
+			"rules_count", len(limitsCfg.Rules),
+		))
+	}
+
+	// Create buffer with stats collector and limits enforcer
+	buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, exp, statsCollector, limitsEnforcer)
 
 	// Start buffer flush routine
 	go buf.Start(ctx)
@@ -78,10 +94,20 @@ func main() {
 		}
 	}()
 
-	// Start stats HTTP server
+	// Start stats HTTP server with combined metrics
+	statsMux := http.NewServeMux()
+	statsMux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		// Write stats metrics
+		statsCollector.ServeHTTP(w, r)
+		// Write limits metrics (if enabled)
+		if limitsEnforcer != nil {
+			limitsEnforcer.ServeHTTP(w, r)
+		}
+	})
+
 	statsServer := &http.Server{
 		Addr:    cfg.StatsAddr,
-		Handler: http.HandlerFunc(statsCollector.ServeHTTP),
+		Handler: statsMux,
 	}
 	go func() {
 		logging.Info("stats endpoint started", logging.F("addr", cfg.StatsAddr, "path", "/metrics"))
@@ -98,6 +124,7 @@ func main() {
 		"http_addr", cfg.HTTPListenAddr,
 		"exporter_endpoint", cfg.ExporterEndpoint,
 		"stats_addr", cfg.StatsAddr,
+		"limits_enabled", cfg.LimitsConfig != "",
 	))
 
 	// Wait for shutdown signal

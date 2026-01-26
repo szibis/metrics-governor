@@ -1,0 +1,63 @@
+# Example limits configuration for metrics-governor
+#
+# Actions:
+#   - log:    Log violation but pass through data (default)
+#   - sample: Sample data at specified rate when limit exceeded
+#   - drop:   Drop data entirely when limit exceeded
+
+defaults:
+  max_datapoints_rate: 1000000  # per minute
+  max_cardinality: 100000
+  action: log
+
+rules:
+  # High-cardinality metric protection
+  - name: "high-cardinality-http-metrics"
+    match:
+      metric_name: "http_request_duration_.*"  # regex pattern
+    max_cardinality: 1000
+    action: drop
+
+  # Limit specific service in production
+  - name: "payment-service-prod-limits"
+    match:
+      labels:
+        service: "payment-api"
+        env: "prod"
+    max_datapoints_rate: 50000
+    max_cardinality: 2000
+    action: sample
+    sample_rate: 0.5
+
+  # Limit all services in production (wildcard)
+  - name: "all-services-prod"
+    match:
+      labels:
+        service: "*"    # matches any service
+        env: "prod"
+    max_datapoints_rate: 100000
+    max_cardinality: 5000
+    action: log
+
+  # Protect against runaway metrics from any source
+  - name: "runaway-metric-protection"
+    match:
+      metric_name: ".*_total"  # all counter metrics
+    max_cardinality: 10000
+    action: drop
+
+  # Debug/dev environment - more relaxed limits
+  - name: "dev-environment"
+    match:
+      labels:
+        env: "dev"
+    max_datapoints_rate: 500000
+    max_cardinality: 50000
+    action: log
+
+  # Specific problematic metric
+  - name: "known-problematic-metric"
+    match:
+      metric_name: "legacy_app_request_count"
+    max_cardinality: 100
+    action: drop
