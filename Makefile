@@ -5,12 +5,13 @@ LDFLAGS=-ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/
 
 BUILD_DIR=bin
 
-.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker
+.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose
 
 all: darwin-arm64 linux-arm64 linux-amd64
 
 build:
-	go build $(LDFLAGS) -o $(BINARY_NAME) ./cmd/metrics-governor
+	@mkdir -p $(BUILD_DIR)
+	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/metrics-governor
 
 darwin-arm64:
 	@mkdir -p $(BUILD_DIR)
@@ -30,18 +31,33 @@ docker:
 docker-multiarch:
 	docker buildx build --platform linux/amd64,linux/arm64 -t $(BINARY_NAME):$(VERSION) -t $(BINARY_NAME):latest .
 
+test:
+	go test ./...
+
+test-verbose:
+	go test -v ./...
+
+test-coverage:
+	@mkdir -p $(BUILD_DIR)
+	go test -coverprofile=$(BUILD_DIR)/coverage.out ./...
+	go tool cover -html=$(BUILD_DIR)/coverage.out -o $(BUILD_DIR)/coverage.html
+	@echo "Coverage report: $(BUILD_DIR)/coverage.html"
+	@go tool cover -func=$(BUILD_DIR)/coverage.out | tail -1
+
 clean:
 	rm -rf $(BUILD_DIR)
-	rm -f $(BINARY_NAME)
 
 help:
 	@echo "Available targets:"
-	@echo "  all           - Build all platforms (darwin-arm64, linux-arm64, linux-amd64)"
-	@echo "  build         - Build for current platform"
-	@echo "  darwin-arm64  - Build for macOS ARM64"
-	@echo "  linux-arm64   - Build for Linux ARM64"
-	@echo "  linux-amd64   - Build for Linux AMD64"
-	@echo "  docker        - Build Docker image"
+	@echo "  all             - Build all platforms (darwin-arm64, linux-arm64, linux-amd64)"
+	@echo "  build           - Build for current platform (output: bin/metrics-governor)"
+	@echo "  darwin-arm64    - Build for macOS ARM64"
+	@echo "  linux-arm64     - Build for Linux ARM64"
+	@echo "  linux-amd64     - Build for Linux AMD64"
+	@echo "  docker          - Build Docker image"
 	@echo "  docker-multiarch - Build multi-arch Docker image (requires buildx)"
-	@echo "  clean         - Remove build artifacts"
-	@echo "  help          - Show this help"
+	@echo "  test            - Run tests"
+	@echo "  test-verbose    - Run tests with verbose output"
+	@echo "  test-coverage   - Run tests with coverage report"
+	@echo "  clean           - Remove build artifacts"
+	@echo "  help            - Show this help"

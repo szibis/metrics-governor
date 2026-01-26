@@ -1,5 +1,24 @@
 # metrics-governor
 
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
+
+**Test Coverage**
+
+| Package | Coverage |
+|---------|----------|
+| ![buffer](https://img.shields.io/badge/buffer-100%25-brightgreen) | internal/buffer |
+| ![config](https://img.shields.io/badge/config-100%25-brightgreen) | internal/config |
+| ![exporter](https://img.shields.io/badge/exporter-100%25-brightgreen) | internal/exporter |
+| ![stats](https://img.shields.io/badge/stats-93%25-green) | internal/stats |
+| ![receiver](https://img.shields.io/badge/receiver-88%25-green) | internal/receiver |
+| ![logging](https://img.shields.io/badge/logging-84%25-green) | internal/logging |
+| ![limits](https://img.shields.io/badge/limits-83%25-green) | internal/limits |
+| ![Total](https://img.shields.io/badge/Total-80.6%25-green) | **All packages** |
+
+---
+
 OTLP metrics proxy with buffering and statistics. Receives metrics via gRPC and HTTP, buffers them, tracks cardinality and datapoints, and forwards to a configurable OTLP endpoint with batching support.
 
 ## Features
@@ -14,7 +33,7 @@ OTLP metrics proxy with buffering and statistics. Receives metrics via gRPC and 
   - Configurable datapoints rate and cardinality limits
   - Per-metric and per-label-combination rules
   - Regex and wildcard matching
-  - Actions: log (dry-run), sample, drop
+  - Actions: log (dry-run), adaptive, drop
   - Prometheus metrics for limit violations
 - **Metrics statistics tracking:**
   - Per-metric datapoints and cardinality
@@ -27,13 +46,13 @@ OTLP metrics proxy with buffering and statistics. Receives metrics via gRPC and 
 ### From source
 
 ```bash
-go install github.com/slawomirskowron/metrics-governor/cmd/metrics-governor@latest
+go install ./cmd/metrics-governor
 ```
 
 ### Build from source
 
 ```bash
-git clone https://github.com/slawomirskowron/metrics-governor.git
+git clone <repository-url>
 cd metrics-governor
 make build
 ```
@@ -135,7 +154,7 @@ curl localhost:9090/metrics
 | `metrics_governor_limit_datapoints_exceeded_total{rule="..."}` | counter | Times datapoints rate limit was exceeded |
 | `metrics_governor_limit_cardinality_exceeded_total{rule="..."}` | counter | Times cardinality limit was exceeded |
 | `metrics_governor_limit_datapoints_dropped_total{rule="..."}` | counter | Datapoints dropped due to limits |
-| `metrics_governor_limit_datapoints_sampled_total{rule="..."}` | counter | Datapoints affected by sampling |
+| `metrics_governor_limit_datapoints_passed_total{rule="..."}` | counter | Datapoints passed through (within limits) |
 
 ### Periodic Logging
 
@@ -379,6 +398,44 @@ rules:
                         │  (scrape)   │
                         └─────────────┘
                              :9090
+```
+
+## Development
+
+### Running Tests
+
+```bash
+# Run all tests
+make test
+
+# Run tests with verbose output
+make test-verbose
+
+# Run tests with coverage report
+make test-coverage
+```
+
+Coverage report is generated at `bin/coverage.html`.
+
+### Project Structure
+
+```
+metrics-governor/
+├── cmd/metrics-governor/    # Main application entry point
+├── internal/
+│   ├── buffer/              # Metrics buffering and batching
+│   ├── config/              # Configuration management
+│   ├── exporter/            # OTLP gRPC exporter
+│   ├── limits/              # Limits enforcement (adaptive, drop, log)
+│   ├── logging/             # JSON structured logging
+│   ├── receiver/            # gRPC and HTTP receivers
+│   └── stats/               # Statistics collection
+├── examples/                # Example configuration files
+├── test/                    # Integration test environment
+├── bin/                     # Build output directory
+├── Dockerfile
+├── docker-compose.yaml
+└── Makefile
 ```
 
 ## Testing

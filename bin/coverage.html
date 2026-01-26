@@ -1,0 +1,2057 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>metrics-governor: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/slawomirskowron/metrics-governor/cmd/metrics-governor/main.go (0.0%)</option>
+				
+				<option value="file1">github.com/slawomirskowron/metrics-governor/internal/buffer/buffer.go (100.0%)</option>
+				
+				<option value="file2">github.com/slawomirskowron/metrics-governor/internal/config/config.go (100.0%)</option>
+				
+				<option value="file3">github.com/slawomirskowron/metrics-governor/internal/exporter/exporter.go (100.0%)</option>
+				
+				<option value="file4">github.com/slawomirskowron/metrics-governor/internal/limits/config.go (97.6%)</option>
+				
+				<option value="file5">github.com/slawomirskowron/metrics-governor/internal/limits/enforcer.go (81.1%)</option>
+				
+				<option value="file6">github.com/slawomirskowron/metrics-governor/internal/logging/logging.go (83.9%)</option>
+				
+				<option value="file7">github.com/slawomirskowron/metrics-governor/internal/receiver/grpc.go (90.0%)</option>
+				
+				<option value="file8">github.com/slawomirskowron/metrics-governor/internal/receiver/http.go (87.9%)</option>
+				
+				<option value="file9">github.com/slawomirskowron/metrics-governor/internal/stats/stats.go (93.0%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package main
+
+import (
+        "context"
+        "net/http"
+        "os"
+        "os/signal"
+        "strings"
+        "syscall"
+        "time"
+
+        "github.com/slawomirskowron/metrics-governor/internal/buffer"
+        "github.com/slawomirskowron/metrics-governor/internal/config"
+        "github.com/slawomirskowron/metrics-governor/internal/exporter"
+        "github.com/slawomirskowron/metrics-governor/internal/limits"
+        "github.com/slawomirskowron/metrics-governor/internal/logging"
+        "github.com/slawomirskowron/metrics-governor/internal/receiver"
+        "github.com/slawomirskowron/metrics-governor/internal/stats"
+)
+
+func main() <span class="cov0" title="0">{
+        cfg := config.ParseFlags()
+
+        if cfg.ShowHelp </span><span class="cov0" title="0">{
+                config.PrintUsage()
+                os.Exit(0)
+        }</span>
+
+        <span class="cov0" title="0">if cfg.ShowVersion </span><span class="cov0" title="0">{
+                config.PrintVersion()
+                os.Exit(0)
+        }</span>
+
+        <span class="cov0" title="0">ctx, cancel := context.WithCancel(context.Background())
+        defer cancel()
+
+        // Create exporter
+        exp, err := exporter.New(ctx, exporter.Config{
+                Endpoint: cfg.ExporterEndpoint,
+                Insecure: cfg.ExporterInsecure,
+                Timeout:  cfg.ExporterTimeout,
+        })
+        if err != nil </span><span class="cov0" title="0">{
+                logging.Fatal("failed to create exporter", logging.F("error", err.Error()))
+        }</span>
+        <span class="cov0" title="0">defer exp.Close()
+
+        // Parse stats labels
+        var trackLabels []string
+        if cfg.StatsLabels != "" </span><span class="cov0" title="0">{
+                trackLabels = strings.Split(cfg.StatsLabels, ",")
+                for i, l := range trackLabels </span><span class="cov0" title="0">{
+                        trackLabels[i] = strings.TrimSpace(l)
+                }</span>
+        }
+
+        // Create stats collector
+        <span class="cov0" title="0">statsCollector := stats.NewCollector(trackLabels)
+
+        // Create limits enforcer (if configured)
+        var limitsEnforcer *limits.Enforcer
+        if cfg.LimitsConfig != "" </span><span class="cov0" title="0">{
+                limitsCfg, err := limits.LoadConfig(cfg.LimitsConfig)
+                if err != nil </span><span class="cov0" title="0">{
+                        logging.Fatal("failed to load limits config", logging.F("error", err.Error(), "path", cfg.LimitsConfig))
+                }</span>
+                <span class="cov0" title="0">limitsEnforcer = limits.NewEnforcer(limitsCfg, cfg.LimitsDryRun)
+                logging.Info("limits enforcer initialized", logging.F(
+                        "config", cfg.LimitsConfig,
+                        "dry_run", cfg.LimitsDryRun,
+                        "rules_count", len(limitsCfg.Rules),
+                ))</span>
+        }
+
+        // Create buffer with stats collector and limits enforcer
+        <span class="cov0" title="0">buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, exp, statsCollector, limitsEnforcer)
+
+        // Start buffer flush routine
+        go buf.Start(ctx)
+
+        // Create and start gRPC receiver
+        grpcReceiver := receiver.NewGRPC(cfg.GRPCListenAddr, buf)
+        go func() </span><span class="cov0" title="0">{
+                if err := grpcReceiver.Start(); err != nil </span><span class="cov0" title="0">{
+                        logging.Error("gRPC receiver error", logging.F("error", err.Error()))
+                }</span>
+        }()
+
+        // Create and start HTTP receiver
+        <span class="cov0" title="0">httpReceiver := receiver.NewHTTP(cfg.HTTPListenAddr, buf)
+        go func() </span><span class="cov0" title="0">{
+                if err := httpReceiver.Start(); err != nil </span><span class="cov0" title="0">{
+                        logging.Error("HTTP receiver error", logging.F("error", err.Error()))
+                }</span>
+        }()
+
+        // Start stats HTTP server with combined metrics
+        <span class="cov0" title="0">statsMux := http.NewServeMux()
+        statsMux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) </span><span class="cov0" title="0">{
+                // Write stats metrics
+                statsCollector.ServeHTTP(w, r)
+                // Write limits metrics (if enabled)
+                if limitsEnforcer != nil </span><span class="cov0" title="0">{
+                        limitsEnforcer.ServeHTTP(w, r)
+                }</span>
+        })
+
+        <span class="cov0" title="0">statsServer := &amp;http.Server{
+                Addr:    cfg.StatsAddr,
+                Handler: statsMux,
+        }
+        go func() </span><span class="cov0" title="0">{
+                logging.Info("stats endpoint started", logging.F("addr", cfg.StatsAddr, "path", "/metrics"))
+                if err := statsServer.ListenAndServe(); err != nil &amp;&amp; err != http.ErrServerClosed </span><span class="cov0" title="0">{
+                        logging.Error("stats server error", logging.F("error", err.Error()))
+                }</span>
+        }()
+
+        // Start periodic stats logging (every 30 seconds)
+        <span class="cov0" title="0">go statsCollector.StartPeriodicLogging(ctx, 30*time.Second)
+
+        logging.Info("metrics-governor started", logging.F(
+                "grpc_addr", cfg.GRPCListenAddr,
+                "http_addr", cfg.HTTPListenAddr,
+                "exporter_endpoint", cfg.ExporterEndpoint,
+                "stats_addr", cfg.StatsAddr,
+                "limits_enabled", cfg.LimitsConfig != "",
+        ))
+
+        // Wait for shutdown signal
+        sigChan := make(chan os.Signal, 1)
+        signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+        &lt;-sigChan
+
+        logging.Info("shutting down")
+
+        // Graceful shutdown
+        grpcReceiver.Stop()
+        httpReceiver.Stop(ctx)
+        statsServer.Shutdown(ctx)
+        cancel()
+        buf.Wait()
+
+        logging.Info("shutdown complete")</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package buffer
+
+import (
+        "context"
+        "sync"
+        "time"
+
+        colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+        metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+)
+
+// Exporter defines the interface for sending metrics.
+type Exporter interface {
+        Export(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error
+}
+
+// StatsCollector defines the interface for collecting stats.
+type StatsCollector interface {
+        Process(resourceMetrics []*metricspb.ResourceMetrics)
+}
+
+// LimitsEnforcer defines the interface for enforcing limits.
+type LimitsEnforcer interface {
+        Process(resourceMetrics []*metricspb.ResourceMetrics) []*metricspb.ResourceMetrics
+}
+
+// MetricsBuffer buffers incoming metrics and flushes them periodically.
+type MetricsBuffer struct {
+        mu            sync.Mutex
+        metrics       []*metricspb.ResourceMetrics
+        maxSize       int
+        maxBatchSize  int
+        flushInterval time.Duration
+        exporter      Exporter
+        stats         StatsCollector
+        limits        LimitsEnforcer
+        flushChan     chan struct{}
+        doneChan      chan struct{}
+}
+
+// New creates a new MetricsBuffer.
+func New(maxSize, maxBatchSize int, flushInterval time.Duration, exporter Exporter, stats StatsCollector, limits LimitsEnforcer) *MetricsBuffer <span class="cov8" title="1">{
+        return &amp;MetricsBuffer{
+                metrics:       make([]*metricspb.ResourceMetrics, 0, maxSize),
+                maxSize:       maxSize,
+                maxBatchSize:  maxBatchSize,
+                flushInterval: flushInterval,
+                exporter:      exporter,
+                stats:         stats,
+                limits:        limits,
+                flushChan:     make(chan struct{}, 1),
+                doneChan:      make(chan struct{}),
+        }
+}</span>
+
+// Add adds metrics to the buffer.
+func (b *MetricsBuffer) Add(resourceMetrics []*metricspb.ResourceMetrics) <span class="cov8" title="1">{
+        // Process stats before any filtering
+        if b.stats != nil </span><span class="cov8" title="1">{
+                b.stats.Process(resourceMetrics)
+        }</span>
+
+        // Apply limits enforcement (may filter/sample metrics)
+        <span class="cov8" title="1">if b.limits != nil </span><span class="cov8" title="1">{
+                resourceMetrics = b.limits.Process(resourceMetrics)
+        }</span>
+
+        <span class="cov8" title="1">if len(resourceMetrics) == 0 </span><span class="cov8" title="1">{
+                return
+        }</span>
+
+        <span class="cov8" title="1">b.mu.Lock()
+        defer b.mu.Unlock()
+
+        b.metrics = append(b.metrics, resourceMetrics...)
+
+        // Trigger flush if buffer is full
+        if len(b.metrics) &gt;= b.maxSize </span><span class="cov8" title="1">{
+                select </span>{
+                case b.flushChan &lt;- struct{}{}:<span class="cov8" title="1"></span>
+                default:<span class="cov0" title="0"></span>
+                }
+        }
+}
+
+// Start starts the background flush routine.
+func (b *MetricsBuffer) Start(ctx context.Context) <span class="cov8" title="1">{
+        ticker := time.NewTicker(b.flushInterval)
+        defer ticker.Stop()
+
+        for </span><span class="cov8" title="1">{
+                select </span>{
+                case &lt;-ctx.Done():<span class="cov8" title="1">
+                        b.flush(context.Background()) // Final flush
+                        close(b.doneChan)
+                        return</span>
+                case &lt;-ticker.C:<span class="cov8" title="1">
+                        b.flush(ctx)</span>
+                case &lt;-b.flushChan:<span class="cov8" title="1">
+                        b.flush(ctx)</span>
+                }
+        }
+}
+
+// flush sends buffered metrics to the exporter.
+func (b *MetricsBuffer) flush(ctx context.Context) <span class="cov8" title="1">{
+        b.mu.Lock()
+        if len(b.metrics) == 0 </span><span class="cov8" title="1">{
+                b.mu.Unlock()
+                return
+        }</span>
+
+        // Take metrics from buffer
+        <span class="cov8" title="1">toSend := b.metrics
+        b.metrics = make([]*metricspb.ResourceMetrics, 0, b.maxSize)
+        b.mu.Unlock()
+
+        // Send in batches
+        for i := 0; i &lt; len(toSend); i += b.maxBatchSize </span><span class="cov8" title="1">{
+                end := i + b.maxBatchSize
+                if end &gt; len(toSend) </span><span class="cov8" title="1">{
+                        end = len(toSend)
+                }</span>
+
+                <span class="cov8" title="1">batch := toSend[i:end]
+                req := &amp;colmetricspb.ExportMetricsServiceRequest{
+                        ResourceMetrics: batch,
+                }
+
+                if err := b.exporter.Export(ctx, req); err != nil </span><span class="cov8" title="1">{
+                        // TODO: implement retry logic or dead letter queue
+                        // For now, just log and continue
+                        continue</span>
+                }
+        }
+}
+
+// Wait waits for the buffer to finish flushing.
+func (b *MetricsBuffer) Wait() <span class="cov8" title="1">{
+        &lt;-b.doneChan
+}</span>
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package config
+
+import (
+        "flag"
+        "fmt"
+        "os"
+        "time"
+)
+
+// version is set at build time via ldflags
+var version = "dev"
+
+// Config holds the application configuration.
+type Config struct {
+        // Receiver settings
+        GRPCListenAddr string
+        HTTPListenAddr string
+
+        // Exporter settings
+        ExporterEndpoint string
+        ExporterInsecure bool
+        ExporterTimeout  time.Duration
+
+        // Buffer settings
+        BufferSize    int
+        FlushInterval time.Duration
+        MaxBatchSize  int
+
+        // Stats settings
+        StatsAddr   string
+        StatsLabels string
+
+        // Limits settings
+        LimitsConfig string
+        LimitsDryRun bool
+
+        // Flags
+        ShowHelp    bool
+        ShowVersion bool
+}
+
+// ParseFlags parses command line flags and returns the configuration.
+func ParseFlags() *Config <span class="cov8" title="1">{
+        cfg := &amp;Config{}
+
+        // Receiver flags
+        flag.StringVar(&amp;cfg.GRPCListenAddr, "grpc-listen", ":4317", "gRPC receiver listen address")
+        flag.StringVar(&amp;cfg.HTTPListenAddr, "http-listen", ":4318", "HTTP receiver listen address")
+
+        // Exporter flags
+        flag.StringVar(&amp;cfg.ExporterEndpoint, "exporter-endpoint", "localhost:4317", "OTLP exporter endpoint")
+        flag.BoolVar(&amp;cfg.ExporterInsecure, "exporter-insecure", true, "Use insecure connection for exporter")
+        flag.DurationVar(&amp;cfg.ExporterTimeout, "exporter-timeout", 30*time.Second, "Exporter request timeout")
+
+        // Buffer flags
+        flag.IntVar(&amp;cfg.BufferSize, "buffer-size", 10000, "Maximum number of metrics to buffer")
+        flag.DurationVar(&amp;cfg.FlushInterval, "flush-interval", 5*time.Second, "Buffer flush interval")
+        flag.IntVar(&amp;cfg.MaxBatchSize, "batch-size", 1000, "Maximum batch size for export")
+
+        // Stats flags
+        flag.StringVar(&amp;cfg.StatsAddr, "stats-addr", ":9090", "Stats/metrics HTTP endpoint address")
+        flag.StringVar(&amp;cfg.StatsLabels, "stats-labels", "", "Comma-separated labels to track for grouping (e.g., service,env,cluster)")
+
+        // Limits flags
+        flag.StringVar(&amp;cfg.LimitsConfig, "limits-config", "", "Path to limits configuration YAML file")
+        flag.BoolVar(&amp;cfg.LimitsDryRun, "limits-dry-run", true, "Dry run mode: log violations but don't drop/sample")
+
+        // Help and version
+        flag.BoolVar(&amp;cfg.ShowHelp, "help", false, "Show help message")
+        flag.BoolVar(&amp;cfg.ShowHelp, "h", false, "Show help message (shorthand)")
+        flag.BoolVar(&amp;cfg.ShowVersion, "version", false, "Show version")
+        flag.BoolVar(&amp;cfg.ShowVersion, "v", false, "Show version (shorthand)")
+
+        flag.Usage = PrintUsage
+
+        flag.Parse()
+
+        return cfg
+}</span>
+
+// PrintUsage prints the help message.
+func PrintUsage() <span class="cov8" title="1">{
+        fmt.Fprintf(os.Stderr, `metrics-governor - OTLP metrics proxy with buffering
+
+USAGE:
+    metrics-governor [OPTIONS]
+
+DESCRIPTION:
+    Receives OTLP metrics via gRPC and HTTP, buffers them, and forwards
+    to a configurable OTLP endpoint with batching support.
+
+OPTIONS:
+    Receiver:
+        -grpc-listen &lt;addr&gt;      gRPC receiver listen address (default: ":4317")
+        -http-listen &lt;addr&gt;      HTTP receiver listen address (default: ":4318")
+
+    Exporter:
+        -exporter-endpoint &lt;addr&gt;  OTLP exporter endpoint (default: "localhost:4317")
+        -exporter-insecure         Use insecure connection (default: true)
+        -exporter-timeout &lt;dur&gt;    Exporter request timeout (default: 30s)
+
+    Buffer:
+        -buffer-size &lt;n&gt;         Maximum metrics to buffer (default: 10000)
+        -flush-interval &lt;dur&gt;    Buffer flush interval (default: 5s)
+        -batch-size &lt;n&gt;          Maximum batch size for export (default: 1000)
+
+    Stats:
+        -stats-addr &lt;addr&gt;       Stats/metrics HTTP endpoint address (default: ":9090")
+        -stats-labels &lt;labels&gt;   Comma-separated labels to track (e.g., service,env,cluster)
+
+    Limits:
+        -limits-config &lt;path&gt;    Path to limits configuration YAML file
+        -limits-dry-run          Dry run mode: log only, don't drop/sample (default: true)
+
+    General:
+        -h, -help                Show this help message
+        -v, -version             Show version
+
+EXAMPLES:
+    # Start with default settings
+    metrics-governor
+
+    # Custom receiver ports
+    metrics-governor -grpc-listen :5317 -http-listen :5318
+
+    # Forward to remote endpoint
+    metrics-governor -exporter-endpoint otel-collector:4317
+
+    # Adjust buffering
+    metrics-governor -buffer-size 50000 -flush-interval 10s -batch-size 2000
+
+    # Enable stats tracking by service and environment
+    metrics-governor -stats-labels service,env,cluster
+
+    # Enable limits enforcement with config file
+    metrics-governor -limits-config /etc/metrics-governor/limits.yaml -limits-dry-run=false
+
+`)
+}</span>
+
+// PrintVersion prints the version and exits.
+func PrintVersion() <span class="cov8" title="1">{
+        fmt.Printf("metrics-governor version %s\n", version)
+}</span>
+
+// DefaultConfig returns the default configuration.
+func DefaultConfig() *Config <span class="cov8" title="1">{
+        return &amp;Config{
+                GRPCListenAddr:   ":4317",
+                HTTPListenAddr:   ":4318",
+                ExporterEndpoint: "localhost:4317",
+                ExporterInsecure: true,
+                ExporterTimeout:  30 * time.Second,
+                BufferSize:       10000,
+                FlushInterval:    5 * time.Second,
+                MaxBatchSize:     1000,
+                StatsAddr:        ":9090",
+                StatsLabels:      "",
+                LimitsConfig:     "",
+                LimitsDryRun:     true,
+        }
+}</span>
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package exporter
+
+import (
+        "context"
+        "time"
+
+        colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+        "google.golang.org/grpc"
+        "google.golang.org/grpc/credentials/insecure"
+)
+
+// OTLPExporter exports metrics via OTLP gRPC.
+type OTLPExporter struct {
+        conn    *grpc.ClientConn
+        client  colmetricspb.MetricsServiceClient
+        timeout time.Duration
+}
+
+// Config holds the exporter configuration.
+type Config struct {
+        Endpoint string
+        Insecure bool
+        Timeout  time.Duration
+}
+
+// New creates a new OTLPExporter.
+func New(ctx context.Context, cfg Config) (*OTLPExporter, error) <span class="cov8" title="1">{
+        var opts []grpc.DialOption
+
+        if cfg.Insecure </span><span class="cov8" title="1">{
+                opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+        }</span>
+
+        <span class="cov8" title="1">conn, err := grpc.NewClient(cfg.Endpoint, opts...)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">client := colmetricspb.NewMetricsServiceClient(conn)
+
+        return &amp;OTLPExporter{
+                conn:    conn,
+                client:  client,
+                timeout: cfg.Timeout,
+        }, nil</span>
+}
+
+// Export sends metrics to the configured endpoint.
+func (e *OTLPExporter) Export(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error <span class="cov8" title="1">{
+        ctx, cancel := context.WithTimeout(ctx, e.timeout)
+        defer cancel()
+
+        _, err := e.client.Export(ctx, req)
+        return err
+}</span>
+
+// Close closes the exporter connection.
+func (e *OTLPExporter) Close() error <span class="cov8" title="1">{
+        return e.conn.Close()
+}</span>
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package limits
+
+import (
+        "fmt"
+        "os"
+        "regexp"
+
+        "gopkg.in/yaml.v3"
+)
+
+// Action defines what to do when a limit is exceeded.
+type Action string
+
+const (
+        ActionLog      Action = "log"      // Log only, don't modify data
+        ActionAdaptive Action = "adaptive" // Adaptive: drop top offenders to stay within limits
+        ActionDrop     Action = "drop"     // Drop all data when limit exceeded
+)
+
+// Config holds the complete limits configuration.
+type Config struct {
+        Defaults *DefaultLimits `yaml:"defaults"`
+        Rules    []Rule         `yaml:"rules"`
+}
+
+// DefaultLimits defines default limits when no rule matches.
+type DefaultLimits struct {
+        MaxDatapointsRate int64  `yaml:"max_datapoints_rate"` // per minute
+        MaxCardinality    int64  `yaml:"max_cardinality"`
+        Action            Action `yaml:"action"`
+}
+
+// Rule defines a limit rule with matching criteria.
+type Rule struct {
+        Name              string    `yaml:"name"`
+        Match             RuleMatch `yaml:"match"`
+        MaxDatapointsRate int64     `yaml:"max_datapoints_rate"` // per minute, 0 = no limit
+        MaxCardinality    int64     `yaml:"max_cardinality"`     // 0 = no limit
+        Action            Action    `yaml:"action"`
+
+        // GroupBy specifies which labels to use for tracking top offenders.
+        // Datapoints and cardinality are tracked per unique combination of these labels.
+        // When limits are exceeded with action=adaptive, top offenders by these labels are dropped first.
+        // Example: ["service", "env"] tracks per service+env combination.
+        GroupBy []string `yaml:"group_by"`
+
+        // Compiled regex (internal)
+        metricRegex *regexp.Regexp
+}
+
+// RuleMatch defines matching criteria for a rule.
+type RuleMatch struct {
+        MetricName string            `yaml:"metric_name"` // exact match or regex pattern
+        Labels     map[string]string `yaml:"labels"`      // label key-value pairs, "*" = wildcard
+}
+
+// LoadConfig loads limits configuration from a YAML file.
+func LoadConfig(path string) (*Config, error) <span class="cov8" title="1">{
+        data, err := os.ReadFile(path)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("failed to read limits config: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var cfg Config
+        if err := yaml.Unmarshal(data, &amp;cfg); err != nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("failed to parse limits config: %w", err)
+        }</span>
+
+        // Set defaults
+        <span class="cov8" title="1">if cfg.Defaults == nil </span><span class="cov8" title="1">{
+                cfg.Defaults = &amp;DefaultLimits{
+                        Action: ActionLog,
+                }
+        }</span>
+        <span class="cov8" title="1">if cfg.Defaults.Action == "" </span><span class="cov0" title="0">{
+                cfg.Defaults.Action = ActionLog
+        }</span>
+
+        // Compile regex patterns and validate rules
+        <span class="cov8" title="1">for i := range cfg.Rules </span><span class="cov8" title="1">{
+                rule := &amp;cfg.Rules[i]
+
+                if rule.Action == "" </span><span class="cov8" title="1">{
+                        rule.Action = cfg.Defaults.Action
+                }</span>
+
+                <span class="cov8" title="1">if rule.Match.MetricName != "" </span><span class="cov8" title="1">{
+                        // Check if it's a regex pattern (contains special chars)
+                        if containsRegexChars(rule.Match.MetricName) </span><span class="cov8" title="1">{
+                                regex, err := regexp.Compile(rule.Match.MetricName)
+                                if err != nil </span><span class="cov8" title="1">{
+                                        return nil, fmt.Errorf("invalid regex in rule %q: %w", rule.Name, err)
+                                }</span>
+                                <span class="cov8" title="1">rule.metricRegex = regex</span>
+                        }
+                }
+
+        }
+
+        <span class="cov8" title="1">return &amp;cfg, nil</span>
+}
+
+// containsRegexChars checks if a string contains regex special characters.
+func containsRegexChars(s string) bool <span class="cov8" title="1">{
+        specialChars := `.*+?^${}()|[]\`
+        for _, c := range s </span><span class="cov8" title="1">{
+                for _, sc := range specialChars </span><span class="cov8" title="1">{
+                        if c == sc </span><span class="cov8" title="1">{
+                                return true
+                        }</span>
+                }
+        }
+        <span class="cov8" title="1">return false</span>
+}
+
+// MatchesMetric checks if the rule matches a metric name.
+func (r *Rule) MatchesMetric(metricName string) bool <span class="cov8" title="1">{
+        if r.Match.MetricName == "" </span><span class="cov8" title="1">{
+                return true // No metric filter
+        }</span>
+
+        <span class="cov8" title="1">if r.metricRegex != nil </span><span class="cov8" title="1">{
+                return r.metricRegex.MatchString(metricName)
+        }</span>
+
+        <span class="cov8" title="1">return r.Match.MetricName == metricName</span>
+}
+
+// MatchesLabels checks if the rule matches a set of labels.
+func (r *Rule) MatchesLabels(labels map[string]string) bool <span class="cov8" title="1">{
+        if len(r.Match.Labels) == 0 </span><span class="cov8" title="1">{
+                return true // No label filter
+        }</span>
+
+        <span class="cov8" title="1">for key, pattern := range r.Match.Labels </span><span class="cov8" title="1">{
+                value, exists := labels[key]
+                if !exists </span><span class="cov8" title="1">{
+                        return false
+                }</span>
+                <span class="cov8" title="1">if pattern != "*" &amp;&amp; pattern != value </span><span class="cov8" title="1">{
+                        return false
+                }</span>
+        }
+
+        <span class="cov8" title="1">return true</span>
+}
+
+// Matches checks if the rule matches a metric name and labels.
+func (r *Rule) Matches(metricName string, labels map[string]string) bool <span class="cov8" title="1">{
+        return r.MatchesMetric(metricName) &amp;&amp; r.MatchesLabels(labels)
+}</span>
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">package limits
+
+import (
+        "fmt"
+        "net/http"
+        "sort"
+        "strings"
+        "sync"
+        "sync/atomic"
+        "time"
+
+        "github.com/slawomirskowron/metrics-governor/internal/logging"
+        commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+        metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+)
+
+// groupStats tracks statistics for a specific label combination (group).
+type groupStats struct {
+        datapoints  int64                  // Total datapoints in current window
+        cardinality map[string]struct{}    // Unique series keys
+        windowEnd   time.Time              // When the current window expires
+}
+
+// ruleStats tracks all groups for a specific rule.
+type ruleStats struct {
+        groups      map[string]*groupStats // groupKey -&gt; stats
+        totalDPs    int64                  // Total datapoints across all groups
+        totalCard   int64                  // Total cardinality across all groups
+        windowEnd   time.Time              // Global window end
+}
+
+// Enforcer enforces limits on metrics based on configuration.
+type Enforcer struct {
+        mu     sync.RWMutex
+        config *Config
+
+        // Per-rule statistics tracking
+        ruleStats map[string]*ruleStats // ruleName -&gt; stats
+
+        // Dropped groups (top offenders marked for dropping)
+        droppedGroups map[string]map[string]time.Time // ruleName -&gt; groupKey -&gt; expiry
+
+        // Violation counters for Prometheus
+        violations *ViolationMetrics
+
+        // Dry run mode (log only, don't actually drop)
+        dryRun bool
+}
+
+// ViolationMetrics tracks limit violation counts.
+type ViolationMetrics struct {
+        mu sync.RWMutex
+
+        // Counters by rule name
+        datapointsExceeded  map[string]*atomic.Int64 // rule -&gt; count
+        cardinalityExceeded map[string]*atomic.Int64 // rule -&gt; count
+        datapointsDropped   map[string]*atomic.Int64 // rule -&gt; count
+        datapointsPassed    map[string]*atomic.Int64 // rule -&gt; count
+        groupsDropped       map[string]*atomic.Int64 // rule -&gt; count (unique groups)
+}
+
+// NewEnforcer creates a new limits enforcer.
+func NewEnforcer(config *Config, dryRun bool) *Enforcer <span class="cov8" title="1">{
+        return &amp;Enforcer{
+                config:        config,
+                ruleStats:     make(map[string]*ruleStats),
+                droppedGroups: make(map[string]map[string]time.Time),
+                violations: &amp;ViolationMetrics{
+                        datapointsExceeded:  make(map[string]*atomic.Int64),
+                        cardinalityExceeded: make(map[string]*atomic.Int64),
+                        datapointsDropped:   make(map[string]*atomic.Int64),
+                        datapointsPassed:    make(map[string]*atomic.Int64),
+                        groupsDropped:       make(map[string]*atomic.Int64),
+                },
+                dryRun: dryRun,
+        }
+}</span>
+
+// Process processes metrics and enforces limits.
+// Returns filtered metrics (may be modified if limits exceeded with adaptive action).
+func (e *Enforcer) Process(resourceMetrics []*metricspb.ResourceMetrics) []*metricspb.ResourceMetrics <span class="cov8" title="1">{
+        if e.config == nil </span><span class="cov8" title="1">{
+                return resourceMetrics
+        }</span>
+
+        <span class="cov8" title="1">result := make([]*metricspb.ResourceMetrics, 0, len(resourceMetrics))
+
+        for _, rm := range resourceMetrics </span><span class="cov8" title="1">{
+                resourceAttrs := extractAttributes(rm.Resource.GetAttributes())
+                filteredRM := e.processResourceMetrics(rm, resourceAttrs)
+                if filteredRM != nil </span><span class="cov8" title="1">{
+                        result = append(result, filteredRM)
+                }</span>
+        }
+
+        <span class="cov8" title="1">return result</span>
+}
+
+func (e *Enforcer) processResourceMetrics(rm *metricspb.ResourceMetrics, resourceAttrs map[string]string) *metricspb.ResourceMetrics <span class="cov8" title="1">{
+        filteredScopeMetrics := make([]*metricspb.ScopeMetrics, 0, len(rm.ScopeMetrics))
+
+        for _, sm := range rm.ScopeMetrics </span><span class="cov8" title="1">{
+                filteredMetrics := make([]*metricspb.Metric, 0, len(sm.Metrics))
+
+                for _, m := range sm.Metrics </span><span class="cov8" title="1">{
+                        filteredMetric := e.processMetric(m, resourceAttrs)
+                        if filteredMetric != nil </span><span class="cov8" title="1">{
+                                filteredMetrics = append(filteredMetrics, filteredMetric)
+                        }</span>
+                }
+
+                <span class="cov8" title="1">if len(filteredMetrics) &gt; 0 </span><span class="cov8" title="1">{
+                        filteredSM := &amp;metricspb.ScopeMetrics{
+                                Scope:   sm.Scope,
+                                Metrics: filteredMetrics,
+                        }
+                        filteredScopeMetrics = append(filteredScopeMetrics, filteredSM)
+                }</span>
+        }
+
+        <span class="cov8" title="1">if len(filteredScopeMetrics) == 0 </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+
+        <span class="cov8" title="1">return &amp;metricspb.ResourceMetrics{
+                Resource:     rm.Resource,
+                ScopeMetrics: filteredScopeMetrics,
+        }</span>
+}
+
+func (e *Enforcer) processMetric(m *metricspb.Metric, resourceAttrs map[string]string) *metricspb.Metric <span class="cov8" title="1">{
+        metricName := m.Name
+
+        // Find matching rule
+        rule := e.findMatchingRule(metricName, resourceAttrs)
+        if rule == nil </span><span class="cov8" title="1">{
+                return m // No rule matches, pass through
+        }</span>
+
+        // Build group key based on rule's GroupBy labels
+        <span class="cov8" title="1">groupKey := e.buildGroupKey(rule, resourceAttrs, m)
+
+        // Check if this group is currently marked as dropped
+        if e.isGroupDropped(rule.Name, groupKey) </span><span class="cov0" title="0">{
+                datapointsCount := countDatapoints(m)
+                e.recordDrop(rule.Name, datapointsCount, false) // Not a new group drop
+                if !e.dryRun </span><span class="cov0" title="0">{
+                        return nil
+                }</span>
+                <span class="cov0" title="0">return m</span>
+        }
+
+        // Update tracking and check limits
+        <span class="cov8" title="1">exceeded, reason := e.updateAndCheckLimits(rule, groupKey, m, resourceAttrs)
+
+        if !exceeded </span><span class="cov8" title="1">{
+                e.recordPass(rule.Name, countDatapoints(m))
+                return m
+        }</span>
+
+        // Handle violation based on action
+        <span class="cov8" title="1">return e.handleViolation(rule, groupKey, m, resourceAttrs, reason)</span>
+}
+
+func (e *Enforcer) findMatchingRule(metricName string, labels map[string]string) *Rule <span class="cov8" title="1">{
+        for i := range e.config.Rules </span><span class="cov8" title="1">{
+                rule := &amp;e.config.Rules[i]
+                if rule.Matches(metricName, labels) </span><span class="cov8" title="1">{
+                        return rule
+                }</span>
+        }
+        <span class="cov8" title="1">return nil</span>
+}
+
+func (e *Enforcer) buildGroupKey(rule *Rule, resourceAttrs map[string]string, m *metricspb.Metric) string <span class="cov8" title="1">{
+        // If GroupBy is specified, use only those labels
+        if len(rule.GroupBy) &gt; 0 </span><span class="cov8" title="1">{
+                parts := make([]string, 0, len(rule.GroupBy))
+
+                // Merge resource attrs with first datapoint attrs for grouping
+                allAttrs := resourceAttrs
+                dpAttrs := extractDatapointAttributes(m)
+                if len(dpAttrs) &gt; 0 </span><span class="cov8" title="1">{
+                        allAttrs = mergeAttrs(resourceAttrs, dpAttrs[0])
+                }</span>
+
+                <span class="cov8" title="1">for _, label := range rule.GroupBy </span><span class="cov8" title="1">{
+                        if v, ok := allAttrs[label]; ok </span><span class="cov8" title="1">{
+                                parts = append(parts, fmt.Sprintf("%s=%s", label, v))
+                        }</span>
+                }
+                <span class="cov8" title="1">return strings.Join(parts, ",")</span>
+        }
+
+        // Default: use metric name as the group
+        <span class="cov8" title="1">return m.Name</span>
+}
+
+func (e *Enforcer) isGroupDropped(ruleName, groupKey string) bool <span class="cov8" title="1">{
+        e.mu.RLock()
+        defer e.mu.RUnlock()
+
+        if ruleDropped, ok := e.droppedGroups[ruleName]; ok </span><span class="cov0" title="0">{
+                if expiry, ok := ruleDropped[groupKey]; ok </span><span class="cov0" title="0">{
+                        if time.Now().Before(expiry) </span><span class="cov0" title="0">{
+                                return true
+                        }</span>
+                }
+        }
+        <span class="cov8" title="1">return false</span>
+}
+
+func (e *Enforcer) updateAndCheckLimits(rule *Rule, groupKey string, m *metricspb.Metric, resourceAttrs map[string]string) (exceeded bool, reason string) <span class="cov8" title="1">{
+        e.mu.Lock()
+        defer e.mu.Unlock()
+
+        now := time.Now()
+        datapointsCount := countDatapoints(m)
+
+        // Initialize rule stats if needed
+        if _, ok := e.ruleStats[rule.Name]; !ok </span><span class="cov8" title="1">{
+                e.ruleStats[rule.Name] = &amp;ruleStats{
+                        groups:    make(map[string]*groupStats),
+                        windowEnd: now.Add(time.Minute),
+                }
+        }</span>
+        <span class="cov8" title="1">rs := e.ruleStats[rule.Name]
+
+        // Reset if window expired
+        if now.After(rs.windowEnd) </span><span class="cov0" title="0">{
+                rs.groups = make(map[string]*groupStats)
+                rs.totalDPs = 0
+                rs.totalCard = 0
+                rs.windowEnd = now.Add(time.Minute)
+                // Also clear dropped groups for this rule
+                delete(e.droppedGroups, rule.Name)
+        }</span>
+
+        // Initialize group stats if needed
+        <span class="cov8" title="1">if _, ok := rs.groups[groupKey]; !ok </span><span class="cov8" title="1">{
+                rs.groups[groupKey] = &amp;groupStats{
+                        cardinality: make(map[string]struct{}),
+                        windowEnd:   rs.windowEnd,
+                }
+        }</span>
+        <span class="cov8" title="1">gs := rs.groups[groupKey]
+
+        // Calculate new series from this metric
+        newSeries := 0
+        dpAttrs := extractDatapointAttributes(m)
+        for _, attrs := range dpAttrs </span><span class="cov8" title="1">{
+                merged := mergeAttrs(resourceAttrs, attrs)
+                seriesKey := buildSeriesKey(merged)
+                if _, exists := gs.cardinality[seriesKey]; !exists </span><span class="cov8" title="1">{
+                        newSeries++
+                }</span>
+        }
+
+        // Check if adding this would exceed limits
+        <span class="cov8" title="1">newTotalDPs := rs.totalDPs + int64(datapointsCount)
+        newTotalCard := rs.totalCard + int64(newSeries)
+
+        exceededDP := rule.MaxDatapointsRate &gt; 0 &amp;&amp; newTotalDPs &gt; rule.MaxDatapointsRate
+        exceededCard := rule.MaxCardinality &gt; 0 &amp;&amp; newTotalCard &gt; rule.MaxCardinality
+
+        if !exceededDP &amp;&amp; !exceededCard </span><span class="cov8" title="1">{
+                // Update tracking - within limits
+                gs.datapoints += int64(datapointsCount)
+                for _, attrs := range dpAttrs </span><span class="cov8" title="1">{
+                        merged := mergeAttrs(resourceAttrs, attrs)
+                        seriesKey := buildSeriesKey(merged)
+                        if _, exists := gs.cardinality[seriesKey]; !exists </span><span class="cov8" title="1">{
+                                gs.cardinality[seriesKey] = struct{}{}
+                                rs.totalCard++
+                        }</span>
+                }
+                <span class="cov8" title="1">rs.totalDPs += int64(datapointsCount)
+                return false, ""</span>
+        }
+
+        // Limits exceeded
+        <span class="cov8" title="1">if exceededCard </span><span class="cov8" title="1">{
+                return true, "cardinality"
+        }</span>
+        <span class="cov8" title="1">return true, "datapoints_rate"</span>
+}
+
+func (e *Enforcer) handleViolation(rule *Rule, groupKey string, m *metricspb.Metric, resourceAttrs map[string]string, reason string) *metricspb.Metric <span class="cov8" title="1">{
+        datapointsCount := countDatapoints(m)
+
+        // Log the violation
+        logging.Warn("limit exceeded", logging.F(
+                "rule", rule.Name,
+                "metric", m.Name,
+                "group", groupKey,
+                "reason", reason,
+                "action", string(rule.Action),
+                "dry_run", e.dryRun,
+                "datapoints", datapointsCount,
+        ))
+
+        // Record violation
+        e.recordViolation(rule.Name, reason)
+
+        switch rule.Action </span>{
+        case ActionLog:<span class="cov8" title="1">
+                // Just log, pass through
+                e.recordPass(rule.Name, datapointsCount)
+                return m</span>
+
+        case ActionDrop:<span class="cov8" title="1">
+                // Drop everything for this metric
+                e.recordDrop(rule.Name, datapointsCount, false)
+                if e.dryRun </span><span class="cov8" title="1">{
+                        return m
+                }</span>
+                <span class="cov8" title="1">return nil</span>
+
+        case ActionAdaptive:<span class="cov8" title="1">
+                // Adaptive: identify and drop top offenders
+                return e.handleAdaptive(rule, groupKey, m, resourceAttrs, reason, datapointsCount)</span>
+
+        default:<span class="cov0" title="0">
+                return m</span>
+        }
+}
+
+func (e *Enforcer) handleAdaptive(rule *Rule, groupKey string, m *metricspb.Metric, resourceAttrs map[string]string, reason string, datapointsCount int) *metricspb.Metric <span class="cov8" title="1">{
+        e.mu.Lock()
+        defer e.mu.Unlock()
+
+        rs := e.ruleStats[rule.Name]
+        if rs == nil </span><span class="cov0" title="0">{
+                return m
+        }</span>
+
+        // Find top offenders (groups with highest contribution)
+        <span class="cov8" title="1">type groupContrib struct {
+                key         string
+                datapoints  int64
+                cardinality int
+        }
+
+        contribs := make([]groupContrib, 0, len(rs.groups))
+        for k, gs := range rs.groups </span><span class="cov8" title="1">{
+                contribs = append(contribs, groupContrib{
+                        key:         k,
+                        datapoints:  gs.datapoints,
+                        cardinality: len(gs.cardinality),
+                })
+        }</span>
+
+        // Sort by contribution (descending) based on the violation reason
+        <span class="cov8" title="1">if reason == "cardinality" </span><span class="cov0" title="0">{
+                sort.Slice(contribs, func(i, j int) bool </span><span class="cov0" title="0">{
+                        return contribs[i].cardinality &gt; contribs[j].cardinality
+                }</span>)
+        } else<span class="cov8" title="1"> {
+                sort.Slice(contribs, func(i, j int) bool </span><span class="cov0" title="0">{
+                        return contribs[i].datapoints &gt; contribs[j].datapoints
+                }</span>)
+        }
+
+        // Calculate how much we need to reduce
+        <span class="cov8" title="1">var excess int64
+        if reason == "cardinality" &amp;&amp; rule.MaxCardinality &gt; 0 </span><span class="cov0" title="0">{
+                excess = rs.totalCard - rule.MaxCardinality
+        }</span> else<span class="cov8" title="1"> if rule.MaxDatapointsRate &gt; 0 </span><span class="cov8" title="1">{
+                excess = rs.totalDPs - rule.MaxDatapointsRate
+        }</span>
+
+        <span class="cov8" title="1">if excess &lt;= 0 </span><span class="cov8" title="1">{
+                return m
+        }</span>
+
+        // Mark top offenders for dropping until we're under limit
+        <span class="cov0" title="0">var reduced int64
+        droppedCount := 0
+
+        // Initialize dropped groups map for this rule
+        if _, ok := e.droppedGroups[rule.Name]; !ok </span><span class="cov0" title="0">{
+                e.droppedGroups[rule.Name] = make(map[string]time.Time)
+        }</span>
+
+        <span class="cov0" title="0">for _, contrib := range contribs </span><span class="cov0" title="0">{
+                if reduced &gt;= excess </span><span class="cov0" title="0">{
+                        break</span>
+                }
+
+                // Mark this group for dropping (until window end)
+                <span class="cov0" title="0">e.droppedGroups[rule.Name][contrib.key] = rs.windowEnd
+                droppedCount++
+
+                if reason == "cardinality" </span><span class="cov0" title="0">{
+                        reduced += int64(contrib.cardinality)
+                }</span> else<span class="cov0" title="0"> {
+                        reduced += contrib.datapoints
+                }</span>
+
+                <span class="cov0" title="0">logging.Info("adaptive: marked group for dropping", logging.F(
+                        "rule", rule.Name,
+                        "group", contrib.key,
+                        "reason", reason,
+                        "contribution_datapoints", contrib.datapoints,
+                        "contribution_cardinality", contrib.cardinality,
+                ))</span>
+        }
+
+        // Check if current group is now marked for dropping
+        <span class="cov0" title="0">isCurrentDropped := false
+        if _, ok := e.droppedGroups[rule.Name][groupKey]; ok </span><span class="cov0" title="0">{
+                isCurrentDropped = true
+        }</span>
+
+        // Record metrics
+        <span class="cov0" title="0">e.recordGroupsDropped(rule.Name, droppedCount)
+
+        if isCurrentDropped </span><span class="cov0" title="0">{
+                e.recordDrop(rule.Name, datapointsCount, true)
+                if e.dryRun </span><span class="cov0" title="0">{
+                        return m
+                }</span>
+                <span class="cov0" title="0">return nil</span>
+        }
+
+        // This group wasn't a top offender, pass through
+        <span class="cov0" title="0">e.recordPass(rule.Name, datapointsCount)
+        return m</span>
+}
+
+func (e *Enforcer) recordViolation(ruleName, reason string) <span class="cov8" title="1">{
+        e.violations.mu.Lock()
+        defer e.violations.mu.Unlock()
+
+        if _, ok := e.violations.datapointsExceeded[ruleName]; !ok </span><span class="cov8" title="1">{
+                e.violations.datapointsExceeded[ruleName] = &amp;atomic.Int64{}
+        }</span>
+        <span class="cov8" title="1">if _, ok := e.violations.cardinalityExceeded[ruleName]; !ok </span><span class="cov8" title="1">{
+                e.violations.cardinalityExceeded[ruleName] = &amp;atomic.Int64{}
+        }</span>
+
+        <span class="cov8" title="1">switch reason </span>{
+        case "datapoints_rate":<span class="cov8" title="1">
+                e.violations.datapointsExceeded[ruleName].Add(1)</span>
+        case "cardinality":<span class="cov8" title="1">
+                e.violations.cardinalityExceeded[ruleName].Add(1)</span>
+        }
+}
+
+func (e *Enforcer) recordDrop(ruleName string, count int, isNewGroup bool) <span class="cov8" title="1">{
+        e.violations.mu.Lock()
+        defer e.violations.mu.Unlock()
+
+        if _, ok := e.violations.datapointsDropped[ruleName]; !ok </span><span class="cov8" title="1">{
+                e.violations.datapointsDropped[ruleName] = &amp;atomic.Int64{}
+        }</span>
+        <span class="cov8" title="1">e.violations.datapointsDropped[ruleName].Add(int64(count))</span>
+}
+
+func (e *Enforcer) recordPass(ruleName string, count int) <span class="cov8" title="1">{
+        e.violations.mu.Lock()
+        defer e.violations.mu.Unlock()
+
+        if _, ok := e.violations.datapointsPassed[ruleName]; !ok </span><span class="cov8" title="1">{
+                e.violations.datapointsPassed[ruleName] = &amp;atomic.Int64{}
+        }</span>
+        <span class="cov8" title="1">e.violations.datapointsPassed[ruleName].Add(int64(count))</span>
+}
+
+func (e *Enforcer) recordGroupsDropped(ruleName string, count int) <span class="cov0" title="0">{
+        e.violations.mu.Lock()
+        defer e.violations.mu.Unlock()
+
+        if _, ok := e.violations.groupsDropped[ruleName]; !ok </span><span class="cov0" title="0">{
+                e.violations.groupsDropped[ruleName] = &amp;atomic.Int64{}
+        }</span>
+        <span class="cov0" title="0">e.violations.groupsDropped[ruleName].Add(int64(count))</span>
+}
+
+// ServeHTTP implements http.Handler for Prometheus metrics endpoint.
+func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) <span class="cov8" title="1">{
+        e.violations.mu.RLock()
+        defer e.violations.mu.RUnlock()
+
+        // Datapoints rate exceeded
+        fmt.Fprintf(w, "# HELP metrics_governor_limit_datapoints_exceeded_total Times datapoints rate limit was exceeded\n")
+        fmt.Fprintf(w, "# TYPE metrics_governor_limit_datapoints_exceeded_total counter\n")
+        for rule, counter := range e.violations.datapointsExceeded </span><span class="cov8" title="1">{
+                fmt.Fprintf(w, "metrics_governor_limit_datapoints_exceeded_total{rule=%q} %d\n", rule, counter.Load())
+        }</span>
+
+        // Cardinality exceeded
+        <span class="cov8" title="1">fmt.Fprintf(w, "# HELP metrics_governor_limit_cardinality_exceeded_total Times cardinality limit was exceeded\n")
+        fmt.Fprintf(w, "# TYPE metrics_governor_limit_cardinality_exceeded_total counter\n")
+        for rule, counter := range e.violations.cardinalityExceeded </span><span class="cov8" title="1">{
+                fmt.Fprintf(w, "metrics_governor_limit_cardinality_exceeded_total{rule=%q} %d\n", rule, counter.Load())
+        }</span>
+
+        // Datapoints dropped
+        <span class="cov8" title="1">fmt.Fprintf(w, "# HELP metrics_governor_limit_datapoints_dropped_total Datapoints dropped due to limits\n")
+        fmt.Fprintf(w, "# TYPE metrics_governor_limit_datapoints_dropped_total counter\n")
+        for rule, counter := range e.violations.datapointsDropped </span><span class="cov8" title="1">{
+                fmt.Fprintf(w, "metrics_governor_limit_datapoints_dropped_total{rule=%q} %d\n", rule, counter.Load())
+        }</span>
+
+        // Datapoints passed
+        <span class="cov8" title="1">fmt.Fprintf(w, "# HELP metrics_governor_limit_datapoints_passed_total Datapoints passed through (within limits)\n")
+        fmt.Fprintf(w, "# TYPE metrics_governor_limit_datapoints_passed_total counter\n")
+        for rule, counter := range e.violations.datapointsPassed </span><span class="cov8" title="1">{
+                fmt.Fprintf(w, "metrics_governor_limit_datapoints_passed_total{rule=%q} %d\n", rule, counter.Load())
+        }</span>
+
+        // Groups dropped (adaptive)
+        <span class="cov8" title="1">fmt.Fprintf(w, "# HELP metrics_governor_limit_groups_dropped_total Groups (label combinations) dropped by adaptive limiting\n")
+        fmt.Fprintf(w, "# TYPE metrics_governor_limit_groups_dropped_total counter\n")
+        for rule, counter := range e.violations.groupsDropped </span><span class="cov0" title="0">{
+                fmt.Fprintf(w, "metrics_governor_limit_groups_dropped_total{rule=%q} %d\n", rule, counter.Load())
+        }</span>
+
+        // Current tracking stats
+        <span class="cov8" title="1">e.mu.RLock()
+        defer e.mu.RUnlock()
+
+        fmt.Fprintf(w, "# HELP metrics_governor_rule_current_datapoints Current datapoints in window per rule\n")
+        fmt.Fprintf(w, "# TYPE metrics_governor_rule_current_datapoints gauge\n")
+        for rule, rs := range e.ruleStats </span><span class="cov8" title="1">{
+                fmt.Fprintf(w, "metrics_governor_rule_current_datapoints{rule=%q} %d\n", rule, rs.totalDPs)
+        }</span>
+
+        <span class="cov8" title="1">fmt.Fprintf(w, "# HELP metrics_governor_rule_current_cardinality Current cardinality in window per rule\n")
+        fmt.Fprintf(w, "# TYPE metrics_governor_rule_current_cardinality gauge\n")
+        for rule, rs := range e.ruleStats </span><span class="cov8" title="1">{
+                fmt.Fprintf(w, "metrics_governor_rule_current_cardinality{rule=%q} %d\n", rule, rs.totalCard)
+        }</span>
+
+        <span class="cov8" title="1">fmt.Fprintf(w, "# HELP metrics_governor_rule_groups_total Number of tracked groups per rule\n")
+        fmt.Fprintf(w, "# TYPE metrics_governor_rule_groups_total gauge\n")
+        for rule, rs := range e.ruleStats </span><span class="cov8" title="1">{
+                fmt.Fprintf(w, "metrics_governor_rule_groups_total{rule=%q} %d\n", rule, len(rs.groups))
+        }</span>
+
+        <span class="cov8" title="1">fmt.Fprintf(w, "# HELP metrics_governor_rule_dropped_groups_total Number of currently dropped groups per rule\n")
+        fmt.Fprintf(w, "# TYPE metrics_governor_rule_dropped_groups_total gauge\n")
+        for rule, dropped := range e.droppedGroups </span><span class="cov0" title="0">{
+                fmt.Fprintf(w, "metrics_governor_rule_dropped_groups_total{rule=%q} %d\n", rule, len(dropped))
+        }</span>
+}
+
+// Helper functions
+
+func extractAttributes(attrs []*commonpb.KeyValue) map[string]string <span class="cov8" title="1">{
+        result := make(map[string]string)
+        for _, kv := range attrs </span><span class="cov8" title="1">{
+                if kv.Value != nil </span><span class="cov8" title="1">{
+                        if sv := kv.Value.GetStringValue(); sv != "" </span><span class="cov8" title="1">{
+                                result[kv.Key] = sv
+                        }</span>
+                }
+        }
+        <span class="cov8" title="1">return result</span>
+}
+
+func extractDatapointAttributes(m *metricspb.Metric) []map[string]string <span class="cov8" title="1">{
+        var allAttrs []map[string]string
+
+        switch d := m.Data.(type) </span>{
+        case *metricspb.Metric_Gauge:<span class="cov8" title="1">
+                for _, dp := range d.Gauge.DataPoints </span><span class="cov8" title="1">{
+                        allAttrs = append(allAttrs, extractAttributes(dp.Attributes))
+                }</span>
+        case *metricspb.Metric_Sum:<span class="cov8" title="1">
+                for _, dp := range d.Sum.DataPoints </span><span class="cov8" title="1">{
+                        allAttrs = append(allAttrs, extractAttributes(dp.Attributes))
+                }</span>
+        case *metricspb.Metric_Histogram:<span class="cov8" title="1">
+                for _, dp := range d.Histogram.DataPoints </span><span class="cov8" title="1">{
+                        allAttrs = append(allAttrs, extractAttributes(dp.Attributes))
+                }</span>
+        case *metricspb.Metric_ExponentialHistogram:<span class="cov8" title="1">
+                for _, dp := range d.ExponentialHistogram.DataPoints </span><span class="cov8" title="1">{
+                        allAttrs = append(allAttrs, extractAttributes(dp.Attributes))
+                }</span>
+        case *metricspb.Metric_Summary:<span class="cov8" title="1">
+                for _, dp := range d.Summary.DataPoints </span><span class="cov8" title="1">{
+                        allAttrs = append(allAttrs, extractAttributes(dp.Attributes))
+                }</span>
+        }
+
+        <span class="cov8" title="1">return allAttrs</span>
+}
+
+func countDatapoints(m *metricspb.Metric) int <span class="cov8" title="1">{
+        switch d := m.Data.(type) </span>{
+        case *metricspb.Metric_Gauge:<span class="cov8" title="1">
+                return len(d.Gauge.DataPoints)</span>
+        case *metricspb.Metric_Sum:<span class="cov8" title="1">
+                return len(d.Sum.DataPoints)</span>
+        case *metricspb.Metric_Histogram:<span class="cov8" title="1">
+                return len(d.Histogram.DataPoints)</span>
+        case *metricspb.Metric_ExponentialHistogram:<span class="cov8" title="1">
+                return len(d.ExponentialHistogram.DataPoints)</span>
+        case *metricspb.Metric_Summary:<span class="cov8" title="1">
+                return len(d.Summary.DataPoints)</span>
+        }
+        <span class="cov8" title="1">return 0</span>
+}
+
+func mergeAttrs(a, b map[string]string) map[string]string <span class="cov8" title="1">{
+        result := make(map[string]string, len(a)+len(b))
+        for k, v := range a </span><span class="cov8" title="1">{
+                result[k] = v
+        }</span>
+        <span class="cov8" title="1">for k, v := range b </span><span class="cov8" title="1">{
+                result[k] = v
+        }</span>
+        <span class="cov8" title="1">return result</span>
+}
+
+func buildSeriesKey(attrs map[string]string) string <span class="cov8" title="1">{
+        if len(attrs) == 0 </span><span class="cov8" title="1">{
+                return ""
+        }</span>
+        <span class="cov8" title="1">keys := make([]string, 0, len(attrs))
+        for k := range attrs </span><span class="cov8" title="1">{
+                keys = append(keys, k)
+        }</span>
+        <span class="cov8" title="1">sort.Strings(keys)
+
+        var parts []string
+        for _, k := range keys </span><span class="cov8" title="1">{
+                parts = append(parts, fmt.Sprintf("%s=%s", k, attrs[k]))
+        }</span>
+        <span class="cov8" title="1">return strings.Join(parts, ",")</span>
+}
+</pre>
+		
+		<pre class="file" id="file6" style="display: none">package logging
+
+import (
+        "encoding/json"
+        "io"
+        "os"
+        "sync"
+        "time"
+)
+
+// Level represents log severity level.
+type Level string
+
+const (
+        LevelInfo  Level = "info"
+        LevelWarn  Level = "warn"
+        LevelError Level = "error"
+        LevelFatal Level = "fatal"
+)
+
+// Logger provides JSON structured logging.
+type Logger struct {
+        mu     sync.Mutex
+        output io.Writer
+}
+
+// LogEntry represents a single log entry.
+type LogEntry struct {
+        Timestamp string                 `json:"timestamp"`
+        Level     Level                  `json:"level"`
+        Message   string                 `json:"message"`
+        Fields    map[string]interface{} `json:"fields,omitempty"`
+}
+
+var defaultLogger = &amp;Logger{output: os.Stdout}
+
+// SetOutput sets the output writer for the default logger.
+func SetOutput(w io.Writer) <span class="cov8" title="1">{
+        defaultLogger.mu.Lock()
+        defer defaultLogger.mu.Unlock()
+        defaultLogger.output = w
+}</span>
+
+// log writes a structured log entry.
+func (l *Logger) log(level Level, msg string, fields map[string]interface{}) <span class="cov8" title="1">{
+        entry := LogEntry{
+                Timestamp: time.Now().UTC().Format(time.RFC3339),
+                Level:     level,
+                Message:   msg,
+                Fields:    fields,
+        }
+
+        l.mu.Lock()
+        defer l.mu.Unlock()
+
+        data, _ := json.Marshal(entry)
+        l.output.Write(data)
+        l.output.Write([]byte("\n"))
+}</span>
+
+// Info logs an info level message.
+func Info(msg string, fields ...map[string]interface{}) <span class="cov8" title="1">{
+        var f map[string]interface{}
+        if len(fields) &gt; 0 </span><span class="cov8" title="1">{
+                f = fields[0]
+        }</span>
+        <span class="cov8" title="1">defaultLogger.log(LevelInfo, msg, f)</span>
+}
+
+// Warn logs a warning level message.
+func Warn(msg string, fields ...map[string]interface{}) <span class="cov8" title="1">{
+        var f map[string]interface{}
+        if len(fields) &gt; 0 </span><span class="cov8" title="1">{
+                f = fields[0]
+        }</span>
+        <span class="cov8" title="1">defaultLogger.log(LevelWarn, msg, f)</span>
+}
+
+// Error logs an error level message.
+func Error(msg string, fields ...map[string]interface{}) <span class="cov8" title="1">{
+        var f map[string]interface{}
+        if len(fields) &gt; 0 </span><span class="cov8" title="1">{
+                f = fields[0]
+        }</span>
+        <span class="cov8" title="1">defaultLogger.log(LevelError, msg, f)</span>
+}
+
+// Fatal logs a fatal level message and exits.
+func Fatal(msg string, fields ...map[string]interface{}) <span class="cov0" title="0">{
+        var f map[string]interface{}
+        if len(fields) &gt; 0 </span><span class="cov0" title="0">{
+                f = fields[0]
+        }</span>
+        <span class="cov0" title="0">defaultLogger.log(LevelFatal, msg, f)
+        os.Exit(1)</span>
+}
+
+// F is a helper to create fields map.
+func F(keyvals ...interface{}) map[string]interface{} <span class="cov8" title="1">{
+        fields := make(map[string]interface{})
+        for i := 0; i &lt; len(keyvals)-1; i += 2 </span><span class="cov8" title="1">{
+                if key, ok := keyvals[i].(string); ok </span><span class="cov8" title="1">{
+                        fields[key] = keyvals[i+1]
+                }</span>
+        }
+        <span class="cov8" title="1">return fields</span>
+}
+</pre>
+		
+		<pre class="file" id="file7" style="display: none">package receiver
+
+import (
+        "context"
+        "net"
+
+        "github.com/slawomirskowron/metrics-governor/internal/buffer"
+        "github.com/slawomirskowron/metrics-governor/internal/logging"
+        colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+        "google.golang.org/grpc"
+)
+
+// GRPCReceiver receives metrics via OTLP gRPC.
+type GRPCReceiver struct {
+        colmetricspb.UnimplementedMetricsServiceServer
+        server *grpc.Server
+        buffer *buffer.MetricsBuffer
+        addr   string
+}
+
+// NewGRPC creates a new gRPC receiver.
+func NewGRPC(addr string, buf *buffer.MetricsBuffer) *GRPCReceiver <span class="cov8" title="1">{
+        return &amp;GRPCReceiver{
+                server: grpc.NewServer(),
+                buffer: buf,
+                addr:   addr,
+        }
+}</span>
+
+// Export implements the OTLP MetricsService Export method.
+func (r *GRPCReceiver) Export(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) (*colmetricspb.ExportMetricsServiceResponse, error) <span class="cov8" title="1">{
+        r.buffer.Add(req.ResourceMetrics)
+        return &amp;colmetricspb.ExportMetricsServiceResponse{}, nil
+}</span>
+
+// Start starts the gRPC server.
+func (r *GRPCReceiver) Start() error <span class="cov8" title="1">{
+        lis, err := net.Listen("tcp", r.addr)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov8" title="1">colmetricspb.RegisterMetricsServiceServer(r.server, r)
+
+        logging.Info("gRPC receiver started", logging.F("addr", r.addr))
+        return r.server.Serve(lis)</span>
+}
+
+// Stop gracefully stops the gRPC server.
+func (r *GRPCReceiver) Stop() <span class="cov8" title="1">{
+        r.server.GracefulStop()
+}</span>
+</pre>
+		
+		<pre class="file" id="file8" style="display: none">package receiver
+
+import (
+        "context"
+        "io"
+        "net/http"
+
+        "github.com/slawomirskowron/metrics-governor/internal/buffer"
+        "github.com/slawomirskowron/metrics-governor/internal/logging"
+        colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+        "google.golang.org/protobuf/proto"
+)
+
+// HTTPReceiver receives metrics via OTLP HTTP.
+type HTTPReceiver struct {
+        server *http.Server
+        buffer *buffer.MetricsBuffer
+        addr   string
+}
+
+// NewHTTP creates a new HTTP receiver.
+func NewHTTP(addr string, buf *buffer.MetricsBuffer) *HTTPReceiver <span class="cov8" title="1">{
+        r := &amp;HTTPReceiver{
+                buffer: buf,
+                addr:   addr,
+        }
+
+        mux := http.NewServeMux()
+        mux.HandleFunc("/v1/metrics", r.handleMetrics)
+
+        r.server = &amp;http.Server{
+                Addr:    addr,
+                Handler: mux,
+        }
+
+        return r
+}</span>
+
+// handleMetrics handles incoming OTLP HTTP metrics requests.
+func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) <span class="cov8" title="1">{
+        if req.Method != http.MethodPost </span><span class="cov8" title="1">{
+                http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+                return
+        }</span>
+
+        <span class="cov8" title="1">body, err := io.ReadAll(req.Body)
+        if err != nil </span><span class="cov0" title="0">{
+                http.Error(w, "Failed to read body", http.StatusBadRequest)
+                return
+        }</span>
+        <span class="cov8" title="1">defer req.Body.Close()
+
+        var exportReq colmetricspb.ExportMetricsServiceRequest
+
+        contentType := req.Header.Get("Content-Type")
+        switch contentType </span>{
+        case "application/x-protobuf":<span class="cov8" title="1">
+                if err := proto.Unmarshal(body, &amp;exportReq); err != nil </span><span class="cov8" title="1">{
+                        http.Error(w, "Failed to unmarshal protobuf", http.StatusBadRequest)
+                        return
+                }</span>
+        default:<span class="cov8" title="1">
+                // TODO: add JSON support
+                http.Error(w, "Unsupported content type", http.StatusUnsupportedMediaType)
+                return</span>
+        }
+
+        <span class="cov8" title="1">r.buffer.Add(exportReq.ResourceMetrics)
+
+        // Return empty response
+        resp := &amp;colmetricspb.ExportMetricsServiceResponse{}
+        respBytes, err := proto.Marshal(resp)
+        if err != nil </span><span class="cov0" title="0">{
+                http.Error(w, "Failed to marshal response", http.StatusInternalServerError)
+                return
+        }</span>
+
+        <span class="cov8" title="1">w.Header().Set("Content-Type", "application/x-protobuf")
+        w.WriteHeader(http.StatusOK)
+        w.Write(respBytes)</span>
+}
+
+// Start starts the HTTP server.
+func (r *HTTPReceiver) Start() error <span class="cov8" title="1">{
+        logging.Info("HTTP receiver started", logging.F("addr", r.addr))
+        return r.server.ListenAndServe()
+}</span>
+
+// Stop gracefully stops the HTTP server.
+func (r *HTTPReceiver) Stop(ctx context.Context) error <span class="cov8" title="1">{
+        return r.server.Shutdown(ctx)
+}</span>
+</pre>
+		
+		<pre class="file" id="file9" style="display: none">package stats
+
+import (
+        "context"
+        "fmt"
+        "net/http"
+        "sort"
+        "strings"
+        "sync"
+        "time"
+
+        "github.com/slawomirskowron/metrics-governor/internal/logging"
+        commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+        metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+)
+
+// Collector tracks cardinality and datapoints per metric and label combinations.
+type Collector struct {
+        mu sync.RWMutex
+
+        // Labels to track for grouping (e.g., service, env, cluster)
+        trackLabels []string
+
+        // Per-metric stats: metric_name -&gt; MetricStats
+        metricStats map[string]*MetricStats
+
+        // Per-label-combination stats: "label1=val1,label2=val2" -&gt; LabelStats
+        labelStats map[string]*LabelStats
+
+        // Global counters
+        totalDatapoints uint64
+        totalMetrics    uint64
+}
+
+// MetricStats holds stats for a single metric name.
+type MetricStats struct {
+        Name       string
+        Datapoints uint64
+        // Cardinality is tracked as unique series (metric + all attributes)
+        UniqueSeries map[string]struct{}
+}
+
+// LabelStats holds stats for a label combination across all metrics.
+type LabelStats struct {
+        Labels     string
+        Datapoints uint64
+        // Cardinality: unique metric+series combinations for this label combo
+        UniqueSeries map[string]struct{}
+}
+
+// NewCollector creates a new stats collector.
+func NewCollector(trackLabels []string) *Collector <span class="cov8" title="1">{
+        return &amp;Collector{
+                trackLabels: trackLabels,
+                metricStats: make(map[string]*MetricStats),
+                labelStats:  make(map[string]*LabelStats),
+        }
+}</span>
+
+// Process processes incoming metrics and updates stats.
+func (c *Collector) Process(resourceMetrics []*metricspb.ResourceMetrics) <span class="cov8" title="1">{
+        c.mu.Lock()
+        defer c.mu.Unlock()
+
+        for _, rm := range resourceMetrics </span><span class="cov8" title="1">{
+                // Extract resource attributes
+                resourceAttrs := extractAttributes(rm.Resource.GetAttributes())
+
+                for _, sm := range rm.ScopeMetrics </span><span class="cov8" title="1">{
+                        for _, m := range sm.Metrics </span><span class="cov8" title="1">{
+                                metricName := m.Name
+                                datapoints := c.countDatapoints(m)
+
+                                c.totalDatapoints += uint64(datapoints)
+
+                                // Update per-metric stats
+                                ms, ok := c.metricStats[metricName]
+                                if !ok </span><span class="cov8" title="1">{
+                                        ms = &amp;MetricStats{
+                                                Name:         metricName,
+                                                UniqueSeries: make(map[string]struct{}),
+                                        }
+                                        c.metricStats[metricName] = ms
+                                        c.totalMetrics++
+                                }</span>
+                                <span class="cov8" title="1">ms.Datapoints += uint64(datapoints)
+
+                                // Process each datapoint for cardinality
+                                c.processDatapointsForCardinality(m, resourceAttrs, ms)
+
+                                // Update per-label-combination stats
+                                c.updateLabelStats(metricName, m, resourceAttrs)</span>
+                        }
+                }
+        }
+}
+
+// countDatapoints counts the number of datapoints in a metric.
+func (c *Collector) countDatapoints(m *metricspb.Metric) int <span class="cov8" title="1">{
+        switch d := m.Data.(type) </span>{
+        case *metricspb.Metric_Gauge:<span class="cov8" title="1">
+                return len(d.Gauge.DataPoints)</span>
+        case *metricspb.Metric_Sum:<span class="cov8" title="1">
+                return len(d.Sum.DataPoints)</span>
+        case *metricspb.Metric_Histogram:<span class="cov8" title="1">
+                return len(d.Histogram.DataPoints)</span>
+        case *metricspb.Metric_ExponentialHistogram:<span class="cov8" title="1">
+                return len(d.ExponentialHistogram.DataPoints)</span>
+        case *metricspb.Metric_Summary:<span class="cov8" title="1">
+                return len(d.Summary.DataPoints)</span>
+        }
+        <span class="cov8" title="1">return 0</span>
+}
+
+// processDatapointsForCardinality extracts unique series identifiers.
+func (c *Collector) processDatapointsForCardinality(m *metricspb.Metric, resourceAttrs map[string]string, ms *MetricStats) <span class="cov8" title="1">{
+        var allAttrs []map[string]string
+
+        switch d := m.Data.(type) </span>{
+        case *metricspb.Metric_Gauge:<span class="cov8" title="1">
+                for _, dp := range d.Gauge.DataPoints </span><span class="cov8" title="1">{
+                        allAttrs = append(allAttrs, extractAttributes(dp.Attributes))
+                }</span>
+        case *metricspb.Metric_Sum:<span class="cov8" title="1">
+                for _, dp := range d.Sum.DataPoints </span><span class="cov8" title="1">{
+                        allAttrs = append(allAttrs, extractAttributes(dp.Attributes))
+                }</span>
+        case *metricspb.Metric_Histogram:<span class="cov8" title="1">
+                for _, dp := range d.Histogram.DataPoints </span><span class="cov8" title="1">{
+                        allAttrs = append(allAttrs, extractAttributes(dp.Attributes))
+                }</span>
+        case *metricspb.Metric_ExponentialHistogram:<span class="cov0" title="0">
+                for _, dp := range d.ExponentialHistogram.DataPoints </span><span class="cov0" title="0">{
+                        allAttrs = append(allAttrs, extractAttributes(dp.Attributes))
+                }</span>
+        case *metricspb.Metric_Summary:<span class="cov8" title="1">
+                for _, dp := range d.Summary.DataPoints </span><span class="cov8" title="1">{
+                        allAttrs = append(allAttrs, extractAttributes(dp.Attributes))
+                }</span>
+        }
+
+        <span class="cov8" title="1">for _, attrs := range allAttrs </span><span class="cov8" title="1">{
+                // Merge resource and datapoint attributes
+                merged := mergeAttrs(resourceAttrs, attrs)
+                seriesKey := buildSeriesKey(merged)
+                ms.UniqueSeries[seriesKey] = struct{}{}
+        }</span>
+}
+
+// updateLabelStats updates stats for configured label combinations.
+func (c *Collector) updateLabelStats(metricName string, m *metricspb.Metric, resourceAttrs map[string]string) <span class="cov8" title="1">{
+        if len(c.trackLabels) == 0 </span><span class="cov8" title="1">{
+                return
+        }</span>
+
+        <span class="cov8" title="1">var allAttrs []map[string]string
+
+        switch d := m.Data.(type) </span>{
+        case *metricspb.Metric_Gauge:<span class="cov0" title="0">
+                for _, dp := range d.Gauge.DataPoints </span><span class="cov0" title="0">{
+                        allAttrs = append(allAttrs, extractAttributes(dp.Attributes))
+                }</span>
+        case *metricspb.Metric_Sum:<span class="cov8" title="1">
+                for _, dp := range d.Sum.DataPoints </span><span class="cov8" title="1">{
+                        allAttrs = append(allAttrs, extractAttributes(dp.Attributes))
+                }</span>
+        case *metricspb.Metric_Histogram:<span class="cov0" title="0">
+                for _, dp := range d.Histogram.DataPoints </span><span class="cov0" title="0">{
+                        allAttrs = append(allAttrs, extractAttributes(dp.Attributes))
+                }</span>
+        case *metricspb.Metric_ExponentialHistogram:<span class="cov0" title="0">
+                for _, dp := range d.ExponentialHistogram.DataPoints </span><span class="cov0" title="0">{
+                        allAttrs = append(allAttrs, extractAttributes(dp.Attributes))
+                }</span>
+        case *metricspb.Metric_Summary:<span class="cov0" title="0">
+                for _, dp := range d.Summary.DataPoints </span><span class="cov0" title="0">{
+                        allAttrs = append(allAttrs, extractAttributes(dp.Attributes))
+                }</span>
+        }
+
+        <span class="cov8" title="1">for _, attrs := range allAttrs </span><span class="cov8" title="1">{
+                merged := mergeAttrs(resourceAttrs, attrs)
+
+                // Build label combination key from tracked labels
+                labelKey := c.buildLabelKey(merged)
+                if labelKey == "" </span><span class="cov0" title="0">{
+                        continue</span> // No tracked labels present
+                }
+
+                <span class="cov8" title="1">ls, ok := c.labelStats[labelKey]
+                if !ok </span><span class="cov8" title="1">{
+                        ls = &amp;LabelStats{
+                                Labels:       labelKey,
+                                UniqueSeries: make(map[string]struct{}),
+                        }
+                        c.labelStats[labelKey] = ls
+                }</span>
+                <span class="cov8" title="1">ls.Datapoints++
+
+                // Series key includes metric name + all attributes
+                seriesKey := metricName + "|" + buildSeriesKey(merged)
+                ls.UniqueSeries[seriesKey] = struct{}{}</span>
+        }
+}
+
+// GetGlobalStats returns global statistics.
+func (c *Collector) GetGlobalStats() (datapoints uint64, uniqueMetrics uint64, totalCardinality int) <span class="cov8" title="1">{
+        c.mu.RLock()
+        defer c.mu.RUnlock()
+
+        datapoints = c.totalDatapoints
+        uniqueMetrics = c.totalMetrics
+
+        for _, ms := range c.metricStats </span><span class="cov8" title="1">{
+                totalCardinality += len(ms.UniqueSeries)
+        }</span>
+        <span class="cov8" title="1">return</span>
+}
+
+// StartPeriodicLogging starts logging global stats every interval.
+func (c *Collector) StartPeriodicLogging(ctx context.Context, interval time.Duration) <span class="cov8" title="1">{
+        ticker := time.NewTicker(interval)
+        defer ticker.Stop()
+
+        for </span><span class="cov8" title="1">{
+                select </span>{
+                case &lt;-ctx.Done():<span class="cov8" title="1">
+                        return</span>
+                case &lt;-ticker.C:<span class="cov8" title="1">
+                        datapoints, uniqueMetrics, totalCardinality := c.GetGlobalStats()
+                        logging.Info("stats", logging.F(
+                                "datapoints_total", datapoints,
+                                "unique_metrics", uniqueMetrics,
+                                "total_cardinality", totalCardinality,
+                        ))</span>
+                }
+        }
+}
+
+// buildLabelKey builds a key from tracked labels.
+func (c *Collector) buildLabelKey(attrs map[string]string) string <span class="cov8" title="1">{
+        var parts []string
+        for _, label := range c.trackLabels </span><span class="cov8" title="1">{
+                if val, ok := attrs[label]; ok </span><span class="cov8" title="1">{
+                        parts = append(parts, fmt.Sprintf("%s=%s", label, val))
+                }</span>
+        }
+        <span class="cov8" title="1">if len(parts) == 0 </span><span class="cov8" title="1">{
+                return ""
+        }</span>
+        <span class="cov8" title="1">return strings.Join(parts, ",")</span>
+}
+
+// parseLabelKey parses a label key back to map.
+func parseLabelKey(key string) map[string]string <span class="cov8" title="1">{
+        result := make(map[string]string)
+        parts := strings.Split(key, ",")
+        for _, part := range parts </span><span class="cov8" title="1">{
+                kv := strings.SplitN(part, "=", 2)
+                if len(kv) == 2 </span><span class="cov8" title="1">{
+                        result[kv[0]] = kv[1]
+                }</span>
+        }
+        <span class="cov8" title="1">return result</span>
+}
+
+// ServeHTTP implements http.Handler for Prometheus metrics endpoint.
+func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) <span class="cov8" title="1">{
+        c.mu.RLock()
+        defer c.mu.RUnlock()
+
+        w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+
+        // Global stats
+        fmt.Fprintf(w, "# HELP metrics_governor_datapoints_total Total number of datapoints processed\n")
+        fmt.Fprintf(w, "# TYPE metrics_governor_datapoints_total counter\n")
+        fmt.Fprintf(w, "metrics_governor_datapoints_total %d\n", c.totalDatapoints)
+
+        fmt.Fprintf(w, "# HELP metrics_governor_metrics_total Total number of unique metric names\n")
+        fmt.Fprintf(w, "# TYPE metrics_governor_metrics_total gauge\n")
+        fmt.Fprintf(w, "metrics_governor_metrics_total %d\n", c.totalMetrics)
+
+        // Per-metric stats
+        fmt.Fprintf(w, "# HELP metrics_governor_metric_datapoints_total Datapoints per metric name\n")
+        fmt.Fprintf(w, "# TYPE metrics_governor_metric_datapoints_total counter\n")
+        for name, ms := range c.metricStats </span><span class="cov8" title="1">{
+                fmt.Fprintf(w, "metrics_governor_metric_datapoints_total{metric_name=%q} %d\n", name, ms.Datapoints)
+        }</span>
+
+        <span class="cov8" title="1">fmt.Fprintf(w, "# HELP metrics_governor_metric_cardinality Cardinality (unique series) per metric name\n")
+        fmt.Fprintf(w, "# TYPE metrics_governor_metric_cardinality gauge\n")
+        for name, ms := range c.metricStats </span><span class="cov8" title="1">{
+                fmt.Fprintf(w, "metrics_governor_metric_cardinality{metric_name=%q} %d\n", name, len(ms.UniqueSeries))
+        }</span>
+
+        // Per-label-combination stats
+        <span class="cov8" title="1">if len(c.labelStats) &gt; 0 </span><span class="cov8" title="1">{
+                fmt.Fprintf(w, "# HELP metrics_governor_label_datapoints_total Datapoints per label combination\n")
+                fmt.Fprintf(w, "# TYPE metrics_governor_label_datapoints_total counter\n")
+                for _, ls := range c.labelStats </span><span class="cov8" title="1">{
+                        labels := parseLabelKey(ls.Labels)
+                        labelStr := formatLabels(labels)
+                        fmt.Fprintf(w, "metrics_governor_label_datapoints_total{%s} %d\n", labelStr, ls.Datapoints)
+                }</span>
+
+                <span class="cov8" title="1">fmt.Fprintf(w, "# HELP metrics_governor_label_cardinality Cardinality per label combination\n")
+                fmt.Fprintf(w, "# TYPE metrics_governor_label_cardinality gauge\n")
+                for _, ls := range c.labelStats </span><span class="cov8" title="1">{
+                        labels := parseLabelKey(ls.Labels)
+                        labelStr := formatLabels(labels)
+                        fmt.Fprintf(w, "metrics_governor_label_cardinality{%s} %d\n", labelStr, len(ls.UniqueSeries))
+                }</span>
+        }
+}
+
+// formatLabels formats a label map as Prometheus label string.
+func formatLabels(labels map[string]string) string <span class="cov8" title="1">{
+        if len(labels) == 0 </span><span class="cov8" title="1">{
+                return ""
+        }</span>
+        <span class="cov8" title="1">keys := make([]string, 0, len(labels))
+        for k := range labels </span><span class="cov8" title="1">{
+                keys = append(keys, k)
+        }</span>
+        <span class="cov8" title="1">sort.Strings(keys)
+
+        var parts []string
+        for _, k := range keys </span><span class="cov8" title="1">{
+                parts = append(parts, fmt.Sprintf("%s=%q", k, labels[k]))
+        }</span>
+        <span class="cov8" title="1">return strings.Join(parts, ",")</span>
+}
+
+// Helper functions
+
+func extractAttributes(attrs []*commonpb.KeyValue) map[string]string <span class="cov8" title="1">{
+        result := make(map[string]string)
+        for _, kv := range attrs </span><span class="cov8" title="1">{
+                if kv.Value != nil </span><span class="cov8" title="1">{
+                        if sv := kv.Value.GetStringValue(); sv != "" </span><span class="cov8" title="1">{
+                                result[kv.Key] = sv
+                        }</span>
+                }
+        }
+        <span class="cov8" title="1">return result</span>
+}
+
+func mergeAttrs(a, b map[string]string) map[string]string <span class="cov8" title="1">{
+        result := make(map[string]string, len(a)+len(b))
+        for k, v := range a </span><span class="cov8" title="1">{
+                result[k] = v
+        }</span>
+        <span class="cov8" title="1">for k, v := range b </span><span class="cov8" title="1">{
+                result[k] = v
+        }</span>
+        <span class="cov8" title="1">return result</span>
+}
+
+func buildSeriesKey(attrs map[string]string) string <span class="cov8" title="1">{
+        if len(attrs) == 0 </span><span class="cov8" title="1">{
+                return ""
+        }</span>
+        <span class="cov8" title="1">keys := make([]string, 0, len(attrs))
+        for k := range attrs </span><span class="cov8" title="1">{
+                keys = append(keys, k)
+        }</span>
+        <span class="cov8" title="1">sort.Strings(keys)
+
+        var parts []string
+        for _, k := range keys </span><span class="cov8" title="1">{
+                parts = append(parts, fmt.Sprintf("%s=%s", k, attrs[k]))
+        }</span>
+        <span class="cov8" title="1">return strings.Join(parts, ",")</span>
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
