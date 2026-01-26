@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
-	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/slawomirskowron/metrics-governor/internal/buffer"
 	"github.com/slawomirskowron/metrics-governor/internal/config"
 	"github.com/slawomirskowron/metrics-governor/internal/exporter"
+	"github.com/slawomirskowron/metrics-governor/internal/logging"
 	"github.com/slawomirskowron/metrics-governor/internal/receiver"
+	"github.com/slawomirskowron/metrics-governor/internal/stats"
 )
 
 func main() {
@@ -36,12 +40,24 @@ func main() {
 		Timeout:  cfg.ExporterTimeout,
 	})
 	if err != nil {
-		log.Fatalf("Failed to create exporter: %v", err)
+		logging.Fatal("failed to create exporter", logging.F("error", err.Error()))
 	}
 	defer exp.Close()
 
-	// Create buffer
-	buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, exp)
+	// Parse stats labels
+	var trackLabels []string
+	if cfg.StatsLabels != "" {
+		trackLabels = strings.Split(cfg.StatsLabels, ",")
+		for i, l := range trackLabels {
+			trackLabels[i] = strings.TrimSpace(l)
+		}
+	}
+
+	// Create stats collector
+	statsCollector := stats.NewCollector(trackLabels)
+
+	// Create buffer with stats collector
+	buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, exp, statsCollector)
 
 	// Start buffer flush routine
 	go buf.Start(ctx)
@@ -50,7 +66,7 @@ func main() {
 	grpcReceiver := receiver.NewGRPC(cfg.GRPCListenAddr, buf)
 	go func() {
 		if err := grpcReceiver.Start(); err != nil {
-			log.Printf("gRPC receiver error: %v", err)
+			logging.Error("gRPC receiver error", logging.F("error", err.Error()))
 		}
 	}()
 
@@ -58,24 +74,45 @@ func main() {
 	httpReceiver := receiver.NewHTTP(cfg.HTTPListenAddr, buf)
 	go func() {
 		if err := httpReceiver.Start(); err != nil {
-			log.Printf("HTTP receiver error: %v", err)
+			logging.Error("HTTP receiver error", logging.F("error", err.Error()))
 		}
 	}()
 
-	log.Println("Metrics Governor started")
+	// Start stats HTTP server
+	statsServer := &http.Server{
+		Addr:    cfg.StatsAddr,
+		Handler: http.HandlerFunc(statsCollector.ServeHTTP),
+	}
+	go func() {
+		logging.Info("stats endpoint started", logging.F("addr", cfg.StatsAddr, "path", "/metrics"))
+		if err := statsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logging.Error("stats server error", logging.F("error", err.Error()))
+		}
+	}()
+
+	// Start periodic stats logging (every 30 seconds)
+	go statsCollector.StartPeriodicLogging(ctx, 30*time.Second)
+
+	logging.Info("metrics-governor started", logging.F(
+		"grpc_addr", cfg.GRPCListenAddr,
+		"http_addr", cfg.HTTPListenAddr,
+		"exporter_endpoint", cfg.ExporterEndpoint,
+		"stats_addr", cfg.StatsAddr,
+	))
 
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
 
-	log.Println("Shutting down...")
+	logging.Info("shutting down")
 
 	// Graceful shutdown
 	grpcReceiver.Stop()
 	httpReceiver.Stop(ctx)
+	statsServer.Shutdown(ctx)
 	cancel()
 	buf.Wait()
 
-	log.Println("Shutdown complete")
+	logging.Info("shutdown complete")
 }

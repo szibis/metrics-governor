@@ -2,10 +2,10 @@ package receiver
 
 import (
 	"context"
-	"log"
 	"net"
 
 	"github.com/slawomirskowron/metrics-governor/internal/buffer"
+	"github.com/slawomirskowron/metrics-governor/internal/logging"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/grpc"
 )
@@ -42,7 +42,7 @@ func (r *GRPCReceiver) Start() error {
 
 	colmetricspb.RegisterMetricsServiceServer(r.server, r)
 
-	log.Printf("gRPC receiver listening on %s", r.addr)
+	logging.Info("gRPC receiver started", logging.F("addr", r.addr))
 	return r.server.Serve(lis)
 }
 

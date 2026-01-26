@@ -26,6 +26,10 @@ type Config struct {
 	FlushInterval time.Duration
 	MaxBatchSize  int
 
+	// Stats settings
+	StatsAddr   string
+	StatsLabels string
+
 	// Flags
 	ShowHelp    bool
 	ShowVersion bool
@@ -48,6 +52,10 @@ func ParseFlags() *Config {
 	flag.IntVar(&cfg.BufferSize, "buffer-size", 10000, "Maximum number of metrics to buffer")
 	flag.DurationVar(&cfg.FlushInterval, "flush-interval", 5*time.Second, "Buffer flush interval")
 	flag.IntVar(&cfg.MaxBatchSize, "batch-size", 1000, "Maximum batch size for export")
+
+	// Stats flags
+	flag.StringVar(&cfg.StatsAddr, "stats-addr", ":9090", "Stats/metrics HTTP endpoint address")
+	flag.StringVar(&cfg.StatsLabels, "stats-labels", "", "Comma-separated labels to track for grouping (e.g., service,env,cluster)")
 
 	// Help and version
 	flag.BoolVar(&cfg.ShowHelp, "help", false, "Show help message")
@@ -88,6 +96,10 @@ OPTIONS:
         -flush-interval <dur>    Buffer flush interval (default: 5s)
         -batch-size <n>          Maximum batch size for export (default: 1000)
 
+    Stats:
+        -stats-addr <addr>       Stats/metrics HTTP endpoint address (default: ":9090")
+        -stats-labels <labels>   Comma-separated labels to track (e.g., service,env,cluster)
+
     General:
         -h, -help                Show this help message
         -v, -version             Show version
@@ -104,6 +116,9 @@ EXAMPLES:
 
     # Adjust buffering
     metrics-governor -buffer-size 50000 -flush-interval 10s -batch-size 2000
+
+    # Enable stats tracking by service and environment
+    metrics-governor -stats-labels service,env,cluster
 
 `)
 }
@@ -124,5 +139,7 @@ func DefaultConfig() *Config {
 		BufferSize:       10000,
 		FlushInterval:    5 * time.Second,
 		MaxBatchSize:     1000,
+		StatsAddr:        ":9090",
+		StatsLabels:      "",
 	}
 }

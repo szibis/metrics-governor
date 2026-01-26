@@ -3,10 +3,10 @@ package receiver
 import (
 	"context"
 	"io"
-	"log"
 	"net/http"
 
 	"github.com/slawomirskowron/metrics-governor/internal/buffer"
+	"github.com/slawomirskowron/metrics-governor/internal/logging"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -82,7 +82,7 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 
 // Start starts the HTTP server.
 func (r *HTTPReceiver) Start() error {
-	log.Printf("HTTP receiver listening on %s", r.addr)
+	logging.Info("HTTP receiver started", logging.F("addr", r.addr))
 	return r.server.ListenAndServe()
 }
 

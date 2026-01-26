@@ -14,6 +14,11 @@ type Exporter interface {
 	Export(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error
 }
 
+// StatsCollector defines the interface for collecting stats.
+type StatsCollector interface {
+	Process(resourceMetrics []*metricspb.ResourceMetrics)
+}
+
 // MetricsBuffer buffers incoming metrics and flushes them periodically.
 type MetricsBuffer struct {
 	mu            sync.Mutex
@@ -22,18 +27,20 @@ type MetricsBuffer struct {
 	maxBatchSize  int
 	flushInterval time.Duration
 	exporter      Exporter
+	stats         StatsCollector
 	flushChan     chan struct{}
 	doneChan      chan struct{}
 }
 
 // New creates a new MetricsBuffer.
-func New(maxSize, maxBatchSize int, flushInterval time.Duration, exporter Exporter) *MetricsBuffer {
+func New(maxSize, maxBatchSize int, flushInterval time.Duration, exporter Exporter, stats StatsCollector) *MetricsBuffer {
 	return &MetricsBuffer{
 		metrics:       make([]*metricspb.ResourceMetrics, 0, maxSize),
 		maxSize:       maxSize,
 		maxBatchSize:  maxBatchSize,
 		flushInterval: flushInterval,
 		exporter:      exporter,
+		stats:         stats,
 		flushChan:     make(chan struct{}, 1),
 		doneChan:      make(chan struct{}),
 	}
@@ -41,6 +48,11 @@ func New(maxSize, maxBatchSize int, flushInterval time.Duration, exporter Export
 
 // Add adds metrics to the buffer.
 func (b *MetricsBuffer) Add(resourceMetrics []*metricspb.ResourceMetrics) {
+	// Process stats before buffering
+	if b.stats != nil {
+		b.stats.Process(resourceMetrics)
+	}
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
