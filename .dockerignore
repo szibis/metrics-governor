@@ -1,0 +1,5 @@
+bin/
+*.md
+.git
+.gitignore
+Makefile
