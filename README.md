@@ -21,6 +21,41 @@
 
 OTLP metrics proxy with buffering and statistics. Receives metrics via gRPC and HTTP, buffers them, tracks cardinality and datapoints, and forwards to a configurable OTLP endpoint with batching support.
 
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+  - [From source](#from-source)
+  - [Build from source](#build-from-source)
+  - [Multi-platform builds](#multi-platform-builds)
+  - [Docker](#docker)
+  - [Helm Chart](#helm-chart)
+- [Usage](#usage)
+  - [Options](#options)
+  - [Examples](#examples)
+  - [Docker](#docker-1)
+- [Statistics](#statistics)
+  - [Prometheus Metrics Endpoint](#prometheus-metrics-endpoint)
+  - [Periodic Logging](#periodic-logging)
+- [Logging](#logging)
+- [Limits Configuration](#limits-configuration)
+  - [Configuration Structure](#configuration-structure)
+  - [Actions](#actions)
+  - [Adaptive Limiting (Recommended)](#adaptive-limiting-recommended)
+  - [Matching Rules](#matching-rules)
+  - [Dry Run Mode](#dry-run-mode)
+  - [Action Examples](#action-examples)
+- [Architecture](#architecture)
+- [Development](#development)
+  - [Running Tests](#running-tests)
+  - [Project Structure](#project-structure)
+- [Testing](#testing)
+  - [Quick Start](#quick-start)
+  - [Available Endpoints](#available-endpoints)
+  - [Useful Commands](#useful-commands)
+  - [Test Scenarios](#test-scenarios)
+- [License](#license)
+
 ## Features
 
 - OTLP gRPC receiver (default: `:4317`)
