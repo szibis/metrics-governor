@@ -1,0 +1,62 @@
+metrics-governor has been deployed!
+
+{{- if .Values.ingress.enabled }}
+The application is accessible via ingress:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}{{ (first .paths).path }}
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+Get the application URL by running these commands:
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "metrics-governor.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.service.type }}
+NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+      You can watch the status by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "metrics-governor.fullname" . }}'
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "metrics-governor.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.service.statsPort }}
+{{- else if contains "ClusterIP" .Values.service.type }}
+Get the application URL by running these commands:
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "metrics-governor.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  echo "Visit http://127.0.0.1:8080 to use your application"
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
+{{- end }}
+
+Endpoints:
+  - gRPC receiver:  {{ .Values.config.grpcListen }}
+  - HTTP receiver:  {{ .Values.config.httpListen }}
+  - Stats/Metrics:  {{ .Values.config.statsAddr }}
+  - Exporter:       {{ .Values.config.exporterEndpoint }}
+
+{{- if .Values.limits.enabled }}
+
+Limits enforcement is ENABLED.
+{{- if .Values.config.limitsDryRun }}
+  Mode: DRY-RUN (violations logged but data not dropped)
+{{- else }}
+  Mode: ENFORCING (violations will drop/filter metrics)
+{{- end }}
+{{- if .Values.limits.existingConfigMap }}
+  Config: Using existing ConfigMap '{{ .Values.limits.existingConfigMap }}'
+{{- else }}
+  Config: {{ include "metrics-governor.limitsConfigMapName" . }}
+{{- end }}
+{{- else }}
+
+Limits enforcement is DISABLED.
+To enable limits, set:
+  limits.enabled=true
+{{- end }}
+
+{{- if .Values.serviceMonitor.enabled }}
+
+ServiceMonitor is enabled for Prometheus Operator integration.
+{{- end }}
+
+To view stats:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "metrics-governor.fullname" . }} {{ .Values.service.statsPort }}:{{ .Values.service.statsPort }}
+  curl http://localhost:{{ .Values.service.statsPort }}/metrics
+
+To view logs:
+  kubectl --namespace {{ .Release.Namespace }} logs -f -l app.kubernetes.io/name={{ include "metrics-governor.name" . }},app.kubernetes.io/instance={{ .Release.Name }}

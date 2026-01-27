@@ -1,0 +1,22 @@
+apiVersion: v2
+name: metrics-governor
+description: OTLP metrics proxy with buffering, statistics tracking, and adaptive limits enforcement
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - otlp
+  - metrics
+  - proxy
+  - opentelemetry
+  - cardinality
+  - limits
+home: https://github.com/metrics-governor/metrics-governor
+sources:
+  - https://github.com/metrics-governor/metrics-governor
+maintainers:
+  - name: metrics-governor
+    email: maintainers@metrics-governor.io
+annotations:
+  artifacthub.io/license: MIT
+  artifacthub.io/category: monitoring-logging

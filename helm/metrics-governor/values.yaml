@@ -1,0 +1,391 @@
+# Default values for metrics-governor
+# This is a YAML-formatted file.
+
+# -- Global settings
+global:
+  # -- Image registry to use for all images
+  imageRegistry: ""
+  # -- Image pull secrets for all images
+  imagePullSecrets: []
+  # -- Cluster domain suffix
+  clusterDomainSuffix: cluster.local
+
+# -- Number of replicas (ignored for DaemonSet)
+replicaCount: 1
+
+# -- Deployment mode: "deployment", "statefulset", or "daemonset"
+kind: deployment
+
+image:
+  # -- Image registry
+  registry: ""
+  # -- Image repository
+  repository: metrics-governor/metrics-governor
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Image tag (defaults to appVersion)
+  tag: ""
+
+# -- Image pull secrets
+imagePullSecrets: []
+
+# -- Override the name
+nameOverride: ""
+
+# -- Override the fullname
+fullnameOverride: ""
+
+# -- Extra labels for all resources
+extraLabels: {}
+
+# -- Annotations for all resources
+annotations: {}
+
+# -- Pod annotations
+podAnnotations: {}
+
+# -- Pod labels
+podLabels: {}
+
+serviceAccount:
+  # -- Create service account
+  create: true
+  # -- Annotations for service account
+  annotations: {}
+  # -- Name of the service account (generated if not set)
+  name: ""
+  # -- Automount API credentials
+  automountServiceAccountToken: true
+
+rbac:
+  # -- Create RBAC resources
+  create: true
+  # -- Create cluster-wide resources
+  clusterWide: false
+  # -- Extra rules for the role
+  extraRules: []
+  # -- Annotations for RBAC resources
+  annotations: {}
+
+podSecurityContext:
+  # -- Run as non-root
+  runAsNonRoot: true
+  # -- Run as user
+  runAsUser: 1000
+  # -- Run as group
+  runAsGroup: 1000
+  # -- FS group
+  fsGroup: 1000
+
+securityContext:
+  # -- Read only root filesystem
+  readOnlyRootFilesystem: true
+  # -- Allow privilege escalation
+  allowPrivilegeEscalation: false
+  # -- Drop all capabilities
+  capabilities:
+    drop:
+      - ALL
+
+# -- Container ports
+ports:
+  grpc: 4317
+  http: 4318
+  stats: 9090
+
+# -- metrics-governor configuration
+config:
+  # -- gRPC listen address
+  grpcListen: ":4317"
+  # -- HTTP listen address
+  httpListen: ":4318"
+  # -- Stats/metrics HTTP endpoint address
+  statsAddr: ":9090"
+  # -- OTLP exporter endpoint
+  exporterEndpoint: "localhost:4317"
+  # -- Use insecure connection for exporter
+  exporterInsecure: true
+  # -- Exporter request timeout
+  exporterTimeout: "30s"
+  # -- Maximum number of metrics to buffer
+  bufferSize: 10000
+  # -- Buffer flush interval
+  flushInterval: "5s"
+  # -- Maximum batch size for export
+  batchSize: 1000
+  # -- Comma-separated labels to track
+  statsLabels: ""
+  # -- Dry run mode for limits
+  limitsDryRun: true
+  # -- Extra arguments to pass
+  extraArgs: []
+
+# -- Limits configuration (creates ConfigMap)
+limits:
+  # -- Enable limits enforcement
+  enabled: false
+  # -- Use existing ConfigMap for limits
+  existingConfigMap: ""
+  # -- Limits configuration content
+  config: |
+    defaults:
+      max_datapoints_rate: 1000000
+      max_cardinality: 100000
+      action: log
+    rules: []
+
+service:
+  # -- Enable service
+  enabled: true
+  # -- Service type
+  type: ClusterIP
+  # -- Service annotations
+  annotations: {}
+  # -- Service labels
+  labels: {}
+  # -- ClusterIP (leave empty for auto)
+  clusterIP: ""
+  # -- gRPC port
+  grpcPort: 4317
+  # -- HTTP port
+  httpPort: 4318
+  # -- Stats port
+  statsPort: 9090
+  # -- External traffic policy
+  externalTrafficPolicy: ""
+  # -- Load balancer IP
+  loadBalancerIP: ""
+  # -- Load balancer source ranges
+  loadBalancerSourceRanges: []
+
+# -- Headless service for StatefulSet
+headlessService:
+  enabled: true
+  annotations: {}
+
+serviceMonitor:
+  # -- Enable ServiceMonitor
+  enabled: false
+  # -- Namespace for ServiceMonitor (defaults to release namespace)
+  namespace: ""
+  # -- Additional labels for ServiceMonitor
+  additionalLabels: {}
+  # -- Annotations for ServiceMonitor
+  annotations: {}
+  # -- Scrape interval
+  interval: "30s"
+  # -- Scrape timeout
+  scrapeTimeout: "10s"
+  # -- Metric relabelings
+  metricRelabelings: []
+  # -- Relabelings
+  relabelings: []
+  # -- Honor labels
+  honorLabels: false
+  # -- Target labels
+  targetLabels: []
+  # -- Extra endpoints
+  extraEndpoints: []
+
+ingress:
+  # -- Enable ingress
+  enabled: false
+  # -- Ingress class name
+  className: ""
+  # -- Ingress annotations
+  annotations: {}
+  # -- Ingress hosts
+  hosts:
+    - host: metrics-governor.local
+      paths:
+        - path: /
+          pathType: Prefix
+          port: stats
+  # -- TLS configuration
+  tls: []
+
+httpRoute:
+  # -- Enable HTTPRoute (Gateway API)
+  enabled: false
+  # -- Annotations for HTTPRoute
+  annotations: {}
+  # -- Parent gateway references
+  parentRefs: []
+  # -- Hostnames for the route
+  hostnames: []
+  # -- HTTP route rules
+  rules: []
+
+podDisruptionBudget:
+  # -- Enable PodDisruptionBudget
+  enabled: false
+  # -- Minimum available pods
+  minAvailable: 1
+  # -- Maximum unavailable pods (mutually exclusive with minAvailable)
+  maxUnavailable: ""
+  # -- Annotations for PDB
+  annotations: {}
+  # -- Labels for PDB
+  labels: {}
+
+autoscaling:
+  # -- Enable HorizontalPodAutoscaler
+  enabled: false
+  # -- Minimum replicas
+  minReplicas: 1
+  # -- Maximum replicas
+  maxReplicas: 10
+  # -- Target CPU utilization percentage
+  targetCPUUtilizationPercentage: 80
+  # -- Target memory utilization percentage
+  targetMemoryUtilizationPercentage: ""
+  # -- Custom metrics for autoscaling
+  customMetrics: []
+  # -- Scaling behavior
+  behavior: {}
+  # -- Annotations for HPA
+  annotations: {}
+
+persistence:
+  # -- Enable persistence (for StatefulSet)
+  enabled: false
+  # -- Storage class
+  storageClassName: ""
+  # -- Access modes
+  accessModes:
+    - ReadWriteOnce
+  # -- Storage size
+  size: 1Gi
+  # -- Annotations for PVC
+  annotations: {}
+  # -- Selector for PVC
+  selector: {}
+  # -- Existing claim to use
+  existingClaim: ""
+
+# -- Extra volumes
+extraVolumes: []
+
+# -- Extra volume mounts
+extraVolumeMounts: []
+
+# -- Extra containers
+extraContainers: []
+
+# -- Init containers
+initContainers: []
+
+# -- Resources for the container
+resources: {}
+  # limits:
+  #   cpu: 500m
+  #   memory: 512Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+# -- Node selector
+nodeSelector: {}
+
+# -- Tolerations
+tolerations: []
+
+# -- Affinity rules
+affinity: {}
+
+# -- Topology spread constraints
+topologySpreadConstraints: []
+
+# -- Priority class name
+priorityClassName: ""
+
+# -- Termination grace period
+terminationGracePeriodSeconds: 30
+
+# -- DNS policy
+dnsPolicy: ClusterFirst
+
+# -- DNS config
+dnsConfig: {}
+
+# -- Host network
+hostNetwork: false
+
+# -- Lifecycle hooks
+lifecycle: {}
+
+# -- Liveness probe
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /metrics
+    port: stats
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+
+# -- Readiness probe
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /metrics
+    port: stats
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+  successThreshold: 1
+
+# -- Startup probe
+startupProbe:
+  enabled: false
+  httpGet:
+    path: /metrics
+    port: stats
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 30
+  successThreshold: 1
+
+# -- Environment variables
+env: []
+
+# -- Environment variables from secrets/configmaps
+envFrom: []
+
+# -- StatefulSet specific configuration
+statefulSet:
+  # -- Pod management policy
+  podManagementPolicy: OrderedReady
+  # -- Update strategy
+  updateStrategy:
+    type: RollingUpdate
+
+# -- DaemonSet specific configuration
+daemonSet:
+  # -- Update strategy
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+
+# -- Deployment specific configuration
+deployment:
+  # -- Update strategy
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -- Extra Kubernetes objects to create
+extraObjects: []
+# - apiVersion: v1
+#   kind: ConfigMap
+#   metadata:
+#     name: extra-config
+#   data:
+#     key: value

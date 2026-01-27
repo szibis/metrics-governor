@@ -73,6 +73,32 @@ make docker
 docker build -t metrics-governor .
 ```
 
+### Helm Chart
+
+```bash
+# Install from local chart
+helm install metrics-governor ./helm/metrics-governor
+
+# Install with custom values
+helm install metrics-governor ./helm/metrics-governor \
+  --set config.exporterEndpoint=otel-collector:4317 \
+  --set limits.enabled=true \
+  --set serviceMonitor.enabled=true
+
+# Install as StatefulSet with persistence
+helm install metrics-governor ./helm/metrics-governor \
+  --set kind=statefulset \
+  --set persistence.enabled=true \
+  --set persistence.size=10Gi
+
+# Install as DaemonSet
+helm install metrics-governor ./helm/metrics-governor \
+  --set kind=daemonset \
+  --set hostNetwork=true
+```
+
+See [helm/metrics-governor/values.yaml](helm/metrics-governor/values.yaml) for all available options.
+
 ## Usage
 
 ```bash

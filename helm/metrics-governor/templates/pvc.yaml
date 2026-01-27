@@ -1,0 +1,29 @@
+{{- if and .Values.persistence.enabled .Values.persistence.existingClaim (ne .Values.kind "statefulset") }}
+# When using an existing claim with Deployment/DaemonSet, we don't create a PVC
+# The existingClaim will be referenced in the pod spec
+{{- else if and .Values.persistence.enabled (ne .Values.kind "statefulset") }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "metrics-governor.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "metrics-governor.labels" . | nindent 4 }}
+  {{- with .Values.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.persistence.accessModes | nindent 4 }}
+  {{- if .Values.persistence.storageClassName }}
+  storageClassName: {{ .Values.persistence.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+  {{- with .Values.persistence.selector }}
+  selector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
