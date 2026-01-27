@@ -40,6 +40,12 @@ OTLP metrics proxy with buffering and statistics. Receives metrics via gRPC and 
 - [Authentication](#authentication)
   - [Receiver Authentication](#receiver-authentication)
   - [Exporter Authentication](#exporter-authentication)
+- [Compression](#compression)
+  - [Supported Algorithms](#supported-algorithms)
+  - [Compression Levels](#compression-levels)
+- [HTTP Settings](#http-settings)
+  - [HTTP Client Settings (Exporter)](#http-client-settings-exporter)
+  - [HTTP Server Settings (Receiver)](#http-server-settings-receiver)
 - [Statistics](#statistics)
   - [Prometheus Metrics Endpoint](#prometheus-metrics-endpoint)
   - [Periodic Logging](#periodic-logging)
@@ -69,11 +75,15 @@ OTLP metrics proxy with buffering and statistics. Receives metrics via gRPC and 
   - HTTP receiver (default: `:4318`)
   - TLS/mTLS support for secure connections
   - Bearer token and basic authentication
+  - Automatic decompression (gzip, zstd, snappy, zlib, deflate, lz4)
+  - Configurable server timeouts
 - **OTLP Exporters:**
   - gRPC exporter (default)
   - HTTP exporter (configurable via `-exporter-protocol http`)
   - TLS/mTLS support for secure connections
   - Bearer token, basic auth, and custom headers
+  - Compression support (gzip, zstd, snappy, zlib, deflate, lz4)
+  - Configurable connection pooling and HTTP/2 settings
 - **Metrics Processing:**
   - Configurable metrics buffering
   - Batch export with configurable size
@@ -194,6 +204,37 @@ metrics-governor [OPTIONS]
 | `-exporter-auth-basic-password` | | Basic auth password |
 | `-exporter-auth-headers` | | Custom headers (format: `key1=value1,key2=value2`) |
 
+**Exporter Compression Options (HTTP only):**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-exporter-compression` | `none` | Compression type: `none`, `gzip`, `zstd`, `snappy`, `zlib`, `deflate`, `lz4` |
+| `-exporter-compression-level` | `0` | Compression level (algorithm-specific, 0 for default) |
+
+**Exporter HTTP Client Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-exporter-max-idle-conns` | `100` | Maximum idle connections across all hosts |
+| `-exporter-max-idle-conns-per-host` | `100` | Maximum idle connections per host |
+| `-exporter-max-conns-per-host` | `0` | Maximum total connections per host (0 = no limit) |
+| `-exporter-idle-conn-timeout` | `90s` | Idle connection timeout |
+| `-exporter-disable-keep-alives` | `false` | Disable HTTP keep-alives |
+| `-exporter-force-http2` | `false` | Force HTTP/2 for non-TLS connections |
+| `-exporter-http2-read-idle-timeout` | `0` | HTTP/2 read idle timeout for health checks |
+| `-exporter-http2-ping-timeout` | `0` | HTTP/2 ping timeout |
+
+**Receiver HTTP Server Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-receiver-max-request-body-size` | `0` | Maximum request body size in bytes (0 = no limit) |
+| `-receiver-read-timeout` | `0` | HTTP server read timeout (0 = no timeout) |
+| `-receiver-read-header-timeout` | `1m` | HTTP server read header timeout |
+| `-receiver-write-timeout` | `30s` | HTTP server write timeout |
+| `-receiver-idle-timeout` | `1m` | HTTP server idle timeout |
+| `-receiver-keep-alives-enabled` | `true` | Enable HTTP keep-alives for receiver |
+
 **Buffer Options:**
 
 | Flag | Default | Description |
@@ -267,6 +308,27 @@ metrics-governor -exporter-insecure=false \
 
 # Connect to exporter with bearer token
 metrics-governor -exporter-auth-bearer-token "secret-token"
+
+# Enable gzip compression for HTTP exporter
+metrics-governor -exporter-protocol http \
+    -exporter-endpoint otel-collector:4318 \
+    -exporter-compression gzip
+
+# Enable zstd compression with best compression level
+metrics-governor -exporter-protocol http \
+    -exporter-compression zstd \
+    -exporter-compression-level 11
+
+# Configure HTTP client connection pool
+metrics-governor -exporter-protocol http \
+    -exporter-max-idle-conns 200 \
+    -exporter-max-idle-conns-per-host 50 \
+    -exporter-idle-conn-timeout 2m
+
+# Configure HTTP receiver server timeouts
+metrics-governor -receiver-read-timeout 30s \
+    -receiver-write-timeout 1m \
+    -receiver-max-request-body-size 10485760
 
 # Enable limits enforcement (dry-run by default)
 metrics-governor -limits-config /etc/metrics-governor/limits.yaml
@@ -369,6 +431,140 @@ metrics-governor -exporter-auth-basic-username "user" \
 # Custom headers (e.g., API keys)
 metrics-governor -exporter-auth-headers "X-API-Key=your-api-key,X-Tenant-ID=tenant123"
 ```
+
+## Compression
+
+metrics-governor supports compression for HTTP exporters and automatic decompression for HTTP receivers. Compression can significantly reduce network bandwidth, especially for high-volume metrics.
+
+### Supported Algorithms
+
+| Algorithm | Content-Encoding | Description |
+|-----------|------------------|-------------|
+| `gzip` | `gzip` | Standard gzip compression, widely supported |
+| `zstd` | `zstd` | Zstandard compression, excellent ratio and speed |
+| `snappy` | `snappy` | Fast compression with moderate ratio |
+| `zlib` | `zlib` | Zlib compression (similar to gzip) |
+| `deflate` | `deflate` | Raw deflate compression |
+| `lz4` | `lz4` | Very fast compression with lower ratio |
+
+### Compression Levels
+
+Each algorithm supports different compression levels:
+
+| Algorithm | Levels | Description |
+|-----------|--------|-------------|
+| **gzip/zlib/deflate** | 1-9, -1 | 1 = fastest, 9 = best compression, -1 = default |
+| **zstd** | 1, 3, 6, 11 | 1 = fastest, 3 = default, 6 = better, 11 = best |
+| **snappy** | N/A | No compression levels supported |
+| **lz4** | N/A | Uses default compression |
+
+**Usage Examples:**
+
+```bash
+# Enable gzip compression (default level)
+metrics-governor -exporter-protocol http \
+    -exporter-compression gzip
+
+# Enable gzip with best compression
+metrics-governor -exporter-protocol http \
+    -exporter-compression gzip \
+    -exporter-compression-level 9
+
+# Enable zstd with default level
+metrics-governor -exporter-protocol http \
+    -exporter-compression zstd
+
+# Enable zstd with best compression
+metrics-governor -exporter-protocol http \
+    -exporter-compression zstd \
+    -exporter-compression-level 11
+
+# Enable snappy for fast compression
+metrics-governor -exporter-protocol http \
+    -exporter-compression snappy
+```
+
+**Receiver Decompression:**
+
+The HTTP receiver automatically decompresses incoming requests based on the `Content-Encoding` header. Supported encodings:
+- `gzip`, `x-gzip`
+- `zstd`
+- `snappy`, `x-snappy-framed`
+- `zlib`
+- `deflate`
+- `lz4`
+
+## HTTP Settings
+
+### HTTP Client Settings (Exporter)
+
+Configure the HTTP client connection pool for optimal performance:
+
+```bash
+# Increase connection pool for high-throughput scenarios
+metrics-governor -exporter-protocol http \
+    -exporter-max-idle-conns 200 \
+    -exporter-max-idle-conns-per-host 100 \
+    -exporter-max-conns-per-host 100 \
+    -exporter-idle-conn-timeout 2m
+
+# Disable keep-alives (new connection for each request)
+metrics-governor -exporter-protocol http \
+    -exporter-disable-keep-alives
+
+# Enable HTTP/2 with health checks
+metrics-governor -exporter-protocol http \
+    -exporter-force-http2 \
+    -exporter-http2-read-idle-timeout 30s \
+    -exporter-http2-ping-timeout 10s
+```
+
+**Connection Pool Settings:**
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `max-idle-conns` | 100 | Maximum idle connections across all hosts |
+| `max-idle-conns-per-host` | 100 | Maximum idle connections per host |
+| `max-conns-per-host` | 0 | Maximum total connections per host (0 = unlimited) |
+| `idle-conn-timeout` | 90s | Time before idle connections are closed |
+| `disable-keep-alives` | false | Force new connection per request |
+
+**HTTP/2 Settings:**
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `force-http2` | false | Enable HTTP/2 for non-TLS connections |
+| `http2-read-idle-timeout` | 0 | Idle time before sending health check ping |
+| `http2-ping-timeout` | 0 | Timeout waiting for ping response |
+
+### HTTP Server Settings (Receiver)
+
+Configure the HTTP receiver server timeouts for security and resource management:
+
+```bash
+# Configure server timeouts
+metrics-governor -receiver-read-timeout 30s \
+    -receiver-read-header-timeout 10s \
+    -receiver-write-timeout 1m \
+    -receiver-idle-timeout 2m
+
+# Limit request body size (10MB)
+metrics-governor -receiver-max-request-body-size 10485760
+
+# Disable keep-alives for the server
+metrics-governor -receiver-keep-alives-enabled=false
+```
+
+**Server Timeout Settings:**
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `read-timeout` | 0 | Max time to read entire request (0 = no limit) |
+| `read-header-timeout` | 1m | Max time to read request headers |
+| `write-timeout` | 30s | Max time to write response |
+| `idle-timeout` | 1m | Max time to wait for next request (keep-alive) |
+| `max-request-body-size` | 0 | Max request body size in bytes (0 = no limit) |
+| `keep-alives-enabled` | true | Enable HTTP keep-alives |
 
 ## Statistics
 

@@ -175,6 +175,61 @@ Generate container arguments
 {{- if .Values.exporterAuth.headers }}
 {{- $args = append $args (printf "-exporter-auth-headers=%s" .Values.exporterAuth.headers) -}}
 {{- end }}
+{{/* Exporter Compression */}}
+{{- if and .Values.exporterCompression (ne .Values.exporterCompression.type "none") }}
+{{- $args = append $args (printf "-exporter-compression=%s" .Values.exporterCompression.type) -}}
+{{- if .Values.exporterCompression.level }}
+{{- $args = append $args (printf "-exporter-compression-level=%d" (int .Values.exporterCompression.level)) -}}
+{{- end }}
+{{- end }}
+{{/* Exporter HTTP Client */}}
+{{- if .Values.exporterHTTPClient }}
+{{- if .Values.exporterHTTPClient.maxIdleConns }}
+{{- $args = append $args (printf "-exporter-max-idle-conns=%d" (int .Values.exporterHTTPClient.maxIdleConns)) -}}
+{{- end }}
+{{- if .Values.exporterHTTPClient.maxIdleConnsPerHost }}
+{{- $args = append $args (printf "-exporter-max-idle-conns-per-host=%d" (int .Values.exporterHTTPClient.maxIdleConnsPerHost)) -}}
+{{- end }}
+{{- if .Values.exporterHTTPClient.maxConnsPerHost }}
+{{- $args = append $args (printf "-exporter-max-conns-per-host=%d" (int .Values.exporterHTTPClient.maxConnsPerHost)) -}}
+{{- end }}
+{{- if .Values.exporterHTTPClient.idleConnTimeout }}
+{{- $args = append $args (printf "-exporter-idle-conn-timeout=%s" .Values.exporterHTTPClient.idleConnTimeout) -}}
+{{- end }}
+{{- if .Values.exporterHTTPClient.disableKeepAlives }}
+{{- $args = append $args "-exporter-disable-keep-alives=true" -}}
+{{- end }}
+{{- if .Values.exporterHTTPClient.forceHTTP2 }}
+{{- $args = append $args "-exporter-force-http2=true" -}}
+{{- end }}
+{{- if .Values.exporterHTTPClient.http2ReadIdleTimeout }}
+{{- $args = append $args (printf "-exporter-http2-read-idle-timeout=%s" .Values.exporterHTTPClient.http2ReadIdleTimeout) -}}
+{{- end }}
+{{- if .Values.exporterHTTPClient.http2PingTimeout }}
+{{- $args = append $args (printf "-exporter-http2-ping-timeout=%s" .Values.exporterHTTPClient.http2PingTimeout) -}}
+{{- end }}
+{{- end }}
+{{/* Receiver HTTP Server */}}
+{{- if .Values.receiverHTTPServer }}
+{{- if .Values.receiverHTTPServer.maxRequestBodySize }}
+{{- $args = append $args (printf "-receiver-max-request-body-size=%d" (int .Values.receiverHTTPServer.maxRequestBodySize)) -}}
+{{- end }}
+{{- if .Values.receiverHTTPServer.readTimeout }}
+{{- $args = append $args (printf "-receiver-read-timeout=%s" .Values.receiverHTTPServer.readTimeout) -}}
+{{- end }}
+{{- if .Values.receiverHTTPServer.readHeaderTimeout }}
+{{- $args = append $args (printf "-receiver-read-header-timeout=%s" .Values.receiverHTTPServer.readHeaderTimeout) -}}
+{{- end }}
+{{- if .Values.receiverHTTPServer.writeTimeout }}
+{{- $args = append $args (printf "-receiver-write-timeout=%s" .Values.receiverHTTPServer.writeTimeout) -}}
+{{- end }}
+{{- if .Values.receiverHTTPServer.idleTimeout }}
+{{- $args = append $args (printf "-receiver-idle-timeout=%s" .Values.receiverHTTPServer.idleTimeout) -}}
+{{- end }}
+{{- if not .Values.receiverHTTPServer.keepAlivesEnabled }}
+{{- $args = append $args "-receiver-keep-alives-enabled=false" -}}
+{{- end }}
+{{- end }}
 {{- range .Values.config.extraArgs }}
 {{- $args = append $args . -}}
 {{- end }}

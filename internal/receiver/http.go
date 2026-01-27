@@ -5,14 +5,37 @@ import (
 	"crypto/tls"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/slawomirskowron/metrics-governor/internal/auth"
 	"github.com/slawomirskowron/metrics-governor/internal/buffer"
+	"github.com/slawomirskowron/metrics-governor/internal/compression"
 	"github.com/slawomirskowron/metrics-governor/internal/logging"
 	tlspkg "github.com/slawomirskowron/metrics-governor/internal/tls"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/protobuf/proto"
 )
+
+// HTTPServerConfig holds HTTP server timeout settings.
+type HTTPServerConfig struct {
+	// MaxRequestBodySize limits the maximum size of request body.
+	// Zero means no limit.
+	MaxRequestBodySize int64
+	// ReadTimeout is the maximum duration for reading the entire
+	// request, including the body. Zero means no timeout.
+	ReadTimeout time.Duration
+	// ReadHeaderTimeout is the maximum duration for reading request headers.
+	// If zero, the value of ReadTimeout is used.
+	ReadHeaderTimeout time.Duration
+	// WriteTimeout is the maximum duration before timing out writes of the
+	// response. Zero means no timeout.
+	WriteTimeout time.Duration
+	// IdleTimeout is the maximum amount of time to wait for the next request
+	// when keep-alives are enabled. Zero means no timeout.
+	IdleTimeout time.Duration
+	// KeepAlivesEnabled controls whether HTTP keep-alives are enabled.
+	KeepAlivesEnabled bool
+}
 
 // HTTPConfig holds the HTTP receiver configuration.
 type HTTPConfig struct {
@@ -22,14 +45,17 @@ type HTTPConfig struct {
 	TLS tlspkg.ServerConfig
 	// Auth configuration for authentication.
 	Auth auth.ServerConfig
+	// Server configuration for HTTP server settings.
+	Server HTTPServerConfig
 }
 
 // HTTPReceiver receives metrics via OTLP HTTP.
 type HTTPReceiver struct {
-	server    *http.Server
-	buffer    *buffer.MetricsBuffer
-	addr      string
-	tlsConfig *tls.Config
+	server             *http.Server
+	buffer             *buffer.MetricsBuffer
+	addr               string
+	tlsConfig          *tls.Config
+	maxRequestBodySize int64
 }
 
 // NewHTTP creates a new HTTP receiver with default configuration.
@@ -40,8 +66,9 @@ func NewHTTP(addr string, buf *buffer.MetricsBuffer) *HTTPReceiver {
 // NewHTTPWithConfig creates a new HTTP receiver with the given configuration.
 func NewHTTPWithConfig(cfg HTTPConfig, buf *buffer.MetricsBuffer) *HTTPReceiver {
 	r := &HTTPReceiver{
-		buffer: buf,
-		addr:   cfg.Addr,
+		buffer:             buf,
+		addr:               cfg.Addr,
+		maxRequestBodySize: cfg.Server.MaxRequestBodySize,
 	}
 
 	// Configure TLS
@@ -63,10 +90,33 @@ func NewHTTPWithConfig(cfg HTTPConfig, buf *buffer.MetricsBuffer) *HTTPReceiver 
 		handler = auth.HTTPMiddleware(cfg.Auth, mux)
 	}
 
+	// Apply default server timeouts if not set
+	readHeaderTimeout := cfg.Server.ReadHeaderTimeout
+	if readHeaderTimeout == 0 {
+		readHeaderTimeout = 1 * time.Minute
+	}
+	writeTimeout := cfg.Server.WriteTimeout
+	if writeTimeout == 0 {
+		writeTimeout = 30 * time.Second
+	}
+	idleTimeout := cfg.Server.IdleTimeout
+	if idleTimeout == 0 {
+		idleTimeout = 1 * time.Minute
+	}
+
 	r.server = &http.Server{
-		Addr:      cfg.Addr,
-		Handler:   handler,
-		TLSConfig: r.tlsConfig,
+		Addr:              cfg.Addr,
+		Handler:           handler,
+		TLSConfig:         r.tlsConfig,
+		ReadTimeout:       cfg.Server.ReadTimeout,
+		ReadHeaderTimeout: readHeaderTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
+	}
+
+	// Disable keep-alives if configured
+	if !cfg.Server.KeepAlivesEnabled && cfg.Server.ReadTimeout != 0 {
+		r.server.SetKeepAlivesEnabled(false)
 	}
 
 	return r
@@ -79,12 +129,32 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(req.Body)
+	// Limit request body size if configured
+	var bodyReader io.Reader = req.Body
+	if r.maxRequestBodySize > 0 {
+		bodyReader = io.LimitReader(req.Body, r.maxRequestBodySize)
+	}
+
+	body, err := io.ReadAll(bodyReader)
 	if err != nil {
 		http.Error(w, "Failed to read body", http.StatusBadRequest)
 		return
 	}
 	defer req.Body.Close()
+
+	// Decompress body if Content-Encoding is set
+	contentEncoding := req.Header.Get("Content-Encoding")
+	if contentEncoding != "" {
+		compressionType := compression.ParseContentEncoding(contentEncoding)
+		if compressionType != compression.TypeNone {
+			body, err = compression.Decompress(body, compressionType)
+			if err != nil {
+				logging.Error("failed to decompress request body", logging.F("encoding", contentEncoding, "error", err.Error()))
+				http.Error(w, "Failed to decompress body", http.StatusBadRequest)
+				return
+			}
+		}
+	}
 
 	var exportReq colmetricspb.ExportMetricsServiceRequest
 

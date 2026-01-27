@@ -188,6 +188,47 @@ exporterAuth:
   # -- Custom headers for exporter (format: "key1=value1,key2=value2")
   headers: ""
 
+# -- Exporter compression configuration (HTTP only)
+exporterCompression:
+  # -- Compression type: none, gzip, zstd, snappy, zlib, deflate, lz4
+  type: "none"
+  # -- Compression level (algorithm-specific, 0 for default)
+  level: 0
+
+# -- Exporter HTTP client configuration
+exporterHTTPClient:
+  # -- Maximum idle connections across all hosts
+  maxIdleConns: 100
+  # -- Maximum idle connections per host
+  maxIdleConnsPerHost: 100
+  # -- Maximum total connections per host (0 = no limit)
+  maxConnsPerHost: 0
+  # -- Idle connection timeout
+  idleConnTimeout: "90s"
+  # -- Disable HTTP keep-alives
+  disableKeepAlives: false
+  # -- Force HTTP/2 for non-TLS connections
+  forceHTTP2: false
+  # -- HTTP/2 read idle timeout for health checks
+  http2ReadIdleTimeout: ""
+  # -- HTTP/2 ping timeout
+  http2PingTimeout: ""
+
+# -- Receiver HTTP server configuration
+receiverHTTPServer:
+  # -- Maximum request body size in bytes (0 = no limit)
+  maxRequestBodySize: 0
+  # -- HTTP server read timeout (empty = no timeout)
+  readTimeout: ""
+  # -- HTTP server read header timeout
+  readHeaderTimeout: "1m"
+  # -- HTTP server write timeout
+  writeTimeout: "30s"
+  # -- HTTP server idle timeout
+  idleTimeout: "1m"
+  # -- Enable HTTP keep-alives for receiver
+  keepAlivesEnabled: true
+
 # -- Limits configuration (creates ConfigMap)
 limits:
   # -- Enable limits enforcement

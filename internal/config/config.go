@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/slawomirskowron/metrics-governor/internal/auth"
+	"github.com/slawomirskowron/metrics-governor/internal/compression"
 	"github.com/slawomirskowron/metrics-governor/internal/exporter"
 	"github.com/slawomirskowron/metrics-governor/internal/receiver"
 	tlspkg "github.com/slawomirskowron/metrics-governor/internal/tls"
@@ -54,6 +55,28 @@ type Config struct {
 	ExporterAuthBasicUsername string
 	ExporterAuthBasicPassword string
 	ExporterAuthHeaders       string
+
+	// Exporter Compression settings
+	ExporterCompression      string
+	ExporterCompressionLevel int
+
+	// Exporter HTTP client settings
+	ExporterMaxIdleConns        int
+	ExporterMaxIdleConnsPerHost int
+	ExporterMaxConnsPerHost     int
+	ExporterIdleConnTimeout     time.Duration
+	ExporterDisableKeepAlives   bool
+	ExporterForceHTTP2          bool
+	ExporterHTTP2ReadIdleTimeout time.Duration
+	ExporterHTTP2PingTimeout    time.Duration
+
+	// Receiver HTTP server settings
+	ReceiverMaxRequestBodySize int64
+	ReceiverReadTimeout        time.Duration
+	ReceiverReadHeaderTimeout  time.Duration
+	ReceiverWriteTimeout       time.Duration
+	ReceiverIdleTimeout        time.Duration
+	ReceiverKeepAlivesEnabled  bool
 
 	// Buffer settings
 	BufferSize    int
@@ -113,6 +136,28 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.ExporterAuthBasicUsername, "exporter-auth-basic-username", "", "Basic auth username for exporter")
 	flag.StringVar(&cfg.ExporterAuthBasicPassword, "exporter-auth-basic-password", "", "Basic auth password for exporter")
 	flag.StringVar(&cfg.ExporterAuthHeaders, "exporter-auth-headers", "", "Custom headers for exporter (format: key1=value1,key2=value2)")
+
+	// Exporter Compression flags
+	flag.StringVar(&cfg.ExporterCompression, "exporter-compression", "none", "Compression type for HTTP exporter: none, gzip, zstd, snappy, zlib, deflate, lz4")
+	flag.IntVar(&cfg.ExporterCompressionLevel, "exporter-compression-level", 0, "Compression level (algorithm-specific, 0 for default)")
+
+	// Exporter HTTP client flags
+	flag.IntVar(&cfg.ExporterMaxIdleConns, "exporter-max-idle-conns", 100, "Maximum idle connections across all hosts")
+	flag.IntVar(&cfg.ExporterMaxIdleConnsPerHost, "exporter-max-idle-conns-per-host", 100, "Maximum idle connections per host")
+	flag.IntVar(&cfg.ExporterMaxConnsPerHost, "exporter-max-conns-per-host", 0, "Maximum total connections per host (0 = no limit)")
+	flag.DurationVar(&cfg.ExporterIdleConnTimeout, "exporter-idle-conn-timeout", 90*time.Second, "Idle connection timeout")
+	flag.BoolVar(&cfg.ExporterDisableKeepAlives, "exporter-disable-keep-alives", false, "Disable HTTP keep-alives")
+	flag.BoolVar(&cfg.ExporterForceHTTP2, "exporter-force-http2", false, "Force HTTP/2 for non-TLS connections")
+	flag.DurationVar(&cfg.ExporterHTTP2ReadIdleTimeout, "exporter-http2-read-idle-timeout", 0, "HTTP/2 read idle timeout for health checks")
+	flag.DurationVar(&cfg.ExporterHTTP2PingTimeout, "exporter-http2-ping-timeout", 0, "HTTP/2 ping timeout")
+
+	// Receiver HTTP server flags
+	flag.Int64Var(&cfg.ReceiverMaxRequestBodySize, "receiver-max-request-body-size", 0, "Maximum request body size in bytes (0 = no limit)")
+	flag.DurationVar(&cfg.ReceiverReadTimeout, "receiver-read-timeout", 0, "HTTP server read timeout (0 = no timeout)")
+	flag.DurationVar(&cfg.ReceiverReadHeaderTimeout, "receiver-read-header-timeout", 1*time.Minute, "HTTP server read header timeout")
+	flag.DurationVar(&cfg.ReceiverWriteTimeout, "receiver-write-timeout", 30*time.Second, "HTTP server write timeout")
+	flag.DurationVar(&cfg.ReceiverIdleTimeout, "receiver-idle-timeout", 1*time.Minute, "HTTP server idle timeout")
+	flag.BoolVar(&cfg.ReceiverKeepAlivesEnabled, "receiver-keep-alives-enabled", true, "Enable HTTP keep-alives for receiver")
 
 	// Buffer flags
 	flag.IntVar(&cfg.BufferSize, "buffer-size", 10000, "Maximum number of metrics to buffer")
@@ -176,6 +221,14 @@ func (c *Config) HTTPReceiverConfig() receiver.HTTPConfig {
 		Addr: c.HTTPListenAddr,
 		TLS:  c.ReceiverTLSConfig(),
 		Auth: c.ReceiverAuthConfig(),
+		Server: receiver.HTTPServerConfig{
+			MaxRequestBodySize: c.ReceiverMaxRequestBodySize,
+			ReadTimeout:        c.ReceiverReadTimeout,
+			ReadHeaderTimeout:  c.ReceiverReadHeaderTimeout,
+			WriteTimeout:       c.ReceiverWriteTimeout,
+			IdleTimeout:        c.ReceiverIdleTimeout,
+			KeepAlivesEnabled:  c.ReceiverKeepAlivesEnabled,
+		},
 	}
 }
 
@@ -212,15 +265,40 @@ func (c *Config) ExporterAuthConfig() auth.ClientConfig {
 	}
 }
 
+// ExporterCompressionConfig returns the compression configuration for the exporter.
+func (c *Config) ExporterCompressionConfig() compression.Config {
+	compressionType, _ := compression.ParseType(c.ExporterCompression)
+	return compression.Config{
+		Type:  compressionType,
+		Level: compression.Level(c.ExporterCompressionLevel),
+	}
+}
+
+// ExporterHTTPClientConfig returns the HTTP client configuration for the exporter.
+func (c *Config) ExporterHTTPClientConfig() exporter.HTTPClientConfig {
+	return exporter.HTTPClientConfig{
+		MaxIdleConns:         c.ExporterMaxIdleConns,
+		MaxIdleConnsPerHost:  c.ExporterMaxIdleConnsPerHost,
+		MaxConnsPerHost:      c.ExporterMaxConnsPerHost,
+		IdleConnTimeout:      c.ExporterIdleConnTimeout,
+		DisableKeepAlives:    c.ExporterDisableKeepAlives,
+		ForceAttemptHTTP2:    c.ExporterForceHTTP2,
+		HTTP2ReadIdleTimeout: c.ExporterHTTP2ReadIdleTimeout,
+		HTTP2PingTimeout:     c.ExporterHTTP2PingTimeout,
+	}
+}
+
 // ExporterConfig returns the full exporter configuration.
 func (c *Config) ExporterConfig() exporter.Config {
 	return exporter.Config{
-		Endpoint: c.ExporterEndpoint,
-		Protocol: exporter.Protocol(c.ExporterProtocol),
-		Insecure: c.ExporterInsecure,
-		Timeout:  c.ExporterTimeout,
-		TLS:      c.ExporterTLSConfig(),
-		Auth:     c.ExporterAuthConfig(),
+		Endpoint:    c.ExporterEndpoint,
+		Protocol:    exporter.Protocol(c.ExporterProtocol),
+		Insecure:    c.ExporterInsecure,
+		Timeout:     c.ExporterTimeout,
+		TLS:         c.ExporterTLSConfig(),
+		Auth:        c.ExporterAuthConfig(),
+		Compression: c.ExporterCompressionConfig(),
+		HTTPClient:  c.ExporterHTTPClientConfig(),
 	}
 }
 
@@ -272,6 +350,31 @@ OPTIONS:
         -exporter-auth-basic-username    Basic auth username
         -exporter-auth-basic-password    Basic auth password
         -exporter-auth-headers           Custom headers (format: key1=value1,key2=value2)
+
+    Exporter Compression (HTTP only):
+        -exporter-compression <type>     Compression type: none, gzip, zstd, snappy, zlib, deflate, lz4 (default: none)
+        -exporter-compression-level <n>  Compression level (algorithm-specific, 0 for default)
+                                         gzip/zlib/deflate: 1 (fastest) to 9 (best), -1 (default)
+                                         zstd: 1 (fastest), 3 (default), 6 (better), 11 (best)
+                                         snappy/lz4: no levels supported
+
+    Exporter HTTP Client:
+        -exporter-max-idle-conns <n>           Maximum idle connections across all hosts (default: 100)
+        -exporter-max-idle-conns-per-host <n>  Maximum idle connections per host (default: 100)
+        -exporter-max-conns-per-host <n>       Maximum total connections per host (0 = no limit)
+        -exporter-idle-conn-timeout <dur>      Idle connection timeout (default: 90s)
+        -exporter-disable-keep-alives          Disable HTTP keep-alives (default: false)
+        -exporter-force-http2                  Force HTTP/2 for non-TLS connections (default: false)
+        -exporter-http2-read-idle-timeout      HTTP/2 read idle timeout for health checks
+        -exporter-http2-ping-timeout           HTTP/2 ping timeout
+
+    Receiver HTTP Server:
+        -receiver-max-request-body-size <n>    Maximum request body size in bytes (0 = no limit)
+        -receiver-read-timeout <dur>           HTTP server read timeout (default: 0/no timeout)
+        -receiver-read-header-timeout <dur>    HTTP server read header timeout (default: 1m)
+        -receiver-write-timeout <dur>          HTTP server write timeout (default: 30s)
+        -receiver-idle-timeout <dur>           HTTP server idle timeout (default: 1m)
+        -receiver-keep-alives-enabled          Enable HTTP keep-alives for receiver (default: true)
 
     Buffer:
         -buffer-size <n>                 Maximum metrics to buffer (default: 10000)
@@ -336,6 +439,28 @@ EXAMPLES:
     # Enable limits enforcement with config file
     metrics-governor -limits-config /etc/metrics-governor/limits.yaml -limits-dry-run=false
 
+    # Enable gzip compression for HTTP exporter
+    metrics-governor -exporter-protocol http \
+        -exporter-endpoint otel-collector:4318 \
+        -exporter-compression gzip \
+        -exporter-compression-level 6
+
+    # Enable zstd compression with best compression level
+    metrics-governor -exporter-protocol http \
+        -exporter-compression zstd \
+        -exporter-compression-level 11
+
+    # Configure HTTP client connection pool
+    metrics-governor -exporter-protocol http \
+        -exporter-max-idle-conns 200 \
+        -exporter-max-idle-conns-per-host 50 \
+        -exporter-idle-conn-timeout 2m
+
+    # Configure HTTP receiver server timeouts
+    metrics-governor -receiver-read-timeout 30s \
+        -receiver-write-timeout 1m \
+        -receiver-max-request-body-size 10485760
+
 `)
 }
 
@@ -347,18 +472,32 @@ func PrintVersion() {
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
-		GRPCListenAddr:   ":4317",
-		HTTPListenAddr:   ":4318",
-		ExporterEndpoint: "localhost:4317",
-		ExporterProtocol: "grpc",
-		ExporterInsecure: true,
-		ExporterTimeout:  30 * time.Second,
-		BufferSize:       10000,
-		FlushInterval:    5 * time.Second,
-		MaxBatchSize:     1000,
-		StatsAddr:        ":9090",
-		StatsLabels:      "",
-		LimitsConfig:     "",
-		LimitsDryRun:     true,
+		GRPCListenAddr:              ":4317",
+		HTTPListenAddr:              ":4318",
+		ExporterEndpoint:            "localhost:4317",
+		ExporterProtocol:            "grpc",
+		ExporterInsecure:            true,
+		ExporterTimeout:             30 * time.Second,
+		ExporterCompression:         "none",
+		ExporterCompressionLevel:    0,
+		ExporterMaxIdleConns:        100,
+		ExporterMaxIdleConnsPerHost: 100,
+		ExporterMaxConnsPerHost:     0,
+		ExporterIdleConnTimeout:     90 * time.Second,
+		ExporterDisableKeepAlives:   false,
+		ExporterForceHTTP2:          false,
+		ReceiverMaxRequestBodySize:  0,
+		ReceiverReadTimeout:         0,
+		ReceiverReadHeaderTimeout:   1 * time.Minute,
+		ReceiverWriteTimeout:        30 * time.Second,
+		ReceiverIdleTimeout:         1 * time.Minute,
+		ReceiverKeepAlivesEnabled:   true,
+		BufferSize:                  10000,
+		FlushInterval:               5 * time.Second,
+		MaxBatchSize:                1000,
+		StatsAddr:                   ":9090",
+		StatsLabels:                 "",
+		LimitsConfig:                "",
+		LimitsDryRun:                true,
 	}
 }
