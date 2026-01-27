@@ -125,6 +125,7 @@ Generate container arguments
 {{- $args = append $args (printf "-http-listen=%s" .Values.config.httpListen) -}}
 {{- $args = append $args (printf "-stats-addr=%s" .Values.config.statsAddr) -}}
 {{- $args = append $args (printf "-exporter-endpoint=%s" .Values.config.exporterEndpoint) -}}
+{{- $args = append $args (printf "-exporter-protocol=%s" .Values.config.exporterProtocol) -}}
 {{- $args = append $args (printf "-exporter-insecure=%t" .Values.config.exporterInsecure) -}}
 {{- $args = append $args (printf "-exporter-timeout=%s" .Values.config.exporterTimeout) -}}
 {{- $args = append $args (printf "-buffer-size=%d" (int .Values.config.bufferSize)) -}}
@@ -136,6 +137,43 @@ Generate container arguments
 {{- if .Values.limits.enabled }}
 {{- $args = append $args "-limits-config=/etc/metrics-governor/limits.yaml" -}}
 {{- $args = append $args (printf "-limits-dry-run=%t" .Values.config.limitsDryRun) -}}
+{{- end }}
+{{/* Receiver TLS */}}
+{{- if .Values.receiverTLS.enabled }}
+{{- $args = append $args "-receiver-tls-enabled=true" -}}
+{{- $args = append $args "-receiver-tls-cert=/etc/tls/receiver/tls.crt" -}}
+{{- $args = append $args "-receiver-tls-key=/etc/tls/receiver/tls.key" -}}
+{{- if .Values.receiverTLS.caSecretName }}
+{{- $args = append $args "-receiver-tls-ca=/etc/tls/receiver-ca/ca.crt" -}}
+{{- end }}
+{{- if .Values.receiverTLS.clientAuth }}
+{{- $args = append $args "-receiver-tls-client-auth=true" -}}
+{{- end }}
+{{- end }}
+{{/* Receiver Auth */}}
+{{- if .Values.receiverAuth.enabled }}
+{{- $args = append $args "-receiver-auth-enabled=true" -}}
+{{- end }}
+{{/* Exporter TLS */}}
+{{- if .Values.exporterTLS.enabled }}
+{{- $args = append $args "-exporter-tls-enabled=true" -}}
+{{- if .Values.exporterTLS.secretName }}
+{{- $args = append $args "-exporter-tls-cert=/etc/tls/exporter/tls.crt" -}}
+{{- $args = append $args "-exporter-tls-key=/etc/tls/exporter/tls.key" -}}
+{{- end }}
+{{- if .Values.exporterTLS.caSecretName }}
+{{- $args = append $args "-exporter-tls-ca=/etc/tls/exporter-ca/ca.crt" -}}
+{{- end }}
+{{- if .Values.exporterTLS.insecureSkipVerify }}
+{{- $args = append $args "-exporter-tls-skip-verify=true" -}}
+{{- end }}
+{{- if .Values.exporterTLS.serverName }}
+{{- $args = append $args (printf "-exporter-tls-server-name=%s" .Values.exporterTLS.serverName) -}}
+{{- end }}
+{{- end }}
+{{/* Exporter Auth Headers */}}
+{{- if .Values.exporterAuth.headers }}
+{{- $args = append $args (printf "-exporter-auth-headers=%s" .Values.exporterAuth.headers) -}}
 {{- end }}
 {{- range .Values.config.extraArgs }}
 {{- $args = append $args . -}}
@@ -167,6 +205,48 @@ Volume mounts
   mountPath: /etc/metrics-governor
   readOnly: true
 {{- end }}
+{{- if .Values.receiverTLS.enabled }}
+- name: receiver-tls
+  mountPath: /etc/tls/receiver
+  readOnly: true
+{{- if .Values.receiverTLS.caSecretName }}
+- name: receiver-tls-ca
+  mountPath: /etc/tls/receiver-ca
+  readOnly: true
+{{- end }}
+{{- end }}
+{{- if and .Values.receiverAuth.enabled .Values.receiverAuth.bearerTokenSecretName }}
+- name: receiver-auth-token
+  mountPath: /etc/auth/receiver
+  readOnly: true
+{{- end }}
+{{- if and .Values.receiverAuth.enabled .Values.receiverAuth.basicAuthSecretName }}
+- name: receiver-auth-basic
+  mountPath: /etc/auth/receiver-basic
+  readOnly: true
+{{- end }}
+{{- if .Values.exporterTLS.enabled }}
+{{- if .Values.exporterTLS.secretName }}
+- name: exporter-tls
+  mountPath: /etc/tls/exporter
+  readOnly: true
+{{- end }}
+{{- if .Values.exporterTLS.caSecretName }}
+- name: exporter-tls-ca
+  mountPath: /etc/tls/exporter-ca
+  readOnly: true
+{{- end }}
+{{- end }}
+{{- if .Values.exporterAuth.bearerTokenSecretName }}
+- name: exporter-auth-token
+  mountPath: /etc/auth/exporter
+  readOnly: true
+{{- end }}
+{{- if .Values.exporterAuth.basicAuthSecretName }}
+- name: exporter-auth-basic
+  mountPath: /etc/auth/exporter-basic
+  readOnly: true
+{{- end }}
 {{- if and (eq .Values.kind "statefulset") .Values.persistence.enabled }}
 - name: data
   mountPath: /data
@@ -184,6 +264,64 @@ Volumes
 - name: limits-config
   configMap:
     name: {{ include "metrics-governor.limitsConfigMapName" . }}
+{{- end }}
+{{- if .Values.receiverTLS.enabled }}
+- name: receiver-tls
+  secret:
+    secretName: {{ .Values.receiverTLS.secretName }}
+    items:
+      - key: {{ .Values.receiverTLS.certKey }}
+        path: tls.crt
+      - key: {{ .Values.receiverTLS.keyKey }}
+        path: tls.key
+{{- if .Values.receiverTLS.caSecretName }}
+- name: receiver-tls-ca
+  secret:
+    secretName: {{ .Values.receiverTLS.caSecretName }}
+    items:
+      - key: {{ .Values.receiverTLS.caKey }}
+        path: ca.crt
+{{- end }}
+{{- end }}
+{{- if and .Values.receiverAuth.enabled .Values.receiverAuth.bearerTokenSecretName }}
+- name: receiver-auth-token
+  secret:
+    secretName: {{ .Values.receiverAuth.bearerTokenSecretName }}
+{{- end }}
+{{- if and .Values.receiverAuth.enabled .Values.receiverAuth.basicAuthSecretName }}
+- name: receiver-auth-basic
+  secret:
+    secretName: {{ .Values.receiverAuth.basicAuthSecretName }}
+{{- end }}
+{{- if .Values.exporterTLS.enabled }}
+{{- if .Values.exporterTLS.secretName }}
+- name: exporter-tls
+  secret:
+    secretName: {{ .Values.exporterTLS.secretName }}
+    items:
+      - key: {{ .Values.exporterTLS.certKey }}
+        path: tls.crt
+      - key: {{ .Values.exporterTLS.keyKey }}
+        path: tls.key
+{{- end }}
+{{- if .Values.exporterTLS.caSecretName }}
+- name: exporter-tls-ca
+  secret:
+    secretName: {{ .Values.exporterTLS.caSecretName }}
+    items:
+      - key: {{ .Values.exporterTLS.caKey }}
+        path: ca.crt
+{{- end }}
+{{- end }}
+{{- if .Values.exporterAuth.bearerTokenSecretName }}
+- name: exporter-auth-token
+  secret:
+    secretName: {{ .Values.exporterAuth.bearerTokenSecretName }}
+{{- end }}
+{{- if .Values.exporterAuth.basicAuthSecretName }}
+- name: exporter-auth-basic
+  secret:
+    secretName: {{ .Values.exporterAuth.basicAuthSecretName }}
 {{- end }}
 {{- with .Values.extraVolumes }}
 {{ toYaml . }}
@@ -233,10 +371,48 @@ containers:
       {{- include "metrics-governor.args" . | nindent 6 }}
     ports:
       {{- include "metrics-governor.containerPorts" . | nindent 6 }}
-    {{- with .Values.env }}
     env:
+      {{- if and .Values.receiverAuth.enabled .Values.receiverAuth.bearerTokenSecretName }}
+      - name: RECEIVER_AUTH_BEARER_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: {{ .Values.receiverAuth.bearerTokenSecretName }}
+            key: {{ .Values.receiverAuth.bearerTokenKey }}
+      {{- end }}
+      {{- if and .Values.receiverAuth.enabled .Values.receiverAuth.basicAuthSecretName }}
+      - name: RECEIVER_AUTH_BASIC_USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: {{ .Values.receiverAuth.basicAuthSecretName }}
+            key: {{ .Values.receiverAuth.usernameKey }}
+      - name: RECEIVER_AUTH_BASIC_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: {{ .Values.receiverAuth.basicAuthSecretName }}
+            key: {{ .Values.receiverAuth.passwordKey }}
+      {{- end }}
+      {{- if .Values.exporterAuth.bearerTokenSecretName }}
+      - name: EXPORTER_AUTH_BEARER_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: {{ .Values.exporterAuth.bearerTokenSecretName }}
+            key: {{ .Values.exporterAuth.bearerTokenKey }}
+      {{- end }}
+      {{- if .Values.exporterAuth.basicAuthSecretName }}
+      - name: EXPORTER_AUTH_BASIC_USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: {{ .Values.exporterAuth.basicAuthSecretName }}
+            key: {{ .Values.exporterAuth.usernameKey }}
+      - name: EXPORTER_AUTH_BASIC_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: {{ .Values.exporterAuth.basicAuthSecretName }}
+            key: {{ .Values.exporterAuth.passwordKey }}
+      {{- end }}
+      {{- with .Values.env }}
       {{- toYaml . | nindent 6 }}
-    {{- end }}
+      {{- end }}
     {{- with .Values.envFrom }}
     envFrom:
       {{- toYaml . | nindent 6 }}

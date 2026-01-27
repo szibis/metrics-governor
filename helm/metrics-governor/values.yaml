@@ -103,6 +103,8 @@ config:
   statsAddr: ":9090"
   # -- OTLP exporter endpoint
   exporterEndpoint: "localhost:4317"
+  # -- Exporter protocol: "grpc" or "http"
+  exporterProtocol: "grpc"
   # -- Use insecure connection for exporter
   exporterInsecure: true
   # -- Exporter request timeout
@@ -119,6 +121,72 @@ config:
   limitsDryRun: true
   # -- Extra arguments to pass
   extraArgs: []
+
+# -- Receiver TLS configuration
+receiverTLS:
+  # -- Enable TLS for receivers
+  enabled: false
+  # -- Secret containing TLS certificate and key
+  secretName: ""
+  # -- Certificate file key in secret
+  certKey: "tls.crt"
+  # -- Key file key in secret
+  keyKey: "tls.key"
+  # -- CA certificate for client verification (mTLS)
+  caSecretName: ""
+  # -- CA certificate key in secret
+  caKey: "ca.crt"
+  # -- Require client certificates (mTLS)
+  clientAuth: false
+
+# -- Receiver authentication configuration
+receiverAuth:
+  # -- Enable authentication for receivers
+  enabled: false
+  # -- Bearer token for authentication (from secret)
+  bearerTokenSecretName: ""
+  # -- Key in secret containing bearer token
+  bearerTokenKey: "token"
+  # -- Basic auth username (from secret)
+  basicAuthSecretName: ""
+  # -- Username key in secret
+  usernameKey: "username"
+  # -- Password key in secret
+  passwordKey: "password"
+
+# -- Exporter TLS configuration
+exporterTLS:
+  # -- Enable custom TLS config for exporter
+  enabled: false
+  # -- Secret containing client certificate and key (mTLS)
+  secretName: ""
+  # -- Certificate file key in secret
+  certKey: "tls.crt"
+  # -- Key file key in secret
+  keyKey: "tls.key"
+  # -- CA certificate for server verification
+  caSecretName: ""
+  # -- CA certificate key in secret
+  caKey: "ca.crt"
+  # -- Skip TLS certificate verification
+  insecureSkipVerify: false
+  # -- Override server name for TLS verification
+  serverName: ""
+
+# -- Exporter authentication configuration
+exporterAuth:
+  # -- Bearer token for authentication (from secret)
+  bearerTokenSecretName: ""
+  # -- Key in secret containing bearer token
+  bearerTokenKey: "token"
+  # -- Basic auth credentials (from secret)
+  basicAuthSecretName: ""
+  # -- Username key in secret
+  usernameKey: "username"
+  # -- Password key in secret
+  passwordKey: "password"
+  # -- Custom headers for exporter (format: "key1=value1,key2=value2")
+  headers: ""
 
 # -- Limits configuration (creates ConfigMap)
 limits:

@@ -34,6 +34,12 @@ OTLP metrics proxy with buffering and statistics. Receives metrics via gRPC and 
   - [Options](#options)
   - [Examples](#examples)
   - [Docker](#docker-1)
+- [TLS Configuration](#tls-configuration)
+  - [Receiver TLS (Server-side)](#receiver-tls-server-side)
+  - [Exporter TLS (Client-side)](#exporter-tls-client-side)
+- [Authentication](#authentication)
+  - [Receiver Authentication](#receiver-authentication)
+  - [Exporter Authentication](#exporter-authentication)
 - [Statistics](#statistics)
   - [Prometheus Metrics Endpoint](#prometheus-metrics-endpoint)
   - [Periodic Logging](#periodic-logging)
@@ -58,12 +64,20 @@ OTLP metrics proxy with buffering and statistics. Receives metrics via gRPC and 
 
 ## Features
 
-- OTLP gRPC receiver (default: `:4317`)
-- OTLP HTTP receiver (default: `:4318`)
-- Configurable metrics buffering
-- Batch export with configurable size
-- Graceful shutdown with final flush
-- JSON structured logging
+- **OTLP Receivers:**
+  - gRPC receiver (default: `:4317`)
+  - HTTP receiver (default: `:4318`)
+  - TLS/mTLS support for secure connections
+  - Bearer token and basic authentication
+- **OTLP Exporters:**
+  - gRPC exporter (default)
+  - HTTP exporter (configurable via `-exporter-protocol http`)
+  - TLS/mTLS support for secure connections
+  - Bearer token, basic auth, and custom headers
+- **Metrics Processing:**
+  - Configurable metrics buffering
+  - Batch export with configurable size
+  - Graceful shutdown with final flush
 - **Limits enforcement:**
   - Configurable datapoints rate and cardinality limits
   - Per-metric and per-label-combination rules
@@ -75,6 +89,9 @@ OTLP metrics proxy with buffering and statistics. Receives metrics via gRPC and 
   - Per-label-combination stats (configurable labels)
   - Prometheus `/metrics` endpoint for scraping
   - Periodic global stats logging (every 30s)
+- **Operations:**
+  - JSON structured logging
+  - Helm chart for Kubernetes deployment
 
 ## Installation
 
@@ -142,22 +159,69 @@ metrics-governor [OPTIONS]
 
 ### Options
 
+**Receiver Options:**
+
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-grpc-listen` | `:4317` | gRPC receiver listen address |
 | `-http-listen` | `:4318` | HTTP receiver listen address |
+| `-receiver-tls-enabled` | `false` | Enable TLS for receivers |
+| `-receiver-tls-cert` | | Path to server certificate file |
+| `-receiver-tls-key` | | Path to server private key file |
+| `-receiver-tls-ca` | | Path to CA certificate for client verification (mTLS) |
+| `-receiver-tls-client-auth` | `false` | Require client certificates (mTLS) |
+| `-receiver-auth-enabled` | `false` | Enable authentication for receivers |
+| `-receiver-auth-bearer-token` | | Expected bearer token for authentication |
+| `-receiver-auth-basic-username` | | Basic auth username |
+| `-receiver-auth-basic-password` | | Basic auth password |
+
+**Exporter Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
 | `-exporter-endpoint` | `localhost:4317` | OTLP exporter endpoint |
+| `-exporter-protocol` | `grpc` | Exporter protocol: `grpc` or `http` |
 | `-exporter-insecure` | `true` | Use insecure connection for exporter |
 | `-exporter-timeout` | `30s` | Exporter request timeout |
+| `-exporter-tls-enabled` | `false` | Enable custom TLS config for exporter |
+| `-exporter-tls-cert` | | Path to client certificate file (mTLS) |
+| `-exporter-tls-key` | | Path to client private key file (mTLS) |
+| `-exporter-tls-ca` | | Path to CA certificate for server verification |
+| `-exporter-tls-skip-verify` | `false` | Skip TLS certificate verification |
+| `-exporter-tls-server-name` | | Override server name for TLS verification |
+| `-exporter-auth-bearer-token` | | Bearer token to send with requests |
+| `-exporter-auth-basic-username` | | Basic auth username |
+| `-exporter-auth-basic-password` | | Basic auth password |
+| `-exporter-auth-headers` | | Custom headers (format: `key1=value1,key2=value2`) |
+
+**Buffer Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
 | `-buffer-size` | `10000` | Maximum number of metrics to buffer |
 | `-flush-interval` | `5s` | Buffer flush interval |
 | `-batch-size` | `1000` | Maximum batch size for export |
+
+**Stats Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
 | `-stats-addr` | `:9090` | Stats/metrics HTTP endpoint address |
 | `-stats-labels` | | Comma-separated labels to track (e.g., `service,env,cluster`) |
+
+**Limits Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
 | `-limits-config` | | Path to limits configuration YAML file |
 | `-limits-dry-run` | `true` | Dry run mode: log violations but don't drop/sample |
-| `-h`, `-help` | | Show help message |
-| `-v`, `-version` | | Show version |
+
+**General:**
+
+| Flag | Description |
+|------|-------------|
+| `-h`, `-help` | Show help message |
+| `-v`, `-version` | Show version |
 
 ### Examples
 
@@ -168,14 +232,41 @@ metrics-governor
 # Custom receiver ports
 metrics-governor -grpc-listen :5317 -http-listen :5318
 
-# Forward to remote endpoint
+# Forward to remote gRPC endpoint
 metrics-governor -exporter-endpoint otel-collector:4317
+
+# Forward to remote HTTP endpoint
+metrics-governor -exporter-endpoint otel-collector:4318 -exporter-protocol http
 
 # Adjust buffering
 metrics-governor -buffer-size 50000 -flush-interval 10s -batch-size 2000
 
 # Enable stats tracking by service, environment and cluster
 metrics-governor -stats-labels service,env,cluster
+
+# Enable TLS for receivers
+metrics-governor -receiver-tls-enabled \
+    -receiver-tls-cert /etc/certs/server.crt \
+    -receiver-tls-key /etc/certs/server.key
+
+# Enable mTLS for receivers
+metrics-governor -receiver-tls-enabled \
+    -receiver-tls-cert /etc/certs/server.crt \
+    -receiver-tls-key /etc/certs/server.key \
+    -receiver-tls-ca /etc/certs/ca.crt \
+    -receiver-tls-client-auth
+
+# Enable bearer token authentication for receivers
+metrics-governor -receiver-auth-enabled \
+    -receiver-auth-bearer-token "secret-token"
+
+# Connect to secure exporter with custom CA
+metrics-governor -exporter-insecure=false \
+    -exporter-tls-enabled \
+    -exporter-tls-ca /etc/certs/ca.crt
+
+# Connect to exporter with bearer token
+metrics-governor -exporter-auth-bearer-token "secret-token"
 
 # Enable limits enforcement (dry-run by default)
 metrics-governor -limits-config /etc/metrics-governor/limits.yaml
@@ -190,6 +281,93 @@ metrics-governor -limits-config /etc/metrics-governor/limits.yaml -limits-dry-ru
 docker run -p 4317:4317 -p 4318:4318 -p 9090:9090 metrics-governor \
   -exporter-endpoint otel-collector:4317 \
   -stats-labels service,env,cluster
+```
+
+## TLS Configuration
+
+metrics-governor supports TLS for both receivers (server-side) and exporters (client-side), including mutual TLS (mTLS) for certificate-based authentication.
+
+### Receiver TLS (Server-side)
+
+Enable TLS for incoming connections on both gRPC and HTTP receivers:
+
+```bash
+# Basic TLS
+metrics-governor -receiver-tls-enabled \
+    -receiver-tls-cert /etc/certs/server.crt \
+    -receiver-tls-key /etc/certs/server.key
+
+# mTLS (require client certificates)
+metrics-governor -receiver-tls-enabled \
+    -receiver-tls-cert /etc/certs/server.crt \
+    -receiver-tls-key /etc/certs/server.key \
+    -receiver-tls-ca /etc/certs/ca.crt \
+    -receiver-tls-client-auth
+```
+
+### Exporter TLS (Client-side)
+
+Enable TLS for outgoing connections to the OTLP backend:
+
+```bash
+# Secure connection with system CA
+metrics-governor -exporter-insecure=false
+
+# Custom CA certificate
+metrics-governor -exporter-insecure=false \
+    -exporter-tls-enabled \
+    -exporter-tls-ca /etc/certs/ca.crt
+
+# mTLS (client certificate)
+metrics-governor -exporter-insecure=false \
+    -exporter-tls-enabled \
+    -exporter-tls-cert /etc/certs/client.crt \
+    -exporter-tls-key /etc/certs/client.key \
+    -exporter-tls-ca /etc/certs/ca.crt
+
+# Skip certificate verification (not recommended for production)
+metrics-governor -exporter-insecure=false \
+    -exporter-tls-enabled \
+    -exporter-tls-skip-verify
+```
+
+## Authentication
+
+metrics-governor supports bearer token and basic authentication for both receivers and exporters.
+
+### Receiver Authentication
+
+Require authentication for incoming connections:
+
+```bash
+# Bearer token authentication
+metrics-governor -receiver-auth-enabled \
+    -receiver-auth-bearer-token "your-secret-token"
+
+# Basic authentication
+metrics-governor -receiver-auth-enabled \
+    -receiver-auth-basic-username "user" \
+    -receiver-auth-basic-password "password"
+```
+
+Clients must include the appropriate `Authorization` header:
+- Bearer token: `Authorization: Bearer your-secret-token`
+- Basic auth: `Authorization: Basic <base64(user:password)>`
+
+### Exporter Authentication
+
+Authenticate when connecting to the OTLP backend:
+
+```bash
+# Bearer token authentication
+metrics-governor -exporter-auth-bearer-token "your-secret-token"
+
+# Basic authentication
+metrics-governor -exporter-auth-basic-username "user" \
+    -exporter-auth-basic-password "password"
+
+# Custom headers (e.g., API keys)
+metrics-governor -exporter-auth-headers "X-API-Key=your-api-key,X-Tenant-ID=tenant123"
 ```
 
 ## Statistics
@@ -484,13 +662,16 @@ Coverage report is generated at `bin/coverage.html`.
 metrics-governor/
 ├── cmd/metrics-governor/    # Main application entry point
 ├── internal/
+│   ├── auth/                # Authentication (bearer token, basic auth)
 │   ├── buffer/              # Metrics buffering and batching
 │   ├── config/              # Configuration management
-│   ├── exporter/            # OTLP gRPC exporter
+│   ├── exporter/            # OTLP gRPC and HTTP exporters
 │   ├── limits/              # Limits enforcement (adaptive, drop, log)
 │   ├── logging/             # JSON structured logging
 │   ├── receiver/            # gRPC and HTTP receivers
-│   └── stats/               # Statistics collection
+│   ├── stats/               # Statistics collection
+│   └── tls/                 # TLS configuration utilities
+├── helm/metrics-governor/   # Helm chart for Kubernetes
 ├── examples/                # Example configuration files
 ├── test/                    # Integration test environment
 ├── bin/                     # Build output directory

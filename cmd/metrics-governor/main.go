@@ -34,12 +34,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Create exporter
-	exp, err := exporter.New(ctx, exporter.Config{
-		Endpoint: cfg.ExporterEndpoint,
-		Insecure: cfg.ExporterInsecure,
-		Timeout:  cfg.ExporterTimeout,
-	})
+	// Create exporter with full configuration
+	exp, err := exporter.New(ctx, cfg.ExporterConfig())
 	if err != nil {
 		logging.Fatal("failed to create exporter", logging.F("error", err.Error()))
 	}
@@ -78,16 +74,16 @@ func main() {
 	// Start buffer flush routine
 	go buf.Start(ctx)
 
-	// Create and start gRPC receiver
-	grpcReceiver := receiver.NewGRPC(cfg.GRPCListenAddr, buf)
+	// Create and start gRPC receiver with full configuration
+	grpcReceiver := receiver.NewGRPCWithConfig(cfg.GRPCReceiverConfig(), buf)
 	go func() {
 		if err := grpcReceiver.Start(); err != nil {
 			logging.Error("gRPC receiver error", logging.F("error", err.Error()))
 		}
 	}()
 
-	// Create and start HTTP receiver
-	httpReceiver := receiver.NewHTTP(cfg.HTTPListenAddr, buf)
+	// Create and start HTTP receiver with full configuration
+	httpReceiver := receiver.NewHTTPWithConfig(cfg.HTTPReceiverConfig(), buf)
 	go func() {
 		if err := httpReceiver.Start(); err != nil {
 			logging.Error("HTTP receiver error", logging.F("error", err.Error()))
@@ -123,7 +119,10 @@ func main() {
 		"grpc_addr", cfg.GRPCListenAddr,
 		"http_addr", cfg.HTTPListenAddr,
 		"exporter_endpoint", cfg.ExporterEndpoint,
+		"exporter_protocol", cfg.ExporterProtocol,
 		"stats_addr", cfg.StatsAddr,
+		"receiver_tls", cfg.ReceiverTLSEnabled,
+		"receiver_auth", cfg.ReceiverAuthEnabled,
 		"limits_enabled", cfg.LimitsConfig != "",
 	))
 
