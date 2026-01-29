@@ -7,11 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-01-29
+
+### Changed
+
+#### Documentation
+- **Architecture diagrams** - Replaced ASCII art with Mermaid diagrams
+  - Detailed architecture diagram converted to interactive Mermaid flowchart
+  - Simplified flow diagram converted to Mermaid flowchart
+  - Better visualization and rendering on GitHub
+
 ## [0.2.6] - 2026-01-29
 
 ### Added
 - Add high-level overview and detailed architecture diagram to README
-
 
 ## [0.2.4] - 2026-01-29
 
