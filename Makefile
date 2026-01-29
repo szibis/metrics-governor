@@ -62,7 +62,7 @@ lint-yaml:
 	@command -v yamllint >/dev/null 2>&1 || { echo "yamllint not installed. Install with: pip install yamllint"; exit 1; }
 	yamllint -c .yamllint.yml examples/
 	yamllint -c .yamllint.yml helm/metrics-governor/values.yaml
-	yamllint -c .yamllint.yml helm/metrics-governor/templates/
+	yamllint -c .yamllint.yml helm/metrics-governor/Chart.yaml
 
 lint-helm:
 	@echo "Linting Helm chart..."

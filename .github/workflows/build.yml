@@ -77,8 +77,8 @@ jobs:
       - name: Lint Helm values
         run: yamllint -c .yamllint.yml helm/metrics-governor/values.yaml
 
-      - name: Lint Helm templates
-        run: yamllint -c .yamllint.yml helm/metrics-governor/templates/
+      - name: Lint Helm Chart.yaml
+        run: yamllint -c .yamllint.yml helm/metrics-governor/Chart.yaml
 
   lint-helm:
     runs-on: ubuntu-latest
