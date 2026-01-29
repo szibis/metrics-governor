@@ -34,55 +34,54 @@ metrics-governor solves these problems with **adaptive limiting** - it intellige
 
 ### Architecture Diagram
 
-```
-                                    ┌─────────────────────────────────────────────────────────────┐
-                                    │                    metrics-governor                          │
-                                    │                                                              │
-┌──────────────┐                    │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐     │                    ┌──────────────┐
-│              │   OTLP/gRPC        │  │             │    │             │    │             │     │   OTLP/gRPC        │              │
-│   App 1      │──────────────────▶│  │   gRPC      │    │             │    │             │     │──────────────────▶│              │
-│  (OTel SDK)  │      :4317         │  │  Receiver   │───▶│   Metrics   │───▶│  Exporter   │     │      :4317         │    OTel      │
-│              │                    │  │             │    │   Buffer    │    │  (gRPC/HTTP)│     │                    │  Collector   │
-└──────────────┘                    │  └─────────────┘    │             │    │             │     │                    │              │
-                                    │                     │  ┌───────┐  │    └─────────────┘     │                    │      or      │
-┌──────────────┐                    │  ┌─────────────┐    │  │ Batch │  │                        │                    │              │
-│              │   OTLP/HTTP        │  │             │    │  │ Queue │  │                        │                    │   Any OTLP   │
-│   App 2      │──────────────────▶│  │   HTTP      │───▶│  └───────┘  │                        │                    │   Backend    │
-│  (OTel SDK)  │      :4318         │  │  Receiver   │    │             │                        │                    │              │
-│              │                    │  │             │    └──────┬──────┘                        │                    └──────────────┘
-└──────────────┘                    │  └─────────────┘           │                               │
-                                    │        │                   │                               │
-┌──────────────┐                    │        │ Auth/TLS          │                               │
-│              │   OTLP/gRPC        │        │ Decompression     │                               │
-│   App N      │──────────────────▶│        ▼                   ▼                               │
-│  (OTel SDK)  │      :4317         │  ┌─────────────────────────────────────────────────────┐   │
-│              │                    │  │                  Processing Pipeline                 │   │
-└──────────────┘                    │  │                                                      │   │
-                                    │  │  ┌─────────────────┐    ┌─────────────────────────┐  │   │
-                                    │  │  │ Stats Collector │    │    Limits Enforcer      │  │   │
-                                    │  │  │                 │    │                         │  │   │
-                                    │  │  │ • Per-metric    │    │ • Cardinality limits    │  │   │
-                                    │  │  │   datapoints    │    │ • Datapoints rate       │  │   │
-                                    │  │  │ • Per-metric    │    │ • Adaptive dropping     │  │   │
-                                    │  │  │   cardinality   │    │ • Per-group tracking    │  │   │
-                                    │  │  │ • Per-label     │    │ • Regex matching        │  │   │
-                                    │  │  │   combinations  │    │ • Dry-run mode          │  │   │
-                                    │  │  └────────┬────────┘    └────────────┬────────────┘  │   │
-                                    │  │           │                          │               │   │
-                                    │  └───────────┼──────────────────────────┼───────────────┘   │
-                                    │              │                          │                   │
-                                    └──────────────┼──────────────────────────┼───────────────────┘
-                                                   │                          │
-                                                   ▼                          ▼
-                                    ┌─────────────────────────┐    ┌─────────────────────────┐
-                                    │     Prometheus          │    │     Structured Logs     │
-                                    │     :9090/metrics       │    │     (JSON format)       │
-                                    │                         │    │                         │
-                                    │ • metrics_governor_*    │    │ • Limit violations      │
-                                    │ • datapoints_total      │    │ • Dropped groups        │
-                                    │ • cardinality           │    │ • Stats summaries       │
-                                    │ • limit_exceeded_total  │    │ • Errors & warnings     │
-                                    └─────────────────────────┘    └─────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Clients["OTLP Clients"]
+        App1["App 1<br/>(OTel SDK)"]
+        App2["App 2<br/>(OTel SDK)"]
+        AppN["App N<br/>(OTel SDK)"]
+    end
+
+    subgraph MG["metrics-governor"]
+        subgraph Receivers["Receivers"]
+            GRPC["gRPC Receiver<br/>:4317"]
+            HTTP["HTTP Receiver<br/>:4318"]
+        end
+
+        subgraph Buffer["Metrics Buffer"]
+            Queue["Batch Queue"]
+        end
+
+        subgraph Pipeline["Processing Pipeline"]
+            Stats["Stats Collector<br/>• Per-metric datapoints<br/>• Per-metric cardinality<br/>• Per-label combinations"]
+            Limits["Limits Enforcer<br/>• Cardinality limits<br/>• Datapoints rate<br/>• Adaptive dropping<br/>• Per-group tracking"]
+        end
+
+        Exporter["Exporter<br/>(gRPC/HTTP)"]
+    end
+
+    subgraph Backend["Backend"]
+        OTel["OTel Collector<br/>or Any OTLP Backend"]
+    end
+
+    subgraph Observability["Observability"]
+        Prom["Prometheus<br/>:9090/metrics<br/>• metrics_governor_*<br/>• datapoints_total<br/>• cardinality"]
+        Logs["Structured Logs<br/>(JSON format)<br/>• Limit violations<br/>• Dropped groups<br/>• Stats summaries"]
+    end
+
+    App1 -->|"OTLP/gRPC"| GRPC
+    App2 -->|"OTLP/HTTP"| HTTP
+    AppN -->|"OTLP/gRPC"| GRPC
+
+    GRPC -->|"Auth/TLS<br/>Decompress"| Buffer
+    HTTP -->|"Auth/TLS<br/>Decompress"| Buffer
+
+    Buffer --> Pipeline
+    Stats --> Prom
+    Stats --> Logs
+    Limits --> Logs
+    Pipeline --> Exporter
+    Exporter -->|"OTLP/gRPC"| OTel
 ```
 
 ### Data Flow
@@ -1034,13 +1033,14 @@ See the [detailed architecture diagram](#architecture-diagram) in the Overview s
 
 **Simplified flow:**
 
-```
-OTLP Clients ──▶ Receivers ──▶ Buffer ──▶ Stats/Limits ──▶ Exporter ──▶ Backend
- (gRPC/HTTP)     (:4317/:4318)              (processing)     (gRPC/HTTP)
-                                                │
-                                                ▼
-                                          Prometheus
-                                         (:9090/metrics)
+```mermaid
+flowchart LR
+    Clients["OTLP Clients<br/>(gRPC/HTTP)"] --> Receivers[":4317/:4318<br/>Receivers"]
+    Receivers --> Buffer["Buffer"]
+    Buffer --> Processing["Stats/Limits<br/>(processing)"]
+    Processing --> Exporter["Exporter<br/>(gRPC/HTTP)"]
+    Exporter --> Backend["Backend"]
+    Processing --> Prom["Prometheus<br/>:9090/metrics"]
 ```
 
 **Components:**
