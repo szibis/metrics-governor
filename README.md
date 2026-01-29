@@ -1,11 +1,10 @@
 # metrics-governor
 
-[![Latest Release](https://img.shields.io/github/v/release/slawomirskowron/metrics-governor?sort=semver&logo=github&labelColor=gray&color=gray)](https://github.com/slawomirskowron/metrics-governor/releases/latest)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/slawomirskowron/metrics-governor?logo=go&logoColor=white&labelColor=00ADD8&color=00ADD8)](https://go.dev/)
-[![Go Report Card](https://goreportcard.com/badge/github.com/slawomirskowron/metrics-governor)](https://goreportcard.com/report/github.com/slawomirskowron/metrics-governor)
+[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev/)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Build Status](https://github.com/slawomirskowron/metrics-governor/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/slawomirskowron/metrics-governor/actions/workflows/build.yml)
-[![codecov](https://codecov.io/gh/slawomirskowron/metrics-governor/branch/main/graph/badge.svg)](https://codecov.io/gh/slawomirskowron/metrics-governor)
-[![License](https://img.shields.io/github/license/slawomirskowron/metrics-governor?labelColor=orange&color=orange)](LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/slawomirskowron/metrics-governor)](https://goreportcard.com/report/github.com/slawomirskowron/metrics-governor)
+[![Coverage](https://img.shields.io/badge/Coverage-80%25-green.svg)](https://github.com/slawomirskowron/metrics-governor)
 
 ---
 

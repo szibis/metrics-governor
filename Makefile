@@ -76,7 +76,7 @@ help:
 	@echo "  test             - Run tests"
 	@echo "  test-verbose     - Run tests with verbose output"
 	@echo "  test-coverage    - Run tests with coverage report"
-	@echo "  lint             - Run golangci-lint"
+	@echo "  lint             - Run go vet"
 	@echo "  release          - Run tests, lint, and build all platforms"
 	@echo "  tag VERSION=vX.Y.Z - Create a git tag for release"
 	@echo "  clean            - Remove build artifacts"
