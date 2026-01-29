@@ -117,123 +117,130 @@ Pod FQDN for StatefulSet
 {{- end }}
 
 {{/*
-Generate container arguments
+Generate container arguments (uses config file)
 */}}
 {{- define "metrics-governor.args" -}}
 {{- $args := list -}}
-{{- $args = append $args (printf "-grpc-listen=%s" .Values.config.grpcListen) -}}
-{{- $args = append $args (printf "-http-listen=%s" .Values.config.httpListen) -}}
-{{- $args = append $args (printf "-stats-addr=%s" .Values.config.statsAddr) -}}
-{{- $args = append $args (printf "-exporter-endpoint=%s" .Values.config.exporterEndpoint) -}}
-{{- $args = append $args (printf "-exporter-protocol=%s" .Values.config.exporterProtocol) -}}
-{{- $args = append $args (printf "-exporter-insecure=%t" .Values.config.exporterInsecure) -}}
-{{- $args = append $args (printf "-exporter-timeout=%s" .Values.config.exporterTimeout) -}}
-{{- $args = append $args (printf "-buffer-size=%d" (int .Values.config.bufferSize)) -}}
-{{- $args = append $args (printf "-flush-interval=%s" .Values.config.flushInterval) -}}
-{{- $args = append $args (printf "-batch-size=%d" (int .Values.config.batchSize)) -}}
-{{- if .Values.config.statsLabels }}
-{{- $args = append $args (printf "-stats-labels=%s" .Values.config.statsLabels) -}}
-{{- end }}
+{{- $args = append $args "-config=/etc/metrics-governor/config.yaml" -}}
 {{- if .Values.limits.enabled }}
 {{- $args = append $args "-limits-config=/etc/metrics-governor/limits.yaml" -}}
-{{- $args = append $args (printf "-limits-dry-run=%t" .Values.config.limitsDryRun) -}}
 {{- end }}
-{{/* Receiver TLS */}}
-{{- if .Values.receiverTLS.enabled }}
-{{- $args = append $args "-receiver-tls-enabled=true" -}}
-{{- $args = append $args "-receiver-tls-cert=/etc/tls/receiver/tls.crt" -}}
-{{- $args = append $args "-receiver-tls-key=/etc/tls/receiver/tls.key" -}}
-{{- if .Values.receiverTLS.caSecretName }}
-{{- $args = append $args "-receiver-tls-ca=/etc/tls/receiver-ca/ca.crt" -}}
+{{/* Optional CLI overrides for operational flexibility */}}
+{{- if .Values.config.overrides }}
+{{- if .Values.config.overrides.grpcListen }}
+{{- $args = append $args (printf "-grpc-listen=%s" .Values.config.overrides.grpcListen) -}}
 {{- end }}
-{{- if .Values.receiverTLS.clientAuth }}
-{{- $args = append $args "-receiver-tls-client-auth=true" -}}
+{{- if .Values.config.overrides.httpListen }}
+{{- $args = append $args (printf "-http-listen=%s" .Values.config.overrides.httpListen) -}}
 {{- end }}
+{{- if .Values.config.overrides.statsAddr }}
+{{- $args = append $args (printf "-stats-addr=%s" .Values.config.overrides.statsAddr) -}}
 {{- end }}
-{{/* Receiver Auth */}}
-{{- if .Values.receiverAuth.enabled }}
-{{- $args = append $args "-receiver-auth-enabled=true" -}}
-{{- end }}
-{{/* Exporter TLS */}}
-{{- if .Values.exporterTLS.enabled }}
-{{- $args = append $args "-exporter-tls-enabled=true" -}}
-{{- if .Values.exporterTLS.secretName }}
-{{- $args = append $args "-exporter-tls-cert=/etc/tls/exporter/tls.crt" -}}
-{{- $args = append $args "-exporter-tls-key=/etc/tls/exporter/tls.key" -}}
-{{- end }}
-{{- if .Values.exporterTLS.caSecretName }}
-{{- $args = append $args "-exporter-tls-ca=/etc/tls/exporter-ca/ca.crt" -}}
-{{- end }}
-{{- if .Values.exporterTLS.insecureSkipVerify }}
-{{- $args = append $args "-exporter-tls-skip-verify=true" -}}
-{{- end }}
-{{- if .Values.exporterTLS.serverName }}
-{{- $args = append $args (printf "-exporter-tls-server-name=%s" .Values.exporterTLS.serverName) -}}
-{{- end }}
-{{- end }}
-{{/* Exporter Auth Headers */}}
-{{- if .Values.exporterAuth.headers }}
-{{- $args = append $args (printf "-exporter-auth-headers=%s" .Values.exporterAuth.headers) -}}
-{{- end }}
-{{/* Exporter Compression */}}
-{{- if and .Values.exporterCompression (ne .Values.exporterCompression.type "none") }}
-{{- $args = append $args (printf "-exporter-compression=%s" .Values.exporterCompression.type) -}}
-{{- if .Values.exporterCompression.level }}
-{{- $args = append $args (printf "-exporter-compression-level=%d" (int .Values.exporterCompression.level)) -}}
-{{- end }}
-{{- end }}
-{{/* Exporter HTTP Client */}}
-{{- if .Values.exporterHTTPClient }}
-{{- if .Values.exporterHTTPClient.maxIdleConns }}
-{{- $args = append $args (printf "-exporter-max-idle-conns=%d" (int .Values.exporterHTTPClient.maxIdleConns)) -}}
-{{- end }}
-{{- if .Values.exporterHTTPClient.maxIdleConnsPerHost }}
-{{- $args = append $args (printf "-exporter-max-idle-conns-per-host=%d" (int .Values.exporterHTTPClient.maxIdleConnsPerHost)) -}}
-{{- end }}
-{{- if .Values.exporterHTTPClient.maxConnsPerHost }}
-{{- $args = append $args (printf "-exporter-max-conns-per-host=%d" (int .Values.exporterHTTPClient.maxConnsPerHost)) -}}
-{{- end }}
-{{- if .Values.exporterHTTPClient.idleConnTimeout }}
-{{- $args = append $args (printf "-exporter-idle-conn-timeout=%s" .Values.exporterHTTPClient.idleConnTimeout) -}}
-{{- end }}
-{{- if .Values.exporterHTTPClient.disableKeepAlives }}
-{{- $args = append $args "-exporter-disable-keep-alives=true" -}}
-{{- end }}
-{{- if .Values.exporterHTTPClient.forceHTTP2 }}
-{{- $args = append $args "-exporter-force-http2=true" -}}
-{{- end }}
-{{- if .Values.exporterHTTPClient.http2ReadIdleTimeout }}
-{{- $args = append $args (printf "-exporter-http2-read-idle-timeout=%s" .Values.exporterHTTPClient.http2ReadIdleTimeout) -}}
-{{- end }}
-{{- if .Values.exporterHTTPClient.http2PingTimeout }}
-{{- $args = append $args (printf "-exporter-http2-ping-timeout=%s" .Values.exporterHTTPClient.http2PingTimeout) -}}
-{{- end }}
-{{- end }}
-{{/* Receiver HTTP Server */}}
-{{- if .Values.receiverHTTPServer }}
-{{- if .Values.receiverHTTPServer.maxRequestBodySize }}
-{{- $args = append $args (printf "-receiver-max-request-body-size=%d" (int .Values.receiverHTTPServer.maxRequestBodySize)) -}}
-{{- end }}
-{{- if .Values.receiverHTTPServer.readTimeout }}
-{{- $args = append $args (printf "-receiver-read-timeout=%s" .Values.receiverHTTPServer.readTimeout) -}}
-{{- end }}
-{{- if .Values.receiverHTTPServer.readHeaderTimeout }}
-{{- $args = append $args (printf "-receiver-read-header-timeout=%s" .Values.receiverHTTPServer.readHeaderTimeout) -}}
-{{- end }}
-{{- if .Values.receiverHTTPServer.writeTimeout }}
-{{- $args = append $args (printf "-receiver-write-timeout=%s" .Values.receiverHTTPServer.writeTimeout) -}}
-{{- end }}
-{{- if .Values.receiverHTTPServer.idleTimeout }}
-{{- $args = append $args (printf "-receiver-idle-timeout=%s" .Values.receiverHTTPServer.idleTimeout) -}}
-{{- end }}
-{{- if not .Values.receiverHTTPServer.keepAlivesEnabled }}
-{{- $args = append $args "-receiver-keep-alives-enabled=false" -}}
+{{- if .Values.config.overrides.exporterEndpoint }}
+{{- $args = append $args (printf "-exporter-endpoint=%s" .Values.config.overrides.exporterEndpoint) -}}
 {{- end }}
 {{- end }}
 {{- range .Values.config.extraArgs }}
 {{- $args = append $args . -}}
 {{- end }}
 {{- toYaml $args }}
+{{- end }}
+
+{{/*
+Generate config YAML from values
+*/}}
+{{- define "metrics-governor.configYAML" -}}
+receiver:
+  grpc:
+    address: {{ .Values.config.grpcListen | quote }}
+  http:
+    address: {{ .Values.config.httpListen | quote }}
+    {{- if .Values.receiverHTTPServer }}
+    server:
+      max_request_body_size: {{ .Values.receiverHTTPServer.maxRequestBodySize | default 0 }}
+      read_timeout: {{ .Values.receiverHTTPServer.readTimeout | default "0s" | quote }}
+      read_header_timeout: {{ .Values.receiverHTTPServer.readHeaderTimeout | default "1m" | quote }}
+      write_timeout: {{ .Values.receiverHTTPServer.writeTimeout | default "30s" | quote }}
+      idle_timeout: {{ .Values.receiverHTTPServer.idleTimeout | default "1m" | quote }}
+      keep_alives_enabled: {{ .Values.receiverHTTPServer.keepAlivesEnabled | default true }}
+    {{- end }}
+  {{- if .Values.receiverTLS.enabled }}
+  tls:
+    enabled: true
+    cert_file: /etc/tls/receiver/tls.crt
+    key_file: /etc/tls/receiver/tls.key
+    {{- if .Values.receiverTLS.caSecretName }}
+    ca_file: /etc/tls/receiver-ca/ca.crt
+    {{- end }}
+    client_auth: {{ .Values.receiverTLS.clientAuth | default false }}
+  {{- end }}
+  {{- if .Values.receiverAuth.enabled }}
+  auth:
+    enabled: true
+  {{- end }}
+
+exporter:
+  endpoint: {{ .Values.config.exporterEndpoint | quote }}
+  protocol: {{ .Values.config.exporterProtocol | quote }}
+  insecure: {{ .Values.config.exporterInsecure }}
+  timeout: {{ .Values.config.exporterTimeout | quote }}
+  {{- if .Values.exporterTLS.enabled }}
+  tls:
+    enabled: true
+    {{- if .Values.exporterTLS.secretName }}
+    cert_file: /etc/tls/exporter/tls.crt
+    key_file: /etc/tls/exporter/tls.key
+    {{- end }}
+    {{- if .Values.exporterTLS.caSecretName }}
+    ca_file: /etc/tls/exporter-ca/ca.crt
+    {{- end }}
+    skip_verify: {{ .Values.exporterTLS.insecureSkipVerify | default false }}
+    {{- if .Values.exporterTLS.serverName }}
+    server_name: {{ .Values.exporterTLS.serverName | quote }}
+    {{- end }}
+  {{- end }}
+  {{- if or .Values.exporterAuth.headers .Values.exporterAuth.bearerTokenSecretName .Values.exporterAuth.basicAuthSecretName }}
+  auth:
+    {{- if .Values.exporterAuth.headers }}
+    headers:
+      {{- range $key, $value := .Values.exporterAuth.headers }}
+      {{ $key }}: {{ $value | quote }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- if .Values.exporterCompression }}
+  compression:
+    type: {{ .Values.exporterCompression.type | default "none" | quote }}
+    level: {{ .Values.exporterCompression.level | default 0 }}
+  {{- end }}
+  {{- if .Values.exporterHTTPClient }}
+  http_client:
+    max_idle_conns: {{ .Values.exporterHTTPClient.maxIdleConns | default 100 }}
+    max_idle_conns_per_host: {{ .Values.exporterHTTPClient.maxIdleConnsPerHost | default 100 }}
+    max_conns_per_host: {{ .Values.exporterHTTPClient.maxConnsPerHost | default 0 }}
+    idle_conn_timeout: {{ .Values.exporterHTTPClient.idleConnTimeout | default "90s" | quote }}
+    disable_keep_alives: {{ .Values.exporterHTTPClient.disableKeepAlives | default false }}
+    force_http2: {{ .Values.exporterHTTPClient.forceHTTP2 | default false }}
+    http2_read_idle_timeout: {{ .Values.exporterHTTPClient.http2ReadIdleTimeout | default "0s" | quote }}
+    http2_ping_timeout: {{ .Values.exporterHTTPClient.http2PingTimeout | default "0s" | quote }}
+  {{- end }}
+
+buffer:
+  size: {{ .Values.config.bufferSize }}
+  batch_size: {{ .Values.config.batchSize }}
+  flush_interval: {{ .Values.config.flushInterval | quote }}
+
+stats:
+  address: {{ .Values.config.statsAddr | quote }}
+  {{- if .Values.config.statsLabels }}
+  labels:
+    {{- range (splitList "," .Values.config.statsLabels) }}
+    - {{ . | trim | quote }}
+    {{- end }}
+  {{- end }}
+
+limits:
+  dry_run: {{ .Values.config.limitsDryRun }}
 {{- end }}
 
 {{/*
@@ -255,9 +262,14 @@ Container ports
 Volume mounts
 */}}
 {{- define "metrics-governor.volumeMounts" -}}
+- name: config
+  mountPath: /etc/metrics-governor/config.yaml
+  subPath: config.yaml
+  readOnly: true
 {{- if .Values.limits.enabled }}
 - name: limits-config
-  mountPath: /etc/metrics-governor
+  mountPath: /etc/metrics-governor/limits.yaml
+  subPath: limits.yaml
   readOnly: true
 {{- end }}
 {{- if .Values.receiverTLS.enabled }}
@@ -315,6 +327,9 @@ Volume mounts
 Volumes
 */}}
 {{- define "metrics-governor.volumes" -}}
+- name: config
+  configMap:
+    name: {{ include "metrics-governor.fullname" . }}-config
 {{- if .Values.limits.enabled }}
 - name: limits-config
   configMap:

@@ -30,6 +30,10 @@ OTLP metrics proxy with buffering and statistics. Receives metrics via gRPC and 
   - [Multi-platform builds](#multi-platform-builds)
   - [Docker](#docker)
   - [Helm Chart](#helm-chart)
+- [Configuration](#configuration)
+  - [YAML Configuration File](#yaml-configuration-file)
+  - [CLI Flags](#cli-flags)
+  - [Configuration Priority](#configuration-priority)
 - [Usage](#usage)
   - [Options](#options)
   - [Examples](#examples)
@@ -161,6 +165,89 @@ helm install metrics-governor ./helm/metrics-governor \
 
 See [helm/metrics-governor/values.yaml](helm/metrics-governor/values.yaml) for all available options.
 
+## Configuration
+
+metrics-governor supports two configuration methods:
+1. **YAML configuration file** (recommended for complex setups)
+2. **CLI flags** (for simple setups or quick overrides)
+
+### YAML Configuration File
+
+Use the `-config` flag to specify a YAML configuration file:
+
+```bash
+metrics-governor -config /etc/metrics-governor/config.yaml
+```
+
+Example configuration file:
+
+```yaml
+receiver:
+  grpc:
+    address: ":4317"
+  http:
+    address: ":4318"
+    server:
+      max_request_body_size: 10485760  # 10MB
+      read_header_timeout: 30s
+      write_timeout: 1m
+  tls:
+    enabled: true
+    cert_file: "/etc/tls/server.crt"
+    key_file: "/etc/tls/server.key"
+
+exporter:
+  endpoint: "otel-collector:4317"
+  protocol: "grpc"
+  insecure: false
+  timeout: 60s
+  tls:
+    enabled: true
+    ca_file: "/etc/tls/ca.crt"
+  compression:
+    type: "gzip"
+    level: 6
+
+buffer:
+  size: 50000
+  batch_size: 2000
+  flush_interval: 10s
+
+stats:
+  address: ":9090"
+  labels:
+    - service
+    - env
+
+limits:
+  dry_run: false
+```
+
+See [examples/config.yaml](examples/config.yaml) for a complete example with all options documented.
+
+Additional example configs:
+- [examples/config-minimal.yaml](examples/config-minimal.yaml) - Minimal configuration
+- [examples/config-production.yaml](examples/config-production.yaml) - Production-ready settings
+
+### CLI Flags
+
+All settings can also be configured via CLI flags. See [Options](#options) below for the complete list.
+
+### Configuration Priority
+
+When both YAML config and CLI flags are used, the priority is:
+
+1. **CLI flags** (highest priority) - explicitly set flags override config file
+2. **YAML config file** - values from the config file
+3. **Built-in defaults** (lowest priority)
+
+Example combining config file with CLI override:
+
+```bash
+# Use config file but override the exporter endpoint
+metrics-governor -config config.yaml -exporter-endpoint otel:4317
+```
+
 ## Usage
 
 ```bash
@@ -168,6 +255,12 @@ metrics-governor [OPTIONS]
 ```
 
 ### Options
+
+**Configuration:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-config` | | Path to YAML configuration file |
 
 **Receiver Options:**
 
@@ -269,6 +362,12 @@ metrics-governor [OPTIONS]
 ```bash
 # Start with default settings
 metrics-governor
+
+# Use YAML configuration file
+metrics-governor -config /etc/metrics-governor/config.yaml
+
+# Use config file with CLI overrides
+metrics-governor -config config.yaml -exporter-endpoint otel:4317
 
 # Custom receiver ports
 metrics-governor -grpc-listen :5317 -http-listen :5318

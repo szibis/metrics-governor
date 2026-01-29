@@ -98,7 +98,11 @@ type Config struct {
 
 // ParseFlags parses command line flags and returns the configuration.
 func ParseFlags() *Config {
-	cfg := &Config{}
+	cfg := DefaultConfig()
+
+	// Config file flag
+	var configFile string
+	flag.StringVar(&configFile, "config", "", "Path to YAML configuration file")
 
 	// Receiver flags
 	flag.StringVar(&cfg.GRPCListenAddr, "grpc-listen", ":4317", "gRPC receiver listen address")
@@ -182,7 +186,174 @@ func ParseFlags() *Config {
 
 	flag.Parse()
 
+	// Load YAML config if specified
+	if configFile != "" {
+		yamlCfg, err := LoadYAML(configFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading config file %s: %v\n", configFile, err)
+			os.Exit(1)
+		}
+		cfg = yamlCfg.ToConfig()
+	}
+
+	// Apply CLI overrides for explicitly set flags
+	applyFlagOverrides(cfg)
+
 	return cfg
+}
+
+// applyFlagOverrides applies CLI flag values that were explicitly set.
+func applyFlagOverrides(cfg *Config) {
+	flag.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "grpc-listen":
+			cfg.GRPCListenAddr = f.Value.String()
+		case "http-listen":
+			cfg.HTTPListenAddr = f.Value.String()
+		case "receiver-tls-enabled":
+			cfg.ReceiverTLSEnabled = f.Value.String() == "true"
+		case "receiver-tls-cert":
+			cfg.ReceiverTLSCertFile = f.Value.String()
+		case "receiver-tls-key":
+			cfg.ReceiverTLSKeyFile = f.Value.String()
+		case "receiver-tls-ca":
+			cfg.ReceiverTLSCAFile = f.Value.String()
+		case "receiver-tls-client-auth":
+			cfg.ReceiverTLSClientAuth = f.Value.String() == "true"
+		case "receiver-auth-enabled":
+			cfg.ReceiverAuthEnabled = f.Value.String() == "true"
+		case "receiver-auth-bearer-token":
+			cfg.ReceiverAuthBearerToken = f.Value.String()
+		case "receiver-auth-basic-username":
+			cfg.ReceiverAuthBasicUsername = f.Value.String()
+		case "receiver-auth-basic-password":
+			cfg.ReceiverAuthBasicPassword = f.Value.String()
+		case "exporter-endpoint":
+			cfg.ExporterEndpoint = f.Value.String()
+		case "exporter-protocol":
+			cfg.ExporterProtocol = f.Value.String()
+		case "exporter-insecure":
+			cfg.ExporterInsecure = f.Value.String() == "true"
+		case "exporter-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.ExporterTimeout = d
+			}
+		case "exporter-tls-enabled":
+			cfg.ExporterTLSEnabled = f.Value.String() == "true"
+		case "exporter-tls-cert":
+			cfg.ExporterTLSCertFile = f.Value.String()
+		case "exporter-tls-key":
+			cfg.ExporterTLSKeyFile = f.Value.String()
+		case "exporter-tls-ca":
+			cfg.ExporterTLSCAFile = f.Value.String()
+		case "exporter-tls-skip-verify":
+			cfg.ExporterTLSInsecureSkipVerify = f.Value.String() == "true"
+		case "exporter-tls-server-name":
+			cfg.ExporterTLSServerName = f.Value.String()
+		case "exporter-auth-bearer-token":
+			cfg.ExporterAuthBearerToken = f.Value.String()
+		case "exporter-auth-basic-username":
+			cfg.ExporterAuthBasicUsername = f.Value.String()
+		case "exporter-auth-basic-password":
+			cfg.ExporterAuthBasicPassword = f.Value.String()
+		case "exporter-auth-headers":
+			cfg.ExporterAuthHeaders = f.Value.String()
+		case "exporter-compression":
+			cfg.ExporterCompression = f.Value.String()
+		case "exporter-compression-level":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.ExporterCompressionLevel = i
+				}
+			}
+		case "exporter-max-idle-conns":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.ExporterMaxIdleConns = i
+				}
+			}
+		case "exporter-max-idle-conns-per-host":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.ExporterMaxIdleConnsPerHost = i
+				}
+			}
+		case "exporter-max-conns-per-host":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.ExporterMaxConnsPerHost = i
+				}
+			}
+		case "exporter-idle-conn-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.ExporterIdleConnTimeout = d
+			}
+		case "exporter-disable-keep-alives":
+			cfg.ExporterDisableKeepAlives = f.Value.String() == "true"
+		case "exporter-force-http2":
+			cfg.ExporterForceHTTP2 = f.Value.String() == "true"
+		case "exporter-http2-read-idle-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.ExporterHTTP2ReadIdleTimeout = d
+			}
+		case "exporter-http2-ping-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.ExporterHTTP2PingTimeout = d
+			}
+		case "receiver-max-request-body-size":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int64); ok {
+					cfg.ReceiverMaxRequestBodySize = i
+				}
+			}
+		case "receiver-read-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.ReceiverReadTimeout = d
+			}
+		case "receiver-read-header-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.ReceiverReadHeaderTimeout = d
+			}
+		case "receiver-write-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.ReceiverWriteTimeout = d
+			}
+		case "receiver-idle-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.ReceiverIdleTimeout = d
+			}
+		case "receiver-keep-alives-enabled":
+			cfg.ReceiverKeepAlivesEnabled = f.Value.String() == "true"
+		case "buffer-size":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.BufferSize = i
+				}
+			}
+		case "flush-interval":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.FlushInterval = d
+			}
+		case "batch-size":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.MaxBatchSize = i
+				}
+			}
+		case "stats-addr":
+			cfg.StatsAddr = f.Value.String()
+		case "stats-labels":
+			cfg.StatsLabels = f.Value.String()
+		case "limits-config":
+			cfg.LimitsConfig = f.Value.String()
+		case "limits-dry-run":
+			cfg.LimitsDryRun = f.Value.String() == "true"
+		case "help", "h":
+			cfg.ShowHelp = f.Value.String() == "true"
+		case "version", "v":
+			cfg.ShowVersion = f.Value.String() == "true"
+		}
+	})
 }
 
 // ReceiverTLSConfig returns the TLS configuration for receivers.
@@ -314,6 +485,10 @@ DESCRIPTION:
     to a configurable OTLP endpoint with batching support.
 
 OPTIONS:
+    Configuration:
+        -config <path>                   Path to YAML configuration file
+                                         CLI flags override config file values
+
     Receiver:
         -grpc-listen <addr>              gRPC receiver listen address (default: ":4317")
         -http-listen <addr>              HTTP receiver listen address (default: ":4318")
@@ -396,6 +571,12 @@ OPTIONS:
 EXAMPLES:
     # Start with default settings
     metrics-governor
+
+    # Use YAML configuration file
+    metrics-governor -config /etc/metrics-governor/config.yaml
+
+    # Use config file with CLI overrides
+    metrics-governor -config config.yaml -exporter-endpoint otel:4317
 
     # Custom receiver ports
     metrics-governor -grpc-listen :5317 -http-listen :5318

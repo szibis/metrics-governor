@@ -121,6 +121,16 @@ config:
   limitsDryRun: true
   # -- Extra arguments to pass
   extraArgs: []
+  # -- CLI overrides (applied on top of config file)
+  overrides:
+    # -- Override receiver gRPC address
+    grpcListen: ""
+    # -- Override receiver HTTP address
+    httpListen: ""
+    # -- Override stats address
+    statsAddr: ""
+    # -- Override exporter endpoint
+    exporterEndpoint: ""
 
 # -- Receiver TLS configuration
 receiverTLS:

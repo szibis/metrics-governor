@@ -1,0 +1,5 @@
+# Minimal configuration - all defaults except exporter endpoint
+# All other settings use built-in defaults
+
+exporter:
+  endpoint: "otel-collector:4317"
