@@ -11,11 +11,11 @@ keywords:
   - opentelemetry
   - cardinality
   - limits
-home: https://github.com/slawomirskowron/metrics-governor
+home: https://github.com/szibis/metrics-governor
 sources:
-  - https://github.com/slawomirskowron/metrics-governor
+  - https://github.com/szibis/metrics-governor
 maintainers:
-  - name: slawomirskowron
+  - name: szibis
 annotations:
   artifacthub.io/license: Apache-2.0
   artifacthub.io/category: monitoring-logging

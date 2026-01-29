@@ -1,5 +1,5 @@
 # metrics-governor configuration
-# https://github.com/slawomirskowron/metrics-governor
+# https://github.com/szibis/metrics-governor
 #
 # All settings are optional - defaults are applied when not specified.
 # CLI flags can override any setting in this file.

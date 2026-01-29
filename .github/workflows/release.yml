@@ -111,7 +111,7 @@ jobs:
           build-args: |
             VERSION=${{ steps.version.outputs.VERSION }}
           tags: |
-            slawomirskowron/metrics-governor:${{ steps.version.outputs.VERSION }}
-            slawomirskowron/metrics-governor:latest
-            ghcr.io/slawomirskowron/metrics-governor:${{ steps.version.outputs.VERSION }}
-            ghcr.io/slawomirskowron/metrics-governor:latest
+            slaskoss/metrics-governor:${{ steps.version.outputs.VERSION }}
+            slaskoss/metrics-governor:latest
+            ghcr.io/szibis/metrics-governor:${{ steps.version.outputs.VERSION }}
+            ghcr.io/szibis/metrics-governor:latest
