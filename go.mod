@@ -1,6 +1,6 @@
 module github.com/slawomirskowron/metrics-governor
 
-go 1.25.4
+go 1.25.6
 
 require (
 	github.com/golang/snappy v0.0.4
