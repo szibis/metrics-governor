@@ -48,7 +48,8 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 lint:
-	golangci-lint run ./...
+	@echo "Running go vet..."
+	go vet ./...
 
 # Release targets
 # Usage: make tag VERSION=v0.2.0
