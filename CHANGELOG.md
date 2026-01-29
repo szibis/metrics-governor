@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-01-29
+
+### Added
+- Add hadolint config to ignore DL3018 for Alpine packages
+
+### Changed
+- Update CHANGELOG.md for v0.2.1
+
+
 ## [0.2.1] - 2026-01-29
 
 ### Added
