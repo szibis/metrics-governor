@@ -5,7 +5,7 @@ LDFLAGS=-ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/
 
 BUILD_DIR=bin
 
-.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose
+.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose lint release tag
 
 all: darwin-arm64 linux-arm64 linux-amd64
 
@@ -47,17 +47,36 @@ test-coverage:
 clean:
 	rm -rf $(BUILD_DIR)
 
+lint:
+	golangci-lint run ./...
+
+# Release targets
+# Usage: make tag VERSION=v0.2.0
+tag:
+ifndef VERSION
+	$(error VERSION is required. Usage: make tag VERSION=v0.2.0)
+endif
+	@echo "Creating tag $(VERSION)"
+	git tag -a $(VERSION) -m "Release $(VERSION)"
+	@echo "Tag created. Push with: git push origin $(VERSION)"
+
+release: test lint all
+	@echo "Build complete. Create release with: make tag VERSION=vX.Y.Z"
+
 help:
 	@echo "Available targets:"
-	@echo "  all             - Build all platforms (darwin-arm64, linux-arm64, linux-amd64)"
-	@echo "  build           - Build for current platform (output: bin/metrics-governor)"
-	@echo "  darwin-arm64    - Build for macOS ARM64"
-	@echo "  linux-arm64     - Build for Linux ARM64"
-	@echo "  linux-amd64     - Build for Linux AMD64"
-	@echo "  docker          - Build Docker image"
+	@echo "  all              - Build all platforms (darwin-arm64, linux-arm64, linux-amd64)"
+	@echo "  build            - Build for current platform (output: bin/metrics-governor)"
+	@echo "  darwin-arm64     - Build for macOS ARM64"
+	@echo "  linux-arm64      - Build for Linux ARM64"
+	@echo "  linux-amd64      - Build for Linux AMD64"
+	@echo "  docker           - Build Docker image"
 	@echo "  docker-multiarch - Build multi-arch Docker image (requires buildx)"
-	@echo "  test            - Run tests"
-	@echo "  test-verbose    - Run tests with verbose output"
-	@echo "  test-coverage   - Run tests with coverage report"
-	@echo "  clean           - Remove build artifacts"
-	@echo "  help            - Show this help"
+	@echo "  test             - Run tests"
+	@echo "  test-verbose     - Run tests with verbose output"
+	@echo "  test-coverage    - Run tests with coverage report"
+	@echo "  lint             - Run golangci-lint"
+	@echo "  release          - Run tests, lint, and build all platforms"
+	@echo "  tag VERSION=vX.Y.Z - Create a git tag for release"
+	@echo "  clean            - Remove build artifacts"
+	@echo "  help             - Show this help"

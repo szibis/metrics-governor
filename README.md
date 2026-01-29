@@ -1,21 +1,11 @@
 # metrics-governor
 
-[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)](https://go.dev/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-
-**Test Coverage**
-
-| Package | Coverage |
-|---------|----------|
-| ![buffer](https://img.shields.io/badge/buffer-100%25-brightgreen) | internal/buffer |
-| ![config](https://img.shields.io/badge/config-100%25-brightgreen) | internal/config |
-| ![exporter](https://img.shields.io/badge/exporter-100%25-brightgreen) | internal/exporter |
-| ![stats](https://img.shields.io/badge/stats-93%25-green) | internal/stats |
-| ![receiver](https://img.shields.io/badge/receiver-88%25-green) | internal/receiver |
-| ![logging](https://img.shields.io/badge/logging-84%25-green) | internal/logging |
-| ![limits](https://img.shields.io/badge/limits-83%25-green) | internal/limits |
-| ![Total](https://img.shields.io/badge/Total-80.6%25-green) | **All packages** |
+[![Latest Release](https://img.shields.io/github/v/release/slawomirskowron/metrics-governor?sort=semver&logo=github&labelColor=gray&color=gray)](https://github.com/slawomirskowron/metrics-governor/releases/latest)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/slawomirskowron/metrics-governor?logo=go&logoColor=white&labelColor=00ADD8&color=00ADD8)](https://go.dev/)
+[![Go Report Card](https://goreportcard.com/badge/github.com/slawomirskowron/metrics-governor)](https://goreportcard.com/report/github.com/slawomirskowron/metrics-governor)
+[![Build Status](https://github.com/slawomirskowron/metrics-governor/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/slawomirskowron/metrics-governor/actions/workflows/build.yml)
+[![codecov](https://codecov.io/gh/slawomirskowron/metrics-governor/branch/main/graph/badge.svg)](https://codecov.io/gh/slawomirskowron/metrics-governor)
+[![License](https://img.shields.io/github/license/slawomirskowron/metrics-governor?labelColor=orange&color=orange)](LICENSE)
 
 ---
 

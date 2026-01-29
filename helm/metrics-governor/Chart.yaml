@@ -11,12 +11,11 @@ keywords:
   - opentelemetry
   - cardinality
   - limits
-home: https://github.com/metrics-governor/metrics-governor
+home: https://github.com/slawomirskowron/metrics-governor
 sources:
-  - https://github.com/metrics-governor/metrics-governor
+  - https://github.com/slawomirskowron/metrics-governor
 maintainers:
-  - name: metrics-governor
-    email: maintainers@metrics-governor.io
+  - name: slawomirskowron
 annotations:
-  artifacthub.io/license: MIT
+  artifacthub.io/license: Apache-2.0
   artifacthub.io/category: monitoring-logging
