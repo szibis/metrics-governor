@@ -5,7 +5,7 @@ LDFLAGS=-ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/
 
 BUILD_DIR=bin
 
-.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose lint lint-dockerfile lint-yaml lint-helm lint-all release tag
+.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all lint lint-dockerfile lint-yaml lint-helm lint-all release tag
 
 all: darwin-arm64 linux-arm64 linux-amd64
 
@@ -36,6 +36,21 @@ test:
 
 test-verbose:
 	go test -v ./...
+
+test-unit:
+	@echo "Running unit tests..."
+	go test -v ./internal/...
+
+test-functional:
+	@echo "Running functional tests..."
+	go test -v ./functional/...
+
+test-e2e:
+	@echo "Running e2e tests..."
+	go test -v ./e2e/...
+
+test-all: test-unit test-functional test-e2e
+	@echo "All tests passed!"
 
 test-coverage:
 	@mkdir -p $(BUILD_DIR)
@@ -94,8 +109,12 @@ help:
 	@echo "  linux-amd64      - Build for Linux AMD64"
 	@echo "  docker           - Build Docker image"
 	@echo "  docker-multiarch - Build multi-arch Docker image (requires buildx)"
-	@echo "  test             - Run tests"
+	@echo "  test             - Run all tests"
 	@echo "  test-verbose     - Run tests with verbose output"
+	@echo "  test-unit        - Run unit tests only"
+	@echo "  test-functional  - Run functional tests only"
+	@echo "  test-e2e         - Run e2e tests only"
+	@echo "  test-all         - Run unit, functional, and e2e tests"
 	@echo "  test-coverage    - Run tests with coverage report"
 	@echo "  lint             - Run go vet"
 	@echo "  lint-dockerfile  - Lint Dockerfiles with hadolint"
