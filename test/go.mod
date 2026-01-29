@@ -1,6 +1,6 @@
 module github.com/slawomirskowron/metrics-governor/test
 
-go 1.24
+go 1.25.4
 
 require (
 	go.opentelemetry.io/otel v1.32.0
