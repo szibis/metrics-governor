@@ -7,10 +7,133 @@
 
 ---
 
-OTLP metrics proxy with buffering and statistics. Receives metrics via gRPC and HTTP, buffers them, tracks cardinality and datapoints, and forwards to a configurable OTLP endpoint with batching support.
+## Overview
+
+**metrics-governor** is a high-performance OTLP metrics proxy designed to sit between your applications and your metrics backend (like OpenTelemetry Collector, Prometheus, or any OTLP-compatible system). It provides intelligent traffic management, cardinality control, and observability for your metrics pipeline.
+
+### Why metrics-governor?
+
+Modern observability platforms often struggle with:
+- **Cardinality explosions** - High-cardinality labels (like user IDs, request IDs) can overwhelm your metrics backend
+- **Unpredictable costs** - Cloud metrics services charge by datapoints; runaway metrics mean runaway bills
+- **Lack of visibility** - Hard to know which services or metrics are consuming the most resources
+- **All-or-nothing limits** - Traditional approaches either drop everything or nothing
+
+metrics-governor solves these problems with **adaptive limiting** - it intelligently identifies and drops only the worst offenders while preserving valuable metrics from well-behaved services.
+
+### Key Capabilities
+
+| Capability | Description |
+|------------|-------------|
+| **OTLP Protocol Support** | Full gRPC and HTTP receiver/exporter with TLS and authentication |
+| **Intelligent Buffering** | Configurable buffer with batching for optimal throughput |
+| **Adaptive Limits** | Per-group tracking with smart dropping of top offenders only |
+| **Real-time Statistics** | Per-metric cardinality, datapoints, and limit violation tracking |
+| **Prometheus Integration** | Native `/metrics` endpoint for monitoring the proxy itself |
+| **Production Ready** | Helm chart, multi-arch Docker images, graceful shutdown |
+
+### Architecture Diagram
+
+```
+                                    ┌─────────────────────────────────────────────────────────────┐
+                                    │                    metrics-governor                          │
+                                    │                                                              │
+┌──────────────┐                    │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐     │                    ┌──────────────┐
+│              │   OTLP/gRPC        │  │             │    │             │    │             │     │   OTLP/gRPC        │              │
+│   App 1      │──────────────────▶│  │   gRPC      │    │             │    │             │     │──────────────────▶│              │
+│  (OTel SDK)  │      :4317         │  │  Receiver   │───▶│   Metrics   │───▶│  Exporter   │     │      :4317         │    OTel      │
+│              │                    │  │             │    │   Buffer    │    │  (gRPC/HTTP)│     │                    │  Collector   │
+└──────────────┘                    │  └─────────────┘    │             │    │             │     │                    │              │
+                                    │                     │  ┌───────┐  │    └─────────────┘     │                    │      or      │
+┌──────────────┐                    │  ┌─────────────┐    │  │ Batch │  │                        │                    │              │
+│              │   OTLP/HTTP        │  │             │    │  │ Queue │  │                        │                    │   Any OTLP   │
+│   App 2      │──────────────────▶│  │   HTTP      │───▶│  └───────┘  │                        │                    │   Backend    │
+│  (OTel SDK)  │      :4318         │  │  Receiver   │    │             │                        │                    │              │
+│              │                    │  │             │    └──────┬──────┘                        │                    └──────────────┘
+└──────────────┘                    │  └─────────────┘           │                               │
+                                    │        │                   │                               │
+┌──────────────┐                    │        │ Auth/TLS          │                               │
+│              │   OTLP/gRPC        │        │ Decompression     │                               │
+│   App N      │──────────────────▶│        ▼                   ▼                               │
+│  (OTel SDK)  │      :4317         │  ┌─────────────────────────────────────────────────────┐   │
+│              │                    │  │                  Processing Pipeline                 │   │
+└──────────────┘                    │  │                                                      │   │
+                                    │  │  ┌─────────────────┐    ┌─────────────────────────┐  │   │
+                                    │  │  │ Stats Collector │    │    Limits Enforcer      │  │   │
+                                    │  │  │                 │    │                         │  │   │
+                                    │  │  │ • Per-metric    │    │ • Cardinality limits    │  │   │
+                                    │  │  │   datapoints    │    │ • Datapoints rate       │  │   │
+                                    │  │  │ • Per-metric    │    │ • Adaptive dropping     │  │   │
+                                    │  │  │   cardinality   │    │ • Per-group tracking    │  │   │
+                                    │  │  │ • Per-label     │    │ • Regex matching        │  │   │
+                                    │  │  │   combinations  │    │ • Dry-run mode          │  │   │
+                                    │  │  └────────┬────────┘    └────────────┬────────────┘  │   │
+                                    │  │           │                          │               │   │
+                                    │  └───────────┼──────────────────────────┼───────────────┘   │
+                                    │              │                          │                   │
+                                    └──────────────┼──────────────────────────┼───────────────────┘
+                                                   │                          │
+                                                   ▼                          ▼
+                                    ┌─────────────────────────┐    ┌─────────────────────────┐
+                                    │     Prometheus          │    │     Structured Logs     │
+                                    │     :9090/metrics       │    │     (JSON format)       │
+                                    │                         │    │                         │
+                                    │ • metrics_governor_*    │    │ • Limit violations      │
+                                    │ • datapoints_total      │    │ • Dropped groups        │
+                                    │ • cardinality           │    │ • Stats summaries       │
+                                    │ • limit_exceeded_total  │    │ • Errors & warnings     │
+                                    └─────────────────────────┘    └─────────────────────────┘
+```
+
+### Data Flow
+
+1. **Ingestion** - Applications send OTLP metrics via gRPC (`:4317`) or HTTP (`:4318`)
+2. **Authentication** - Optional bearer token or basic auth validation
+3. **Decompression** - Automatic decompression of gzip, zstd, snappy, lz4 payloads
+4. **Buffering** - Metrics are queued in a configurable in-memory buffer
+5. **Statistics** - Every metric is analyzed for cardinality and datapoint tracking
+6. **Limits Enforcement** - Rules are evaluated; top offenders are adaptively dropped
+7. **Batching** - Metrics are batched for efficient export
+8. **Export** - Batches are sent to the OTLP backend via gRPC or HTTP
+9. **Observability** - Stats exposed via Prometheus endpoint and structured logs
+
+### Quick Example
+
+```bash
+# Start metrics-governor with adaptive limits
+metrics-governor \
+  -exporter-endpoint otel-collector:4317 \
+  -limits-config limits.yaml \
+  -limits-dry-run=false \
+  -stats-labels service,env
+
+# Your apps send metrics to metrics-governor instead of directly to collector
+# App: export OTEL_EXPORTER_OTLP_ENDPOINT=http://metrics-governor:4317
+```
+
+```yaml
+# limits.yaml - Adaptive limiting by service
+rules:
+  - name: "per-service-limits"
+    match:
+      labels:
+        service: "*"
+    max_cardinality: 10000
+    max_datapoints_rate: 100000
+    action: adaptive
+    group_by: ["service"]
+```
+
+When cardinality exceeds 10,000, metrics-governor identifies which service is the top contributor and drops only that service's metrics, preserving data from well-behaved services.
 
 ## Table of Contents
 
+- [Overview](#overview)
+  - [Why metrics-governor?](#why-metrics-governor)
+  - [Key Capabilities](#key-capabilities)
+  - [Architecture Diagram](#architecture-diagram)
+  - [Data Flow](#data-flow)
+  - [Quick Example](#quick-example)
 - [Features](#features)
 - [Installation](#installation)
   - [From source](#from-source)
@@ -907,20 +1030,25 @@ rules:
 
 ## Architecture
 
+See the [detailed architecture diagram](#architecture-diagram) in the Overview section for a comprehensive view of the system.
+
+**Simplified flow:**
+
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  OTLP Clients   │────▶│ metrics-governor│────▶│  OTLP Backend   │
-│  (gRPC/HTTP)    │     │    (buffer)     │     │  (collector)    │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-        :4317/:4318            │                      :4317
-                               │
-                               ▼
-                        ┌─────────────┐
-                        │ Prometheus  │
-                        │  (scrape)   │
-                        └─────────────┘
-                             :9090
+OTLP Clients ──▶ Receivers ──▶ Buffer ──▶ Stats/Limits ──▶ Exporter ──▶ Backend
+ (gRPC/HTTP)     (:4317/:4318)              (processing)     (gRPC/HTTP)
+                                                │
+                                                ▼
+                                          Prometheus
+                                         (:9090/metrics)
 ```
+
+**Components:**
+- **Receivers** - Accept OTLP metrics via gRPC and HTTP with TLS/auth support
+- **Buffer** - In-memory queue with configurable size and batch settings
+- **Stats Collector** - Tracks per-metric cardinality and datapoints
+- **Limits Enforcer** - Applies adaptive limiting rules
+- **Exporter** - Sends batched metrics to OTLP backend
 
 ## Development
 
