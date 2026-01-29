@@ -30,6 +30,72 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
+      - name: Get previous tag
+        id: prev_tag
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          echo "PREV_TAG=$PREV_TAG" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          PREV_TAG="${{ steps.prev_tag.outputs.PREV_TAG }}"
+          DATE=$(date +%Y-%m-%d)
+
+          # Generate changelog content
+          if [ -n "$PREV_TAG" ]; then
+            COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s" --no-merges)
+            COMPARE_URL="https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION}"
+          else
+            COMMITS=$(git log --pretty=format:"- %s" --no-merges)
+            COMPARE_URL="https://github.com/${{ github.repository }}/commits/${VERSION}"
+          fi
+
+          # Categorize commits
+          FEATURES=$(echo "$COMMITS" | grep -iE "^- (add|feat|new)" || true)
+          FIXES=$(echo "$COMMITS" | grep -iE "^- (fix|bug|patch)" || true)
+          CHANGES=$(echo "$COMMITS" | grep -iE "^- (update|change|improve|enhance|refactor)" || true)
+          DOCS=$(echo "$COMMITS" | grep -iE "^- (doc|readme)" || true)
+          OTHER=$(echo "$COMMITS" | grep -viE "^- (add|feat|new|fix|bug|patch|update|change|improve|enhance|refactor|doc|readme)" || true)
+
+          # Build release notes
+          {
+            echo "RELEASE_NOTES<<EOF"
+            echo "## What's Changed"
+            echo ""
+            if [ -n "$FEATURES" ]; then
+              echo "### Added"
+              echo "$FEATURES"
+              echo ""
+            fi
+            if [ -n "$FIXES" ]; then
+              echo "### Fixed"
+              echo "$FIXES"
+              echo ""
+            fi
+            if [ -n "$CHANGES" ]; then
+              echo "### Changed"
+              echo "$CHANGES"
+              echo ""
+            fi
+            if [ -n "$DOCS" ]; then
+              echo "### Documentation"
+              echo "$DOCS"
+              echo ""
+            fi
+            if [ -n "$OTHER" ]; then
+              echo "### Other"
+              echo "$OTHER"
+              echo ""
+            fi
+            echo "**Full Changelog**: $COMPARE_URL"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+          # Save for CHANGELOG.md update
+          echo "DATE=$DATE" >> $GITHUB_OUTPUT
+
       - name: Build darwin-arm64
         run: |
           GOOS=darwin GOARCH=arm64 go build \
@@ -66,12 +132,54 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          generate_release_notes: true
+          body: ${{ steps.changelog.outputs.RELEASE_NOTES }}
           files: |
             bin/metrics-governor-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz
             bin/metrics-governor-${{ steps.version.outputs.VERSION }}-linux-arm64.tar.gz
             bin/metrics-governor-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz
             bin/checksums.txt
+
+      - name: Update CHANGELOG.md
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          DATE="${{ steps.changelog.outputs.DATE }}"
+          PREV_TAG="${{ steps.prev_tag.outputs.PREV_TAG }}"
+
+          # Get commits for changelog
+          if [ -n "$PREV_TAG" ]; then
+            COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s" --no-merges)
+          else
+            COMMITS=$(git log --pretty=format:"- %s" --no-merges)
+          fi
+
+          # Categorize commits
+          FEATURES=$(echo "$COMMITS" | grep -iE "^- (add|feat|new)" || true)
+          FIXES=$(echo "$COMMITS" | grep -iE "^- (fix|bug|patch)" || true)
+          CHANGES=$(echo "$COMMITS" | grep -iE "^- (update|change|improve|enhance|refactor)" || true)
+
+          # Build new changelog entry
+          NEW_ENTRY="## [${VERSION#v}] - $DATE"
+          NEW_ENTRY+="\n"
+          if [ -n "$FEATURES" ]; then
+            NEW_ENTRY+="\n### Added\n$FEATURES\n"
+          fi
+          if [ -n "$FIXES" ]; then
+            NEW_ENTRY+="\n### Fixed\n$FIXES\n"
+          fi
+          if [ -n "$CHANGES" ]; then
+            NEW_ENTRY+="\n### Changed\n$CHANGES\n"
+          fi
+
+          # Update CHANGELOG.md
+          sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n${NEW_ENTRY//\//\\/}/" CHANGELOG.md
+
+      - name: Commit CHANGELOG.md
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "Update CHANGELOG.md for ${{ steps.version.outputs.VERSION }}" || echo "No changes to commit"
+          git push origin HEAD:main || echo "Could not push changelog update"
 
   docker:
     runs-on: ubuntu-latest

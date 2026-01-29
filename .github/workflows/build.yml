@@ -46,9 +46,54 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+  lint-dockerfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          failure-threshold: warning
+
+      - name: Lint test Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: test/Dockerfile.generator
+          failure-threshold: warning
+
+  lint-yaml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Lint YAML config examples
+        run: yamllint -c .yamllint.yml examples/
+
+      - name: Lint Helm values
+        run: yamllint -c .yamllint.yml helm/metrics-governor/values.yaml
+
+      - name: Lint Helm templates
+        run: yamllint -c .yamllint.yml helm/metrics-governor/templates/
+
+  lint-helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Lint Helm chart
+        run: helm lint helm/metrics-governor
+
   build-binaries:
     runs-on: ubuntu-latest
-    needs: [build, lint]
+    needs: [build, lint, lint-dockerfile, lint-yaml, lint-helm]
     steps:
       - uses: actions/checkout@v4
 

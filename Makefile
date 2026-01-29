@@ -5,7 +5,7 @@ LDFLAGS=-ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/
 
 BUILD_DIR=bin
 
-.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose lint release tag
+.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose lint lint-dockerfile lint-yaml lint-helm lint-all release tag
 
 all: darwin-arm64 linux-arm64 linux-amd64
 
@@ -51,6 +51,27 @@ lint:
 	@echo "Running go vet..."
 	go vet ./...
 
+lint-dockerfile:
+	@echo "Linting Dockerfiles..."
+	@command -v hadolint >/dev/null 2>&1 || { echo "hadolint not installed. Install with: brew install hadolint"; exit 1; }
+	hadolint Dockerfile
+	hadolint test/Dockerfile.generator
+
+lint-yaml:
+	@echo "Linting YAML files..."
+	@command -v yamllint >/dev/null 2>&1 || { echo "yamllint not installed. Install with: pip install yamllint"; exit 1; }
+	yamllint -c .yamllint.yml examples/
+	yamllint -c .yamllint.yml helm/metrics-governor/values.yaml
+	yamllint -c .yamllint.yml helm/metrics-governor/templates/
+
+lint-helm:
+	@echo "Linting Helm chart..."
+	@command -v helm >/dev/null 2>&1 || { echo "helm not installed. Install from: https://helm.sh/docs/intro/install/"; exit 1; }
+	helm lint helm/metrics-governor
+
+lint-all: lint lint-dockerfile lint-yaml lint-helm
+	@echo "All lints passed!"
+
 # Release targets
 # Usage: make tag VERSION=v0.2.0
 tag:
@@ -77,6 +98,10 @@ help:
 	@echo "  test-verbose     - Run tests with verbose output"
 	@echo "  test-coverage    - Run tests with coverage report"
 	@echo "  lint             - Run go vet"
+	@echo "  lint-dockerfile  - Lint Dockerfiles with hadolint"
+	@echo "  lint-yaml        - Lint YAML files with yamllint"
+	@echo "  lint-helm        - Lint Helm chart"
+	@echo "  lint-all         - Run all linters"
 	@echo "  release          - Run tests, lint, and build all platforms"
 	@echo "  tag VERSION=vX.Y.Z - Create a git tag for release"
 	@echo "  clean            - Remove build artifacts"
