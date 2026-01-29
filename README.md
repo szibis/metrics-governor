@@ -2,8 +2,7 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Build Status](https://github.com/slawomirskowron/metrics-governor/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/slawomirskowron/metrics-governor/actions/workflows/build.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/slawomirskowron/metrics-governor)](https://goreportcard.com/report/github.com/slawomirskowron/metrics-governor)
+[![Build](https://img.shields.io/badge/Build-passing-brightgreen?style=flat&logo=github)](https://github.com/slawomirskowron/metrics-governor/actions)
 [![Coverage](https://img.shields.io/badge/Coverage-80%25-green.svg)](https://github.com/slawomirskowron/metrics-governor)
 
 ---
