@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 5s
+  scrape_timeout: 5s
+
+scrape_configs:
+  - job_name: 'metrics-governor'
+    static_configs:
+      - targets: ['metrics-governor:9090']
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'metrics_governor_.*'
+        action: keep
+
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8888']

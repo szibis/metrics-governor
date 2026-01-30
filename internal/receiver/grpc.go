@@ -40,6 +40,13 @@ func NewGRPC(addr string, buf *buffer.MetricsBuffer) *GRPCReceiver {
 func NewGRPCWithConfig(cfg GRPCConfig, buf *buffer.MetricsBuffer) *GRPCReceiver {
 	var opts []grpc.ServerOption
 
+	// Configure max message size (64MB to handle large batches)
+	maxMsgSize := 64 * 1024 * 1024 // 64MB
+	opts = append(opts,
+		grpc.MaxRecvMsgSize(maxMsgSize),
+		grpc.MaxSendMsgSize(maxMsgSize),
+	)
+
 	// Configure TLS
 	if cfg.TLS.Enabled {
 		tlsConfig, err := tlspkg.NewServerTLSConfig(cfg.TLS)

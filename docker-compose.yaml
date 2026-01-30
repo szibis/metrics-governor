@@ -10,8 +10,11 @@ services:
       - "-exporter-endpoint=otel-collector:4317"
       - "-exporter-insecure=true"
       - "-stats-labels=service,env"
-      - "-limits-config=/etc/metrics-governor/limits.yaml"
-      - "-limits-dry-run=false"
+#      - "-limits-config=/etc/metrics-governor/limits.yaml"
+#      - "-limits-dry-run=true"
+      - "-flush-interval=1s"
+      - "-batch-size=5000"
+      - "-buffer-size=100000"
     volumes:
       - ./examples/limits.yaml:/etc/metrics-governor/limits.yaml:ro
     depends_on:
@@ -19,7 +22,7 @@ services:
 
   # OpenTelemetry Collector as the backend
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.92.0
+    image: otel/opentelemetry-collector-contrib:0.144.0
     ports:
       - "14317:4317"   # OTLP gRPC (external)
       - "14318:4318"   # OTLP HTTP (external)
@@ -29,36 +32,39 @@ services:
     depends_on:
       - victoriametrics
 
-  # VictoriaMetrics for metrics storage (accepts OTLP directly)
+  # VictoriaMetrics for metrics storage
   victoriametrics:
-    image: victoriametrics/victoria-metrics:v1.96.0
+    image: victoriametrics/victoria-metrics:v1.134.0
     ports:
       - "8428:8428"    # HTTP API and UI
-      - "8089:8089"    # OpenTelemetry ingestion
     command:
       - "--storageDataPath=/victoria-metrics-data"
       - "--httpListenAddr=:8428"
-      - "--opentsdbHTTPListenAddr=:8089"
       - "--retentionPeriod=1d"
       - "--search.latencyOffset=0s"
+      - "--promscrape.config=/etc/victoriametrics/scrape.yaml"
+    volumes:
+      - ./test/vmscrape-config.yaml:/etc/victoriametrics/scrape.yaml:ro
 
-  # Test metrics generator
+  # Test metrics generator - high throughput mode
   metrics-generator:
     build:
       context: ./test
       dockerfile: Dockerfile.generator
     environment:
       - OTLP_ENDPOINT=metrics-governor:4317
-      - METRICS_INTERVAL=1s
-      - SERVICES=payment-api,order-api,inventory-api,legacy-app
-      - ENVIRONMENTS=prod,staging,dev
+      - METRICS_INTERVAL=100ms
+      - SERVICES=payment-api,order-api,inventory-api,user-api,auth-api,legacy-app
+      - ENVIRONMENTS=prod,staging,dev,qa
       - ENABLE_EDGE_CASES=true
       - ENABLE_HIGH_CARDINALITY=true
       - ENABLE_BURST_TRAFFIC=true
       - HIGH_CARDINALITY_COUNT=100
-      - BURST_SIZE=500
-      - BURST_INTERVAL_SEC=30
+      - BURST_SIZE=2000
+      - BURST_INTERVAL_SEC=15
       - STATS_INTERVAL_SEC=10
+      - TARGET_METRICS_PER_SEC=1000
+      - TARGET_DATAPOINTS_PER_SEC=10000
     depends_on:
       - metrics-governor
 
@@ -70,8 +76,9 @@ services:
     environment:
       - VM_ENDPOINT=http://victoriametrics:8428
       - MG_ENDPOINT=http://metrics-governor:9090
-      - CHECK_INTERVAL=30s
+      - CHECK_INTERVAL=15s
       - VERIFICATION_METRIC=generator_verification_counter_total
+      - PASS_THRESHOLD=95.0
     depends_on:
       - victoriametrics
       - metrics-governor

@@ -49,17 +49,19 @@ var stats = &GeneratorStats{}
 
 func main() {
 	endpoint := getEnv("OTLP_ENDPOINT", "localhost:4317")
-	intervalStr := getEnv("METRICS_INTERVAL", "1s")
-	servicesStr := getEnv("SERVICES", "payment-api,order-api,inventory-api")
-	environmentsStr := getEnv("ENVIRONMENTS", "prod,staging,dev")
+	intervalStr := getEnv("METRICS_INTERVAL", "100ms")
+	servicesStr := getEnv("SERVICES", "payment-api,order-api,inventory-api,user-api,auth-api,legacy-app")
+	environmentsStr := getEnv("ENVIRONMENTS", "prod,staging,dev,qa")
 	enableEdgeCases := getEnvBool("ENABLE_EDGE_CASES", true)
 	enableHighCardinality := getEnvBool("ENABLE_HIGH_CARDINALITY", true)
 	enableBurstTraffic := getEnvBool("ENABLE_BURST_TRAFFIC", true)
 	highCardinalityCount := getEnvInt("HIGH_CARDINALITY_COUNT", 100)
-	burstSize := getEnvInt("BURST_SIZE", 500)
-	burstIntervalSec := getEnvInt("BURST_INTERVAL_SEC", 30)
+	burstSize := getEnvInt("BURST_SIZE", 2000)
+	burstIntervalSec := getEnvInt("BURST_INTERVAL_SEC", 15)
 	statsIntervalSec := getEnvInt("STATS_INTERVAL_SEC", 10)
 	enableStatsOutput := getEnvBool("ENABLE_STATS_OUTPUT", true)
+	targetMetricsPerSec := getEnvInt("TARGET_METRICS_PER_SEC", 1000)
+	targetDatapointsPerSec := getEnvInt("TARGET_DATAPOINTS_PER_SEC", 10000)
 
 	interval, err := time.ParseDuration(intervalStr)
 	if err != nil {
@@ -81,7 +83,13 @@ func main() {
 	log.Printf("  High cardinality: %v (count: %d)", enableHighCardinality, highCardinalityCount)
 	log.Printf("  Burst traffic: %v (size: %d, interval: %ds)", enableBurstTraffic, burstSize, burstIntervalSec)
 	log.Printf("  Stats output: %v (interval: %ds)", enableStatsOutput, statsIntervalSec)
+	log.Printf("  Target metrics/sec: %d", targetMetricsPerSec)
+	log.Printf("  Target datapoints/sec: %d", targetDatapointsPerSec)
 	log.Printf("========================================")
+
+	// Suppress unused variable warnings
+	_ = targetMetricsPerSec
+	_ = targetDatapointsPerSec
 
 	ctx := context.Background()
 	stats.StartTime = time.Now()
@@ -90,9 +98,13 @@ func main() {
 	log.Println("Waiting for OTLP endpoint to be ready...")
 	time.Sleep(5 * time.Second)
 
-	// Setup OTLP exporter
+	// Setup OTLP exporter with larger message size
 	conn, err := grpc.NewClient(endpoint,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallSendMsgSize(64*1024*1024), // 64MB
+			grpc.MaxCallRecvMsgSize(64*1024*1024), // 64MB
+		),
 	)
 	if err != nil {
 		log.Fatalf("Failed to create gRPC connection: %v", err)
@@ -204,8 +216,8 @@ func main() {
 			// Standard metrics generation
 			for _, service := range services {
 				for _, env := range environments {
-					// Generate HTTP request metrics
-					numRequests := rand.Intn(10) + 5
+					// Generate HTTP request metrics - increased for higher throughput
+					numRequests := rand.Intn(50) + 25
 					for i := 0; i < numRequests; i++ {
 						method := methods[rand.Intn(len(methods))]
 						endpoint := endpoints[rand.Intn(len(endpoints))]
