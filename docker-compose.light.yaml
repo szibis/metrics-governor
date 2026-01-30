@@ -1,30 +1,32 @@
-# Light testing configuration - low volume, quick validation
+# Light testing configuration - moderate volume for development
 # Usage: docker compose -f docker-compose.yaml -f docker-compose.light.yaml up -d
 #
-# This override reduces data volume for:
+# This override provides moderate data volume for:
 # - Quick functional testing
 # - CI/CD pipelines
 # - Local development
 # - Dashboard validation
+#
+# Expected: ~5,000-10,000 datapoints/second
 
 services:
   metrics-generator:
     environment:
       - OTLP_ENDPOINT=otel-collector:4317
-      - METRICS_INTERVAL=1s           # Much slower generation
-      - SERVICES=payment-api,order-api  # Fewer services
-      - ENVIRONMENTS=prod,dev          # Fewer environments
+      - METRICS_INTERVAL=500ms         # Moderate generation rate
+      - SERVICES=payment-api,order-api,inventory-api  # 3 services
+      - ENVIRONMENTS=prod,staging,dev  # 3 environments
       - ENABLE_EDGE_CASES=false
-      - ENABLE_HIGH_CARDINALITY=false  # Disabled
+      - ENABLE_HIGH_CARDINALITY=true   # Enabled with low count
       - ENABLE_BURST_TRAFFIC=false
-      - ENABLE_DIVERSE_METRICS=false   # Disabled
-      - HIGH_CARDINALITY_COUNT=10      # Minimal
-      - DIVERSE_METRIC_COUNT=20        # Minimal
+      - ENABLE_DIVERSE_METRICS=true    # Enabled with low count
+      - HIGH_CARDINALITY_COUNT=20      # Low cardinality
+      - DIVERSE_METRIC_COUNT=30        # Few diverse metrics
       - BURST_SIZE=100
-      - BURST_INTERVAL_SEC=60
-      - STATS_INTERVAL_SEC=30
-      - TARGET_METRICS_PER_SEC=100     # Very low
-      - TARGET_DATAPOINTS_PER_SEC=200  # Very low
+      - BURST_INTERVAL_SEC=120
+      - STATS_INTERVAL_SEC=15
+      - TARGET_METRICS_PER_SEC=2000
+      - TARGET_DATAPOINTS_PER_SEC=5000
       - METRICS_PORT=9091
 
   metrics-governor:
