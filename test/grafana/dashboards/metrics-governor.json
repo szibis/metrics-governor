@@ -2771,7 +2771,7 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "Bps"
         },
         "overrides": []
       },
@@ -2800,12 +2800,12 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "metrics_governor_network_receive_bytes_total",
+          "expr": "rate(metrics_governor_network_receive_bytes_total[1m])",
           "legendFormat": "",
           "refId": "A"
         }
       ],
-      "title": "Total Network Received",
+      "title": "Network Rx Rate",
       "type": "stat"
     },
     {
@@ -2828,7 +2828,7 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "Bps"
         },
         "overrides": []
       },
@@ -2857,12 +2857,12 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "metrics_governor_network_transmit_bytes_total",
+          "expr": "rate(metrics_governor_network_transmit_bytes_total[1m])",
           "legendFormat": "",
           "refId": "A"
         }
       ],
-      "title": "Total Network Transmitted",
+      "title": "Network Tx Rate",
       "type": "stat"
     },
     {
@@ -2885,7 +2885,7 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "Bps"
         },
         "overrides": []
       },
@@ -2914,12 +2914,12 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "metrics_governor_process_io_read_bytes_total",
+          "expr": "rate(metrics_governor_process_io_read_bytes_total[1m])",
           "legendFormat": "",
           "refId": "A"
         }
       ],
-      "title": "Total Disk Read",
+      "title": "Disk Read Rate",
       "type": "stat"
     },
     {
@@ -2942,7 +2942,7 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "Bps"
         },
         "overrides": []
       },
@@ -2971,12 +2971,12 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "metrics_governor_process_io_write_bytes_total",
+          "expr": "rate(metrics_governor_process_io_write_bytes_total[1m])",
           "legendFormat": "",
           "refId": "A"
         }
       ],
-      "title": "Total Disk Written",
+      "title": "Disk Write Rate",
       "type": "stat"
     },
     {
