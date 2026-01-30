@@ -28,9 +28,9 @@ services:
       - "-stats-labels=service,env"
       - "-limits-config=/etc/metrics-governor/limits.yaml"
       - "-limits-dry-run=true"
-      - "-flush-interval=1s"
-      - "-batch-size=50"
-      - "-buffer-size=2000"
+      - "-flush-interval=500ms"
+      - "-batch-size=10"
+      - "-buffer-size=500"
     volumes:
       - ./examples/limits.yaml:/etc/metrics-governor/limits.yaml:ro
     depends_on:
@@ -52,10 +52,10 @@ services:
       - "--retentionPeriod=1d"
       - "--search.latencyOffset=0s"
       - "--promscrape.config=/etc/victoriametrics/scrape.yaml"
-      - "--maxInsertRequestSize=64MB"
-      - "--opentelemetry.maxRequestSize=64MB"
+      - "--maxInsertRequestSize=48MB"
+      - "--opentelemetry.maxRequestSize=48MB"
       - "--opentelemetry.convertMetricNamesToPrometheus"
-      - "--memory.allowedPercent=60"
+      - "--memory.allowedPercent=80"
     volumes:
       - ./test/vmscrape-config.yaml:/etc/victoriametrics/scrape.yaml:ro
 
@@ -68,20 +68,20 @@ services:
       - "9091:9091"   # Prometheus metrics
     environment:
       - OTLP_ENDPOINT=otel-collector:4317
-      - METRICS_INTERVAL=100ms
+      - METRICS_INTERVAL=500ms
       - SERVICES=payment-api,order-api,inventory-api,user-api,auth-api,legacy-app
       - ENVIRONMENTS=prod,staging,dev,qa
       - ENABLE_EDGE_CASES=true
       - ENABLE_HIGH_CARDINALITY=true
       - ENABLE_BURST_TRAFFIC=true
-      - ENABLE_DIVERSE_METRICS=true
-      - HIGH_CARDINALITY_COUNT=100
-      - DIVERSE_METRIC_COUNT=200
-      - BURST_SIZE=2000
-      - BURST_INTERVAL_SEC=15
+      - ENABLE_DIVERSE_METRICS=false
+      - HIGH_CARDINALITY_COUNT=20
+      - DIVERSE_METRIC_COUNT=50
+      - BURST_SIZE=100
+      - BURST_INTERVAL_SEC=60
       - STATS_INTERVAL_SEC=10
-      - TARGET_METRICS_PER_SEC=500
-      - TARGET_DATAPOINTS_PER_SEC=5000
+      - TARGET_METRICS_PER_SEC=100
+      - TARGET_DATAPOINTS_PER_SEC=500
       - METRICS_PORT=9091
     depends_on:
       - otel-collector

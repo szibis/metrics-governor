@@ -9,8 +9,9 @@ receivers:
 
 processors:
   batch:
-    timeout: 1s
-    send_batch_size: 1024
+    timeout: 500ms
+    send_batch_size: 256
+    send_batch_max_size: 512
 
 exporters:
   debug:
@@ -19,7 +20,17 @@ exporters:
     endpoint: metrics-governor:4317
     tls:
       insecure: true
-    compression: zstd  # Use zstd compression - faster and better compression than gzip
+    compression: zstd
+    timeout: 60s
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 1000
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 5m
 
 service:
   telemetry:
