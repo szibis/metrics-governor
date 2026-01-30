@@ -224,6 +224,29 @@ exporterHTTPClient:
   # -- HTTP/2 ping timeout
   http2PingTimeout: ""
 
+# -- Persistent queue configuration for export retries (WAL-based)
+queue:
+  # -- Enable persistent queue
+  enabled: false
+  # -- Queue storage directory (must be writable, use persistence for StatefulSet)
+  path: "/data/queue"
+  # -- Maximum number of batches in queue
+  maxSize: 10000
+  # -- Maximum total queue size in bytes (1GB default)
+  maxBytes: 1073741824
+  # -- Initial retry interval
+  retryInterval: "5s"
+  # -- Maximum retry backoff delay
+  maxRetryDelay: "5m"
+  # -- Queue full behavior: drop_oldest, drop_newest, or block
+  fullBehavior: "drop_oldest"
+  # -- Target disk utilization for adaptive sizing (0.0-1.0)
+  targetUtilization: 0.85
+  # -- Enable adaptive queue sizing based on disk space
+  adaptiveEnabled: true
+  # -- Ratio of consumed entries before compaction (0.0-1.0)
+  compactThreshold: 0.5
+
 # -- Receiver HTTP server configuration
 receiverHTTPServer:
   # -- Maximum request body size in bytes (0 = no limit)

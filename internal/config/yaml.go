@@ -73,6 +73,21 @@ type ExporterYAMLConfig struct {
 	Auth        AuthClientYAMLConfig    `yaml:"auth"`
 	Compression CompressionYAMLConfig   `yaml:"compression"`
 	HTTPClient  HTTPClientYAMLConfig    `yaml:"http_client"`
+	Queue       QueueYAMLConfig         `yaml:"queue"`
+}
+
+// QueueYAMLConfig holds queue configuration.
+type QueueYAMLConfig struct {
+	Enabled           *bool    `yaml:"enabled"`
+	Path              string   `yaml:"path"`
+	MaxSize           int      `yaml:"max_size"`
+	MaxBytes          int64    `yaml:"max_bytes"`
+	RetryInterval     Duration `yaml:"retry_interval"`
+	MaxRetryDelay     Duration `yaml:"max_retry_delay"`
+	FullBehavior      string   `yaml:"full_behavior"`
+	TargetUtilization float64  `yaml:"target_utilization"`
+	AdaptiveEnabled   *bool    `yaml:"adaptive_enabled"`
+	CompactThreshold  float64  `yaml:"compact_threshold"`
 }
 
 // TLSClientYAMLConfig holds TLS client configuration.
@@ -249,6 +264,40 @@ func (y *YAMLConfig) ApplyDefaults() {
 		dryRun := true
 		y.Limits.DryRun = &dryRun
 	}
+
+	// Queue defaults
+	if y.Exporter.Queue.Enabled == nil {
+		enabled := false
+		y.Exporter.Queue.Enabled = &enabled
+	}
+	if y.Exporter.Queue.Path == "" {
+		y.Exporter.Queue.Path = "./queue"
+	}
+	if y.Exporter.Queue.MaxSize == 0 {
+		y.Exporter.Queue.MaxSize = 10000
+	}
+	if y.Exporter.Queue.MaxBytes == 0 {
+		y.Exporter.Queue.MaxBytes = 1073741824 // 1GB
+	}
+	if y.Exporter.Queue.RetryInterval == 0 {
+		y.Exporter.Queue.RetryInterval = Duration(5 * time.Second)
+	}
+	if y.Exporter.Queue.MaxRetryDelay == 0 {
+		y.Exporter.Queue.MaxRetryDelay = Duration(5 * time.Minute)
+	}
+	if y.Exporter.Queue.FullBehavior == "" {
+		y.Exporter.Queue.FullBehavior = "drop_oldest"
+	}
+	if y.Exporter.Queue.TargetUtilization == 0 {
+		y.Exporter.Queue.TargetUtilization = 0.85
+	}
+	if y.Exporter.Queue.AdaptiveEnabled == nil {
+		enabled := true
+		y.Exporter.Queue.AdaptiveEnabled = &enabled
+	}
+	if y.Exporter.Queue.CompactThreshold == 0 {
+		y.Exporter.Queue.CompactThreshold = 0.5
+	}
 }
 
 // ToConfig converts YAMLConfig to the flat Config struct.
@@ -324,6 +373,18 @@ func (y *YAMLConfig) ToConfig() *Config {
 
 		// Limits
 		LimitsDryRun: *y.Limits.DryRun,
+
+		// Queue
+		QueueEnabled:           *y.Exporter.Queue.Enabled,
+		QueuePath:              y.Exporter.Queue.Path,
+		QueueMaxSize:           y.Exporter.Queue.MaxSize,
+		QueueMaxBytes:          y.Exporter.Queue.MaxBytes,
+		QueueRetryInterval:     time.Duration(y.Exporter.Queue.RetryInterval),
+		QueueMaxRetryDelay:     time.Duration(y.Exporter.Queue.MaxRetryDelay),
+		QueueFullBehavior:      y.Exporter.Queue.FullBehavior,
+		QueueTargetUtilization: y.Exporter.Queue.TargetUtilization,
+		QueueAdaptiveEnabled:   *y.Exporter.Queue.AdaptiveEnabled,
+		QueueCompactThreshold:  y.Exporter.Queue.CompactThreshold,
 	}
 
 	return cfg

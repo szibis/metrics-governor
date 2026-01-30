@@ -91,6 +91,18 @@ type Config struct {
 	LimitsConfig string
 	LimitsDryRun bool
 
+	// Queue settings
+	QueueEnabled          bool
+	QueuePath             string
+	QueueMaxSize          int
+	QueueMaxBytes         int64
+	QueueRetryInterval    time.Duration
+	QueueMaxRetryDelay    time.Duration
+	QueueFullBehavior     string
+	QueueTargetUtilization float64
+	QueueAdaptiveEnabled  bool
+	QueueCompactThreshold float64
+
 	// Flags
 	ShowHelp    bool
 	ShowVersion bool
@@ -175,6 +187,18 @@ func ParseFlags() *Config {
 	// Limits flags
 	flag.StringVar(&cfg.LimitsConfig, "limits-config", "", "Path to limits configuration YAML file")
 	flag.BoolVar(&cfg.LimitsDryRun, "limits-dry-run", true, "Dry run mode: log violations but don't drop/sample")
+
+	// Queue flags
+	flag.BoolVar(&cfg.QueueEnabled, "queue-enabled", false, "Enable persistent queue for export retries")
+	flag.StringVar(&cfg.QueuePath, "queue-path", "./queue", "Queue storage directory")
+	flag.IntVar(&cfg.QueueMaxSize, "queue-max-size", 10000, "Maximum number of batches in queue")
+	flag.Int64Var(&cfg.QueueMaxBytes, "queue-max-bytes", 1073741824, "Maximum total queue size in bytes (1GB default)")
+	flag.DurationVar(&cfg.QueueRetryInterval, "queue-retry-interval", 5*time.Second, "Initial retry interval")
+	flag.DurationVar(&cfg.QueueMaxRetryDelay, "queue-max-retry-delay", 5*time.Minute, "Maximum retry backoff delay")
+	flag.StringVar(&cfg.QueueFullBehavior, "queue-full-behavior", "drop_oldest", "Queue full behavior: drop_oldest, drop_newest, or block")
+	flag.Float64Var(&cfg.QueueTargetUtilization, "queue-target-utilization", 0.85, "Target disk utilization for adaptive sizing (0.0-1.0)")
+	flag.BoolVar(&cfg.QueueAdaptiveEnabled, "queue-adaptive-enabled", true, "Enable adaptive queue sizing based on disk space")
+	flag.Float64Var(&cfg.QueueCompactThreshold, "queue-compact-threshold", 0.5, "Ratio of consumed entries before compaction (0.0-1.0)")
 
 	// Help and version
 	flag.BoolVar(&cfg.ShowHelp, "help", false, "Show help message")
@@ -348,6 +372,46 @@ func applyFlagOverrides(cfg *Config) {
 			cfg.LimitsConfig = f.Value.String()
 		case "limits-dry-run":
 			cfg.LimitsDryRun = f.Value.String() == "true"
+		case "queue-enabled":
+			cfg.QueueEnabled = f.Value.String() == "true"
+		case "queue-path":
+			cfg.QueuePath = f.Value.String()
+		case "queue-max-size":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.QueueMaxSize = i
+				}
+			}
+		case "queue-max-bytes":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int64); ok {
+					cfg.QueueMaxBytes = i
+				}
+			}
+		case "queue-retry-interval":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.QueueRetryInterval = d
+			}
+		case "queue-max-retry-delay":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.QueueMaxRetryDelay = d
+			}
+		case "queue-full-behavior":
+			cfg.QueueFullBehavior = f.Value.String()
+		case "queue-target-utilization":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if fv, ok := v.Get().(float64); ok {
+					cfg.QueueTargetUtilization = fv
+				}
+			}
+		case "queue-adaptive-enabled":
+			cfg.QueueAdaptiveEnabled = f.Value.String() == "true"
+		case "queue-compact-threshold":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if fv, ok := v.Get().(float64); ok {
+					cfg.QueueCompactThreshold = fv
+				}
+			}
 		case "help", "h":
 			cfg.ShowHelp = f.Value.String() == "true"
 		case "version", "v":
@@ -473,6 +537,36 @@ func (c *Config) ExporterConfig() exporter.Config {
 	}
 }
 
+// QueueConfig returns the queue configuration.
+func (c *Config) QueueConfig() QueueConfig {
+	return QueueConfig{
+		Enabled:           c.QueueEnabled,
+		Path:              c.QueuePath,
+		MaxSize:           c.QueueMaxSize,
+		MaxBytes:          c.QueueMaxBytes,
+		RetryInterval:     c.QueueRetryInterval,
+		MaxRetryDelay:     c.QueueMaxRetryDelay,
+		FullBehavior:      c.QueueFullBehavior,
+		TargetUtilization: c.QueueTargetUtilization,
+		AdaptiveEnabled:   c.QueueAdaptiveEnabled,
+		CompactThreshold:  c.QueueCompactThreshold,
+	}
+}
+
+// QueueConfig holds queue configuration.
+type QueueConfig struct {
+	Enabled           bool
+	Path              string
+	MaxSize           int
+	MaxBytes          int64
+	RetryInterval     time.Duration
+	MaxRetryDelay     time.Duration
+	FullBehavior      string
+	TargetUtilization float64
+	AdaptiveEnabled   bool
+	CompactThreshold  float64
+}
+
 // PrintUsage prints the help message.
 func PrintUsage() {
 	fmt.Fprintf(os.Stderr, `metrics-governor - OTLP metrics proxy with buffering
@@ -564,6 +658,18 @@ OPTIONS:
         -limits-config <path>            Path to limits configuration YAML file
         -limits-dry-run                  Dry run mode: log only, don't drop/sample (default: true)
 
+    Queue (Persistent Retry):
+        -queue-enabled                   Enable persistent queue for export retries (default: false)
+        -queue-path <path>               Queue storage directory (default: ./queue)
+        -queue-max-size <n>              Maximum number of batches in queue (default: 10000)
+        -queue-max-bytes <n>             Maximum total queue size in bytes (default: 1GB)
+        -queue-retry-interval <dur>      Initial retry interval (default: 5s)
+        -queue-max-retry-delay <dur>     Maximum retry backoff delay (default: 5m)
+        -queue-full-behavior <behavior>  Queue full behavior: drop_oldest, drop_newest, or block (default: drop_oldest)
+        -queue-target-utilization <n>   Target disk utilization for adaptive sizing (default: 0.85)
+        -queue-adaptive-enabled         Enable adaptive queue sizing based on disk space (default: true)
+        -queue-compact-threshold <n>    Ratio of consumed entries before compaction (default: 0.5)
+
     General:
         -h, -help                        Show this help message
         -v, -version                     Show version
@@ -642,6 +748,12 @@ EXAMPLES:
         -receiver-write-timeout 1m \
         -receiver-max-request-body-size 10485760
 
+    # Enable persistent queue for export retries
+    metrics-governor -queue-enabled \
+        -queue-path /var/lib/metrics-governor/queue \
+        -queue-max-size 10000 \
+        -queue-retry-interval 10s
+
 `)
 }
 
@@ -680,5 +792,15 @@ func DefaultConfig() *Config {
 		StatsLabels:                 "",
 		LimitsConfig:                "",
 		LimitsDryRun:                true,
+		QueueEnabled:                false,
+		QueuePath:                   "./queue",
+		QueueMaxSize:                10000,
+		QueueMaxBytes:               1073741824, // 1GB
+		QueueRetryInterval:          5 * time.Second,
+		QueueMaxRetryDelay:          5 * time.Minute,
+		QueueFullBehavior:           "drop_oldest",
+		QueueTargetUtilization:      0.85,
+		QueueAdaptiveEnabled:        true,
+		QueueCompactThreshold:       0.5,
 	}
 }

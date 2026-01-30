@@ -335,3 +335,298 @@ func TestBasicAuthEncoded(t *testing.T) {
 		t.Errorf("expected '%s', got '%s'", expected, encoded)
 	}
 }
+
+func TestGRPCServerInterceptorDisabled(t *testing.T) {
+	cfg := ServerConfig{
+		Enabled: false,
+	}
+
+	interceptor := GRPCServerInterceptor(cfg)
+
+	called := false
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		called = true
+		return "response", nil
+	}
+
+	ctx := context.Background()
+	resp, err := interceptor(ctx, nil, nil, handler)
+
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Error("handler should be called when auth is disabled")
+	}
+	if resp != "response" {
+		t.Errorf("expected 'response', got %v", resp)
+	}
+}
+
+func TestGRPCServerInterceptorMissingMetadata(t *testing.T) {
+	cfg := ServerConfig{
+		Enabled:     true,
+		BearerToken: "secret-token",
+	}
+
+	interceptor := GRPCServerInterceptor(cfg)
+
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		t.Error("handler should not be called without metadata")
+		return nil, nil
+	}
+
+	ctx := context.Background() // No metadata
+	_, err := interceptor(ctx, nil, nil, handler)
+
+	if err == nil {
+		t.Error("expected error for missing metadata")
+	}
+}
+
+func TestGRPCServerInterceptorValidBearerToken(t *testing.T) {
+	cfg := ServerConfig{
+		Enabled:     true,
+		BearerToken: "secret-token",
+	}
+
+	interceptor := GRPCServerInterceptor(cfg)
+
+	called := false
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		called = true
+		return "response", nil
+	}
+
+	md := metadata.New(map[string]string{
+		"authorization": "Bearer secret-token",
+	})
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	resp, err := interceptor(ctx, nil, nil, handler)
+
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Error("handler should be called with valid token")
+	}
+	if resp != "response" {
+		t.Errorf("expected 'response', got %v", resp)
+	}
+}
+
+func TestGRPCServerInterceptorInvalidBearerToken(t *testing.T) {
+	cfg := ServerConfig{
+		Enabled:     true,
+		BearerToken: "secret-token",
+	}
+
+	interceptor := GRPCServerInterceptor(cfg)
+
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		t.Error("handler should not be called with invalid token")
+		return nil, nil
+	}
+
+	md := metadata.New(map[string]string{
+		"authorization": "Bearer wrong-token",
+	})
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	_, err := interceptor(ctx, nil, nil, handler)
+
+	if err == nil {
+		t.Error("expected error for invalid token")
+	}
+}
+
+func TestGRPCServerInterceptorBasicAuth(t *testing.T) {
+	cfg := ServerConfig{
+		Enabled:           true,
+		BasicAuthUsername: "user",
+		BasicAuthPassword: "pass",
+	}
+
+	interceptor := GRPCServerInterceptor(cfg)
+
+	called := false
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		called = true
+		return "response", nil
+	}
+
+	md := metadata.New(map[string]string{
+		"authorization": "Basic " + basicAuthEncoded("user", "pass"),
+	})
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	resp, err := interceptor(ctx, nil, nil, handler)
+
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Error("handler should be called with valid basic auth")
+	}
+	if resp != "response" {
+		t.Errorf("expected 'response', got %v", resp)
+	}
+}
+
+func TestValidateAuthBasicAuthInvalid(t *testing.T) {
+	cfg := ServerConfig{
+		Enabled:           true,
+		BasicAuthUsername: "user",
+		BasicAuthPassword: "pass",
+	}
+
+	md := metadata.New(map[string]string{
+		"authorization": "Basic " + basicAuthEncoded("user", "wrong"),
+	})
+
+	err := validateAuth(md, cfg)
+	if err == nil {
+		t.Error("expected error for invalid basic auth")
+	}
+}
+
+func TestValidateAuthBasicAuthMissingHeader(t *testing.T) {
+	cfg := ServerConfig{
+		Enabled:           true,
+		BasicAuthUsername: "user",
+		BasicAuthPassword: "pass",
+	}
+
+	md := metadata.MD{}
+
+	err := validateAuth(md, cfg)
+	if err == nil {
+		t.Error("expected error for missing authorization header")
+	}
+}
+
+func TestValidateAuthNoAuthConfigured(t *testing.T) {
+	cfg := ServerConfig{
+		Enabled: true,
+		// No bearer token or basic auth configured
+	}
+
+	md := metadata.MD{}
+
+	err := validateAuth(md, cfg)
+	if err != nil {
+		t.Errorf("expected no error when no auth is configured, got: %v", err)
+	}
+}
+
+func TestValidateAuthInvalidFormat(t *testing.T) {
+	cfg := ServerConfig{
+		Enabled:     true,
+		BearerToken: "secret-token",
+	}
+
+	md := metadata.New(map[string]string{
+		"authorization": "InvalidFormat secret-token",
+	})
+
+	err := validateAuth(md, cfg)
+	if err == nil {
+		t.Error("expected error for invalid format")
+	}
+}
+
+func TestGRPCClientInterceptorBasicAuth(t *testing.T) {
+	cfg := ClientConfig{
+		BasicAuthUsername: "user",
+		BasicAuthPassword: "pass",
+	}
+
+	interceptor := GRPCClientInterceptor(cfg)
+
+	var capturedCtx context.Context
+
+	ctx := context.Background()
+	err := interceptor(ctx, "/test.Service/Method", nil, nil, nil,
+		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+			capturedCtx = ctx
+			return nil
+		})
+
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	md, ok := metadata.FromOutgoingContext(capturedCtx)
+	if !ok {
+		t.Fatal("expected metadata in context")
+	}
+
+	auth := md.Get("authorization")
+	if len(auth) == 0 {
+		t.Error("expected authorization header")
+	}
+	expectedAuth := "Basic " + basicAuthEncoded("user", "pass")
+	if auth[0] != expectedAuth {
+		t.Errorf("expected '%s', got '%s'", expectedAuth, auth[0])
+	}
+}
+
+func TestGRPCClientInterceptorCustomHeaders(t *testing.T) {
+	cfg := ClientConfig{
+		Headers: map[string]string{
+			"x-custom-header": "custom-value",
+		},
+	}
+
+	interceptor := GRPCClientInterceptor(cfg)
+
+	var capturedCtx context.Context
+
+	ctx := context.Background()
+	err := interceptor(ctx, "/test.Service/Method", nil, nil, nil,
+		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+			capturedCtx = ctx
+			return nil
+		})
+
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	md, ok := metadata.FromOutgoingContext(capturedCtx)
+	if !ok {
+		t.Fatal("expected metadata in context")
+	}
+
+	header := md.Get("x-custom-header")
+	if len(header) == 0 || header[0] != "custom-value" {
+		t.Errorf("expected 'custom-value', got %v", header)
+	}
+}
+
+func TestGRPCClientInterceptorNoAuth(t *testing.T) {
+	cfg := ClientConfig{}
+
+	interceptor := GRPCClientInterceptor(cfg)
+
+	var capturedCtx context.Context
+
+	ctx := context.Background()
+	err := interceptor(ctx, "/test.Service/Method", nil, nil, nil,
+		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+			capturedCtx = ctx
+			return nil
+		})
+
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// With no auth configured, metadata might be empty or not set
+	md, _ := metadata.FromOutgoingContext(capturedCtx)
+	auth := md.Get("authorization")
+	if len(auth) > 0 {
+		t.Errorf("expected no authorization header, got %v", auth)
+	}
+}

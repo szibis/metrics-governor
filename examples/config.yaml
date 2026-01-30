@@ -65,6 +65,18 @@ exporter:
     force_http2: false
     http2_read_idle_timeout: 0s
     http2_ping_timeout: 0s
+  # Persistent queue for export retries (WAL-based)
+  queue:
+    enabled: false                     # enable persistent queue
+    path: "./queue"                    # queue storage directory
+    max_size: 10000                    # max batches in queue
+    max_bytes: 1073741824              # max total size (1GB)
+    retry_interval: 5s                 # initial retry interval
+    max_retry_delay: 5m                # max backoff delay
+    full_behavior: drop_oldest         # drop_oldest, drop_newest, or block
+    target_utilization: 0.85           # target disk utilization (0.0-1.0)
+    adaptive_enabled: true             # enable adaptive sizing based on disk space
+    compact_threshold: 0.5             # compact when consumed entries > this ratio
 
 # Buffer configuration - internal metrics buffering
 buffer:

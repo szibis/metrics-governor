@@ -14,6 +14,7 @@ import (
 	"github.com/slawomirskowron/metrics-governor/internal/exporter"
 	"github.com/slawomirskowron/metrics-governor/internal/limits"
 	"github.com/slawomirskowron/metrics-governor/internal/logging"
+	"github.com/slawomirskowron/metrics-governor/internal/queue"
 	"github.com/slawomirskowron/metrics-governor/internal/receiver"
 	"github.com/slawomirskowron/metrics-governor/internal/stats"
 )
@@ -39,7 +40,36 @@ func main() {
 	if err != nil {
 		logging.Fatal("failed to create exporter", logging.F("error", err.Error()))
 	}
-	defer exp.Close()
+
+	// Wrap with queued exporter if enabled
+	var finalExporter exporter.Exporter = exp
+	if cfg.QueueEnabled {
+		queueCfg := queue.Config{
+			Path:              cfg.QueuePath,
+			MaxSize:           cfg.QueueMaxSize,
+			MaxBytes:          cfg.QueueMaxBytes,
+			RetryInterval:     cfg.QueueRetryInterval,
+			MaxRetryDelay:     cfg.QueueMaxRetryDelay,
+			FullBehavior:      queue.FullBehavior(cfg.QueueFullBehavior),
+			TargetUtilization: cfg.QueueTargetUtilization,
+			AdaptiveEnabled:   cfg.QueueAdaptiveEnabled,
+			CompactThreshold:  cfg.QueueCompactThreshold,
+		}
+
+		queuedExp, queueErr := exporter.NewQueued(exp, queueCfg)
+		if queueErr != nil {
+			logging.Fatal("failed to create queued exporter", logging.F("error", queueErr.Error()))
+		}
+		finalExporter = queuedExp
+		logging.Info("queue enabled", logging.F(
+			"path", cfg.QueuePath,
+			"max_size", cfg.QueueMaxSize,
+			"max_bytes", cfg.QueueMaxBytes,
+			"retry_interval", cfg.QueueRetryInterval,
+			"full_behavior", cfg.QueueFullBehavior,
+		))
+	}
+	defer finalExporter.Close()
 
 	// Parse stats labels
 	var trackLabels []string
@@ -69,7 +99,7 @@ func main() {
 	}
 
 	// Create buffer with stats collector and limits enforcer
-	buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, exp, statsCollector, limitsEnforcer)
+	buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, finalExporter, statsCollector, limitsEnforcer)
 
 	// Start buffer flush routine
 	go buf.Start(ctx)
@@ -124,6 +154,7 @@ func main() {
 		"receiver_tls", cfg.ReceiverTLSEnabled,
 		"receiver_auth", cfg.ReceiverAuthEnabled,
 		"limits_enabled", cfg.LimitsConfig != "",
+		"queue_enabled", cfg.QueueEnabled,
 	))
 
 	// Wait for shutdown signal

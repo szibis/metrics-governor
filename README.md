@@ -49,7 +49,7 @@ flowchart LR
         end
 
         subgraph Buffer["Metrics Buffer"]
-            Queue["Batch Queue"]
+            MemQueue["In-Memory<br/>Batch Queue"]
         end
 
         subgraph Pipeline["Processing Pipeline"]
@@ -57,7 +57,10 @@ flowchart LR
             Limits["Limits Enforcer<br/>• Cardinality limits<br/>• Datapoints rate<br/>• Adaptive dropping<br/>• Per-group tracking"]
         end
 
-        Exporter["Exporter<br/>(gRPC/HTTP)"]
+        subgraph Export["Export Layer"]
+            Exporter["Exporter<br/>(gRPC/HTTP)"]
+            SendQueue["Persistent Queue<br/>(WAL-based)<br/>• Retry with backoff<br/>• Disk persistence<br/>• Adaptive sizing"]
+        end
     end
 
     subgraph Backend["Backend"]
@@ -65,7 +68,7 @@ flowchart LR
     end
 
     subgraph Observability["Observability"]
-        Prom["Prometheus<br/>:9090/metrics<br/>• metrics_governor_*<br/>• datapoints_total<br/>• cardinality"]
+        Prom["Prometheus<br/>:9090/metrics<br/>• metrics_governor_*<br/>• datapoints_total<br/>• cardinality<br/>• queue_*"]
         Logs["Structured Logs<br/>(JSON format)<br/>• Limit violations<br/>• Dropped groups<br/>• Stats summaries"]
     end
 
@@ -81,7 +84,10 @@ flowchart LR
     Stats --> Logs
     Limits --> Logs
     Pipeline --> Exporter
-    Exporter -->|"OTLP/gRPC"| OTel
+    Exporter -->|"Success"| OTel
+    Exporter -.->|"Failure"| SendQueue
+    SendQueue -.->|"Retry"| Exporter
+    SendQueue --> Prom
 ```
 
 ### Data Flow
@@ -1039,8 +1045,11 @@ flowchart LR
     Receivers --> Buffer["Buffer"]
     Buffer --> Processing["Stats/Limits<br/>(processing)"]
     Processing --> Exporter["Exporter<br/>(gRPC/HTTP)"]
-    Exporter --> Backend["Backend"]
+    Exporter -->|"Success"| Backend["Backend"]
+    Exporter -.->|"Failure"| Queue["Persistent<br/>Queue (WAL)"]
+    Queue -.->|"Retry"| Exporter
     Processing --> Prom["Prometheus<br/>:9090/metrics"]
+    Queue --> Prom
 ```
 
 **Components:**
@@ -1049,6 +1058,7 @@ flowchart LR
 - **Stats Collector** - Tracks per-metric cardinality and datapoints
 - **Limits Enforcer** - Applies adaptive limiting rules
 - **Exporter** - Sends batched metrics to OTLP backend
+- **Persistent Queue** - WAL-based durable queue for retry on export failures
 
 ## Development
 
@@ -1075,10 +1085,12 @@ metrics-governor/
 ├── internal/
 │   ├── auth/                # Authentication (bearer token, basic auth)
 │   ├── buffer/              # Metrics buffering and batching
+│   ├── compression/         # Compression support (gzip, zstd, etc.)
 │   ├── config/              # Configuration management
 │   ├── exporter/            # OTLP gRPC and HTTP exporters
 │   ├── limits/              # Limits enforcement (adaptive, drop, log)
 │   ├── logging/             # JSON structured logging
+│   ├── queue/               # WAL-based persistent queue for retries
 │   ├── receiver/            # gRPC and HTTP receivers
 │   ├── stats/               # Statistics collection
 │   └── tls/                 # TLS configuration utilities

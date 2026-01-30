@@ -7,6 +7,136 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-01-30
+
+### Added
+
+#### Persistent Sending Queue (WAL-based)
+
+A new file-based persistent queue for the exporter that stores failed batches on disk and retries them with configurable backoff. This prevents data loss during network issues or backend unavailability.
+
+**Core Features:**
+- **Write-Ahead Log (WAL) storage** for durable batch persistence
+  - CRC32 checksums for data integrity validation
+  - Sequential write optimization for high throughput
+  - Automatic recovery of queued batches on restart
+  - Protobuf serialization for efficient storage
+- **Configurable queue-full behavior**
+  - `drop_oldest` - Drop oldest entries when queue is full (default)
+  - `drop_newest` - Reject new entries when queue is full
+  - `block` - Block until space is available (with configurable timeout)
+- **Adaptive queue sizing** based on available disk space
+  - Automatically adjusts limits to maintain target disk utilization
+  - Monitors available disk space via syscall
+  - Configurable target utilization (default: 85%)
+- **WAL compaction** to reclaim space from consumed entries
+  - Triggered when consumed entries exceed configurable threshold
+  - Preserves pending entries during compaction
+  - Atomic file operations for safety
+- **Graceful disk-full handling** without getting stuck
+  - Detects ENOSPC errors and applies queue-full behavior
+  - Continues operation instead of blocking indefinitely
+- **Exponential backoff retry** with configurable delays
+  - Initial retry interval (default: 5s)
+  - Maximum backoff delay (default: 5m)
+  - Automatic retry on export failure
+
+#### New CLI Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-queue-enabled` | `false` | Enable persistent queue for export retries |
+| `-queue-path` | `./queue` | Directory for WAL queue files |
+| `-queue-max-size` | `10000` | Maximum number of batches in queue |
+| `-queue-max-bytes` | `1073741824` | Maximum total queue size (1GB) |
+| `-queue-retry-interval` | `5s` | Initial retry interval for failed exports |
+| `-queue-max-retry-delay` | `5m` | Maximum backoff delay between retries |
+| `-queue-full-behavior` | `drop_oldest` | Action when queue is full: `drop_oldest`, `drop_newest`, `block` |
+| `-queue-target-utilization` | `0.85` | Target disk utilization for adaptive sizing (0.0-1.0) |
+| `-queue-adaptive-enabled` | `true` | Enable adaptive queue sizing based on disk space |
+| `-queue-compact-threshold` | `0.5` | Ratio of consumed entries before compaction (0.0-1.0) |
+
+#### New YAML Configuration Options
+
+```yaml
+exporter:
+  queue:
+    enabled: true                    # Enable persistent queue
+    path: "/var/lib/metrics-governor/queue"  # Storage directory
+    max_size: 10000                  # Max batches in queue
+    max_bytes: 1073741824            # Max total size (1GB)
+    retry_interval: 5s               # Initial retry delay
+    max_retry_delay: 5m              # Max backoff delay
+    full_behavior: drop_oldest       # drop_oldest, drop_newest, block
+    target_utilization: 0.85         # Target disk utilization
+    adaptive_enabled: true           # Enable adaptive sizing
+    compact_threshold: 0.5           # Compaction threshold
+```
+
+#### New Prometheus Metrics
+
+**Queue Size Metrics:**
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_queue_size` | Gauge | Current number of batches in the send queue |
+| `metrics_governor_queue_bytes` | Gauge | Current size of the send queue in bytes |
+| `metrics_governor_queue_max_size` | Gauge | Configured maximum batches |
+| `metrics_governor_queue_max_bytes` | Gauge | Configured maximum bytes |
+| `metrics_governor_queue_effective_max_size` | Gauge | Current effective max batches (adaptive) |
+| `metrics_governor_queue_effective_max_bytes` | Gauge | Current effective max bytes (adaptive) |
+| `metrics_governor_queue_utilization_ratio` | Gauge | Current queue utilization (0.0-1.0) |
+| `metrics_governor_queue_disk_available_bytes` | Gauge | Available disk space on queue partition |
+
+**Queue Operation Metrics:**
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `metrics_governor_queue_push_total` | Counter | - | Total batches pushed to queue |
+| `metrics_governor_queue_dropped_total` | Counter | `reason` | Batches dropped (reason: oldest, newest, error) |
+| `metrics_governor_queue_retry_total` | Counter | - | Total retry attempts |
+| `metrics_governor_queue_retry_success_total` | Counter | - | Successful retry exports |
+| `metrics_governor_queue_wal_write_total` | Counter | - | WAL write operations |
+| `metrics_governor_queue_wal_compact_total` | Counter | - | WAL compaction operations |
+| `metrics_governor_queue_disk_full_total` | Counter | - | Disk full events encountered |
+
+#### Helm Chart Updates
+
+- New `queue` section in `values.yaml` with all queue configuration options
+- Persistence volume support for StatefulSet deployments with queue enabled
+- Queue-related CLI arguments generation in `_helpers.tpl`
+- Volume mount for queue storage directory
+
+### Changed
+
+#### Architecture Diagrams
+
+- Updated detailed architecture diagram with Persistent Queue component
+- Added queue retry flow showing failure path from Exporter to SendQueue
+- Updated simplified flow diagram with queue retry path
+- Added queue metrics to Prometheus observability section
+
+#### Documentation
+
+- Updated README components list to include Persistent Queue
+- Updated project structure to include `internal/queue/` package
+- Added queue configuration examples
+
+#### Test Coverage
+
+- Improved overall test coverage from 77.7% to 80.6%
+- Added comprehensive tests for auth package (98.7% coverage)
+- Added tests for config package methods (71.0% coverage)
+- Added queue package tests including DefaultConfig, metrics, compaction
+- Added receiver package tests for HTTP and gRPC config
+
+### New Files
+
+- `internal/queue/wal.go` - Write-Ahead Log implementation
+- `internal/queue/queue.go` - SendQueue wrapper with full behavior handling
+- `internal/queue/metrics.go` - Prometheus metrics for queue observability
+- `internal/queue/queue_test.go` - Comprehensive queue tests
+- `internal/exporter/queued.go` - QueuedExporter wrapper with retry logic
+- `internal/exporter/queued_test.go` - QueuedExporter tests
+
 ## [0.2.7] - 2026-01-29
 
 ### Changed

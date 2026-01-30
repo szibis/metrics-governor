@@ -224,6 +224,19 @@ exporter:
     http2_read_idle_timeout: {{ .Values.exporterHTTPClient.http2ReadIdleTimeout | default "0s" | quote }}
     http2_ping_timeout: {{ .Values.exporterHTTPClient.http2PingTimeout | default "0s" | quote }}
   {{- end }}
+  {{- if .Values.queue }}
+  queue:
+    enabled: {{ .Values.queue.enabled | default false }}
+    path: {{ .Values.queue.path | default "/data/queue" | quote }}
+    max_size: {{ .Values.queue.maxSize | default 10000 }}
+    max_bytes: {{ .Values.queue.maxBytes | default 1073741824 }}
+    retry_interval: {{ .Values.queue.retryInterval | default "5s" | quote }}
+    max_retry_delay: {{ .Values.queue.maxRetryDelay | default "5m" | quote }}
+    full_behavior: {{ .Values.queue.fullBehavior | default "drop_oldest" | quote }}
+    target_utilization: {{ .Values.queue.targetUtilization | default 0.85 }}
+    adaptive_enabled: {{ .Values.queue.adaptiveEnabled | default true }}
+    compact_threshold: {{ .Values.queue.compactThreshold | default 0.5 }}
+  {{- end }}
 
 buffer:
   size: {{ .Values.config.bufferSize }}
@@ -317,6 +330,9 @@ Volume mounts
 {{- if and (eq .Values.kind "statefulset") .Values.persistence.enabled }}
 - name: data
   mountPath: /data
+{{- else if .Values.queue.enabled }}
+- name: queue-data
+  mountPath: /data/queue
 {{- end }}
 {{- with .Values.extraVolumeMounts }}
 {{ toYaml . }}
@@ -392,6 +408,10 @@ Volumes
 - name: exporter-auth-basic
   secret:
     secretName: {{ .Values.exporterAuth.basicAuthSecretName }}
+{{- end }}
+{{- if and .Values.queue.enabled (not (and (eq .Values.kind "statefulset") .Values.persistence.enabled)) }}
+- name: queue-data
+  emptyDir: {}
 {{- end }}
 {{- with .Values.extraVolumes }}
 {{ toYaml . }}

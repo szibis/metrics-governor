@@ -224,3 +224,178 @@ func TestGRPCStartStop(t *testing.T) {
 		t.Error("timeout waiting for server to stop")
 	}
 }
+
+func TestNewGRPCWithConfig(t *testing.T) {
+	buf := newTestBuffer()
+
+	cfg := GRPCConfig{
+		Addr: ":4317",
+	}
+
+	r := NewGRPCWithConfig(cfg, buf)
+	if r == nil {
+		t.Fatal("expected non-nil receiver")
+	}
+	if r.addr != ":4317" {
+		t.Errorf("expected addr ':4317', got '%s'", r.addr)
+	}
+}
+
+func TestNewHTTPWithConfig(t *testing.T) {
+	buf := newTestBuffer()
+
+	cfg := HTTPConfig{
+		Addr: ":4318",
+		Server: HTTPServerConfig{
+			ReadTimeout:       30 * time.Second,
+			ReadHeaderTimeout: 10 * time.Second,
+			WriteTimeout:      60 * time.Second,
+			IdleTimeout:       120 * time.Second,
+			KeepAlivesEnabled: true,
+		},
+	}
+
+	r := NewHTTPWithConfig(cfg, buf)
+	if r == nil {
+		t.Fatal("expected non-nil receiver")
+	}
+	if r.addr != ":4318" {
+		t.Errorf("expected addr ':4318', got '%s'", r.addr)
+	}
+	if r.server.ReadTimeout != 30*time.Second {
+		t.Errorf("expected ReadTimeout 30s, got %v", r.server.ReadTimeout)
+	}
+	if r.server.WriteTimeout != 60*time.Second {
+		t.Errorf("expected WriteTimeout 60s, got %v", r.server.WriteTimeout)
+	}
+}
+
+func TestHTTPWithConfigMaxRequestBodySize(t *testing.T) {
+	buf := newTestBuffer()
+
+	cfg := HTTPConfig{
+		Addr: ":4318",
+		Server: HTTPServerConfig{
+			MaxRequestBodySize: 10, // Very small limit
+		},
+	}
+
+	r := NewHTTPWithConfig(cfg, buf)
+
+	// Create a request larger than the limit
+	exportReq := &colmetricspb.ExportMetricsServiceRequest{
+		ResourceMetrics: []*metricspb.ResourceMetrics{
+			{
+				ScopeMetrics: []*metricspb.ScopeMetrics{
+					{
+						Metrics: []*metricspb.Metric{
+							{Name: "http.test.metric.with.a.very.long.name.that.exceeds.the.limit"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	body, err := proto.Marshal(exportReq)
+	if err != nil {
+		t.Fatalf("failed to marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/metrics", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	req.ContentLength = int64(len(body))
+
+	rec := httptest.NewRecorder()
+	r.handleMetrics(rec, req)
+
+	// With LimitReader, the body gets truncated, causing protobuf unmarshal to fail
+	// So we expect a 400 Bad Request (protobuf parse error)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 (truncated body fails to parse), got %d", rec.Code)
+	}
+}
+
+func TestHTTPHandleMetricsEmptyBody(t *testing.T) {
+	buf := newTestBuffer()
+
+	r := NewHTTP(":4318", buf)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/metrics", bytes.NewReader([]byte{}))
+	req.Header.Set("Content-Type", "application/x-protobuf")
+
+	rec := httptest.NewRecorder()
+	r.handleMetrics(rec, req)
+
+	// Empty body should be handled (empty protobuf is valid)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+}
+
+func TestHTTPHandleMetricsNoContentType(t *testing.T) {
+	buf := newTestBuffer()
+
+	r := NewHTTP(":4318", buf)
+
+	exportReq := &colmetricspb.ExportMetricsServiceRequest{}
+	body, _ := proto.Marshal(exportReq)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/metrics", bytes.NewReader(body))
+	// No Content-Type header
+
+	rec := httptest.NewRecorder()
+	r.handleMetrics(rec, req)
+
+	// Without content type, should still try protobuf
+	if rec.Code != http.StatusOK && rec.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("expected status 200 or 415, got %d", rec.Code)
+	}
+}
+
+func TestGRPCExportEmptyRequest(t *testing.T) {
+	buf := newTestBuffer()
+
+	r := NewGRPC(":4317", buf)
+
+	req := &colmetricspb.ExportMetricsServiceRequest{}
+
+	resp, err := r.Export(context.Background(), req)
+	if err != nil {
+		t.Fatalf("export failed: %v", err)
+	}
+	if resp == nil {
+		t.Error("expected non-nil response")
+	}
+}
+
+func TestGRPCExportMultipleMetrics(t *testing.T) {
+	buf := newTestBuffer()
+
+	r := NewGRPC(":4317", buf)
+
+	metrics := make([]*metricspb.Metric, 100)
+	for i := 0; i < 100; i++ {
+		metrics[i] = &metricspb.Metric{Name: "test.metric"}
+	}
+
+	req := &colmetricspb.ExportMetricsServiceRequest{
+		ResourceMetrics: []*metricspb.ResourceMetrics{
+			{
+				ScopeMetrics: []*metricspb.ScopeMetrics{
+					{
+						Metrics: metrics,
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := r.Export(context.Background(), req)
+	if err != nil {
+		t.Fatalf("export failed: %v", err)
+	}
+	if resp == nil {
+		t.Error("expected non-nil response")
+	}
+}
