@@ -1161,10 +1161,10 @@ flowchart LR
     style Verifier fill:#fff8e1
 ```
 
-**Data Flow:**
+**Data Flow with Compression:**
 ```
 Generator → OTel Collector → metrics-governor → VictoriaMetrics
-   (OTLP/gRPC)      (OTLP/gRPC)         (OTLP/HTTP protobuf)
+   (OTLP/gRPC)    (OTLP/gRPC+zstd)   (OTLP/HTTP+zstd+protobuf)
 ```
 
 This architecture tests metrics-governor as a transparent proxy that:
@@ -1285,6 +1285,7 @@ The metrics generator creates various test scenarios:
 | **Burst traffic** | Periodic traffic spikes | `BURST_SIZE=2000, BURST_INTERVAL_SEC=15` |
 | **Edge cases** | Extreme values (0, ±inf, π, e) | `ENABLE_EDGE_CASES=true` |
 | **Many datapoints** | Histograms with 15 buckets | Automatic with histograms |
+| **Diverse metrics** | ~200 unique metric names (CPU, memory, disk, network) | `ENABLE_DIVERSE_METRICS=true` |
 
 **Environment variables for generator:**
 
@@ -1297,7 +1298,9 @@ The metrics generator creates various test scenarios:
 | `ENABLE_EDGE_CASES` | `true` | Include edge case values |
 | `ENABLE_HIGH_CARDINALITY` | `true` | Generate high cardinality |
 | `ENABLE_BURST_TRAFFIC` | `true` | Enable burst patterns |
+| `ENABLE_DIVERSE_METRICS` | `true` | Generate ~200 unique metric names |
 | `HIGH_CARDINALITY_COUNT` | `100` | Unique labels per interval |
+| `DIVERSE_METRIC_COUNT` | `200` | Target unique metric names |
 | `BURST_SIZE` | `2000` | Metrics per burst |
 | `BURST_INTERVAL_SEC` | `15` | Seconds between bursts |
 | `TARGET_METRICS_PER_SEC` | `1000` | Target throughput |

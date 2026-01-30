@@ -19,6 +19,7 @@ exporters:
     endpoint: metrics-governor:4317
     tls:
       insecure: true
+    compression: zstd  # Use zstd compression - faster and better compression than gzip
 
 service:
   telemetry:

@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-01-30
+
+### Added
+
+#### Zstd Compression Across Full Pipeline
+
+Implemented end-to-end zstd compression support for the entire metrics pipeline:
+
+**gRPC Receiver Compression:**
+- Registered zstd compressor via `google.golang.org/grpc/encoding`
+- Pooled zstd encoders/decoders for performance (sync.Pool)
+- Automatic decompression for incoming gRPC requests
+- Also supports gzip via import
+
+**HTTP Exporter Compression:**
+- Full zstd support for OTLP/HTTP with protobuf encoding
+- Configurable via `-exporter-compression=zstd`
+- Optimized for VictoriaMetrics OTLP HTTP endpoint
+
+**Test Environment:**
+- OTel Collector exports to metrics-governor with zstd compression
+- metrics-governor exports to VictoriaMetrics with zstd compression
+- VictoriaMetrics configured with optimal limits for high-throughput ingestion
+
+#### Diverse Metrics Generator
+
+Enhanced the test metrics generator with many more unique metric names to better test storage backends:
+
+**New Metrics Categories (~200 unique metric names):**
+- **CPU metrics** (9): `node_cpu_user_percent`, `node_cpu_system_percent`, `node_cpu_idle_percent`, etc.
+- **Memory metrics** (15): `node_memory_total_bytes`, `node_memory_free_bytes`, `node_memory_cached_bytes`, etc.
+- **Disk metrics** (9): `node_disk_read_bytes_total`, `node_disk_written_bytes_total`, etc.
+- **Filesystem metrics** (5): `node_filesystem_size_bytes`, `node_filesystem_free_bytes`, etc.
+- **Network metrics** (12): `node_network_receive_bytes_total`, `node_network_transmit_bytes_total`, etc.
+- **Process metrics** (7): `process_cpu_seconds_total`, `process_resident_memory_bytes`, etc.
+- **Application metrics** (20): `app_db_connections_active`, `app_cache_hits_total`, `app_queue_length`, etc.
+- **HTTP endpoint metrics** (34): Per-endpoint duration and request count metrics
+- **Custom metrics**: Additional unique counters, gauges, and histograms
+
+**New Environment Variables:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_DIVERSE_METRICS` | `true` | Enable diverse metric generation |
+| `DIVERSE_METRIC_COUNT` | `200` | Target number of unique metric names |
+
+### Fixed
+
+#### GitHub Actions Benchmark Workflow
+
+Fixed "body is too long" error when storing benchmark results:
+- Error: `Validation Failed: body is too long (maximum is 65536 characters)`
+- Solution: Filter benchmark output to keep only summary lines before posting
+- Truncate to 500 lines if still too large
+- Disabled `comment-always` and `summary-always` to prevent oversized comments
+- Full benchmark results still available as artifacts
+
+### Changed
+
+#### Docker Compose Configuration
+
+Updated test environment for zstd compression:
+```yaml
+otel-collector:
+  exporters:
+    otlp:
+      compression: zstd  # Changed from gzip
+
+metrics-governor:
+  command:
+    - "-exporter-compression=zstd"
+
+victoriametrics:
+  command:
+    - "--maxInsertRequestSize=64MB"
+    - "--opentelemetry.maxRequestSize=64MB"
+    - "--opentelemetry.convertMetricNamesToPrometheus"
+    - "--memory.allowedPercent=60"
+```
+
 ## [0.4.1] - 2026-01-30
 
 ### Changed

@@ -56,7 +56,9 @@ func main() {
 	enableEdgeCases := getEnvBool("ENABLE_EDGE_CASES", true)
 	enableHighCardinality := getEnvBool("ENABLE_HIGH_CARDINALITY", true)
 	enableBurstTraffic := getEnvBool("ENABLE_BURST_TRAFFIC", true)
+	enableDiverseMetrics := getEnvBool("ENABLE_DIVERSE_METRICS", true)
 	highCardinalityCount := getEnvInt("HIGH_CARDINALITY_COUNT", 100)
+	diverseMetricCount := getEnvInt("DIVERSE_METRIC_COUNT", 200) // Number of unique metric names to generate
 	burstSize := getEnvInt("BURST_SIZE", 2000)
 	burstIntervalSec := getEnvInt("BURST_INTERVAL_SEC", 15)
 	statsIntervalSec := getEnvInt("STATS_INTERVAL_SEC", 10)
@@ -82,6 +84,7 @@ func main() {
 	log.Printf("  Environments: %v", environments)
 	log.Printf("  Edge cases: %v", enableEdgeCases)
 	log.Printf("  High cardinality: %v (count: %d)", enableHighCardinality, highCardinalityCount)
+	log.Printf("  Diverse metrics: %v (count: %d)", enableDiverseMetrics, diverseMetricCount)
 	log.Printf("  Burst traffic: %v (size: %d, interval: %ds)", enableBurstTraffic, burstSize, burstIntervalSec)
 	log.Printf("  Stats output: %v (interval: %ds)", enableStatsOutput, statsIntervalSec)
 	log.Printf("  Target metrics/sec: %d", targetMetricsPerSec)
@@ -169,6 +172,142 @@ func main() {
 	// Verification metrics - these help track what was sent
 	verificationCounter, _ := meter.Int64Counter("generator_verification_counter",
 		metric.WithDescription("Counter for verifying data delivery"))
+
+	// Diverse metrics - many unique metric names for testing VM storage
+	// Infrastructure metrics (CPU, memory, disk, network)
+	var diverseCounters []metric.Int64Counter
+	var diverseGauges []metric.Float64Gauge
+	var diverseHistograms []metric.Float64Histogram
+
+	if enableDiverseMetrics {
+		// CPU metrics per core (simulating multi-core systems)
+		cpuMetrics := []string{
+			"cpu_user_percent", "cpu_system_percent", "cpu_idle_percent",
+			"cpu_iowait_percent", "cpu_irq_percent", "cpu_softirq_percent",
+			"cpu_steal_percent", "cpu_guest_percent", "cpu_nice_percent",
+		}
+		for _, name := range cpuMetrics {
+			g, _ := meter.Float64Gauge("node_"+name, metric.WithDescription("CPU metric: "+name))
+			diverseGauges = append(diverseGauges, g)
+		}
+
+		// Memory metrics
+		memMetrics := []string{
+			"memory_total_bytes", "memory_free_bytes", "memory_available_bytes",
+			"memory_buffers_bytes", "memory_cached_bytes", "memory_swap_total_bytes",
+			"memory_swap_free_bytes", "memory_swap_used_bytes", "memory_dirty_bytes",
+			"memory_writeback_bytes", "memory_mapped_bytes", "memory_shmem_bytes",
+			"memory_slab_bytes", "memory_page_tables_bytes", "memory_commit_limit_bytes",
+		}
+		for _, name := range memMetrics {
+			g, _ := meter.Float64Gauge("node_"+name, metric.WithDescription("Memory metric: "+name))
+			diverseGauges = append(diverseGauges, g)
+		}
+
+		// Disk metrics per device
+		diskMetrics := []string{
+			"disk_read_bytes_total", "disk_written_bytes_total",
+			"disk_read_time_seconds_total", "disk_write_time_seconds_total",
+			"disk_io_time_seconds_total", "disk_reads_completed_total",
+			"disk_writes_completed_total", "disk_io_now", "disk_discards_completed_total",
+		}
+		for _, name := range diskMetrics {
+			c, _ := meter.Int64Counter("node_"+name, metric.WithDescription("Disk metric: "+name))
+			diverseCounters = append(diverseCounters, c)
+		}
+
+		// Filesystem metrics
+		fsMetrics := []string{
+			"filesystem_size_bytes", "filesystem_free_bytes", "filesystem_avail_bytes",
+			"filesystem_files", "filesystem_files_free",
+		}
+		for _, name := range fsMetrics {
+			g, _ := meter.Float64Gauge("node_"+name, metric.WithDescription("Filesystem metric: "+name))
+			diverseGauges = append(diverseGauges, g)
+		}
+
+		// Network metrics per interface
+		netMetrics := []string{
+			"network_receive_bytes_total", "network_transmit_bytes_total",
+			"network_receive_packets_total", "network_transmit_packets_total",
+			"network_receive_errs_total", "network_transmit_errs_total",
+			"network_receive_drop_total", "network_transmit_drop_total",
+			"network_receive_fifo_total", "network_transmit_fifo_total",
+			"network_receive_multicast_total", "network_receive_compressed_total",
+		}
+		for _, name := range netMetrics {
+			c, _ := meter.Int64Counter("node_"+name, metric.WithDescription("Network metric: "+name))
+			diverseCounters = append(diverseCounters, c)
+		}
+
+		// Process metrics
+		procMetrics := []string{
+			"process_cpu_seconds_total", "process_virtual_memory_bytes",
+			"process_resident_memory_bytes", "process_start_time_seconds",
+			"process_open_fds", "process_max_fds", "process_threads",
+		}
+		for _, name := range procMetrics {
+			c, _ := meter.Int64Counter(name, metric.WithDescription("Process metric: "+name))
+			diverseCounters = append(diverseCounters, c)
+		}
+
+		// Application metrics (simulating various microservices)
+		appMetrics := []string{
+			"db_connections_active", "db_connections_idle", "db_connections_max",
+			"db_query_duration_seconds", "db_query_rows_affected",
+			"cache_hits_total", "cache_misses_total", "cache_evictions_total",
+			"cache_size_bytes", "cache_items",
+			"queue_length", "queue_oldest_message_age_seconds",
+			"queue_messages_published_total", "queue_messages_consumed_total",
+			"thread_pool_active", "thread_pool_idle", "thread_pool_size",
+			"gc_pause_seconds", "gc_collections_total", "gc_heap_bytes",
+		}
+		for _, name := range appMetrics {
+			c, _ := meter.Int64Counter("app_"+name, metric.WithDescription("Application metric: "+name))
+			diverseCounters = append(diverseCounters, c)
+		}
+
+		// HTTP endpoint metrics (different paths)
+		httpEndpoints := []string{
+			"/health", "/ready", "/metrics", "/api/v1/users", "/api/v1/orders",
+			"/api/v1/products", "/api/v1/payments", "/api/v1/inventory",
+			"/api/v1/auth/login", "/api/v1/auth/logout", "/api/v1/auth/refresh",
+			"/api/v2/users", "/api/v2/orders", "/api/v2/products",
+			"/graphql", "/ws/events", "/sse/updates",
+		}
+		for i, endpoint := range httpEndpoints {
+			h, _ := meter.Float64Histogram(fmt.Sprintf("endpoint_%d_duration_seconds", i),
+				metric.WithDescription("Request duration for "+endpoint))
+			diverseHistograms = append(diverseHistograms, h)
+			c, _ := meter.Int64Counter(fmt.Sprintf("endpoint_%d_requests_total", i),
+				metric.WithDescription("Request count for "+endpoint))
+			diverseCounters = append(diverseCounters, c)
+		}
+
+		// Generate additional unique metrics up to diverseMetricCount
+		currentCount := len(diverseCounters) + len(diverseGauges) + len(diverseHistograms)
+		for i := currentCount; i < diverseMetricCount; i++ {
+			metricType := i % 3
+			switch metricType {
+			case 0:
+				c, _ := meter.Int64Counter(fmt.Sprintf("custom_counter_%d", i),
+					metric.WithDescription(fmt.Sprintf("Custom counter metric %d", i)))
+				diverseCounters = append(diverseCounters, c)
+			case 1:
+				g, _ := meter.Float64Gauge(fmt.Sprintf("custom_gauge_%d", i),
+					metric.WithDescription(fmt.Sprintf("Custom gauge metric %d", i)))
+				diverseGauges = append(diverseGauges, g)
+			case 2:
+				h, _ := meter.Float64Histogram(fmt.Sprintf("custom_histogram_%d", i),
+					metric.WithDescription(fmt.Sprintf("Custom histogram metric %d", i)))
+				diverseHistograms = append(diverseHistograms, h)
+			}
+		}
+
+		log.Printf("Created %d diverse counters, %d gauges, %d histograms (total: %d unique metric names)",
+			len(diverseCounters), len(diverseGauges), len(diverseHistograms),
+			len(diverseCounters)+len(diverseGauges)+len(diverseHistograms))
+	}
 
 	methods := []string{"GET", "POST", "PUT", "DELETE"}
 	endpoints := []string{"/api/users", "/api/orders", "/api/products", "/api/payments", "/api/inventory"}
@@ -318,6 +457,91 @@ func main() {
 				batchMetrics++
 				stats.HighCardinalityMetrics.Add(int64(highCardinalityCount))
 				stats.UniqueLabels.Add(int64(highCardinalityCount)) // Approximate
+			}
+
+			// Diverse metrics - generate values for all unique metric names
+			if enableDiverseMetrics {
+				devices := []string{"sda", "sdb", "nvme0n1", "nvme1n1"}
+				interfaces := []string{"eth0", "eth1", "lo", "docker0", "br-0"}
+				mounts := []string{"/", "/var", "/tmp", "/home", "/data"}
+				cpuCores := []string{"cpu0", "cpu1", "cpu2", "cpu3", "cpu4", "cpu5", "cpu6", "cpu7"}
+
+				// Record counter values
+				for i, c := range diverseCounters {
+					// Vary attributes based on metric type
+					var attrs []attribute.KeyValue
+					switch {
+					case i < 9: // disk metrics
+						attrs = []attribute.KeyValue{
+							attribute.String("device", devices[i%len(devices)]),
+							attribute.String("service", services[rand.Intn(len(services))]),
+						}
+					case i < 21: // network metrics
+						attrs = []attribute.KeyValue{
+							attribute.String("interface", interfaces[i%len(interfaces)]),
+							attribute.String("service", services[rand.Intn(len(services))]),
+						}
+					default:
+						attrs = []attribute.KeyValue{
+							attribute.String("service", services[rand.Intn(len(services))]),
+							attribute.String("env", environments[rand.Intn(len(environments))]),
+							attribute.String("instance", fmt.Sprintf("inst_%d", rand.Intn(10))),
+						}
+					}
+					c.Add(ctx, int64(rand.Intn(1000)+1), metric.WithAttributes(attrs...))
+					batchDatapoints++
+				}
+				batchMetrics += int64(len(diverseCounters))
+
+				// Record gauge values
+				for i, g := range diverseGauges {
+					var attrs []attribute.KeyValue
+					var value float64
+					switch {
+					case i < 9: // CPU metrics
+						attrs = []attribute.KeyValue{
+							attribute.String("cpu", cpuCores[i%len(cpuCores)]),
+							attribute.String("service", services[rand.Intn(len(services))]),
+						}
+						value = rand.Float64() * 100 // percent
+					case i < 24: // memory metrics
+						attrs = []attribute.KeyValue{
+							attribute.String("service", services[rand.Intn(len(services))]),
+						}
+						value = float64(rand.Int63n(16*1024*1024*1024)) // up to 16GB
+					case i < 29: // filesystem metrics
+						attrs = []attribute.KeyValue{
+							attribute.String("mountpoint", mounts[i%len(mounts)]),
+							attribute.String("device", devices[rand.Intn(len(devices))]),
+							attribute.String("fstype", "ext4"),
+						}
+						value = float64(rand.Int63n(500*1024*1024*1024)) // up to 500GB
+					default:
+						attrs = []attribute.KeyValue{
+							attribute.String("service", services[rand.Intn(len(services))]),
+							attribute.String("env", environments[rand.Intn(len(environments))]),
+						}
+						value = rand.Float64() * 1000
+					}
+					g.Record(ctx, value, metric.WithAttributes(attrs...))
+					batchDatapoints++
+				}
+				batchMetrics += int64(len(diverseGauges))
+
+				// Record histogram values
+				for _, h := range diverseHistograms {
+					attrs := []attribute.KeyValue{
+						attribute.String("service", services[rand.Intn(len(services))]),
+						attribute.String("env", environments[rand.Intn(len(environments))]),
+						attribute.String("method", methods[rand.Intn(len(methods))]),
+					}
+					// Generate multiple samples per histogram
+					for j := 0; j < 5; j++ {
+						h.Record(ctx, rand.Float64()*2.0, metric.WithAttributes(attrs...)) // 0-2 seconds
+						batchDatapoints++
+					}
+				}
+				batchMetrics += int64(len(diverseHistograms))
 			}
 
 			// Verification counter - increment with known value

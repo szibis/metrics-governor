@@ -2,8 +2,11 @@ package receiver
 
 import (
 	"context"
+	"io"
 	"net"
+	"sync"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/slawomirskowron/metrics-governor/internal/auth"
 	"github.com/slawomirskowron/metrics-governor/internal/buffer"
 	"github.com/slawomirskowron/metrics-governor/internal/logging"
@@ -11,7 +14,92 @@ import (
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/encoding"
+	_ "google.golang.org/grpc/encoding/gzip" // Register gzip compressor
 )
+
+func init() {
+	// Register zstd compressor for gRPC
+	encoding.RegisterCompressor(&zstdCompressor{})
+}
+
+// zstdCompressor implements grpc encoding.Compressor for zstd.
+type zstdCompressor struct{}
+
+func (c *zstdCompressor) Name() string {
+	return "zstd"
+}
+
+func (c *zstdCompressor) Compress(w io.Writer) (io.WriteCloser, error) {
+	return zstdWriterPoolW.Get(w)
+}
+
+func (c *zstdCompressor) Decompress(r io.Reader) (io.Reader, error) {
+	return zstdReaderPoolW.Get(r)
+}
+
+// zstd encoder/decoder pools for performance
+var zstdWriterPool = &sync.Pool{
+	New: func() interface{} {
+		w, _ := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedDefault))
+		return w
+	},
+}
+
+var zstdReaderPool = &sync.Pool{
+	New: func() interface{} {
+		r, _ := zstd.NewReader(nil)
+		return r
+	},
+}
+
+type pooledZstdWriter struct {
+	*zstd.Encoder
+	underlying io.Writer
+}
+
+func (p *pooledZstdWriter) Close() error {
+	err := p.Encoder.Close()
+	p.Encoder.Reset(nil)
+	zstdWriterPool.Put(p.Encoder)
+	return err
+}
+
+type pooledZstdReader struct {
+	*zstd.Decoder
+}
+
+func (p *pooledZstdReader) Read(b []byte) (int, error) {
+	n, err := p.Decoder.Read(b)
+	if err == io.EOF {
+		p.Decoder.Reset(nil)
+		zstdReaderPool.Put(p.Decoder)
+	}
+	return n, err
+}
+
+// zstdWriterPoolWrapper wraps the pool to return io.WriteCloser
+type zstdWriterPoolWrapper struct{}
+
+func (p *zstdWriterPoolWrapper) Get(w io.Writer) (io.WriteCloser, error) {
+	encoder := zstdWriterPool.New().(*zstd.Encoder)
+	encoder.Reset(w)
+	return &pooledZstdWriter{Encoder: encoder, underlying: w}, nil
+}
+
+// zstdReaderPoolWrapper wraps the pool to return io.Reader
+type zstdReaderPoolWrapper struct{}
+
+func (p *zstdReaderPoolWrapper) Get(r io.Reader) (io.Reader, error) {
+	decoder := zstdReaderPool.New().(*zstd.Decoder)
+	if err := decoder.Reset(r); err != nil {
+		return nil, err
+	}
+	return &pooledZstdReader{Decoder: decoder}, nil
+}
+
+var zstdWriterPoolW = &zstdWriterPoolWrapper{}
+var zstdReaderPoolW = &zstdReaderPoolWrapper{}
 
 // GRPCConfig holds the gRPC receiver configuration.
 type GRPCConfig struct {

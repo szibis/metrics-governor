@@ -138,7 +138,16 @@ jobs:
 
       - name: Run full benchmarks
         run: |
-          go test -bench=. -benchmem -count=5 ./internal/... 2>&1 | tee benchmark-results.txt
+          go test -bench=. -benchmem -count=5 ./internal/... 2>&1 | tee benchmark-results-full.txt
+          # Truncate output for benchmark-action (max 65536 chars for comments)
+          # Keep only summary lines (goos, goarch, pkg, Benchmark lines, ok lines)
+          grep -E '^(goos:|goarch:|pkg:|Benchmark|ok\s)' benchmark-results-full.txt > benchmark-results.txt || true
+          # If still too large, keep only key benchmarks
+          if [ $(wc -c < benchmark-results.txt) -gt 60000 ]; then
+            echo "Benchmark results too large, filtering to key benchmarks..."
+            head -n 500 benchmark-results.txt > benchmark-results-truncated.txt
+            mv benchmark-results-truncated.txt benchmark-results.txt
+          fi
 
       - name: Download previous benchmark data
         uses: actions/cache@v4
@@ -160,8 +169,9 @@ jobs:
           comment-on-alert: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: false
-          comment-always: true
-          summary-always: true
+          # Disabled to avoid "body is too long" error (max 65536 chars)
+          comment-always: false
+          summary-always: false
 
       - name: Save benchmark baseline
         run: |
@@ -172,7 +182,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results-full
-          path: benchmark-results.txt
+          path: |
+            benchmark-results.txt
+            benchmark-results-full.txt
           retention-days: 90
 
   compare-baseline:

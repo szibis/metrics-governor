@@ -24,12 +24,13 @@ services:
       - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
       - "-exporter-protocol=http"
       - "-exporter-insecure=true"
+      - "-exporter-compression=zstd"
       - "-stats-labels=service,env"
       - "-limits-config=/etc/metrics-governor/limits.yaml"
       - "-limits-dry-run=true"
       - "-flush-interval=1s"
-      - "-batch-size=500"
-      - "-buffer-size=10000"
+      - "-batch-size=50"
+      - "-buffer-size=2000"
     volumes:
       - ./examples/limits.yaml:/etc/metrics-governor/limits.yaml:ro
     depends_on:
@@ -41,12 +42,20 @@ services:
     image: victoriametrics/victoria-metrics:v1.134.0
     ports:
       - "8428:8428"    # HTTP API and UI
+    deploy:
+      resources:
+        limits:
+          memory: 4G
     command:
       - "--storageDataPath=/victoria-metrics-data"
       - "--httpListenAddr=:8428"
       - "--retentionPeriod=1d"
       - "--search.latencyOffset=0s"
       - "--promscrape.config=/etc/victoriametrics/scrape.yaml"
+      - "--maxInsertRequestSize=64MB"
+      - "--opentelemetry.maxRequestSize=64MB"
+      - "--opentelemetry.convertMetricNamesToPrometheus"
+      - "--memory.allowedPercent=60"
     volumes:
       - ./test/vmscrape-config.yaml:/etc/victoriametrics/scrape.yaml:ro
 
@@ -65,12 +74,14 @@ services:
       - ENABLE_EDGE_CASES=true
       - ENABLE_HIGH_CARDINALITY=true
       - ENABLE_BURST_TRAFFIC=true
+      - ENABLE_DIVERSE_METRICS=true
       - HIGH_CARDINALITY_COUNT=100
+      - DIVERSE_METRIC_COUNT=200
       - BURST_SIZE=2000
       - BURST_INTERVAL_SEC=15
       - STATS_INTERVAL_SEC=10
-      - TARGET_METRICS_PER_SEC=1000
-      - TARGET_DATAPOINTS_PER_SEC=10000
+      - TARGET_METRICS_PER_SEC=500
+      - TARGET_DATAPOINTS_PER_SEC=5000
       - METRICS_PORT=9091
     depends_on:
       - otel-collector
@@ -86,7 +97,7 @@ services:
       - VM_ENDPOINT=http://victoriametrics:8428
       - MG_ENDPOINT=http://metrics-governor:9090
       - CHECK_INTERVAL=15s
-      - VERIFICATION_METRIC=generator_verification_counter_total
+      - VERIFICATION_METRIC=generator_verification_counter
       - PASS_THRESHOLD=95.0
       - METRICS_PORT=9092
     depends_on:
