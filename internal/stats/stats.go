@@ -246,9 +246,14 @@ func (c *Collector) RecordExportError() {
 }
 
 // StartPeriodicLogging starts logging global stats every interval.
+// It also resets cardinality tracking to prevent unbounded memory growth.
 func (c *Collector) StartPeriodicLogging(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+
+	// Reset cardinality more frequently (every 60s) to bound memory
+	resetTicker := time.NewTicker(60 * time.Second)
+	defer resetTicker.Stop()
 
 	for {
 		select {
@@ -261,6 +266,40 @@ func (c *Collector) StartPeriodicLogging(ctx context.Context, interval time.Dura
 				"unique_metrics", uniqueMetrics,
 				"total_cardinality", totalCardinality,
 			))
+		case <-resetTicker.C:
+			c.ResetCardinality()
+		}
+	}
+}
+
+// ResetCardinality resets the cardinality tracking maps to prevent unbounded memory growth.
+// This keeps counters intact but clears the per-metric and per-label cardinality tracking.
+func (c *Collector) ResetCardinality() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// If maps are too large, recreate them entirely to release memory
+	const maxMetrics = 10000
+	const maxLabels = 5000
+
+	if len(c.metricStats) > maxMetrics {
+		c.metricStats = make(map[string]*MetricStats)
+		c.totalMetrics = 0
+		logging.Info("metric stats map reset due to size", logging.F("previous_size", len(c.metricStats)))
+	} else {
+		// Reset per-metric cardinality (keep datapoint counts, clear series tracking)
+		for _, ms := range c.metricStats {
+			ms.UniqueSeries = make(map[string]struct{})
+		}
+	}
+
+	if len(c.labelStats) > maxLabels {
+		c.labelStats = make(map[string]*LabelStats)
+		logging.Info("label stats map reset due to size", logging.F("previous_size", len(c.labelStats)))
+	} else {
+		// Reset per-label cardinality
+		for _, ls := range c.labelStats {
+			ls.UniqueSeries = make(map[string]struct{})
 		}
 	}
 }
