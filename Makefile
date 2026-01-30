@@ -5,7 +5,7 @@ LDFLAGS=-ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/
 
 BUILD_DIR=bin
 
-.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all lint lint-dockerfile lint-yaml lint-helm lint-all release tag
+.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all lint lint-dockerfile lint-yaml lint-helm lint-all release tag compose-up compose-down compose-light compose-perf compose-logs
 
 all: darwin-arm64 linux-arm64 linux-amd64
 
@@ -149,6 +149,46 @@ endif
 release: test lint all
 	@echo "Build complete. Create release with: make tag VERSION=vX.Y.Z"
 
+# Docker Compose test environment targets
+compose-up:
+	@echo "Starting test environment (moderate load)..."
+	docker compose up -d --build
+	@echo "Waiting for services to start..."
+	@sleep 10
+	@echo "Services started. Grafana: http://localhost:3000 (admin/admin)"
+
+compose-down:
+	@echo "Stopping test environment..."
+	docker compose down -v
+	@echo "Test environment stopped."
+
+compose-light:
+	@echo "Starting LIGHT test environment (low volume, quick validation)..."
+	docker compose -f docker-compose.yaml -f docker-compose.light.yaml up -d --build
+	@echo "Waiting for services to start..."
+	@sleep 10
+	@echo "Light test environment started. Grafana: http://localhost:3000 (admin/admin)"
+
+compose-perf:
+	@echo "Starting PERFORMANCE test environment (high volume stress testing)..."
+	docker compose -f docker-compose.yaml -f docker-compose.perf.yaml up -d --build
+	@echo "Waiting for services to start..."
+	@sleep 15
+	@echo "Performance test environment started. Grafana: http://localhost:3000 (admin/admin)"
+
+compose-logs:
+	docker compose logs -f
+
+compose-status:
+	@echo "=== Container Status ==="
+	docker compose ps
+	@echo ""
+	@echo "=== VictoriaMetrics Stats ==="
+	@curl -s http://localhost:8428/api/v1/status/tsdb 2>/dev/null | jq -r '.data | "Total time series: \(.totalSeries)"' || echo "VictoriaMetrics not responding"
+	@echo ""
+	@echo "=== Metrics Governor Stats ==="
+	@curl -s http://localhost:9090/metrics 2>/dev/null | grep -E "^metrics_governor_(datapoints_received|datapoints_sent|export_errors)_total" || echo "Metrics Governor not responding"
+
 help:
 	@echo "Available targets:"
 	@echo "  all              - Build all platforms (darwin-arm64, linux-arm64, linux-amd64)"
@@ -185,4 +225,13 @@ help:
 	@echo "  release          - Run tests, lint, and build all platforms"
 	@echo "  tag VERSION=vX.Y.Z - Create a git tag for release"
 	@echo "  clean            - Remove build artifacts"
+	@echo ""
+	@echo "Docker Compose Test Environment:"
+	@echo "  compose-up       - Start test environment (moderate load)"
+	@echo "  compose-down     - Stop test environment and remove volumes"
+	@echo "  compose-light    - Start LIGHT test (low volume, quick validation)"
+	@echo "  compose-perf     - Start PERFORMANCE test (high volume stress)"
+	@echo "  compose-logs     - Follow logs from all containers"
+	@echo "  compose-status   - Show container and metrics status"
+	@echo ""
 	@echo "  help             - Show this help"

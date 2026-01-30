@@ -38,6 +38,7 @@ services:
     restart: on-failure
 
   # VictoriaMetrics for metrics storage (OTLP HTTP endpoint)
+  # Default: moderate resources. Use docker-compose.perf.yaml for high volume
   victoriametrics:
     image: victoriametrics/victoria-metrics:v1.134.0
     ports:
@@ -45,7 +46,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 10G
+          memory: 2G   # Moderate memory for default testing
     command:
       - "--storageDataPath=/victoria-metrics-data"
       - "--httpListenAddr=:8428"
@@ -64,6 +65,7 @@ services:
       - ./test/vmscrape-config.yaml:/etc/victoriametrics/scrape.yaml:ro
 
   # Test metrics generator - sends to otel-collector
+  # Default: moderate load. Use docker-compose.light.yaml or docker-compose.perf.yaml for overrides
   metrics-generator:
     build:
       context: ./test
@@ -72,20 +74,20 @@ services:
       - "9091:9091"   # Prometheus metrics
     environment:
       - OTLP_ENDPOINT=otel-collector:4317
-      - METRICS_INTERVAL=100ms
-      - SERVICES=payment-api,order-api,inventory-api,user-api,auth-api,legacy-app,billing-api,notification-api
+      - METRICS_INTERVAL=500ms        # Moderate interval
+      - SERVICES=payment-api,order-api,inventory-api,user-api
       - ENVIRONMENTS=prod,staging,dev
       - ENABLE_EDGE_CASES=false
       - ENABLE_HIGH_CARDINALITY=true
       - ENABLE_BURST_TRAFFIC=false
       - ENABLE_DIVERSE_METRICS=true
-      - HIGH_CARDINALITY_COUNT=100
-      - DIVERSE_METRIC_COUNT=150
-      - BURST_SIZE=1000
-      - BURST_INTERVAL_SEC=30
-      - STATS_INTERVAL_SEC=10
-      - TARGET_METRICS_PER_SEC=50000
-      - TARGET_DATAPOINTS_PER_SEC=75000
+      - HIGH_CARDINALITY_COUNT=50     # Moderate cardinality
+      - DIVERSE_METRIC_COUNT=50       # Moderate diversity
+      - BURST_SIZE=500
+      - BURST_INTERVAL_SEC=60
+      - STATS_INTERVAL_SEC=15
+      - TARGET_METRICS_PER_SEC=5000   # Moderate throughput
+      - TARGET_DATAPOINTS_PER_SEC=10000
       - METRICS_PORT=9091
     depends_on:
       - otel-collector

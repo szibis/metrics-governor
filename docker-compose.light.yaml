@@ -1,0 +1,69 @@
+# Light testing configuration - low volume, quick validation
+# Usage: docker compose -f docker-compose.yaml -f docker-compose.light.yaml up -d
+#
+# This override reduces data volume for:
+# - Quick functional testing
+# - CI/CD pipelines
+# - Local development
+# - Dashboard validation
+
+services:
+  metrics-generator:
+    environment:
+      - OTLP_ENDPOINT=otel-collector:4317
+      - METRICS_INTERVAL=1s           # Much slower generation
+      - SERVICES=payment-api,order-api  # Fewer services
+      - ENVIRONMENTS=prod,dev          # Fewer environments
+      - ENABLE_EDGE_CASES=false
+      - ENABLE_HIGH_CARDINALITY=false  # Disabled
+      - ENABLE_BURST_TRAFFIC=false
+      - ENABLE_DIVERSE_METRICS=false   # Disabled
+      - HIGH_CARDINALITY_COUNT=10      # Minimal
+      - DIVERSE_METRIC_COUNT=20        # Minimal
+      - BURST_SIZE=100
+      - BURST_INTERVAL_SEC=60
+      - STATS_INTERVAL_SEC=30
+      - TARGET_METRICS_PER_SEC=100     # Very low
+      - TARGET_DATAPOINTS_PER_SEC=200  # Very low
+      - METRICS_PORT=9091
+
+  metrics-governor:
+    command:
+      - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
+      - "-exporter-protocol=http"
+      - "-exporter-insecure=true"
+      - "-exporter-compression=gzip"  # Lighter compression
+      - "-stats-labels=service,env"
+      - "-limits-config=/etc/metrics-governor/limits.yaml"
+      - "-limits-dry-run=true"
+      - "-flush-interval=1s"          # Slower flushing
+      - "-batch-size=50"              # Smaller batches
+      - "-buffer-size=1000"           # Smaller buffer
+
+  victoriametrics:
+    deploy:
+      resources:
+        limits:
+          memory: 1G                  # Reduced memory
+    command:
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=1h"        # Short retention
+      - "--search.latencyOffset=0s"
+      - "--promscrape.config=/etc/victoriametrics/scrape.yaml"
+      - "--maxInsertRequestSize=16MB"
+      - "--opentelemetry.maxRequestSize=16MB"
+      - "--opentelemetry.convertMetricNamesToPrometheus"
+      - "--memory.allowedPercent=60"
+      - "--search.maxUniqueTimeseries=100000"
+      - "--search.maxConcurrentRequests=8"
+      - "--search.maxQueryDuration=5s"
+
+  verifier:
+    environment:
+      - VM_ENDPOINT=http://victoriametrics:8428
+      - MG_ENDPOINT=http://metrics-governor:9090
+      - CHECK_INTERVAL=30s            # Less frequent checks
+      - VERIFICATION_METRIC=generator_verification_counter
+      - PASS_THRESHOLD=90.0           # Lower threshold for light testing
+      - METRICS_PORT=9092
