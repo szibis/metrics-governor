@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-01-30
+
+### Changed
+
+#### Docker Compose Architecture Update
+
+Changed the test environment data flow to demonstrate metrics-governor as a proxy between OTel Collector and VictoriaMetrics:
+
+**New Flow:**
+```
+Generator → OTel Collector → metrics-governor → VictoriaMetrics
+   (OTLP/gRPC)      (OTLP/gRPC)         (OTLP/HTTP protobuf)
+```
+
+**Key Changes:**
+- Generator now sends metrics to OTel Collector (`:4317`)
+- OTel Collector forwards to metrics-governor (`:14317`)
+- metrics-governor exports to VictoriaMetrics OTLP HTTP endpoint (`/opentelemetry/v1/metrics`)
+- Updated port mappings to avoid conflicts
+
+**Port Mappings:**
+| Service | External Ports | Internal Ports |
+|---------|----------------|----------------|
+| otel-collector | 4317, 4318, 8888 | 4317, 4318, 8888 |
+| metrics-governor | 14317, 14318, 9090 | 4317, 4318, 9090 |
+| victoriametrics | 8428 | 8428 |
+
+This architecture tests metrics-governor as a transparent proxy that can be inserted between any OTLP pipeline and a backend storage system.
+
 ## [0.4.0] - 2026-01-30
 
 ### Added

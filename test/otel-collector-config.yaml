@@ -15,8 +15,8 @@ processors:
 exporters:
   debug:
     verbosity: basic
-  prometheusremotewrite:
-    endpoint: "http://victoriametrics:8428/api/v1/write"
+  otlp:
+    endpoint: metrics-governor:4317
     tls:
       insecure: true
 
@@ -33,4 +33,4 @@ service:
     metrics:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug, prometheusremotewrite]
+      exporters: [debug, otlp]

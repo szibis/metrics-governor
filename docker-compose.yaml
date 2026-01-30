@@ -1,13 +1,28 @@
 services:
-  # metrics-governor - the main proxy
+  # OpenTelemetry Collector - receives metrics from generator
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.144.0
+    ports:
+      - "4317:4317"     # OTLP gRPC (for generator)
+      - "4318:4318"     # OTLP HTTP (for generator)
+      - "8888:8888"     # Prometheus metrics
+    volumes:
+      - ./test/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    command: ["--config=/etc/otelcol/config.yaml"]
+    depends_on:
+      - metrics-governor
+    restart: on-failure
+
+  # metrics-governor - proxy between otel-collector and VictoriaMetrics
   metrics-governor:
     build: .
     ports:
-      - "4317:4317"   # gRPC receiver
-      - "4318:4318"   # HTTP receiver
-      - "9090:9090"   # Prometheus metrics
+      - "14317:4317"    # gRPC receiver (from otel-collector)
+      - "14318:4318"    # HTTP receiver (from otel-collector)
+      - "9090:9090"     # Prometheus metrics
     command:
-      - "-exporter-endpoint=dns:///otel-collector:4317"
+      - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
+      - "-exporter-protocol=http"
       - "-exporter-insecure=true"
       - "-stats-labels=service,env"
       - "-limits-config=/etc/metrics-governor/limits.yaml"
@@ -18,23 +33,10 @@ services:
     volumes:
       - ./examples/limits.yaml:/etc/metrics-governor/limits.yaml:ro
     depends_on:
-      - otel-collector
+      - victoriametrics
     restart: on-failure
 
-  # OpenTelemetry Collector as the backend
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.144.0
-    ports:
-      - "14317:4317"   # OTLP gRPC (external)
-      - "14318:4318"   # OTLP HTTP (external)
-      - "8888:8888"    # Prometheus metrics
-    volumes:
-      - ./test/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
-    command: ["--config=/etc/otelcol/config.yaml"]
-    depends_on:
-      - victoriametrics
-
-  # VictoriaMetrics for metrics storage
+  # VictoriaMetrics for metrics storage (OTLP HTTP endpoint)
   victoriametrics:
     image: victoriametrics/victoria-metrics:v1.134.0
     ports:
@@ -48,7 +50,7 @@ services:
     volumes:
       - ./test/vmscrape-config.yaml:/etc/victoriametrics/scrape.yaml:ro
 
-  # Test metrics generator - high throughput mode
+  # Test metrics generator - sends to otel-collector
   metrics-generator:
     build:
       context: ./test
@@ -56,7 +58,7 @@ services:
     ports:
       - "9091:9091"   # Prometheus metrics
     environment:
-      - OTLP_ENDPOINT=metrics-governor:4317
+      - OTLP_ENDPOINT=otel-collector:4317
       - METRICS_INTERVAL=100ms
       - SERVICES=payment-api,order-api,inventory-api,user-api,auth-api,legacy-app
       - ENVIRONMENTS=prod,staging,dev,qa
@@ -71,7 +73,7 @@ services:
       - TARGET_DATAPOINTS_PER_SEC=10000
       - METRICS_PORT=9091
     depends_on:
-      - metrics-governor
+      - otel-collector
 
   # Data verification tool
   verifier:

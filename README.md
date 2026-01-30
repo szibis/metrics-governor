@@ -1115,61 +1115,70 @@ A comprehensive test environment is provided using Docker Compose with full obse
 
 ### Test Environment Architecture
 
+The test environment demonstrates metrics-governor as a **proxy between OpenTelemetry Collector and VictoriaMetrics**:
+
 ```mermaid
-flowchart TB
-    subgraph TestClients["Test Clients"]
-        Generator["Metrics Generator<br/>:9091/metrics<br/>• HTTP metrics<br/>• High cardinality<br/>• Burst traffic<br/>• Edge cases"]
+flowchart LR
+    subgraph Sources["Metrics Sources"]
+        Generator["Metrics Generator<br/>:9091/metrics"]
     end
 
-    subgraph MG["metrics-governor"]
-        Receiver["OTLP Receiver<br/>:4317 gRPC<br/>:4318 HTTP"]
-        Buffer["Buffer"]
-        Stats["Stats"]
-        Limits["Limits<br/>(dry-run)"]
-        Exporter["Exporter"]
-        MGMetrics[":9090/metrics"]
+    subgraph Ingestion["Ingestion Layer"]
+        OTel["OpenTelemetry Collector<br/>:4317 gRPC receiver<br/>:4318 HTTP receiver<br/>:8888/metrics"]
     end
 
-    subgraph Backend["Backend Stack"]
-        OTel["OpenTelemetry Collector<br/>:14317 external<br/>:8888/metrics"]
-        VM["VictoriaMetrics<br/>:8428 API"]
+    subgraph Proxy["Proxy Layer"]
+        MG["metrics-governor<br/>:14317 gRPC receiver<br/>:14318 HTTP receiver<br/>:9090/metrics<br/>━━━━━━━━━━━<br/>• Stats tracking<br/>• Limits enforcement<br/>• Adaptive dropping"]
+    end
+
+    subgraph Storage["Storage Layer"]
+        VM["VictoriaMetrics<br/>:8428 OTLP HTTP<br/>/opentelemetry/v1/metrics"]
     end
 
     subgraph Observability["Observability"]
-        Grafana["Grafana<br/>:3000<br/>admin/admin"]
-        Verifier["Data Verifier<br/>:9092/metrics<br/>• VM queries<br/>• MG queries<br/>• Pass/fail checks"]
+        Grafana["Grafana :3000"]
+        Verifier["Verifier :9092"]
     end
 
-    Generator -->|"OTLP/gRPC"| Receiver
-    Receiver --> Buffer --> Stats --> Limits --> Exporter
-    Stats --> MGMetrics
-    Exporter -->|"OTLP/gRPC"| OTel
-    OTel -->|"Remote Write"| VM
+    Generator -->|"OTLP/gRPC"| OTel
+    OTel -->|"OTLP/gRPC"| MG
+    MG -->|"OTLP/HTTP<br/>protobuf"| VM
 
-    VM -->|"Scrape"| Generator
-    VM -->|"Scrape"| MGMetrics
-    VM -->|"Scrape"| OTel
-    VM -->|"Scrape"| Verifier
+    VM -.->|"Scrape"| Generator
+    VM -.->|"Scrape"| OTel
+    VM -.->|"Scrape"| MG
+    VM -.->|"Scrape"| Verifier
 
-    Verifier -->|"Query API"| VM
-    Verifier -->|"Query /metrics"| MGMetrics
-
+    Verifier -->|"Query"| VM
+    Verifier -->|"Query"| MG
     Grafana -->|"Query"| VM
 
-    style Generator fill:#e1f5fe
-    style MG fill:#fff3e0
-    style VM fill:#e8f5e9
-    style Grafana fill:#fce4ec
-    style Verifier fill:#f3e5f5
+    style Generator fill:#e3f2fd
+    style OTel fill:#fff3e0
+    style MG fill:#e8f5e9
+    style VM fill:#fce4ec
+    style Grafana fill:#f3e5f5
+    style Verifier fill:#fff8e1
 ```
+
+**Data Flow:**
+```
+Generator → OTel Collector → metrics-governor → VictoriaMetrics
+   (OTLP/gRPC)      (OTLP/gRPC)         (OTLP/HTTP protobuf)
+```
+
+This architecture tests metrics-governor as a transparent proxy that:
+- Receives OTLP metrics from upstream collectors
+- Tracks statistics and enforces limits
+- Forwards to VictoriaMetrics using native OTLP HTTP endpoint
 
 ### Components
 
 | Service | Ports | Description |
 |---------|-------|-------------|
-| **metrics-governor** | 4317, 4318, 9090 | OTLP proxy with limits and stats |
-| **otel-collector** | 14317, 14318, 8888 | OpenTelemetry Collector backend |
-| **victoriametrics** | 8428 | Time-series database with Prometheus API |
+| **otel-collector** | 4317, 4318, 8888 | Receives metrics from generator, forwards to governor |
+| **metrics-governor** | 14317, 14318, 9090 | OTLP proxy between collector and VictoriaMetrics |
+| **victoriametrics** | 8428 | Storage with OTLP HTTP endpoint (`/opentelemetry/v1/metrics`) |
 | **metrics-generator** | 9091 | Test traffic generator |
 | **verifier** | 9092 | Automated data flow verification |
 | **grafana** | 3000 | Visualization dashboards |
@@ -1203,12 +1212,13 @@ docker compose down
 
 | Service | Endpoint | Description |
 |---------|----------|-------------|
-| metrics-governor gRPC | `localhost:4317` | OTLP gRPC receiver |
-| metrics-governor HTTP | `localhost:4318` | OTLP HTTP receiver |
-| metrics-governor stats | `http://localhost:9090/metrics` | Governor Prometheus metrics |
-| OTel Collector gRPC | `localhost:14317` | Backend gRPC endpoint |
+| OTel Collector gRPC | `localhost:4317` | OTLP gRPC receiver (generator sends here) |
+| OTel Collector HTTP | `localhost:4318` | OTLP HTTP receiver |
 | OTel Collector metrics | `http://localhost:8888/metrics` | Collector internal metrics |
-| VictoriaMetrics API | `http://localhost:8428` | Query API and UI |
+| metrics-governor gRPC | `localhost:14317` | OTLP gRPC receiver (collector sends here) |
+| metrics-governor HTTP | `localhost:14318` | OTLP HTTP receiver |
+| metrics-governor stats | `http://localhost:9090/metrics` | Governor Prometheus metrics |
+| VictoriaMetrics API | `http://localhost:8428` | Query API, UI, and OTLP HTTP endpoint |
 | Generator metrics | `http://localhost:9091/metrics` | Generator stats |
 | Verifier metrics | `http://localhost:9092/metrics` | Verification stats |
 | Grafana | `http://localhost:3000` | Dashboard UI (admin/admin) |

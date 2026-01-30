@@ -23,10 +23,12 @@ import (
 
 const (
 	metricsGovernorEndpoint = "http://localhost:9090"
+	metricsGovernorGRPC     = "localhost:14317"
 	victoriametricsEndpoint = "http://localhost:8428"
 	generatorEndpoint       = "http://localhost:9091"
 	verifierEndpoint        = "http://localhost:9092"
 	otelCollectorEndpoint   = "http://localhost:8888"
+	otelCollectorGRPC       = "localhost:4317"
 
 	// Test timeouts
 	testTimeout       = 60 * time.Second
