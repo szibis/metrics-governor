@@ -97,12 +97,13 @@ func main() {
 	log.Printf("  Target datapoints/sec: %d", targetDatapointsPerSec)
 	if enableStableMode {
 		log.Printf("  STABLE MODE ENABLED:")
-		log.Printf("    Metrics: %d", stableMetricCount)
-		log.Printf("    Cardinality per metric: %d", stableCardinalityPerMetric)
-		log.Printf("    Datapoints per series per interval: %d", stableDatapointsPerInterval)
-		expectedDatapoints := stableMetricCount * stableCardinalityPerMetric * stableDatapointsPerInterval
-		log.Printf("    Expected total datapoints per interval: %d", expectedDatapoints)
-		log.Printf("    Expected total series: %d", stableMetricCount*stableCardinalityPerMetric)
+		log.Printf("    Standard metrics: DISABLED (stable only)")
+		log.Printf("    Stable metrics: %d", stableMetricCount)
+		log.Printf("    Series per metric: %d", stableCardinalityPerMetric)
+		totalSeries := stableMetricCount * stableCardinalityPerMetric
+		log.Printf("    Total unique series: %d", totalSeries)
+		log.Printf("    NOTE: OTel SDK uses cumulative aggregation")
+		log.Printf("    Expected OTLP datapoints/export: %d (1 per series)", totalSeries)
 	}
 	log.Printf("========================================")
 
@@ -384,8 +385,9 @@ func main() {
 			batchMetrics := int64(0)
 			batchDatapoints := int64(0)
 
-			// Standard metrics generation
-			for _, service := range services {
+			// Standard metrics generation (skip in stable mode for predictability)
+			if !enableStableMode {
+				for _, service := range services {
 				for _, env := range environments {
 					// Generate HTTP request metrics - increased for higher throughput
 					numRequests := rand.Intn(50) + 25
@@ -435,6 +437,7 @@ func main() {
 					}
 				}
 			}
+			} // end if !enableStableMode
 
 			// Edge case values
 			if enableEdgeCases {
