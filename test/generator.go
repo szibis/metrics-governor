@@ -394,7 +394,8 @@ func main() {
 					if service == "legacy-app" || strings.HasPrefix(service, "legacy") {
 						numLegacy := rand.Intn(50) + 10
 						for i := 0; i < numLegacy; i++ {
-							reqID := fmt.Sprintf("req-%s-%d-%d", service, iteration, i)
+							// Use bounded request_id pool to prevent unbounded cardinality
+							reqID := fmt.Sprintf("req-%s-%d", service, rand.Intn(1000))
 							legacyAppRequestCount.Add(ctx, 1,
 								metric.WithAttributes(
 									attribute.String("service", service),
@@ -446,11 +447,12 @@ func main() {
 				for i := 0; i < highCardinalityCount; i++ {
 					highCardinalityMetric.Add(ctx, 1,
 						metric.WithAttributes(
-							attribute.String("user_id", fmt.Sprintf("user_%d", rand.Intn(10000))),
-							attribute.String("session_id", fmt.Sprintf("sess_%d_%d", iteration, i)),
-							attribute.String("request_path", fmt.Sprintf("/api/v%d/resource/%d", rand.Intn(5), rand.Intn(1000))),
-							attribute.String("region", fmt.Sprintf("region_%d", rand.Intn(20))),
-							attribute.String("instance", fmt.Sprintf("instance_%d", rand.Intn(50))),
+							// Use bounded pools to prevent unbounded cardinality growth
+							attribute.String("user_id", fmt.Sprintf("user_%d", rand.Intn(1000))),
+							attribute.String("session_id", fmt.Sprintf("sess_%d", rand.Intn(5000))),
+							attribute.String("request_path", fmt.Sprintf("/api/v%d/resource/%d", rand.Intn(3), rand.Intn(100))),
+							attribute.String("region", fmt.Sprintf("region_%d", rand.Intn(10))),
+							attribute.String("instance", fmt.Sprintf("instance_%d", rand.Intn(20))),
 						))
 					batchDatapoints++
 				}
@@ -545,11 +547,11 @@ func main() {
 			}
 
 			// Verification counter - increment with known value
+			// Use bounded batch_id to prevent unbounded cardinality (verifier only uses max value)
 			verificationID++
 			verificationCounter.Add(ctx, verificationID,
 				metric.WithAttributes(
-					attribute.Int64("batch_id", int64(iteration)),
-					attribute.Int64("verification_id", verificationID),
+					attribute.Int64("batch_id", int64(iteration%100)),
 				))
 			batchMetrics++
 			batchDatapoints++
