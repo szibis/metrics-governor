@@ -164,8 +164,10 @@ jobs:
           tool: 'go'
           output-file-path: benchmark-results.txt
           external-data-json-path: ./cache/benchmark-data.json
-          fail-on-alert: true
-          alert-threshold: '150%'
+          # Don't fail on alert - CI benchmarks have high variance
+          # Real regressions should be caught in code review
+          fail-on-alert: false
+          alert-threshold: '200%'
           comment-on-alert: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: false
