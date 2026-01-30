@@ -21,26 +21,28 @@ services:
 
   # OpenTelemetry Collector as the backend
   otel-collector:
-    image: otel/opentelemetry-collector:0.92.0
+    image: otel/opentelemetry-collector-contrib:0.92.0
     ports:
       - "14317:4317"   # OTLP gRPC (external)
       - "14318:4318"   # OTLP HTTP (external)
-      - "8889:8889"    # Prometheus metrics export
     volumes:
       - ./test/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
     command: ["--config=/etc/otelcol/config.yaml"]
+    depends_on:
+      - victoriametrics
 
-  # Prometheus for scraping metrics
-  prometheus:
-    image: prom/prometheus:v2.48.0
+  # VictoriaMetrics for metrics storage (accepts OTLP directly)
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.96.0
     ports:
-      - "9091:9090"
-    volumes:
-      - ./test/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - "8428:8428"    # HTTP API and UI
+      - "8089:8089"    # OpenTelemetry ingestion
     command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--web.enable-lifecycle"
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--httpListenAddr=:8428"
+      - "--opentsdbHTTPListenAddr=:8089"
+      - "--retentionPeriod=1d"
+      - "--search.latencyOffset=0s"
 
   # Test metrics generator
   metrics-generator:
@@ -52,5 +54,11 @@ services:
       - METRICS_INTERVAL=1s
       - SERVICES=payment-api,order-api,inventory-api,legacy-app
       - ENVIRONMENTS=prod,staging,dev
+      - ENABLE_EDGE_CASES=true
+      - ENABLE_HIGH_CARDINALITY=true
+      - ENABLE_BURST_TRAFFIC=true
+      - HIGH_CARDINALITY_COUNT=100
+      - BURST_SIZE=500
+      - BURST_INTERVAL_SEC=30
     depends_on:
       - metrics-governor

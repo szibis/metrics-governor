@@ -5,7 +5,7 @@ LDFLAGS=-ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/
 
 BUILD_DIR=bin
 
-.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all lint lint-dockerfile lint-yaml lint-helm lint-all release tag
+.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all lint lint-dockerfile lint-yaml lint-helm lint-all release tag
 
 all: darwin-arm64 linux-arm64 linux-amd64
 
@@ -51,6 +51,55 @@ test-e2e:
 
 test-all: test-unit test-functional test-e2e
 	@echo "All tests passed!"
+
+bench:
+	@echo "Running all benchmarks..."
+	go test -bench=. -benchmem ./internal/...
+
+bench-stats:
+	@echo "Running stats benchmarks..."
+	go test -bench=. -benchmem ./internal/stats/...
+
+bench-buffer:
+	@echo "Running buffer benchmarks..."
+	go test -bench=. -benchmem ./internal/buffer/...
+
+bench-compression:
+	@echo "Running compression benchmarks..."
+	go test -bench=. -benchmem ./internal/compression/...
+
+bench-limits:
+	@echo "Running limits benchmarks..."
+	go test -bench=. -benchmem ./internal/limits/...
+
+bench-queue:
+	@echo "Running queue benchmarks..."
+	go test -bench=. -benchmem ./internal/queue/...
+
+bench-receiver:
+	@echo "Running receiver benchmarks..."
+	go test -bench=. -benchmem ./internal/receiver/...
+
+bench-exporter:
+	@echo "Running exporter benchmarks..."
+	go test -bench=. -benchmem ./internal/exporter/...
+
+bench-auth:
+	@echo "Running auth benchmarks..."
+	go test -bench=. -benchmem ./internal/auth/...
+
+bench-all: bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth
+	@echo "All benchmarks complete!"
+
+bench-compare:
+	@echo "Running benchmarks and saving baseline..."
+	@mkdir -p $(BUILD_DIR)
+	go test -bench=. -benchmem ./internal/... | tee $(BUILD_DIR)/bench-$(VERSION).txt
+	@echo "Benchmark results saved to $(BUILD_DIR)/bench-$(VERSION).txt"
+
+bench-quick:
+	@echo "Running quick benchmarks (scale tests only)..."
+	go test -bench=Scale -benchmem ./internal/...
 
 test-coverage:
 	@mkdir -p $(BUILD_DIR)
@@ -116,6 +165,18 @@ help:
 	@echo "  test-e2e         - Run e2e tests only"
 	@echo "  test-all         - Run unit, functional, and e2e tests"
 	@echo "  test-coverage    - Run tests with coverage report"
+	@echo "  bench            - Run all benchmarks"
+	@echo "  bench-stats      - Run stats package benchmarks"
+	@echo "  bench-buffer     - Run buffer package benchmarks"
+	@echo "  bench-compression - Run compression benchmarks"
+	@echo "  bench-limits     - Run limits enforcer benchmarks"
+	@echo "  bench-queue      - Run queue benchmarks"
+	@echo "  bench-receiver   - Run receiver benchmarks"
+	@echo "  bench-exporter   - Run exporter benchmarks"
+	@echo "  bench-auth       - Run auth benchmarks"
+	@echo "  bench-all        - Run all benchmark suites"
+	@echo "  bench-compare    - Run benchmarks and save results"
+	@echo "  bench-quick      - Run quick scale benchmarks only"
 	@echo "  lint             - Run go vet"
 	@echo "  lint-dockerfile  - Lint Dockerfiles with hadolint"
 	@echo "  lint-yaml        - Lint YAML files with yamllint"

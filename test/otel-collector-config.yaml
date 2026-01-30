@@ -14,13 +14,14 @@ processors:
 exporters:
   debug:
     verbosity: basic
-  prometheus:
-    endpoint: "0.0.0.0:8889"
-    namespace: "otel"
+  prometheusremotewrite:
+    endpoint: "http://victoriametrics:8428/api/v1/write"
+    tls:
+      insecure: true
 
 service:
   pipelines:
     metrics:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug, prometheus]
+      exporters: [debug, prometheusremotewrite]

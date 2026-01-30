@@ -340,3 +340,199 @@ func createTestRequest(serviceName, metricName string, datapoints int) *colmetri
 		},
 	}
 }
+
+// TestFunctional_GRPCReceiver_HighCardinality tests receiver with high cardinality metrics
+func TestFunctional_GRPCReceiver_HighCardinality(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	buf := newTestBuffer()
+	go buf.Start(ctx)
+
+	addr := getFreeAddr(t)
+	grpcReceiver := receiver.NewGRPC(addr, buf)
+
+	go grpcReceiver.Start()
+	defer grpcReceiver.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	client := colmetrics.NewMetricsServiceClient(conn)
+
+	// Send many requests with unique label combinations
+	numRequests := 500
+	for i := 0; i < numRequests; i++ {
+		req := createHighCardinalityRequest(i)
+		_, err := client.Export(ctx, req)
+		if err != nil {
+			t.Fatalf("Export %d failed: %v", i, err)
+		}
+	}
+
+	t.Logf("Successfully processed %d high cardinality requests", numRequests)
+}
+
+// TestFunctional_GRPCReceiver_ManyDatapoints tests receiver with many datapoints
+func TestFunctional_GRPCReceiver_ManyDatapoints(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	buf := newTestBuffer()
+	go buf.Start(ctx)
+
+	addr := getFreeAddr(t)
+	grpcReceiver := receiver.NewGRPC(addr, buf)
+
+	go grpcReceiver.Start()
+	defer grpcReceiver.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	client := colmetrics.NewMetricsServiceClient(conn)
+
+	// Send request with many datapoints
+	req := createTestRequest("many-datapoints-test", "many-datapoints-metric", 5000)
+	_, err = client.Export(ctx, req)
+	if err != nil {
+		t.Fatalf("Export failed: %v", err)
+	}
+
+	t.Log("Successfully processed request with 5000 datapoints")
+}
+
+// TestFunctional_GRPCReceiver_EdgeCaseValues tests receiver with edge case metric values
+func TestFunctional_GRPCReceiver_EdgeCaseValues(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	buf := newTestBuffer()
+	go buf.Start(ctx)
+
+	addr := getFreeAddr(t)
+	grpcReceiver := receiver.NewGRPC(addr, buf)
+
+	go grpcReceiver.Start()
+	defer grpcReceiver.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	client := colmetrics.NewMetricsServiceClient(conn)
+
+	// Send edge case values
+	req := createEdgeCaseValuesRequest()
+	_, err = client.Export(ctx, req)
+	if err != nil {
+		t.Fatalf("Export failed: %v", err)
+	}
+
+	t.Log("Successfully processed edge case values")
+}
+
+// Helper functions for new tests
+
+func createHighCardinalityRequest(index int) *colmetrics.ExportMetricsServiceRequest {
+	dps := make([]*metricspb.NumberDataPoint, 5)
+	for i := 0; i < 5; i++ {
+		dps[i] = &metricspb.NumberDataPoint{
+			TimeUnixNano: uint64(time.Now().UnixNano()),
+			Value:        &metricspb.NumberDataPoint_AsDouble{AsDouble: float64(i)},
+			Attributes: []*commonpb.KeyValue{
+				{Key: "user_id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "user_" + string(rune('0'+index%10))}}},
+				{Key: "session_id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "sess_" + string(rune('0'+index))}}},
+				{Key: "request_id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "req_" + string(rune('0'+index)) + "_" + string(rune('0'+i))}}},
+			},
+		}
+	}
+
+	return &colmetrics.ExportMetricsServiceRequest{
+		ResourceMetrics: []*metricspb.ResourceMetrics{
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "high-cardinality-service"}}},
+					},
+				},
+				ScopeMetrics: []*metricspb.ScopeMetrics{
+					{
+						Metrics: []*metricspb.Metric{
+							{
+								Name: "high_cardinality_metric",
+								Data: &metricspb.Metric_Gauge{
+									Gauge: &metricspb.Gauge{
+										DataPoints: dps,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func createEdgeCaseValuesRequest() *colmetrics.ExportMetricsServiceRequest {
+	edgeValues := []float64{
+		0.0,
+		-0.0,
+		1.0,
+		-1.0,
+		1.7976931348623157e+308, // Very large
+		-1.7976931348623157e+308,
+		1e-300, // Very small
+		-1e-300,
+		3.141592653589793, // Pi
+	}
+
+	dps := make([]*metricspb.NumberDataPoint, len(edgeValues))
+	for i, val := range edgeValues {
+		dps[i] = &metricspb.NumberDataPoint{
+			TimeUnixNano: uint64(time.Now().UnixNano()),
+			Value:        &metricspb.NumberDataPoint_AsDouble{AsDouble: val},
+		}
+	}
+
+	return &colmetrics.ExportMetricsServiceRequest{
+		ResourceMetrics: []*metricspb.ResourceMetrics{
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "edge-case-service"}}},
+					},
+				},
+				ScopeMetrics: []*metricspb.ScopeMetrics{
+					{
+						Metrics: []*metricspb.Metric{
+							{
+								Name: "edge_case_metric",
+								Data: &metricspb.Metric_Gauge{
+									Gauge: &metricspb.Gauge{
+										DataPoints: dps,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}

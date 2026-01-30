@@ -7,6 +7,152 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-01-30
+
+### Added
+
+#### Comprehensive Performance Benchmarks
+
+Added benchmark tests for all core components to enable performance monitoring and regression detection:
+
+**Stats Package (`bench-stats`):**
+- `BenchmarkCollector_Process` - Basic metrics processing
+- `BenchmarkCollector_ProcessHighCardinality` - High cardinality label combinations
+- `BenchmarkCollector_ProcessManyDatapoints` - Large datapoint volumes
+- `BenchmarkCollector_GetGlobalStats` - Stats retrieval performance
+- `BenchmarkCollector_ConcurrentProcess` - Parallel processing
+- `BenchmarkCollector_Scale` - Scale testing (10x10 to 10000x10)
+
+**Buffer Package (`bench-buffer`):**
+- `BenchmarkBuffer_Add` - Basic buffer add operations
+- `BenchmarkBuffer_AddWithStats` - Buffer with stats collection
+- `BenchmarkBuffer_ConcurrentAdd` - Concurrent buffer access
+- `BenchmarkBuffer_HighThroughput` - Sustained high throughput
+- `BenchmarkBuffer_Scale` - Scale testing
+- `BenchmarkBuffer_FlushThroughput` - Flush performance
+
+**Compression Package (`bench-compression`):**
+- All compression algorithms: gzip, zstd, snappy, lz4, zlib, deflate
+- Compression/decompression at 1KB, 10KB, 100KB, 1MB sizes
+- Compression level comparisons (fastest to best)
+- Round-trip benchmarks (compress + decompress)
+
+**Limits Package (`bench-limits`):**
+- `BenchmarkEnforcer_Process_NoRules` - Baseline without rules
+- `BenchmarkEnforcer_Process_SimpleRule` - Single rule processing
+- `BenchmarkEnforcer_Process_MultipleRules` - Multiple rule matching
+- `BenchmarkEnforcer_Process_DryRun` - Dry run mode
+- `BenchmarkEnforcer_Process_HighCardinality` - High cardinality handling
+- `BenchmarkEnforcer_Process_Concurrent` - Concurrent enforcement
+- `BenchmarkEnforcer_Process_Scale` - Scale testing
+- `BenchmarkEnforcer_Process_RegexMatch` - Regex pattern matching
+- `BenchmarkEnforcer_Process_LabelMatch` - Label matching
+
+**Queue Package (`bench-queue`):**
+- `BenchmarkQueue_Push` - Push operations
+- `BenchmarkQueue_PushPop` - Push/pop cycles
+- `BenchmarkQueue_Peek` - Peek operations
+- `BenchmarkQueue_LenSize` - Length/size queries
+- `BenchmarkQueue_Push_PayloadSizes` - Different payload sizes
+- `BenchmarkQueue_DropOldest` - Drop oldest behavior
+- `BenchmarkQueue_Concurrent` - Concurrent access
+
+**Receiver Package (`bench-receiver`):**
+- `BenchmarkGRPCReceiver_Export` - gRPC export handling
+- `BenchmarkGRPCReceiver_Export_Concurrent` - Concurrent gRPC
+- `BenchmarkGRPCReceiver_Export_Scale` - Scale testing
+- `BenchmarkHTTPReceiver_HandleMetrics` - HTTP request handling
+- `BenchmarkHTTPReceiver_HandleMetrics_Concurrent` - Concurrent HTTP
+- `BenchmarkHTTPReceiver_HandleMetrics_Scale` - Scale testing
+- `BenchmarkProtobuf_Unmarshal` - Protobuf baseline
+
+**Exporter Package (`bench-exporter`):**
+- `BenchmarkExporter_GRPC` - gRPC export
+- `BenchmarkExporter_GRPC_Concurrent` - Concurrent gRPC export
+- `BenchmarkExporter_HTTP` - HTTP export
+- `BenchmarkExporter_HTTP_Concurrent` - Concurrent HTTP export
+- `BenchmarkExporter_HTTP_WithCompression` - Compression comparison
+- `BenchmarkExporter_GRPC_Scale` - Scale testing
+- `BenchmarkProtobuf_Marshal` - Protobuf baseline
+
+**Auth Package (`bench-auth`):**
+- `BenchmarkHTTPMiddleware_BearerToken` - Bearer token validation
+- `BenchmarkHTTPMiddleware_BasicAuth` - Basic auth validation
+- `BenchmarkHTTPMiddleware_Disabled` - Disabled auth baseline
+- `BenchmarkHTTPTransport_BearerToken` - HTTP client auth
+- `BenchmarkHTTPTransport_CustomHeaders` - Custom headers
+- `BenchmarkGRPCClientInterceptor_BearerToken` - gRPC client auth
+- `BenchmarkGRPCServerInterceptor_Enabled` - gRPC server auth
+- `BenchmarkGRPCServerInterceptor_Disabled` - Disabled baseline
+- `BenchmarkGRPCServerInterceptor_Concurrent` - Concurrent validation
+- `BenchmarkHTTPMiddleware_Concurrent` - Concurrent HTTP auth
+
+#### New Makefile Benchmark Targets
+
+| Target | Description |
+|--------|-------------|
+| `make bench` | Run all benchmarks |
+| `make bench-stats` | Stats package benchmarks |
+| `make bench-buffer` | Buffer package benchmarks |
+| `make bench-compression` | Compression benchmarks |
+| `make bench-limits` | Limits enforcer benchmarks |
+| `make bench-queue` | Queue benchmarks |
+| `make bench-receiver` | Receiver benchmarks |
+| `make bench-exporter` | Exporter benchmarks |
+| `make bench-auth` | Auth benchmarks |
+| `make bench-all` | Run all benchmark suites |
+| `make bench-compare` | Run benchmarks and save results |
+| `make bench-quick` | Quick scale benchmarks only |
+
+#### Enhanced Metrics Generator
+
+Updated `test/generator.go` with edge case testing:
+
+- **Edge case values**: Zero, negative, very large (±1e308), very small (±1e-300), Pi, e
+- **High cardinality metrics**: Configurable unique label combinations
+- **Burst traffic patterns**: Configurable burst size and interval
+- **Many datapoints histogram**: 15 explicit buckets
+
+New environment variables:
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_EDGE_CASES` | `true` | Enable edge case value generation |
+| `ENABLE_HIGH_CARDINALITY` | `true` | Enable high cardinality metrics |
+| `ENABLE_BURST_TRAFFIC` | `true` | Enable burst traffic patterns |
+| `HIGH_CARDINALITY_COUNT` | `100` | Unique label combinations per interval |
+| `BURST_SIZE` | `500` | Metrics per burst |
+| `BURST_INTERVAL_SEC` | `30` | Seconds between bursts |
+
+#### E2E Tests for Edge Cases
+
+New end-to-end tests:
+- `TestE2E_HighCardinality` - 1000 unique user/request combinations
+- `TestE2E_ManyDatapoints` - 10 requests × 10,000 datapoints each
+- `TestE2E_BurstTraffic` - 5 bursts × 500 concurrent requests
+- `TestE2E_EdgeCaseValues` - Extreme float values
+
+#### Functional Tests for Edge Cases
+
+New functional tests:
+- `TestFunctional_GRPCReceiver_HighCardinality`
+- `TestFunctional_GRPCReceiver_ManyDatapoints`
+- `TestFunctional_GRPCReceiver_EdgeCaseValues`
+
+### Changed
+
+#### Docker Compose - VictoriaMetrics
+
+Replaced Prometheus with VictoriaMetrics (vmsingle) for metrics storage:
+- VictoriaMetrics v1.96.0 with OTLP ingestion support
+- OpenTelemetry Collector updated to contrib image for prometheusremotewrite exporter
+- Configured remote write to VictoriaMetrics
+
+### Statistics
+
+- **New benchmark files:** 8
+- **New test files:** 0 (tests added to existing files)
+- **New Makefile targets:** 12
+
 ## [0.3.0] - 2026-01-30
 
 ### Added

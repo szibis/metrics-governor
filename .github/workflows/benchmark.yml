@@ -1,0 +1,194 @@
+name: Benchmarks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run benchmarks
+        run: |
+          go test -bench=. -benchmem -count=5 ./internal/... 2>&1 | tee benchmark-results.txt
+
+      - name: Download previous benchmark data
+        uses: actions/cache@v4
+        with:
+          path: ./cache
+          key: ${{ runner.os }}-benchmark
+          restore-keys: |
+            ${{ runner.os }}-benchmark
+
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Go Benchmarks
+          tool: 'go'
+          output-file-path: benchmark-results.txt
+          external-data-json-path: ./cache/benchmark-data.json
+          fail-on-alert: true
+          alert-threshold: '150%'
+          comment-on-alert: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: false
+          comment-always: true
+          summary-always: true
+
+      - name: Generate benchmark summary
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "## Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Extract key benchmarks for summary
+          echo "#### Core Components Performance" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Benchmark | ns/op | B/op | allocs/op |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-----------|-------|------|-----------|" >> $GITHUB_STEP_SUMMARY
+
+          # Stats
+          grep "BenchmarkCollector_Process-" benchmark-results.txt | head -1 | awk '{printf "| Stats | Process | %s | %s | %s |\n", $3, $5, $7}' >> $GITHUB_STEP_SUMMARY
+
+          # Buffer
+          grep "BenchmarkBuffer_Add-" benchmark-results.txt | head -1 | awk '{printf "| Buffer | Add | %s | %s | %s |\n", $3, $5, $7}' >> $GITHUB_STEP_SUMMARY
+
+          # Compression
+          grep "BenchmarkCompress_Gzip/100KB" benchmark-results.txt | head -1 | awk '{printf "| Compression | Gzip 100KB | %s | %s | %s |\n", $3, $5, $7}' >> $GITHUB_STEP_SUMMARY
+
+          # Limits
+          grep "BenchmarkEnforcer_Process_SimpleRule-" benchmark-results.txt | head -1 | awk '{printf "| Limits | SimpleRule | %s | %s | %s |\n", $3, $5, $7}' >> $GITHUB_STEP_SUMMARY
+
+          # Queue
+          grep "BenchmarkQueue_Push-" benchmark-results.txt | head -1 | awk '{printf "| Queue | Push | %s | %s | %s |\n", $3, $5, $7}' >> $GITHUB_STEP_SUMMARY
+
+          # Receiver
+          grep "BenchmarkGRPCReceiver_Export-" benchmark-results.txt | head -1 | awk '{printf "| Receiver | gRPC Export | %s | %s | %s |\n", $3, $5, $7}' >> $GITHUB_STEP_SUMMARY
+
+          # Exporter
+          grep "BenchmarkExporter_GRPC-" benchmark-results.txt | head -1 | awk '{printf "| Exporter | gRPC | %s | %s | %s |\n", $3, $5, $7}' >> $GITHUB_STEP_SUMMARY
+
+          # Auth
+          grep "BenchmarkHTTPMiddleware_BearerToken-" benchmark-results.txt | head -1 | awk '{printf "| Auth | HTTP Bearer | %s | %s | %s |\n", $3, $5, $7}' >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Performance Alert Threshold" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Alert threshold: **150%** of baseline" >> $GITHUB_STEP_SUMMARY
+          echo "- If any benchmark exceeds this threshold compared to the baseline, the PR check will fail." >> $GITHUB_STEP_SUMMARY
+
+      - name: Save benchmark data on main
+        if: github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p ./cache
+          cp benchmark-results.txt ./cache/benchmark-baseline.txt
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results.txt
+          retention-days: 30
+
+  compare-baseline:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: benchmark
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install benchstat
+        run: go install golang.org/x/perf/cmd/benchstat@latest
+
+      - name: Download current benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-results
+          path: ./current
+
+      - name: Download baseline benchmark
+        uses: actions/cache@v4
+        with:
+          path: ./cache
+          key: ${{ runner.os }}-benchmark
+          restore-keys: |
+            ${{ runner.os }}-benchmark
+
+      - name: Compare benchmarks
+        id: compare
+        run: |
+          if [ -f "./cache/benchmark-baseline.txt" ]; then
+            echo "## Benchmark Comparison (vs main)" >> comparison.md
+            echo "" >> comparison.md
+            echo "Comparing PR benchmarks against main branch baseline." >> comparison.md
+            echo "" >> comparison.md
+            echo "\`\`\`" >> comparison.md
+            benchstat ./cache/benchmark-baseline.txt ./current/benchmark-results.txt >> comparison.md 2>&1 || true
+            echo "\`\`\`" >> comparison.md
+            echo "" >> comparison.md
+
+            # Check for significant regressions (> 20%)
+            REGRESSIONS=$(benchstat ./cache/benchmark-baseline.txt ./current/benchmark-results.txt 2>&1 | grep -E '\+[2-9][0-9]\.[0-9]+%|\+[0-9]{3,}\.[0-9]+%' || true)
+            if [ -n "$REGRESSIONS" ]; then
+              echo "### ⚠️ Potential Performance Regressions" >> comparison.md
+              echo "" >> comparison.md
+              echo "The following benchmarks show >20% regression:" >> comparison.md
+              echo "" >> comparison.md
+              echo "\`\`\`" >> comparison.md
+              echo "$REGRESSIONS" >> comparison.md
+              echo "\`\`\`" >> comparison.md
+              echo "has_regression=true" >> $GITHUB_OUTPUT
+            else
+              echo "### ✅ No Significant Regressions" >> comparison.md
+              echo "" >> comparison.md
+              echo "No benchmarks showed >20% regression compared to baseline." >> comparison.md
+              echo "has_regression=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "## Benchmark Comparison" >> comparison.md
+            echo "" >> comparison.md
+            echo "⚠️ No baseline benchmark data available. This is the first run." >> comparison.md
+            echo "has_regression=false" >> $GITHUB_OUTPUT
+          fi
+
+          cat comparison.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const comparison = fs.readFileSync('comparison.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comparison
+            });
