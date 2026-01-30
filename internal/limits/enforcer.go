@@ -556,6 +556,52 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for rule, dropped := range e.droppedGroups {
 		fmt.Fprintf(w, "metrics_governor_rule_dropped_groups_total{rule=%q} %d\n", rule, len(dropped))
 	}
+
+	// Rule configuration (thresholds) - useful for dashboard visualization
+	if e.config != nil {
+		fmt.Fprintf(w, "# HELP metrics_governor_rule_max_datapoints_rate Configured max datapoints rate per minute for rule\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_rule_max_datapoints_rate gauge\n")
+		for _, rule := range e.config.Rules {
+			fmt.Fprintf(w, "metrics_governor_rule_max_datapoints_rate{rule=%q,action=%q} %d\n", rule.Name, rule.Action, rule.MaxDatapointsRate)
+		}
+
+		fmt.Fprintf(w, "# HELP metrics_governor_rule_max_cardinality Configured max cardinality for rule\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_rule_max_cardinality gauge\n")
+		for _, rule := range e.config.Rules {
+			fmt.Fprintf(w, "metrics_governor_rule_max_cardinality{rule=%q,action=%q} %d\n", rule.Name, rule.Action, rule.MaxCardinality)
+		}
+	}
+
+	// Per-group stats within each rule (top groups by datapoints)
+	fmt.Fprintf(w, "# HELP metrics_governor_rule_group_datapoints Current datapoints per group within rule\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_rule_group_datapoints gauge\n")
+	for ruleName, rs := range e.ruleStats {
+		for groupKey, gs := range rs.groups {
+			fmt.Fprintf(w, "metrics_governor_rule_group_datapoints{rule=%q,group=%q} %d\n", ruleName, groupKey, gs.datapoints)
+		}
+	}
+
+	fmt.Fprintf(w, "# HELP metrics_governor_rule_group_cardinality Current cardinality per group within rule\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_rule_group_cardinality gauge\n")
+	for ruleName, rs := range e.ruleStats {
+		for groupKey, gs := range rs.groups {
+			fmt.Fprintf(w, "metrics_governor_rule_group_cardinality{rule=%q,group=%q} %d\n", ruleName, groupKey, len(gs.cardinality))
+		}
+	}
+
+	// Total datapoints/cardinality across all rules (aggregated)
+	var totalDatapointsAllRules, totalCardinalityAllRules int64
+	for _, rs := range e.ruleStats {
+		totalDatapointsAllRules += rs.totalDPs
+		totalCardinalityAllRules += rs.totalCard
+	}
+	fmt.Fprintf(w, "# HELP metrics_governor_limits_total_datapoints Total datapoints across all rules in current window\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_limits_total_datapoints gauge\n")
+	fmt.Fprintf(w, "metrics_governor_limits_total_datapoints %d\n", totalDatapointsAllRules)
+
+	fmt.Fprintf(w, "# HELP metrics_governor_limits_total_cardinality Total cardinality across all rules in current window\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_limits_total_cardinality gauge\n")
+	fmt.Fprintf(w, "metrics_governor_limits_total_cardinality %d\n", totalCardinalityAllRules)
 }
 
 // Helper functions
