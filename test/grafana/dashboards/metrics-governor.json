@@ -265,12 +265,12 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "metrics_governor_datapoints_total",
+          "expr": "rate(metrics_governor_datapoints_total[1m])",
           "legendFormat": "",
           "refId": "A"
         }
       ],
-      "title": "Total Datapoints Processed",
+      "title": "Datapoints Rate",
       "type": "stat"
     },
     {
@@ -387,12 +387,12 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "metrics_governor_export_errors_total",
+          "expr": "rate(metrics_governor_export_errors_total[1m])",
           "legendFormat": "",
           "refId": "A"
         }
       ],
-      "title": "Export Errors",
+      "title": "Errors Rate",
       "type": "stat"
     },
     {
@@ -444,12 +444,12 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "metrics_governor_batches_sent_total",
+          "expr": "rate(metrics_governor_batches_sent_total[1m])",
           "legendFormat": "",
           "refId": "A"
         }
       ],
-      "title": "Batches Sent",
+      "title": "Batches Rate",
       "type": "stat"
     },
     {
