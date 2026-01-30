@@ -10,12 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.0] - 2026-01-30
 
 ### Added
-- Add persistent WAL-based sending queue for exporter
-
-
-## [0.3.0] - 2026-01-30
-
-### Added
 
 #### Persistent Sending Queue (WAL-based)
 
