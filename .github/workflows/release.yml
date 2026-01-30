@@ -36,64 +36,236 @@ jobs:
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           echo "PREV_TAG=$PREV_TAG" >> $GITHUB_OUTPUT
 
-      - name: Generate changelog
+      - name: Generate verbose changelog
         id: changelog
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
           PREV_TAG="${{ steps.prev_tag.outputs.PREV_TAG }}"
           DATE=$(date +%Y-%m-%d)
 
-          # Generate changelog content
+          # Get the range for comparison
           if [ -n "$PREV_TAG" ]; then
-            COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s" --no-merges)
+            RANGE="${PREV_TAG}..HEAD"
             COMPARE_URL="https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION}"
           else
-            COMMITS=$(git log --pretty=format:"- %s" --no-merges)
+            RANGE="HEAD"
             COMPARE_URL="https://github.com/${{ github.repository }}/commits/${VERSION}"
           fi
 
-          # Categorize commits
-          FEATURES=$(echo "$COMMITS" | grep -iE "^- (add|feat|new)" || true)
-          FIXES=$(echo "$COMMITS" | grep -iE "^- (fix|bug|patch)" || true)
-          CHANGES=$(echo "$COMMITS" | grep -iE "^- (update|change|improve|enhance|refactor)" || true)
-          DOCS=$(echo "$COMMITS" | grep -iE "^- (doc|readme)" || true)
-          OTHER=$(echo "$COMMITS" | grep -viE "^- (add|feat|new|fix|bug|patch|update|change|improve|enhance|refactor|doc|readme)" || true)
+          # Get commits with full body
+          COMMITS=$(git log ${RANGE} --pretty=format:"%s%n%b%n---COMMIT_END---" --no-merges 2>/dev/null || git log --pretty=format:"%s%n%b%n---COMMIT_END---" --no-merges)
+
+          # Get changed files
+          if [ -n "$PREV_TAG" ]; then
+            CHANGED_FILES=$(git diff --name-only ${PREV_TAG}..HEAD 2>/dev/null || echo "")
+          else
+            CHANGED_FILES=$(git diff --name-only HEAD~1..HEAD 2>/dev/null || echo "")
+          fi
+
+          # Extract new CLI flags from config.go changes
+          NEW_FLAGS=""
+          if echo "$CHANGED_FILES" | grep -q "internal/config/config.go"; then
+            if [ -n "$PREV_TAG" ]; then
+              NEW_FLAGS=$(git diff ${PREV_TAG}..HEAD -- internal/config/config.go | grep -E '^\+.*flag\.(String|Bool|Int|Duration|Float64)Var' | sed 's/.*"\([^"]*\)".*/\1/' | sort -u || true)
+            fi
+          fi
+
+          # Extract new Prometheus metrics from metrics.go files
+          NEW_METRICS=""
+          METRICS_FILES=$(echo "$CHANGED_FILES" | grep -E "metrics\.go$" || true)
+          if [ -n "$METRICS_FILES" ]; then
+            for file in $METRICS_FILES; do
+              if [ -n "$PREV_TAG" ]; then
+                METRICS=$(git diff ${PREV_TAG}..HEAD -- "$file" | grep -E '^\+.*Name:.*"metrics_governor_' | sed 's/.*"\(metrics_governor_[^"]*\)".*/\1/' || true)
+                NEW_METRICS="$NEW_METRICS $METRICS"
+              fi
+            done
+          fi
+
+          # Extract new YAML config options
+          NEW_YAML_OPTIONS=""
+          if echo "$CHANGED_FILES" | grep -q "internal/config/yaml.go"; then
+            if [ -n "$PREV_TAG" ]; then
+              NEW_YAML_OPTIONS=$(git diff ${PREV_TAG}..HEAD -- internal/config/yaml.go | grep -E '^\+.*`yaml:"[^"]*"`' | sed 's/.*`yaml:"\([^"]*\)"`/\1/' | sort -u || true)
+            fi
+          fi
+
+          # Check for new packages/directories
+          NEW_PACKAGES=""
+          if [ -n "$PREV_TAG" ]; then
+            NEW_DIRS=$(git diff --name-status ${PREV_TAG}..HEAD | grep -E '^A.*\.go$' | awk '{print $2}' | xargs -I{} dirname {} | sort -u | grep -E '^internal/' || true)
+            for dir in $NEW_DIRS; do
+              if ! git ls-tree -r ${PREV_TAG} --name-only 2>/dev/null | grep -q "^${dir}/"; then
+                NEW_PACKAGES="$NEW_PACKAGES $dir"
+              fi
+            done
+          fi
+
+          # Check for breaking changes in commit messages
+          BREAKING_CHANGES=$(echo "$COMMITS" | grep -iE "(BREAKING|breaking change|incompatible)" | grep -v "^---COMMIT_END---$" || true)
+
+          # Categorize commits by type
+          FEATURES=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (add|feat|new|implement)" || true)
+          FIXES=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (fix|bug|patch|resolve)" || true)
+          CHANGES=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (update|change|improve|enhance|refactor|optimize)" || true)
+          DOCS=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (doc|readme|comment)" || true)
+          TESTS=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (test|coverage|spec)" || true)
+          DEPS=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (dep|dependency|upgrade|bump)" || true)
+          CI=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (ci|workflow|action|pipeline)" || true)
 
           # Build release notes
           {
-            echo "RELEASE_NOTES<<EOF"
-            echo "## What's Changed"
+            echo "RELEASE_NOTES<<RELEASE_EOF"
+            echo "## What's Changed in ${VERSION}"
             echo ""
-            if [ -n "$FEATURES" ]; then
-              echo "### Added"
-              echo "$FEATURES"
+
+            # Breaking changes section
+            if [ -n "$BREAKING_CHANGES" ]; then
+              echo "### ⚠️ Breaking Changes"
+              echo ""
+              echo "$BREAKING_CHANGES" | while read -r line; do
+                if [ -n "$line" ] && [ "$line" != "---COMMIT_END---" ]; then
+                  echo "- $line"
+                fi
+              done
               echo ""
             fi
+
+            # Features section with details
+            if [ -n "$FEATURES" ]; then
+              echo "### ✨ Added"
+              echo ""
+              echo "$FEATURES"
+              echo ""
+
+              # New packages
+              if [ -n "$NEW_PACKAGES" ]; then
+                echo "#### New Packages"
+                echo ""
+                for pkg in $NEW_PACKAGES; do
+                  echo "- \`$pkg\`"
+                done
+                echo ""
+              fi
+
+              # New CLI flags
+              if [ -n "$NEW_FLAGS" ]; then
+                echo "#### New CLI Flags"
+                echo ""
+                echo "| Flag | Description |"
+                echo "|------|-------------|"
+                for flag in $NEW_FLAGS; do
+                  # Try to extract description from code
+                  DESC=$(grep -A1 "\"$flag\"" internal/config/config.go 2>/dev/null | tail -1 | sed 's/.*"\([^"]*\)".*/\1/' | head -c 60 || echo "See documentation")
+                  echo "| \`-$flag\` | $DESC |"
+                done
+                echo ""
+              fi
+
+              # New Prometheus metrics
+              if [ -n "$NEW_METRICS" ]; then
+                echo "#### New Prometheus Metrics"
+                echo ""
+                echo "| Metric | Description |"
+                echo "|--------|-------------|"
+                for metric in $NEW_METRICS; do
+                  if [ -n "$metric" ]; then
+                    # Try to extract help text from code
+                    HELP=$(grep -A2 "\"$metric\"" internal/*/metrics.go 2>/dev/null | grep "Help:" | sed 's/.*"\([^"]*\)".*/\1/' | head -1 || echo "See documentation")
+                    echo "| \`$metric\` | $HELP |"
+                  fi
+                done
+                echo ""
+              fi
+
+              # New YAML config options
+              if [ -n "$NEW_YAML_OPTIONS" ]; then
+                echo "#### New Configuration Options"
+                echo ""
+                echo "New YAML configuration fields added:"
+                echo ""
+                for opt in $NEW_YAML_OPTIONS; do
+                  if [ -n "$opt" ]; then
+                    echo "- \`$opt\`"
+                  fi
+                done
+                echo ""
+              fi
+            fi
+
+            # Fixes section
             if [ -n "$FIXES" ]; then
-              echo "### Fixed"
+              echo "### 🐛 Fixed"
+              echo ""
               echo "$FIXES"
               echo ""
             fi
+
+            # Changes section
             if [ -n "$CHANGES" ]; then
-              echo "### Changed"
+              echo "### 🔄 Changed"
+              echo ""
               echo "$CHANGES"
               echo ""
             fi
+
+            # Tests section
+            if [ -n "$TESTS" ]; then
+              echo "### 🧪 Tests"
+              echo ""
+              echo "$TESTS"
+              echo ""
+            fi
+
+            # Documentation section
             if [ -n "$DOCS" ]; then
-              echo "### Documentation"
+              echo "### 📚 Documentation"
+              echo ""
               echo "$DOCS"
               echo ""
             fi
-            if [ -n "$OTHER" ]; then
-              echo "### Other"
-              echo "$OTHER"
+
+            # Dependencies section
+            if [ -n "$DEPS" ]; then
+              echo "### 📦 Dependencies"
+              echo ""
+              echo "$DEPS"
               echo ""
             fi
-            echo "**Full Changelog**: $COMPARE_URL"
-            echo "EOF"
+
+            # CI/CD section
+            if [ -n "$CI" ]; then
+              echo "### 🔧 CI/CD"
+              echo ""
+              echo "$CI"
+              echo ""
+            fi
+
+            # Files changed summary
+            FILE_COUNT=$(echo "$CHANGED_FILES" | grep -c "." || echo "0")
+            if [ "$FILE_COUNT" -gt 0 ]; then
+              echo "### 📊 Stats"
+              echo ""
+              echo "- **Files changed:** $FILE_COUNT"
+
+              # Count by type
+              GO_FILES=$(echo "$CHANGED_FILES" | grep -c "\.go$" || echo "0")
+              YAML_FILES=$(echo "$CHANGED_FILES" | grep -c "\.ya\?ml$" || echo "0")
+              MD_FILES=$(echo "$CHANGED_FILES" | grep -c "\.md$" || echo "0")
+
+              [ "$GO_FILES" -gt 0 ] && echo "- **Go files:** $GO_FILES"
+              [ "$YAML_FILES" -gt 0 ] && echo "- **YAML files:** $YAML_FILES"
+              [ "$MD_FILES" -gt 0 ] && echo "- **Markdown files:** $MD_FILES"
+              echo ""
+            fi
+
+            echo "---"
+            echo ""
+            echo "**Full Changelog:** $COMPARE_URL"
+            echo "RELEASE_EOF"
           } >> $GITHUB_OUTPUT
 
-          # Save for CHANGELOG.md update
+          # Save date for CHANGELOG.md update
           echo "DATE=$DATE" >> $GITHUB_OUTPUT
 
       - name: Build darwin-arm64
@@ -139,46 +311,202 @@ jobs:
             bin/metrics-governor-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz
             bin/checksums.txt
 
+      - name: Generate CHANGELOG.md entry
+        id: changelog_entry
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          PREV_TAG="${{ steps.prev_tag.outputs.PREV_TAG }}"
+          DATE="${{ steps.changelog.outputs.DATE }}"
+
+          # Get the range for comparison
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="${PREV_TAG}..HEAD"
+          else
+            RANGE="HEAD"
+          fi
+
+          # Get changed files for analysis
+          if [ -n "$PREV_TAG" ]; then
+            CHANGED_FILES=$(git diff --name-only ${PREV_TAG}..HEAD 2>/dev/null || echo "")
+          else
+            CHANGED_FILES=$(git diff --name-only HEAD~1..HEAD 2>/dev/null || echo "")
+          fi
+
+          # Extract new CLI flags
+          NEW_FLAGS=""
+          if echo "$CHANGED_FILES" | grep -q "internal/config/config.go"; then
+            if [ -n "$PREV_TAG" ]; then
+              NEW_FLAGS=$(git diff ${PREV_TAG}..HEAD -- internal/config/config.go | grep -E '^\+.*flag\.(String|Bool|Int|Duration|Float64)Var' | sed 's/.*"\([^"]*\)".*/\1/' | sort -u || true)
+            fi
+          fi
+
+          # Extract new metrics
+          NEW_METRICS=""
+          METRICS_FILES=$(echo "$CHANGED_FILES" | grep -E "metrics\.go$" || true)
+          if [ -n "$METRICS_FILES" ]; then
+            for file in $METRICS_FILES; do
+              if [ -n "$PREV_TAG" ]; then
+                METRICS=$(git diff ${PREV_TAG}..HEAD -- "$file" | grep -E '^\+.*Name:.*"metrics_governor_' | sed 's/.*"\(metrics_governor_[^"]*\)".*/\1/' || true)
+                NEW_METRICS="$NEW_METRICS $METRICS"
+              fi
+            done
+          fi
+
+          # Check for new packages
+          NEW_PACKAGES=""
+          if [ -n "$PREV_TAG" ]; then
+            NEW_DIRS=$(git diff --name-status ${PREV_TAG}..HEAD | grep -E '^A.*\.go$' | awk '{print $2}' | xargs -I{} dirname {} | sort -u | grep -E '^internal/' || true)
+            for dir in $NEW_DIRS; do
+              if ! git ls-tree -r ${PREV_TAG} --name-only 2>/dev/null | grep -q "^${dir}/"; then
+                NEW_PACKAGES="$NEW_PACKAGES $dir"
+              fi
+            done
+          fi
+
+          # Check for breaking changes
+          BREAKING=$(git log ${RANGE} --pretty=format:"%s%n%b" --no-merges | grep -iE "(BREAKING|breaking change)" || true)
+
+          # Categorize commits
+          FEATURES=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (add|feat|new|implement)" || true)
+          FIXES=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (fix|bug|patch|resolve)" || true)
+          CHANGES=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (update|change|improve|enhance|refactor|optimize)" || true)
+          DOCS=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (doc|readme)" || true)
+
+          # Create changelog entry file
+          cat > /tmp/changelog_entry.md << 'CHANGELOG_EOF'
+          ## [VERSION_PLACEHOLDER] - DATE_PLACEHOLDER
+          CHANGELOG_EOF
+
+          # Add breaking changes if any
+          if [ -n "$BREAKING" ]; then
+            cat >> /tmp/changelog_entry.md << 'BREAKING_EOF'
+
+### ⚠️ Breaking Changes
+
+BREAKING_EOF
+            echo "$BREAKING" | head -10 >> /tmp/changelog_entry.md
+          fi
+
+          # Add features
+          if [ -n "$FEATURES" ]; then
+            cat >> /tmp/changelog_entry.md << 'FEATURES_EOF'
+
+### Added
+
+FEATURES_EOF
+            echo "$FEATURES" >> /tmp/changelog_entry.md
+
+            # Add new packages subsection
+            if [ -n "$NEW_PACKAGES" ]; then
+              echo "" >> /tmp/changelog_entry.md
+              echo "#### New Packages" >> /tmp/changelog_entry.md
+              echo "" >> /tmp/changelog_entry.md
+              for pkg in $NEW_PACKAGES; do
+                echo "- \`$pkg\`" >> /tmp/changelog_entry.md
+              done
+            fi
+
+            # Add new CLI flags subsection
+            if [ -n "$NEW_FLAGS" ]; then
+              echo "" >> /tmp/changelog_entry.md
+              echo "#### New CLI Flags" >> /tmp/changelog_entry.md
+              echo "" >> /tmp/changelog_entry.md
+              echo "| Flag | Description |" >> /tmp/changelog_entry.md
+              echo "|------|-------------|" >> /tmp/changelog_entry.md
+              for flag in $NEW_FLAGS; do
+                DESC=$(grep -A1 "\"$flag\"" internal/config/config.go 2>/dev/null | tail -1 | sed 's/.*"\([^"]*\)".*/\1/' | head -c 80 || echo "See docs")
+                echo "| \`-$flag\` | $DESC |" >> /tmp/changelog_entry.md
+              done
+            fi
+
+            # Add new metrics subsection
+            if [ -n "$NEW_METRICS" ]; then
+              echo "" >> /tmp/changelog_entry.md
+              echo "#### New Prometheus Metrics" >> /tmp/changelog_entry.md
+              echo "" >> /tmp/changelog_entry.md
+              echo "| Metric | Type | Description |" >> /tmp/changelog_entry.md
+              echo "|--------|------|-------------|" >> /tmp/changelog_entry.md
+              for metric in $NEW_METRICS; do
+                if [ -n "$metric" ]; then
+                  # Try to get type and help from code
+                  TYPE=$(grep -B5 "\"$metric\"" internal/*/metrics.go 2>/dev/null | grep -E "prometheus\.(New)?(Counter|Gauge|Histogram|Summary)" | head -1 | sed 's/.*prometheus\.\(New\)\?\([A-Za-z]*\).*/\2/' || echo "Gauge")
+                  HELP=$(grep -A3 "\"$metric\"" internal/*/metrics.go 2>/dev/null | grep "Help:" | sed 's/.*"\([^"]*\)".*/\1/' | head -1 || echo "-")
+                  echo "| \`$metric\` | $TYPE | $HELP |" >> /tmp/changelog_entry.md
+                fi
+              done
+            fi
+          fi
+
+          # Add fixes
+          if [ -n "$FIXES" ]; then
+            cat >> /tmp/changelog_entry.md << 'FIXES_EOF'
+
+### Fixed
+
+FIXES_EOF
+            echo "$FIXES" >> /tmp/changelog_entry.md
+          fi
+
+          # Add changes
+          if [ -n "$CHANGES" ]; then
+            cat >> /tmp/changelog_entry.md << 'CHANGES_EOF'
+
+### Changed
+
+CHANGES_EOF
+            echo "$CHANGES" >> /tmp/changelog_entry.md
+          fi
+
+          # Add docs
+          if [ -n "$DOCS" ]; then
+            cat >> /tmp/changelog_entry.md << 'DOCS_EOF'
+
+### Documentation
+
+DOCS_EOF
+            echo "$DOCS" >> /tmp/changelog_entry.md
+          fi
+
+          # Replace placeholders
+          sed -i "s/VERSION_PLACEHOLDER/${VERSION#v}/" /tmp/changelog_entry.md
+          sed -i "s/DATE_PLACEHOLDER/$DATE/" /tmp/changelog_entry.md
+
+          # Save entry to output
+          echo "ENTRY_FILE=/tmp/changelog_entry.md" >> $GITHUB_OUTPUT
+
       - name: Update CHANGELOG.md
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          DATE="${{ steps.changelog.outputs.DATE }}"
-          PREV_TAG="${{ steps.prev_tag.outputs.PREV_TAG }}"
+          ENTRY_FILE="${{ steps.changelog_entry.outputs.ENTRY_FILE }}"
 
-          # Get commits for changelog
-          if [ -n "$PREV_TAG" ]; then
-            COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s" --no-merges)
-          else
-            COMMITS=$(git log --pretty=format:"- %s" --no-merges)
+          # Check if this version already exists in CHANGELOG.md
+          if grep -q "## \[${VERSION#v}\]" CHANGELOG.md; then
+            echo "Version ${VERSION} already exists in CHANGELOG.md, skipping update"
+            exit 0
           fi
 
-          # Categorize commits
-          FEATURES=$(echo "$COMMITS" | grep -iE "^- (add|feat|new)" || true)
-          FIXES=$(echo "$COMMITS" | grep -iE "^- (fix|bug|patch)" || true)
-          CHANGES=$(echo "$COMMITS" | grep -iE "^- (update|change|improve|enhance|refactor)" || true)
+          if [ -f "$ENTRY_FILE" ]; then
+            # Read the new entry
+            NEW_ENTRY=$(cat "$ENTRY_FILE")
 
-          # Build new changelog entry
-          NEW_ENTRY="## [${VERSION#v}] - $DATE"
-          NEW_ENTRY+="\n"
-          if [ -n "$FEATURES" ]; then
-            NEW_ENTRY+="\n### Added\n$FEATURES\n"
-          fi
-          if [ -n "$FIXES" ]; then
-            NEW_ENTRY+="\n### Fixed\n$FIXES\n"
-          fi
-          if [ -n "$CHANGES" ]; then
-            NEW_ENTRY+="\n### Changed\n$CHANGES\n"
-          fi
+            # Create temp file with updated changelog
+            {
+              head -8 CHANGELOG.md  # Keep header including ## [Unreleased]
+              echo ""
+              cat "$ENTRY_FILE"
+              echo ""
+              tail -n +9 CHANGELOG.md  # Rest of changelog
+            } > /tmp/CHANGELOG_NEW.md
 
-          # Update CHANGELOG.md
-          sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n${NEW_ENTRY//\//\\/}/" CHANGELOG.md
+            mv /tmp/CHANGELOG_NEW.md CHANGELOG.md
+          fi
 
       - name: Commit CHANGELOG.md
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
           git add CHANGELOG.md
-          git commit -m "Update CHANGELOG.md for ${{ steps.version.outputs.VERSION }}" || echo "No changes to commit"
+          git diff --staged --quiet || git commit -m "Update CHANGELOG.md for ${{ steps.version.outputs.VERSION }}"
           git push origin HEAD:main || echo "Could not push changelog update"
 
   docker:
