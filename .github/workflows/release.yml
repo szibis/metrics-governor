@@ -36,7 +36,7 @@ jobs:
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           echo "PREV_TAG=$PREV_TAG" >> $GITHUB_OUTPUT
 
-      - name: Generate verbose changelog
+      - name: Generate comprehensive changelog
         id: changelog
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
@@ -51,9 +51,6 @@ jobs:
             RANGE="HEAD"
             COMPARE_URL="https://github.com/${{ github.repository }}/commits/${VERSION}"
           fi
-
-          # Get commits with full body
-          COMMITS=$(git log ${RANGE} --pretty=format:"%s%n%b%n---COMMIT_END---" --no-merges 2>/dev/null || git log --pretty=format:"%s%n%b%n---COMMIT_END---" --no-merges)
 
           # Get changed files
           if [ -n "$PREV_TAG" ]; then
@@ -75,7 +72,7 @@ jobs:
           METRICS_FILES=$(echo "$CHANGED_FILES" | grep -E "metrics\.go$" || true)
           if [ -n "$METRICS_FILES" ]; then
             for file in $METRICS_FILES; do
-              if [ -n "$PREV_TAG" ]; then
+              if [ -n "$PREV_TAG" ] && [ -f "$file" ]; then
                 METRICS=$(git diff ${PREV_TAG}..HEAD -- "$file" | grep -E '^\+.*Name:.*"metrics_governor_' | sed 's/.*"\(metrics_governor_[^"]*\)".*/\1/' || true)
                 NEW_METRICS="$NEW_METRICS $METRICS"
               fi
@@ -93,7 +90,7 @@ jobs:
           # Check for new packages/directories
           NEW_PACKAGES=""
           if [ -n "$PREV_TAG" ]; then
-            NEW_DIRS=$(git diff --name-status ${PREV_TAG}..HEAD | grep -E '^A.*\.go$' | awk '{print $2}' | xargs -I{} dirname {} | sort -u | grep -E '^internal/' || true)
+            NEW_DIRS=$(git diff --name-status ${PREV_TAG}..HEAD | grep -E '^A.*\.go$' | awk '{print $2}' | xargs -I{} dirname {} 2>/dev/null | sort -u | grep -E '^internal/' || true)
             for dir in $NEW_DIRS; do
               if ! git ls-tree -r ${PREV_TAG} --name-only 2>/dev/null | grep -q "^${dir}/"; then
                 NEW_PACKAGES="$NEW_PACKAGES $dir"
@@ -102,7 +99,7 @@ jobs:
           fi
 
           # Check for breaking changes in commit messages
-          BREAKING_CHANGES=$(echo "$COMMITS" | grep -iE "(BREAKING|breaking change|incompatible)" | grep -v "^---COMMIT_END---$" || true)
+          BREAKING_CHANGES=$(git log ${RANGE} --pretty=format:"%s%n%b" --no-merges | grep -iE "(BREAKING|breaking change|incompatible)" || true)
 
           # Categorize commits by type
           FEATURES=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (add|feat|new|implement)" || true)
@@ -113,10 +110,17 @@ jobs:
           DEPS=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (dep|dependency|upgrade|bump)" || true)
           CI=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (ci|workflow|action|pipeline)" || true)
 
-          # Build release notes
+          # File statistics
+          FILE_COUNT=$(echo "$CHANGED_FILES" | grep -c "." || echo "0")
+          GO_FILES=$(echo "$CHANGED_FILES" | grep -c "\.go$" || echo "0")
+          YAML_FILES=$(echo "$CHANGED_FILES" | grep -cE "\.ya?ml$" || echo "0")
+          MD_FILES=$(echo "$CHANGED_FILES" | grep -c "\.md$" || echo "0")
+
+          # Create changelog file that will be used for both GitHub Release and CHANGELOG.md
+          CHANGELOG_FILE="/tmp/changelog_${VERSION}.md"
+
           {
-            echo "RELEASE_NOTES<<RELEASE_EOF"
-            echo "## What's Changed in ${VERSION}"
+            echo "## [${VERSION#v}] - $DATE"
             echo ""
 
             # Breaking changes section
@@ -124,7 +128,7 @@ jobs:
               echo "### ⚠️ Breaking Changes"
               echo ""
               echo "$BREAKING_CHANGES" | while read -r line; do
-                if [ -n "$line" ] && [ "$line" != "---COMMIT_END---" ]; then
+                if [ -n "$line" ]; then
                   echo "- $line"
                 fi
               done
@@ -133,7 +137,7 @@ jobs:
 
             # Features section with details
             if [ -n "$FEATURES" ]; then
-              echo "### ✨ Added"
+              echo "### Added"
               echo ""
               echo "$FEATURES"
               echo ""
@@ -148,31 +152,39 @@ jobs:
                 echo ""
               fi
 
-              # New CLI flags
+              # New CLI flags with table
               if [ -n "$NEW_FLAGS" ]; then
                 echo "#### New CLI Flags"
                 echo ""
-                echo "| Flag | Description |"
-                echo "|------|-------------|"
+                echo "| Flag | Default | Description |"
+                echo "|------|---------|-------------|"
                 for flag in $NEW_FLAGS; do
-                  # Try to extract description from code
-                  DESC=$(grep -A1 "\"$flag\"" internal/config/config.go 2>/dev/null | tail -1 | sed 's/.*"\([^"]*\)".*/\1/' | head -c 60 || echo "See documentation")
-                  echo "| \`-$flag\` | $DESC |"
+                  # Try to extract default and description from code
+                  FLAG_LINE=$(grep -B2 -A2 "\"$flag\"" internal/config/config.go 2>/dev/null | tr '\n' ' ' || echo "")
+                  DEFAULT=$(echo "$FLAG_LINE" | grep -oE '\, *"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || echo "-")
+                  DESC=$(echo "$FLAG_LINE" | grep -oE '"[^"]{10,}"' | tail -1 | sed 's/"//g' | head -c 60 || echo "See documentation")
+                  [ -z "$DEFAULT" ] && DEFAULT="-"
+                  [ -z "$DESC" ] && DESC="See documentation"
+                  echo "| \`-$flag\` | \`$DEFAULT\` | $DESC |"
                 done
                 echo ""
               fi
 
-              # New Prometheus metrics
+              # New Prometheus metrics with table
               if [ -n "$NEW_METRICS" ]; then
                 echo "#### New Prometheus Metrics"
                 echo ""
-                echo "| Metric | Description |"
-                echo "|--------|-------------|"
+                echo "| Metric | Type | Description |"
+                echo "|--------|------|-------------|"
                 for metric in $NEW_METRICS; do
                   if [ -n "$metric" ]; then
-                    # Try to extract help text from code
-                    HELP=$(grep -A2 "\"$metric\"" internal/*/metrics.go 2>/dev/null | grep "Help:" | sed 's/.*"\([^"]*\)".*/\1/' | head -1 || echo "See documentation")
-                    echo "| \`$metric\` | $HELP |"
+                    # Try to get type and help from code
+                    METRIC_BLOCK=$(grep -B10 "\"$metric\"" internal/*/metrics.go 2>/dev/null | tr '\n' ' ' || echo "")
+                    TYPE=$(echo "$METRIC_BLOCK" | grep -oE "prometheus\.(New)?(Counter|Gauge|Histogram|Summary)" | tail -1 | sed 's/.*prometheus\.\(New\)\?//' || echo "Gauge")
+                    HELP=$(grep -A5 "\"$metric\"" internal/*/metrics.go 2>/dev/null | grep "Help:" | sed 's/.*Help:[^"]*"\([^"]*\)".*/\1/' | head -1 || echo "-")
+                    [ -z "$TYPE" ] && TYPE="Gauge"
+                    [ -z "$HELP" ] && HELP="-"
+                    echo "| \`$metric\` | $TYPE | $HELP |"
                   fi
                 done
                 echo ""
@@ -180,13 +192,16 @@ jobs:
 
               # New YAML config options
               if [ -n "$NEW_YAML_OPTIONS" ]; then
-                echo "#### New Configuration Options"
+                echo "#### New Configuration Options (YAML)"
                 echo ""
-                echo "New YAML configuration fields added:"
-                echo ""
+                echo "| Option | Description |"
+                echo "|--------|-------------|"
                 for opt in $NEW_YAML_OPTIONS; do
                   if [ -n "$opt" ]; then
-                    echo "- \`$opt\`"
+                    # Try to find the comment/description
+                    DESC=$(grep -B1 "yaml:\"$opt\"" internal/config/yaml.go 2>/dev/null | head -1 | sed 's/.*\/\/ *//' | head -c 60 || echo "-")
+                    [ -z "$DESC" ] || [ "$DESC" = "$opt" ] && DESC="-"
+                    echo "| \`$opt\` | $DESC |"
                   fi
                 done
                 echo ""
@@ -195,7 +210,7 @@ jobs:
 
             # Fixes section
             if [ -n "$FIXES" ]; then
-              echo "### 🐛 Fixed"
+              echo "### Fixed"
               echo ""
               echo "$FIXES"
               echo ""
@@ -203,7 +218,7 @@ jobs:
 
             # Changes section
             if [ -n "$CHANGES" ]; then
-              echo "### 🔄 Changed"
+              echo "### Changed"
               echo ""
               echo "$CHANGES"
               echo ""
@@ -211,7 +226,7 @@ jobs:
 
             # Tests section
             if [ -n "$TESTS" ]; then
-              echo "### 🧪 Tests"
+              echo "### Tests"
               echo ""
               echo "$TESTS"
               echo ""
@@ -219,7 +234,7 @@ jobs:
 
             # Documentation section
             if [ -n "$DOCS" ]; then
-              echo "### 📚 Documentation"
+              echo "### Documentation"
               echo ""
               echo "$DOCS"
               echo ""
@@ -227,7 +242,7 @@ jobs:
 
             # Dependencies section
             if [ -n "$DEPS" ]; then
-              echo "### 📦 Dependencies"
+              echo "### Dependencies"
               echo ""
               echo "$DEPS"
               echo ""
@@ -235,24 +250,17 @@ jobs:
 
             # CI/CD section
             if [ -n "$CI" ]; then
-              echo "### 🔧 CI/CD"
+              echo "### CI/CD"
               echo ""
               echo "$CI"
               echo ""
             fi
 
-            # Files changed summary
-            FILE_COUNT=$(echo "$CHANGED_FILES" | grep -c "." || echo "0")
+            # Statistics
             if [ "$FILE_COUNT" -gt 0 ]; then
-              echo "### 📊 Stats"
+              echo "### Statistics"
               echo ""
               echo "- **Files changed:** $FILE_COUNT"
-
-              # Count by type
-              GO_FILES=$(echo "$CHANGED_FILES" | grep -c "\.go$" || echo "0")
-              YAML_FILES=$(echo "$CHANGED_FILES" | grep -c "\.ya\?ml$" || echo "0")
-              MD_FILES=$(echo "$CHANGED_FILES" | grep -c "\.md$" || echo "0")
-
               [ "$GO_FILES" -gt 0 ] && echo "- **Go files:** $GO_FILES"
               [ "$YAML_FILES" -gt 0 ] && echo "- **YAML files:** $YAML_FILES"
               [ "$MD_FILES" -gt 0 ] && echo "- **Markdown files:** $MD_FILES"
@@ -262,11 +270,20 @@ jobs:
             echo "---"
             echo ""
             echo "**Full Changelog:** $COMPARE_URL"
+
+          } > "$CHANGELOG_FILE"
+
+          # Output the file path
+          echo "CHANGELOG_FILE=$CHANGELOG_FILE" >> $GITHUB_OUTPUT
+          echo "DATE=$DATE" >> $GITHUB_OUTPUT
+          echo "COMPARE_URL=$COMPARE_URL" >> $GITHUB_OUTPUT
+
+          # Also create release notes (same content with header for GitHub Release)
+          {
+            echo "RELEASE_NOTES<<RELEASE_EOF"
+            cat "$CHANGELOG_FILE"
             echo "RELEASE_EOF"
           } >> $GITHUB_OUTPUT
-
-          # Save date for CHANGELOG.md update
-          echo "DATE=$DATE" >> $GITHUB_OUTPUT
 
       - name: Build darwin-arm64
         run: |
@@ -311,173 +328,10 @@ jobs:
             bin/metrics-governor-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz
             bin/checksums.txt
 
-      - name: Generate CHANGELOG.md entry
-        id: changelog_entry
-        run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          PREV_TAG="${{ steps.prev_tag.outputs.PREV_TAG }}"
-          DATE="${{ steps.changelog.outputs.DATE }}"
-
-          # Get the range for comparison
-          if [ -n "$PREV_TAG" ]; then
-            RANGE="${PREV_TAG}..HEAD"
-          else
-            RANGE="HEAD"
-          fi
-
-          # Get changed files for analysis
-          if [ -n "$PREV_TAG" ]; then
-            CHANGED_FILES=$(git diff --name-only ${PREV_TAG}..HEAD 2>/dev/null || echo "")
-          else
-            CHANGED_FILES=$(git diff --name-only HEAD~1..HEAD 2>/dev/null || echo "")
-          fi
-
-          # Extract new CLI flags
-          NEW_FLAGS=""
-          if echo "$CHANGED_FILES" | grep -q "internal/config/config.go"; then
-            if [ -n "$PREV_TAG" ]; then
-              NEW_FLAGS=$(git diff ${PREV_TAG}..HEAD -- internal/config/config.go | grep -E '^\+.*flag\.(String|Bool|Int|Duration|Float64)Var' | sed 's/.*"\([^"]*\)".*/\1/' | sort -u || true)
-            fi
-          fi
-
-          # Extract new metrics
-          NEW_METRICS=""
-          METRICS_FILES=$(echo "$CHANGED_FILES" | grep -E "metrics\.go$" || true)
-          if [ -n "$METRICS_FILES" ]; then
-            for file in $METRICS_FILES; do
-              if [ -n "$PREV_TAG" ]; then
-                METRICS=$(git diff ${PREV_TAG}..HEAD -- "$file" | grep -E '^\+.*Name:.*"metrics_governor_' | sed 's/.*"\(metrics_governor_[^"]*\)".*/\1/' || true)
-                NEW_METRICS="$NEW_METRICS $METRICS"
-              fi
-            done
-          fi
-
-          # Check for new packages
-          NEW_PACKAGES=""
-          if [ -n "$PREV_TAG" ]; then
-            NEW_DIRS=$(git diff --name-status ${PREV_TAG}..HEAD | grep -E '^A.*\.go$' | awk '{print $2}' | xargs -I{} dirname {} | sort -u | grep -E '^internal/' || true)
-            for dir in $NEW_DIRS; do
-              if ! git ls-tree -r ${PREV_TAG} --name-only 2>/dev/null | grep -q "^${dir}/"; then
-                NEW_PACKAGES="$NEW_PACKAGES $dir"
-              fi
-            done
-          fi
-
-          # Check for breaking changes
-          BREAKING=$(git log ${RANGE} --pretty=format:"%s%n%b" --no-merges | grep -iE "(BREAKING|breaking change)" || true)
-
-          # Categorize commits
-          FEATURES=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (add|feat|new|implement)" || true)
-          FIXES=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (fix|bug|patch|resolve)" || true)
-          CHANGES=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (update|change|improve|enhance|refactor|optimize)" || true)
-          DOCS=$(git log ${RANGE} --pretty=format:"- %s" --no-merges | grep -iE "^- (doc|readme)" || true)
-
-          # Create changelog entry file
-          cat > /tmp/changelog_entry.md << 'CHANGELOG_EOF'
-          ## [VERSION_PLACEHOLDER] - DATE_PLACEHOLDER
-          CHANGELOG_EOF
-
-          # Add breaking changes if any
-          if [ -n "$BREAKING" ]; then
-            cat >> /tmp/changelog_entry.md << 'BREAKING_EOF'
-
-### ⚠️ Breaking Changes
-
-BREAKING_EOF
-            echo "$BREAKING" | head -10 >> /tmp/changelog_entry.md
-          fi
-
-          # Add features
-          if [ -n "$FEATURES" ]; then
-            cat >> /tmp/changelog_entry.md << 'FEATURES_EOF'
-
-### Added
-
-FEATURES_EOF
-            echo "$FEATURES" >> /tmp/changelog_entry.md
-
-            # Add new packages subsection
-            if [ -n "$NEW_PACKAGES" ]; then
-              echo "" >> /tmp/changelog_entry.md
-              echo "#### New Packages" >> /tmp/changelog_entry.md
-              echo "" >> /tmp/changelog_entry.md
-              for pkg in $NEW_PACKAGES; do
-                echo "- \`$pkg\`" >> /tmp/changelog_entry.md
-              done
-            fi
-
-            # Add new CLI flags subsection
-            if [ -n "$NEW_FLAGS" ]; then
-              echo "" >> /tmp/changelog_entry.md
-              echo "#### New CLI Flags" >> /tmp/changelog_entry.md
-              echo "" >> /tmp/changelog_entry.md
-              echo "| Flag | Description |" >> /tmp/changelog_entry.md
-              echo "|------|-------------|" >> /tmp/changelog_entry.md
-              for flag in $NEW_FLAGS; do
-                DESC=$(grep -A1 "\"$flag\"" internal/config/config.go 2>/dev/null | tail -1 | sed 's/.*"\([^"]*\)".*/\1/' | head -c 80 || echo "See docs")
-                echo "| \`-$flag\` | $DESC |" >> /tmp/changelog_entry.md
-              done
-            fi
-
-            # Add new metrics subsection
-            if [ -n "$NEW_METRICS" ]; then
-              echo "" >> /tmp/changelog_entry.md
-              echo "#### New Prometheus Metrics" >> /tmp/changelog_entry.md
-              echo "" >> /tmp/changelog_entry.md
-              echo "| Metric | Type | Description |" >> /tmp/changelog_entry.md
-              echo "|--------|------|-------------|" >> /tmp/changelog_entry.md
-              for metric in $NEW_METRICS; do
-                if [ -n "$metric" ]; then
-                  # Try to get type and help from code
-                  TYPE=$(grep -B5 "\"$metric\"" internal/*/metrics.go 2>/dev/null | grep -E "prometheus\.(New)?(Counter|Gauge|Histogram|Summary)" | head -1 | sed 's/.*prometheus\.\(New\)\?\([A-Za-z]*\).*/\2/' || echo "Gauge")
-                  HELP=$(grep -A3 "\"$metric\"" internal/*/metrics.go 2>/dev/null | grep "Help:" | sed 's/.*"\([^"]*\)".*/\1/' | head -1 || echo "-")
-                  echo "| \`$metric\` | $TYPE | $HELP |" >> /tmp/changelog_entry.md
-                fi
-              done
-            fi
-          fi
-
-          # Add fixes
-          if [ -n "$FIXES" ]; then
-            cat >> /tmp/changelog_entry.md << 'FIXES_EOF'
-
-### Fixed
-
-FIXES_EOF
-            echo "$FIXES" >> /tmp/changelog_entry.md
-          fi
-
-          # Add changes
-          if [ -n "$CHANGES" ]; then
-            cat >> /tmp/changelog_entry.md << 'CHANGES_EOF'
-
-### Changed
-
-CHANGES_EOF
-            echo "$CHANGES" >> /tmp/changelog_entry.md
-          fi
-
-          # Add docs
-          if [ -n "$DOCS" ]; then
-            cat >> /tmp/changelog_entry.md << 'DOCS_EOF'
-
-### Documentation
-
-DOCS_EOF
-            echo "$DOCS" >> /tmp/changelog_entry.md
-          fi
-
-          # Replace placeholders
-          sed -i "s/VERSION_PLACEHOLDER/${VERSION#v}/" /tmp/changelog_entry.md
-          sed -i "s/DATE_PLACEHOLDER/$DATE/" /tmp/changelog_entry.md
-
-          # Save entry to output
-          echo "ENTRY_FILE=/tmp/changelog_entry.md" >> $GITHUB_OUTPUT
-
       - name: Update CHANGELOG.md
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          ENTRY_FILE="${{ steps.changelog_entry.outputs.ENTRY_FILE }}"
+          CHANGELOG_FILE="${{ steps.changelog.outputs.CHANGELOG_FILE }}"
 
           # Check if this version already exists in CHANGELOG.md
           if grep -q "## \[${VERSION#v}\]" CHANGELOG.md; then
@@ -485,17 +339,17 @@ DOCS_EOF
             exit 0
           fi
 
-          if [ -f "$ENTRY_FILE" ]; then
-            # Read the new entry
-            NEW_ENTRY=$(cat "$ENTRY_FILE")
-
+          if [ -f "$CHANGELOG_FILE" ]; then
             # Create temp file with updated changelog
             {
-              head -8 CHANGELOG.md  # Keep header including ## [Unreleased]
+              # Keep header lines up to and including ## [Unreleased]
+              sed -n '1,/## \[Unreleased\]/p' CHANGELOG.md
               echo ""
-              cat "$ENTRY_FILE"
+              # Add new changelog entry
+              cat "$CHANGELOG_FILE"
               echo ""
-              tail -n +9 CHANGELOG.md  # Rest of changelog
+              # Add rest of changelog (skip header)
+              sed -n '/## \[Unreleased\]/,$ p' CHANGELOG.md | tail -n +2
             } > /tmp/CHANGELOG_NEW.md
 
             mv /tmp/CHANGELOG_NEW.md CHANGELOG.md
