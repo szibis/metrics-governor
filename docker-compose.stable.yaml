@@ -46,6 +46,7 @@ services:
       - "-flush-interval=500ms"
       - "-batch-size=100"
       - "-buffer-size=2000"
+    volumes: []  # Clear all volumes (no limits config needed)
 
   victoriametrics:
     deploy:

@@ -17,6 +17,7 @@ import (
 	"github.com/slawomirskowron/metrics-governor/internal/queue"
 	"github.com/slawomirskowron/metrics-governor/internal/receiver"
 	"github.com/slawomirskowron/metrics-governor/internal/stats"
+	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
 
 func main() {
@@ -87,7 +88,12 @@ func main() {
 	runtimeStats := stats.NewRuntimeStats()
 
 	// Create limits enforcer (if configured)
-	var limitsEnforcer *limits.Enforcer
+	// Use interface type to avoid typed nil issue with interface comparison
+	var limitsEnforcer interface {
+		Process([]*metricspb.ResourceMetrics) []*metricspb.ResourceMetrics
+		ServeHTTP(http.ResponseWriter, *http.Request)
+		Stop()
+	}
 	if cfg.LimitsConfig != "" {
 		limitsCfg, err := limits.LoadConfig(cfg.LimitsConfig)
 		if err != nil {
