@@ -66,6 +66,12 @@ func main() {
 	targetMetricsPerSec := getEnvInt("TARGET_METRICS_PER_SEC", 1000)
 	targetDatapointsPerSec := getEnvInt("TARGET_DATAPOINTS_PER_SEC", 10000)
 
+	// Stable mode configuration - for predictable testing
+	enableStableMode := getEnvBool("ENABLE_STABLE_MODE", false)
+	stableMetricCount := getEnvInt("STABLE_METRIC_COUNT", 100)         // Number of stable metrics
+	stableCardinalityPerMetric := getEnvInt("STABLE_CARDINALITY", 10)  // Series per metric
+	stableDatapointsPerInterval := getEnvInt("STABLE_DATAPOINTS", 1)   // Datapoints per series per interval
+
 	interval, err := time.ParseDuration(intervalStr)
 	if err != nil {
 		log.Fatalf("Invalid interval: %v", err)
@@ -89,6 +95,15 @@ func main() {
 	log.Printf("  Stats output: %v (interval: %ds)", enableStatsOutput, statsIntervalSec)
 	log.Printf("  Target metrics/sec: %d", targetMetricsPerSec)
 	log.Printf("  Target datapoints/sec: %d", targetDatapointsPerSec)
+	if enableStableMode {
+		log.Printf("  STABLE MODE ENABLED:")
+		log.Printf("    Metrics: %d", stableMetricCount)
+		log.Printf("    Cardinality per metric: %d", stableCardinalityPerMetric)
+		log.Printf("    Datapoints per series per interval: %d", stableDatapointsPerInterval)
+		expectedDatapoints := stableMetricCount * stableCardinalityPerMetric * stableDatapointsPerInterval
+		log.Printf("    Expected total datapoints per interval: %d", expectedDatapoints)
+		log.Printf("    Expected total series: %d", stableMetricCount*stableCardinalityPerMetric)
+	}
 	log.Printf("========================================")
 
 	// Suppress unused variable warnings
@@ -309,6 +324,18 @@ func main() {
 			len(diverseCounters)+len(diverseGauges)+len(diverseHistograms))
 	}
 
+	// Stable metrics - predictable counters for testing
+	var stableCounters []metric.Int64Counter
+	if enableStableMode {
+		for i := 0; i < stableMetricCount; i++ {
+			c, _ := meter.Int64Counter(fmt.Sprintf("stable_metric_%03d", i),
+				metric.WithDescription(fmt.Sprintf("Stable test metric %d with fixed cardinality", i)))
+			stableCounters = append(stableCounters, c)
+		}
+		log.Printf("Created %d stable counters with %d series each = %d total series",
+			stableMetricCount, stableCardinalityPerMetric, stableMetricCount*stableCardinalityPerMetric)
+	}
+
 	methods := []string{"GET", "POST", "PUT", "DELETE"}
 	endpoints := []string{"/api/users", "/api/orders", "/api/products", "/api/payments", "/api/inventory"}
 	statuses := []string{"200", "201", "400", "404", "500"}
@@ -460,6 +487,25 @@ func main() {
 				batchMetrics++
 				stats.HighCardinalityMetrics.Add(int64(highCardinalityCount))
 				stats.UniqueLabels.Add(int64(highCardinalityCount)) // Approximate
+			}
+
+			// Stable mode metrics - completely predictable for testing
+			if enableStableMode {
+				for i, c := range stableCounters {
+					// Each metric has exactly stableCardinalityPerMetric series
+					// using deterministic label values (not random)
+					for j := 0; j < stableCardinalityPerMetric; j++ {
+						for k := 0; k < stableDatapointsPerInterval; k++ {
+							c.Add(ctx, 1,
+								metric.WithAttributes(
+									attribute.String("series", fmt.Sprintf("s%02d", j)),
+									attribute.Int("metric_id", i),
+								))
+							batchDatapoints++
+						}
+					}
+				}
+				batchMetrics += int64(len(stableCounters))
 			}
 
 			// Diverse metrics - generate values for all unique metric names

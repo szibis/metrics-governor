@@ -1,0 +1,76 @@
+# Stable testing configuration - predictable metrics for verification
+# Usage: docker compose -f docker-compose.yaml -f docker-compose.stable.yaml up -d
+#
+# This override provides completely predictable metrics for:
+# - Rate calculation verification
+# - Datapoint counting verification
+# - Cardinality testing
+# - Dashboard validation
+#
+# Expected metrics per interval (1s):
+# - 100 metrics * 10 series * 1 datapoint = 1,000 datapoints/interval
+# - Total cardinality: 1,000 unique series (stable, no growth)
+
+services:
+  metrics-generator:
+    environment:
+      - OTLP_ENDPOINT=otel-collector:4317
+      - METRICS_INTERVAL=1s              # 1 second intervals for easy rate calculation
+      - SERVICES=stable-service          # Single service
+      - ENVIRONMENTS=test                # Single environment
+      - ENABLE_EDGE_CASES=false          # Disabled for predictability
+      - ENABLE_HIGH_CARDINALITY=false    # Disabled for predictability
+      - ENABLE_BURST_TRAFFIC=false       # Disabled for predictability
+      - ENABLE_DIVERSE_METRICS=false     # Disabled for predictability
+      - HIGH_CARDINALITY_COUNT=0
+      - DIVERSE_METRIC_COUNT=0
+      - BURST_SIZE=0
+      - BURST_INTERVAL_SEC=9999
+      - STATS_INTERVAL_SEC=10
+      - TARGET_METRICS_PER_SEC=1000
+      - TARGET_DATAPOINTS_PER_SEC=1000
+      - METRICS_PORT=9091
+      # Stable mode configuration
+      - ENABLE_STABLE_MODE=true
+      - STABLE_METRIC_COUNT=100          # 100 unique metric names
+      - STABLE_CARDINALITY=10            # 10 series per metric
+      - STABLE_DATAPOINTS=1              # 1 datapoint per series per interval
+
+  metrics-governor:
+    command:
+      - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
+      - "-exporter-protocol=http"
+      - "-exporter-insecure=true"
+      - "-exporter-compression=gzip"
+      - "-stats-labels=series,metric_id"
+      - "-flush-interval=500ms"
+      - "-batch-size=100"
+      - "-buffer-size=2000"
+
+  victoriametrics:
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    command:
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=1h"
+      - "--search.latencyOffset=0s"
+      - "--promscrape.config=/etc/victoriametrics/scrape.yaml"
+      - "--maxInsertRequestSize=32MB"
+      - "--opentelemetry.maxRequestSize=32MB"
+      - "--opentelemetry.convertMetricNamesToPrometheus"
+      - "--memory.allowedPercent=70"
+      - "--search.maxUniqueTimeseries=10000"
+      - "--search.maxConcurrentRequests=8"
+      - "--search.maxQueryDuration=5s"
+
+  verifier:
+    environment:
+      - VM_ENDPOINT=http://victoriametrics:8428
+      - MG_ENDPOINT=http://metrics-governor:9090
+      - CHECK_INTERVAL=10s
+      - VERIFICATION_METRIC=generator_verification_counter
+      - PASS_THRESHOLD=99.0              # High threshold for stable mode
+      - METRICS_PORT=9092
