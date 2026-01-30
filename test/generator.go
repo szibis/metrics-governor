@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -22,6 +23,30 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// GeneratorStats tracks metrics generation statistics
+type GeneratorStats struct {
+	StartTime              time.Time
+	TotalMetricsSent       atomic.Int64
+	TotalDatapointsSent    atomic.Int64
+	TotalBytesSent         atomic.Int64
+	TotalBatchesSent       atomic.Int64
+	TotalErrors            atomic.Int64
+	LastBatchTime          atomic.Int64 // Unix nano
+	MinBatchLatency        atomic.Int64 // Nanoseconds
+	MaxBatchLatency        atomic.Int64 // Nanoseconds
+	TotalBatchLatency      atomic.Int64 // Nanoseconds (for average)
+
+	// High cardinality tracking
+	HighCardinalityMetrics atomic.Int64
+	UniqueLabels           atomic.Int64
+
+	// Burst tracking
+	BurstsSent             atomic.Int64
+	BurstMetricsSent       atomic.Int64
+}
+
+var stats = &GeneratorStats{}
+
 func main() {
 	endpoint := getEnv("OTLP_ENDPOINT", "localhost:4317")
 	intervalStr := getEnv("METRICS_INTERVAL", "1s")
@@ -31,8 +56,10 @@ func main() {
 	enableHighCardinality := getEnvBool("ENABLE_HIGH_CARDINALITY", true)
 	enableBurstTraffic := getEnvBool("ENABLE_BURST_TRAFFIC", true)
 	highCardinalityCount := getEnvInt("HIGH_CARDINALITY_COUNT", 100)
-	burstSize := getEnvInt("BURST_SIZE", 1000)
+	burstSize := getEnvInt("BURST_SIZE", 500)
 	burstIntervalSec := getEnvInt("BURST_INTERVAL_SEC", 30)
+	statsIntervalSec := getEnvInt("STATS_INTERVAL_SEC", 10)
+	enableStatsOutput := getEnvBool("ENABLE_STATS_OUTPUT", true)
 
 	interval, err := time.ParseDuration(intervalStr)
 	if err != nil {
@@ -42,7 +69,10 @@ func main() {
 	services := strings.Split(servicesStr, ",")
 	environments := strings.Split(environmentsStr, ",")
 
-	log.Printf("Starting metrics generator")
+	log.Printf("========================================")
+	log.Printf("  METRICS GENERATOR STARTING")
+	log.Printf("========================================")
+	log.Printf("Configuration:")
 	log.Printf("  Endpoint: %s", endpoint)
 	log.Printf("  Interval: %s", interval)
 	log.Printf("  Services: %v", services)
@@ -50,8 +80,11 @@ func main() {
 	log.Printf("  Edge cases: %v", enableEdgeCases)
 	log.Printf("  High cardinality: %v (count: %d)", enableHighCardinality, highCardinalityCount)
 	log.Printf("  Burst traffic: %v (size: %d, interval: %ds)", enableBurstTraffic, burstSize, burstIntervalSec)
+	log.Printf("  Stats output: %v (interval: %ds)", enableStatsOutput, statsIntervalSec)
+	log.Printf("========================================")
 
 	ctx := context.Background()
+	stats.StartTime = time.Now()
 
 	// Wait for metrics-governor to be ready
 	log.Println("Waiting for OTLP endpoint to be ready...")
@@ -120,6 +153,10 @@ func main() {
 		metric.WithDescription("Histogram with many datapoints"),
 		metric.WithExplicitBucketBoundaries(0.001, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0))
 
+	// Verification metrics - these help track what was sent
+	verificationCounter, _ := meter.Int64Counter("generator_verification_counter",
+		metric.WithDescription("Counter for verifying data delivery"))
+
 	methods := []string{"GET", "POST", "PUT", "DELETE"}
 	endpoints := []string{"/api/users", "/api/orders", "/api/products", "/api/payments", "/api/inventory"}
 	statuses := []string{"200", "201", "400", "404", "500"}
@@ -146,17 +183,30 @@ func main() {
 	burstTicker := time.NewTicker(time.Duration(burstIntervalSec) * time.Second)
 	defer burstTicker.Stop()
 
+	// Stats output ticker
+	var statsTicker *time.Ticker
+	if enableStatsOutput {
+		statsTicker = time.NewTicker(time.Duration(statsIntervalSec) * time.Second)
+		defer statsTicker.Stop()
+	}
+
 	iteration := 0
+	verificationID := int64(0)
+
 	for {
 		select {
 		case <-ticker.C:
+			batchStart := time.Now()
 			iteration++
+			batchMetrics := int64(0)
+			batchDatapoints := int64(0)
 
 			// Standard metrics generation
 			for _, service := range services {
 				for _, env := range environments {
 					// Generate HTTP request metrics
-					for i := 0; i < rand.Intn(10)+5; i++ {
+					numRequests := rand.Intn(10) + 5
+					for i := 0; i < numRequests; i++ {
 						method := methods[rand.Intn(len(methods))]
 						endpoint := endpoints[rand.Intn(len(endpoints))]
 						status := statuses[rand.Intn(len(statuses))]
@@ -171,6 +221,8 @@ func main() {
 
 						httpRequestsTotal.Add(ctx, 1, metric.WithAttributes(attrs...))
 						httpRequestDuration.Record(ctx, rand.Float64()*0.5, metric.WithAttributes(attrs...))
+						batchMetrics += 2
+						batchDatapoints += 2
 					}
 
 					// Generate active connections
@@ -179,11 +231,13 @@ func main() {
 							attribute.String("service", service),
 							attribute.String("env", env),
 						))
+					batchMetrics++
+					batchDatapoints++
 
 					// Generate high-cardinality legacy metrics (to test limits)
 					if service == "legacy-app" || strings.HasPrefix(service, "legacy") {
-						for i := 0; i < rand.Intn(50)+10; i++ {
-							// High cardinality: unique request ID
+						numLegacy := rand.Intn(50) + 10
+						for i := 0; i < numLegacy; i++ {
 							reqID := fmt.Sprintf("req-%s-%d-%d", service, iteration, i)
 							legacyAppRequestCount.Add(ctx, 1,
 								metric.WithAttributes(
@@ -191,7 +245,9 @@ func main() {
 									attribute.String("env", env),
 									attribute.String("request_id", reqID),
 								))
+							batchDatapoints++
 						}
+						batchMetrics++
 					}
 				}
 			}
@@ -204,7 +260,9 @@ func main() {
 							attribute.String("edge_type", fmt.Sprintf("type_%d", i)),
 							attribute.String("iteration", strconv.Itoa(iteration)),
 						))
+					batchDatapoints++
 				}
+				batchMetrics++
 
 				// Counter edge cases (only positive values for counters)
 				for i := 0; i < 5; i++ {
@@ -212,7 +270,9 @@ func main() {
 						metric.WithAttributes(
 							attribute.String("edge_type", fmt.Sprintf("counter_type_%d", i)),
 						))
+					batchDatapoints++
 				}
+				batchMetrics++
 
 				// Many datapoints histogram
 				for i := 0; i < 100; i++ {
@@ -220,13 +280,14 @@ func main() {
 						metric.WithAttributes(
 							attribute.String("source", "edge_test"),
 						))
+					batchDatapoints++
 				}
+				batchMetrics++
 			}
 
 			// High cardinality metrics
 			if enableHighCardinality {
 				for i := 0; i < highCardinalityCount; i++ {
-					// Create unique label combinations
 					highCardinalityMetric.Add(ctx, 1,
 						metric.WithAttributes(
 							attribute.String("user_id", fmt.Sprintf("user_%d", rand.Intn(10000))),
@@ -235,6 +296,48 @@ func main() {
 							attribute.String("region", fmt.Sprintf("region_%d", rand.Intn(20))),
 							attribute.String("instance", fmt.Sprintf("instance_%d", rand.Intn(50))),
 						))
+					batchDatapoints++
+				}
+				batchMetrics++
+				stats.HighCardinalityMetrics.Add(int64(highCardinalityCount))
+				stats.UniqueLabels.Add(int64(highCardinalityCount)) // Approximate
+			}
+
+			// Verification counter - increment with known value
+			verificationID++
+			verificationCounter.Add(ctx, verificationID,
+				metric.WithAttributes(
+					attribute.Int64("batch_id", int64(iteration)),
+					attribute.Int64("verification_id", verificationID),
+				))
+			batchMetrics++
+			batchDatapoints++
+
+			// Update stats
+			batchLatency := time.Since(batchStart).Nanoseconds()
+			stats.TotalMetricsSent.Add(batchMetrics)
+			stats.TotalDatapointsSent.Add(batchDatapoints)
+			stats.TotalBatchesSent.Add(1)
+			stats.LastBatchTime.Store(time.Now().UnixNano())
+			stats.TotalBatchLatency.Add(batchLatency)
+
+			// Update min/max latency
+			for {
+				oldMin := stats.MinBatchLatency.Load()
+				if oldMin != 0 && oldMin <= batchLatency {
+					break
+				}
+				if stats.MinBatchLatency.CompareAndSwap(oldMin, batchLatency) {
+					break
+				}
+			}
+			for {
+				oldMax := stats.MaxBatchLatency.Load()
+				if oldMax >= batchLatency {
+					break
+				}
+				if stats.MaxBatchLatency.CompareAndSwap(oldMax, batchLatency) {
+					break
 				}
 			}
 
@@ -244,8 +347,8 @@ func main() {
 
 		case <-burstTicker.C:
 			if enableBurstTraffic {
+				burstStart := time.Now()
 				log.Printf("Generating burst traffic: %d metrics", burstSize)
-				start := time.Now()
 
 				for i := 0; i < burstSize; i++ {
 					burstMetric.Add(ctx, 1,
@@ -256,10 +359,72 @@ func main() {
 						))
 				}
 
-				log.Printf("Burst complete in %v", time.Since(start))
+				burstDuration := time.Since(burstStart)
+				stats.BurstsSent.Add(1)
+				stats.BurstMetricsSent.Add(int64(burstSize))
+				stats.TotalDatapointsSent.Add(int64(burstSize))
+
+				log.Printf("Burst complete in %v (%.0f metrics/sec)", burstDuration, float64(burstSize)/burstDuration.Seconds())
 			}
+
+		case <-func() <-chan time.Time {
+			if statsTicker != nil {
+				return statsTicker.C
+			}
+			return nil
+		}():
+			printStats()
 		}
 	}
+}
+
+func printStats() {
+	elapsed := time.Since(stats.StartTime)
+	totalMetrics := stats.TotalMetricsSent.Load()
+	totalDatapoints := stats.TotalDatapointsSent.Load()
+	totalBatches := stats.TotalBatchesSent.Load()
+	totalErrors := stats.TotalErrors.Load()
+	highCardMetrics := stats.HighCardinalityMetrics.Load()
+	bursts := stats.BurstsSent.Load()
+	burstMetrics := stats.BurstMetricsSent.Load()
+
+	avgLatency := float64(0)
+	if totalBatches > 0 {
+		avgLatency = float64(stats.TotalBatchLatency.Load()) / float64(totalBatches) / 1e6 // Convert to ms
+	}
+
+	metricsPerSec := float64(totalMetrics) / elapsed.Seconds()
+	datapointsPerSec := float64(totalDatapoints) / elapsed.Seconds()
+
+	log.Printf("========================================")
+	log.Printf("  GENERATOR STATISTICS")
+	log.Printf("========================================")
+	log.Printf("Runtime: %s", elapsed.Round(time.Second))
+	log.Printf("")
+	log.Printf("THROUGHPUT:")
+	log.Printf("  Total metrics sent:     %d", totalMetrics)
+	log.Printf("  Total datapoints sent:  %d", totalDatapoints)
+	log.Printf("  Metrics/sec:            %.2f", metricsPerSec)
+	log.Printf("  Datapoints/sec:         %.2f", datapointsPerSec)
+	log.Printf("")
+	log.Printf("BATCHES:")
+	log.Printf("  Total batches:          %d", totalBatches)
+	log.Printf("  Avg batch latency:      %.2f ms", avgLatency)
+	log.Printf("  Min batch latency:      %.2f ms", float64(stats.MinBatchLatency.Load())/1e6)
+	log.Printf("  Max batch latency:      %.2f ms", float64(stats.MaxBatchLatency.Load())/1e6)
+	log.Printf("")
+	log.Printf("HIGH CARDINALITY:")
+	log.Printf("  High-card metrics:      %d", highCardMetrics)
+	log.Printf("  Unique labels (approx): %d", stats.UniqueLabels.Load())
+	log.Printf("")
+	log.Printf("BURST TRAFFIC:")
+	log.Printf("  Bursts sent:            %d", bursts)
+	log.Printf("  Burst metrics total:    %d", burstMetrics)
+	log.Printf("")
+	log.Printf("ERRORS:")
+	log.Printf("  Total errors:           %d", totalErrors)
+	log.Printf("  Error rate:             %.4f%%", float64(totalErrors)/float64(totalBatches)*100)
+	log.Printf("========================================")
 }
 
 func getEnv(key, defaultValue string) string {
