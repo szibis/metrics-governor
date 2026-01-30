@@ -83,6 +83,9 @@ func main() {
 	// Create stats collector
 	statsCollector := stats.NewCollector(trackLabels)
 
+	// Create runtime stats collector
+	runtimeStats := stats.NewRuntimeStats()
+
 	// Create limits enforcer (if configured)
 	var limitsEnforcer *limits.Enforcer
 	if cfg.LimitsConfig != "" {
@@ -132,6 +135,8 @@ func main() {
 		if limitsEnforcer != nil {
 			limitsEnforcer.ServeHTTP(w, r)
 		}
+		// Write runtime metrics (goroutines, memory, GC, PSI)
+		runtimeStats.ServeHTTP(w, r)
 	})
 
 	statsServer := &http.Server{

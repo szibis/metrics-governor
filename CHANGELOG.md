@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-01-30
+
+### Added
+
+#### Runtime Metrics for Governor Process
+
+New internal metrics exposing Go runtime and process statistics:
+
+**Go Runtime Metrics:**
+- `metrics_governor_goroutines` - Number of goroutines
+- `metrics_governor_memory_alloc_bytes` - Currently allocated memory
+- `metrics_governor_memory_heap_*` - Heap memory stats (alloc, sys, idle, inuse, released, objects)
+- `metrics_governor_memory_stack_*` - Stack memory stats
+- `metrics_governor_gc_cycles_total` - Total GC cycles
+- `metrics_governor_gc_pause_total_seconds` - Total GC pause time
+- `metrics_governor_gc_cpu_percent` - GC CPU usage percentage
+- `metrics_governor_process_uptime_seconds` - Process uptime
+
+**Network I/O Metrics (Linux):**
+- `metrics_governor_network_receive_bytes_total` - Total bytes received
+- `metrics_governor_network_transmit_bytes_total` - Total bytes transmitted
+- `metrics_governor_network_receive_packets_total` - Total packets received
+- `metrics_governor_network_transmit_packets_total` - Total packets transmitted
+- `metrics_governor_network_*_errors_total` - Network errors
+- `metrics_governor_network_*_dropped_total` - Dropped packets
+
+**Disk I/O Metrics (Linux):**
+- `metrics_governor_process_io_read_bytes_total` - Bytes read from disk
+- `metrics_governor_process_io_write_bytes_total` - Bytes written to disk
+- `metrics_governor_process_io_read_syscalls_total` - Read syscalls
+- `metrics_governor_process_io_write_syscalls_total` - Write syscalls
+
+**PSI Metrics (Linux):**
+- `metrics_governor_psi_{cpu,memory,io}_some_avg*` - Pressure stall info
+
+**New Files:**
+- `internal/stats/runtime.go` - RuntimeStats collector
+
+**Modified Files:**
+- `cmd/metrics-governor/main.go` - Integrated RuntimeStats into /metrics endpoint
+
+#### Grafana Dashboard - Runtime Section
+
+New "Runtime (Governor Process)" section with 12 panels:
+- Memory Usage (heap, stack, system)
+- Goroutines & Heap Objects
+- GC Pause Time and GC Cycles & CPU
+- Network Throughput (receive/transmit bytes/sec)
+- Disk I/O Throughput (read/write bytes/sec)
+- Network Packets Rate
+- Disk I/O Syscalls Rate
+- Stat panels for key metrics
+
 ## [0.4.3] - 2026-01-30
 
 ### Added
