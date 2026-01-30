@@ -48,7 +48,7 @@ services:
     command:
       - "--storageDataPath=/victoria-metrics-data"
       - "--httpListenAddr=:8428"
-      - "--retentionPeriod=1h"        # Short retention
+      - "--retentionPeriod=1d"        # Minimum retention
       - "--search.latencyOffset=0s"
       - "--promscrape.config=/etc/victoriametrics/scrape.yaml"
       - "--maxInsertRequestSize=16MB"
