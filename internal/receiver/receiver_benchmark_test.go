@@ -26,7 +26,7 @@ func (n *noopExporter) Export(ctx context.Context, req *colmetricspb.ExportMetri
 }
 
 func newBenchmarkBuffer() *buffer.MetricsBuffer {
-	return buffer.New(100000, 1000, time.Hour, &noopExporter{}, nil, nil)
+	return buffer.New(100000, 1000, time.Hour, &noopExporter{}, nil, nil, nil)
 }
 
 // BenchmarkGRPCReceiver_Export benchmarks the gRPC Export method

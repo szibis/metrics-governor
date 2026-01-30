@@ -38,7 +38,7 @@ func (c *countingExporter) Export(ctx context.Context, req *colmetricspb.ExportM
 // BenchmarkBuffer_Add benchmarks adding metrics to buffer
 func BenchmarkBuffer_Add(b *testing.B) {
 	exp := &noopExporter{}
-	buf := New(100000, 1000, time.Hour, exp, nil, nil)
+	buf := New(100000, 1000, time.Hour, exp, nil, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -56,7 +56,7 @@ func BenchmarkBuffer_Add(b *testing.B) {
 func BenchmarkBuffer_AddWithStats(b *testing.B) {
 	exp := &noopExporter{}
 	statsCollector := stats.NewCollector([]string{"service", "env"})
-	buf := New(100000, 1000, time.Hour, exp, statsCollector, nil)
+	buf := New(100000, 1000, time.Hour, exp, statsCollector, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -73,7 +73,7 @@ func BenchmarkBuffer_AddWithStats(b *testing.B) {
 // BenchmarkBuffer_ConcurrentAdd benchmarks concurrent adds
 func BenchmarkBuffer_ConcurrentAdd(b *testing.B) {
 	exp := &noopExporter{}
-	buf := New(100000, 1000, time.Hour, exp, nil, nil)
+	buf := New(100000, 1000, time.Hour, exp, nil, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -92,7 +92,7 @@ func BenchmarkBuffer_ConcurrentAdd(b *testing.B) {
 func BenchmarkBuffer_HighThroughput(b *testing.B) {
 	exp := &countingExporter{}
 	// Small batch size to trigger frequent flushes
-	buf := New(10000, 100, 10*time.Millisecond, exp, nil, nil)
+	buf := New(10000, 100, 10*time.Millisecond, exp, nil, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -125,7 +125,7 @@ func BenchmarkBuffer_Scale(b *testing.B) {
 	for _, scale := range scales {
 		b.Run(scale.name, func(b *testing.B) {
 			exp := &noopExporter{}
-			buf := New(scale.bufferSize, scale.batchSize, time.Hour, exp, nil, nil)
+			buf := New(scale.bufferSize, scale.batchSize, time.Hour, exp, nil, nil, nil)
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -145,7 +145,7 @@ func BenchmarkBuffer_Scale(b *testing.B) {
 func BenchmarkBuffer_FlushThroughput(b *testing.B) {
 	exp := &countingExporter{}
 	// Immediate flush on every add
-	buf := New(10, 1, time.Millisecond, exp, nil, nil)
+	buf := New(10, 1, time.Millisecond, exp, nil, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

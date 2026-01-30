@@ -263,9 +263,18 @@ metrics_governor_batches_sent_total 500
 func TestFunctional_VerifyFunction(t *testing.T) {
 	// Mock VictoriaMetrics
 	vmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		query := r.URL.Query().Get("query")
 		var response string
 
+		// Handle TSDB status API (used for efficient time series counting)
+		if strings.Contains(r.URL.Path, "/api/v1/status/tsdb") {
+			response = `{"status":"success","data":{"totalSeries":1000,"totalLabelValuePairs":5000,"seriesCountByMetricName":[{"name":"metric1","value":100},{"name":"metric2","value":100},{"name":"metric3","value":100},{"name":"metric4","value":100},{"name":"metric5","value":100},{"name":"metric6","value":100},{"name":"metric7","value":100},{"name":"metric8","value":100},{"name":"metric9","value":100},{"name":"metric10","value":100},{"name":"metric11","value":100},{"name":"metric12","value":100},{"name":"metric13","value":100},{"name":"metric14","value":100},{"name":"metric15","value":100},{"name":"metric16","value":100},{"name":"metric17","value":100},{"name":"metric18","value":100},{"name":"metric19","value":100},{"name":"metric20","value":100},{"name":"metric21","value":100},{"name":"metric22","value":100},{"name":"metric23","value":100},{"name":"metric24","value":100},{"name":"metric25","value":100},{"name":"metric26","value":100},{"name":"metric27","value":100},{"name":"metric28","value":100},{"name":"metric29","value":100},{"name":"metric30","value":100},{"name":"metric31","value":100},{"name":"metric32","value":100},{"name":"metric33","value":100},{"name":"metric34","value":100},{"name":"metric35","value":100},{"name":"metric36","value":100},{"name":"metric37","value":100},{"name":"metric38","value":100},{"name":"metric39","value":100},{"name":"metric40","value":100},{"name":"metric41","value":100},{"name":"metric42","value":100},{"name":"metric43","value":100},{"name":"metric44","value":100},{"name":"metric45","value":100},{"name":"metric46","value":100},{"name":"metric47","value":100},{"name":"metric48","value":100},{"name":"metric49","value":100},{"name":"metric50","value":100}]}}`
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, response)
+			return
+		}
+
+		// Handle query API
+		query := r.URL.Query().Get("query")
 		switch {
 		case strings.Contains(query, "count({__name__"):
 			response = `{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[0,"1000"]}]}}`

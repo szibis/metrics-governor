@@ -53,7 +53,7 @@ func TestE2E_FullPipeline_GRPC(t *testing.T) {
 	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true) // dry run mode
 
 	// Create buffer
-	buf := buffer.New(1000, 10, 100*time.Millisecond, exp, statsCollector, limitsEnforcer)
+	buf := buffer.New(1000, 10, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)
 	go buf.Start(ctx)
 	// Buffer stops when context is canceled
 
@@ -138,7 +138,7 @@ func TestE2E_FullPipeline_HTTP(t *testing.T) {
 	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true)
 
 	// Create buffer
-	buf := buffer.New(1000, 10, 100*time.Millisecond, exp, statsCollector, limitsEnforcer)
+	buf := buffer.New(1000, 10, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)
 	go buf.Start(ctx)
 	// Buffer stops when context is canceled
 
@@ -216,7 +216,7 @@ func TestE2E_BufferFlushOnClose(t *testing.T) {
 	bufCtx, bufCancel := context.WithCancel(ctx)
 
 	// Create buffer with long flush interval (won't auto-flush)
-	buf := buffer.New(1000, 1000, 1*time.Hour, exp, statsCollector, limitsEnforcer)
+	buf := buffer.New(1000, 1000, 1*time.Hour, exp, statsCollector, limitsEnforcer, nil)
 	go buf.Start(bufCtx)
 
 	// Create gRPC receiver
@@ -288,7 +288,7 @@ func TestE2E_ConcurrentClients(t *testing.T) {
 	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true)
 
 	// Create buffer
-	buf := buffer.New(10000, 100, 100*time.Millisecond, exp, statsCollector, limitsEnforcer)
+	buf := buffer.New(10000, 100, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)
 	go buf.Start(ctx)
 	// Buffer stops when context is canceled
 
@@ -465,7 +465,7 @@ func TestE2E_HighCardinality(t *testing.T) {
 	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true)
 
 	// Create buffer
-	buf := buffer.New(100000, 1000, 100*time.Millisecond, exp, statsCollector, limitsEnforcer)
+	buf := buffer.New(100000, 1000, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)
 	go buf.Start(ctx)
 
 	// Create gRPC receiver
@@ -565,7 +565,7 @@ func TestE2E_ManyDatapoints(t *testing.T) {
 	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true)
 
 	// Create buffer
-	buf := buffer.New(100000, 1000, 100*time.Millisecond, exp, statsCollector, limitsEnforcer)
+	buf := buffer.New(100000, 1000, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)
 	go buf.Start(ctx)
 
 	// Create gRPC receiver
@@ -653,7 +653,7 @@ func TestE2E_BurstTraffic(t *testing.T) {
 	defer exp.Close()
 
 	// Create buffer with smaller batch size for faster processing
-	buf := buffer.New(100000, 500, 50*time.Millisecond, exp, nil, nil)
+	buf := buffer.New(100000, 500, 50*time.Millisecond, exp, nil, nil, nil)
 	go buf.Start(ctx)
 
 	// Create gRPC receiver
@@ -756,7 +756,7 @@ func TestE2E_EdgeCaseValues(t *testing.T) {
 	defer exp.Close()
 
 	// Create buffer
-	buf := buffer.New(1000, 100, 100*time.Millisecond, exp, nil, nil)
+	buf := buffer.New(1000, 100, 100*time.Millisecond, exp, nil, nil, nil)
 	go buf.Start(ctx)
 
 	// Create gRPC receiver

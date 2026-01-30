@@ -32,6 +32,21 @@ type VMResult struct {
 	Values [][]interface{}   `json:"values"` // for range queries
 }
 
+// VMTSDBStatusResponse is the response from /api/v1/status/tsdb
+type VMTSDBStatusResponse struct {
+	Status string         `json:"status"`
+	Data   VMTSDBStatData `json:"data"`
+}
+
+type VMTSDBStatData struct {
+	TotalSeries          int64 `json:"totalSeries"`
+	TotalLabelValuePairs int64 `json:"totalLabelValuePairs"`
+	SeriesCountByMetricName []struct {
+		Name  string `json:"name"`
+		Count int64  `json:"value"`
+	} `json:"seriesCountByMetricName"`
+}
+
 type VerificationResult struct {
 	Timestamp time.Time
 
@@ -141,20 +156,13 @@ func verify(vmEndpoint, mgEndpoint string, passThreshold float64) VerificationRe
 		PassThreshold: passThreshold,
 	}
 
-	// Query VictoriaMetrics for total time series
-	totalTS, err := queryVMScalar(vmEndpoint, "count({__name__=~\".+\"})")
+	// Query VictoriaMetrics TSDB status API (efficient, doesn't scan data)
+	tsdbStats, err := queryVMTSDBStatus(vmEndpoint)
 	if err != nil {
-		log.Printf("Error querying total time series: %v", err)
+		log.Printf("Error querying TSDB status: %v", err)
 	} else {
-		result.VMTotalTimeSeries = int(totalTS)
-	}
-
-	// Query VictoriaMetrics for unique metric names
-	uniqueNames, err := queryVMScalar(vmEndpoint, "count(count by (__name__)({__name__=~\".+\"}))")
-	if err != nil {
-		log.Printf("Error querying unique metric names: %v", err)
-	} else {
-		result.VMUniqueMetricNames = int(uniqueNames)
+		result.VMTotalTimeSeries = int(tsdbStats.TotalSeries)
+		result.VMUniqueMetricNames = len(tsdbStats.SeriesCountByMetricName)
 	}
 
 	// Query verification counter from VictoriaMetrics
@@ -262,6 +270,30 @@ func (r *VerificationResult) calculateVerification() {
 			r.VerificationMessage = "Unable to calculate ingestion rate"
 		}
 	}
+}
+
+func queryVMTSDBStatus(endpoint string) (*VMTSDBStatData, error) {
+	resp, err := http.Get(endpoint + "/api/v1/status/tsdb")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var tsdbResp VMTSDBStatusResponse
+	if err := json.Unmarshal(body, &tsdbResp); err != nil {
+		return nil, err
+	}
+
+	if tsdbResp.Status != "success" {
+		return nil, fmt.Errorf("TSDB status query failed: %s", tsdbResp.Status)
+	}
+
+	return &tsdbResp.Data, nil
 }
 
 func queryVMScalar(endpoint, query string) (float64, error) {

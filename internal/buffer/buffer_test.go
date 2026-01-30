@@ -119,7 +119,7 @@ func createTestResourceMetrics(count int) []*metricspb.ResourceMetrics {
 
 func TestNew(t *testing.T) {
 	exporter := &mockExporter{}
-	buf := New(100, 10, time.Second, exporter, nil, nil)
+	buf := New(100, 10, time.Second, exporter, nil, nil, nil)
 
 	if buf == nil {
 		t.Fatal("expected non-nil buffer")
@@ -137,7 +137,7 @@ func TestNew(t *testing.T) {
 
 func TestAdd(t *testing.T) {
 	exporter := &mockExporter{}
-	buf := New(100, 10, time.Hour, exporter, nil, nil) // Long interval to prevent auto-flush
+	buf := New(100, 10, time.Hour, exporter, nil, nil, nil) // Long interval to prevent auto-flush
 
 	metrics := createTestResourceMetrics(5)
 	buf.Add(metrics)
@@ -154,7 +154,7 @@ func TestAdd(t *testing.T) {
 func TestAddWithStats(t *testing.T) {
 	exporter := &mockExporter{}
 	stats := &mockStatsCollector{}
-	buf := New(100, 10, time.Hour, exporter, stats, nil)
+	buf := New(100, 10, time.Hour, exporter, stats, nil, nil)
 
 	metrics := createTestResourceMetrics(5)
 	buf.Add(metrics)
@@ -167,7 +167,7 @@ func TestAddWithStats(t *testing.T) {
 func TestAddWithLimitsEnforcerPass(t *testing.T) {
 	exporter := &mockExporter{}
 	limits := &mockLimitsEnforcer{dropAll: false}
-	buf := New(100, 10, time.Hour, exporter, nil, limits)
+	buf := New(100, 10, time.Hour, exporter, nil, limits, nil)
 
 	metrics := createTestResourceMetrics(5)
 	buf.Add(metrics)
@@ -184,7 +184,7 @@ func TestAddWithLimitsEnforcerPass(t *testing.T) {
 func TestAddWithLimitsEnforcerDrop(t *testing.T) {
 	exporter := &mockExporter{}
 	limits := &mockLimitsEnforcer{dropAll: true}
-	buf := New(100, 10, time.Hour, exporter, nil, limits)
+	buf := New(100, 10, time.Hour, exporter, nil, limits, nil)
 
 	metrics := createTestResourceMetrics(5)
 	buf.Add(metrics)
@@ -200,7 +200,7 @@ func TestAddWithLimitsEnforcerDrop(t *testing.T) {
 
 func TestAddTriggersFlushWhenFull(t *testing.T) {
 	exporter := &mockExporter{}
-	buf := New(5, 5, time.Hour, exporter, nil, nil) // Buffer size 5
+	buf := New(5, 5, time.Hour, exporter, nil, nil, nil) // Buffer size 5
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go buf.Start(ctx)
@@ -222,7 +222,7 @@ func TestAddTriggersFlushWhenFull(t *testing.T) {
 
 func TestStartAndStop(t *testing.T) {
 	exporter := &mockExporter{}
-	buf := New(100, 10, 50*time.Millisecond, exporter, nil, nil)
+	buf := New(100, 10, 50*time.Millisecond, exporter, nil, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -247,7 +247,7 @@ func TestStartAndStop(t *testing.T) {
 
 func TestFlushOnShutdown(t *testing.T) {
 	exporter := &mockExporter{}
-	buf := New(100, 10, time.Hour, exporter, nil, nil) // Long interval
+	buf := New(100, 10, time.Hour, exporter, nil, nil, nil) // Long interval
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -268,7 +268,7 @@ func TestFlushOnShutdown(t *testing.T) {
 
 func TestBatching(t *testing.T) {
 	exporter := &mockExporter{}
-	buf := New(100, 3, 50*time.Millisecond, exporter, nil, nil) // Batch size 3
+	buf := New(100, 3, 50*time.Millisecond, exporter, nil, nil, nil) // Batch size 3
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -292,7 +292,7 @@ func TestBatching(t *testing.T) {
 
 func TestFlushEmptyBuffer(t *testing.T) {
 	exporter := &mockExporter{}
-	buf := New(100, 10, 50*time.Millisecond, exporter, nil, nil)
+	buf := New(100, 10, 50*time.Millisecond, exporter, nil, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -310,7 +310,7 @@ func TestFlushEmptyBuffer(t *testing.T) {
 
 func TestExportError(t *testing.T) {
 	exporter := &mockExporter{err: context.DeadlineExceeded}
-	buf := New(100, 10, 50*time.Millisecond, exporter, nil, nil)
+	buf := New(100, 10, 50*time.Millisecond, exporter, nil, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -329,7 +329,7 @@ func TestExportError(t *testing.T) {
 
 func TestConcurrentAdds(t *testing.T) {
 	exporter := &mockExporter{}
-	buf := New(1000, 100, time.Hour, exporter, nil, nil)
+	buf := New(1000, 100, time.Hour, exporter, nil, nil, nil)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
@@ -356,7 +356,7 @@ func TestConcurrentAdds(t *testing.T) {
 
 func TestWait(t *testing.T) {
 	exporter := &mockExporter{}
-	buf := New(100, 10, 50*time.Millisecond, exporter, nil, nil)
+	buf := New(100, 10, 50*time.Millisecond, exporter, nil, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 

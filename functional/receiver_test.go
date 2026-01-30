@@ -53,7 +53,7 @@ func (m *mockLimitsEnforcer) Process(resourceMetrics []*metricspb.ResourceMetric
 }
 
 func newTestBuffer() *buffer.MetricsBuffer {
-	return buffer.New(1000, 100, 100*time.Millisecond, &mockExporter{}, &mockStatsCollector{}, &mockLimitsEnforcer{})
+	return buffer.New(1000, 100, 100*time.Millisecond, &mockExporter{}, &mockStatsCollector{}, &mockLimitsEnforcer{}, nil)
 }
 
 // TestFunctional_GRPCReceiver_BasicFlow tests basic gRPC receiver functionality

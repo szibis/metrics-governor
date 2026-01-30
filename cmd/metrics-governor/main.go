@@ -98,8 +98,11 @@ func main() {
 		))
 	}
 
-	// Create buffer with stats collector and limits enforcer
-	buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, finalExporter, statsCollector, limitsEnforcer)
+	// Create log aggregator for buffer (aggregates logs per 10s interval)
+	bufferLogAggregator := limits.NewLogAggregator(10 * time.Second)
+
+	// Create buffer with stats collector, limits enforcer, and log aggregator
+	buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, finalExporter, statsCollector, limitsEnforcer, bufferLogAggregator)
 
 	// Start buffer flush routine
 	go buf.Start(ctx)
@@ -170,6 +173,12 @@ func main() {
 	statsServer.Shutdown(ctx)
 	cancel()
 	buf.Wait()
+
+	// Stop log aggregators (flushes remaining entries)
+	bufferLogAggregator.Stop()
+	if limitsEnforcer != nil {
+		limitsEnforcer.Stop()
+	}
 
 	logging.Info("shutdown complete")
 }

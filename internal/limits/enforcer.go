@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/slawomirskowron/metrics-governor/internal/logging"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
@@ -45,6 +44,9 @@ type Enforcer struct {
 
 	// Dry run mode (log only, don't actually drop)
 	dryRun bool
+
+	// Log aggregator for batching similar log messages
+	logAggregator *LogAggregator
 }
 
 // ViolationMetrics tracks limit violation counts.
@@ -72,7 +74,15 @@ func NewEnforcer(config *Config, dryRun bool) *Enforcer {
 			datapointsPassed:    make(map[string]*atomic.Int64),
 			groupsDropped:       make(map[string]*atomic.Int64),
 		},
-		dryRun: dryRun,
+		dryRun:        dryRun,
+		logAggregator: NewLogAggregator(10 * time.Second), // Aggregate logs every 10s
+	}
+}
+
+// Stop stops the enforcer and flushes any pending aggregated logs.
+func (e *Enforcer) Stop() {
+	if e.logAggregator != nil {
+		e.logAggregator.Stop()
 	}
 }
 
@@ -288,16 +298,16 @@ func (e *Enforcer) updateAndCheckLimits(rule *Rule, groupKey string, m *metricsp
 func (e *Enforcer) handleViolation(rule *Rule, groupKey string, m *metricspb.Metric, resourceAttrs map[string]string, reason string) *metricspb.Metric {
 	datapointsCount := countDatapoints(m)
 
-	// Log the violation
-	logging.Warn("limit exceeded", logging.F(
-		"rule", rule.Name,
-		"metric", m.Name,
-		"group", groupKey,
-		"reason", reason,
-		"action", string(rule.Action),
-		"dry_run", e.dryRun,
-		"datapoints", datapointsCount,
-	))
+	// Aggregate the violation log (key: rule+group+reason+action)
+	logKey := fmt.Sprintf("violation:%s:%s:%s:%s", rule.Name, groupKey, reason, rule.Action)
+	e.logAggregator.Warn(logKey, "limit exceeded", map[string]interface{}{
+		"rule":    rule.Name,
+		"metric":  m.Name,
+		"group":   groupKey,
+		"reason":  reason,
+		"action":  string(rule.Action),
+		"dry_run": e.dryRun,
+	}, int64(datapointsCount))
 
 	// Record violation
 	e.recordViolation(rule.Name, reason)
@@ -397,13 +407,15 @@ func (e *Enforcer) handleAdaptive(rule *Rule, groupKey string, m *metricspb.Metr
 			reduced += contrib.datapoints
 		}
 
-		logging.Info("adaptive: marked group for dropping", logging.F(
-			"rule", rule.Name,
-			"group", contrib.key,
-			"reason", reason,
-			"contribution_datapoints", contrib.datapoints,
-			"contribution_cardinality", contrib.cardinality,
-		))
+		// Aggregate the adaptive drop log
+		logKey := fmt.Sprintf("adaptive_drop:%s:%s:%s", rule.Name, contrib.key, reason)
+		e.logAggregator.Info(logKey, "adaptive: marked group for dropping", map[string]interface{}{
+			"rule":                     rule.Name,
+			"group":                    contrib.key,
+			"reason":                   reason,
+			"contribution_datapoints":  contrib.datapoints,
+			"contribution_cardinality": contrib.cardinality,
+		}, contrib.datapoints)
 	}
 
 	// Check if current group is now marked for dropping

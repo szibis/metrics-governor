@@ -1,20 +1,28 @@
 global:
-  scrape_interval: 5s
-  scrape_timeout: 5s
+  scrape_interval: 15s
+  scrape_timeout: 10s
 
 scrape_configs:
   - job_name: 'metrics-governor'
+    scrape_interval: 15s
+    scrape_timeout: 10s
     static_configs:
       - targets: ['metrics-governor:9090']
 
   - job_name: 'otel-collector'
+    scrape_interval: 15s
+    scrape_timeout: 10s
     static_configs:
       - targets: ['otel-collector:8888']
 
   - job_name: 'metrics-generator'
+    scrape_interval: 15s
+    scrape_timeout: 10s
     static_configs:
       - targets: ['metrics-generator:9091']
 
   - job_name: 'verifier'
+    scrape_interval: 15s
+    scrape_timeout: 10s
     static_configs:
       - targets: ['verifier:9092']

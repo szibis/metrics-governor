@@ -28,9 +28,9 @@ services:
       - "-stats-labels=service,env"
       - "-limits-config=/etc/metrics-governor/limits.yaml"
       - "-limits-dry-run=true"
-      - "-flush-interval=500ms"
-      - "-batch-size=10"
-      - "-buffer-size=500"
+      - "-flush-interval=100ms"
+      - "-batch-size=100"
+      - "-buffer-size=5000"
     volumes:
       - ./examples/limits.yaml:/etc/metrics-governor/limits.yaml:ro
     depends_on:
@@ -45,17 +45,21 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 10G
     command:
       - "--storageDataPath=/victoria-metrics-data"
       - "--httpListenAddr=:8428"
       - "--retentionPeriod=1d"
       - "--search.latencyOffset=0s"
       - "--promscrape.config=/etc/victoriametrics/scrape.yaml"
-      - "--maxInsertRequestSize=48MB"
-      - "--opentelemetry.maxRequestSize=48MB"
+      - "--maxInsertRequestSize=128MB"
+      - "--opentelemetry.maxRequestSize=128MB"
       - "--opentelemetry.convertMetricNamesToPrometheus"
       - "--memory.allowedPercent=80"
+      - "--search.maxUniqueTimeseries=1000000"
+      - "--search.maxConcurrentRequests=32"
+      - "--search.maxQueryDuration=10s"
+      - "--search.logSlowQueryDuration=5s"
     volumes:
       - ./test/vmscrape-config.yaml:/etc/victoriametrics/scrape.yaml:ro
 
@@ -68,20 +72,20 @@ services:
       - "9091:9091"   # Prometheus metrics
     environment:
       - OTLP_ENDPOINT=otel-collector:4317
-      - METRICS_INTERVAL=500ms
-      - SERVICES=payment-api,order-api,inventory-api,user-api,auth-api,legacy-app
-      - ENVIRONMENTS=prod,staging,dev,qa
-      - ENABLE_EDGE_CASES=true
+      - METRICS_INTERVAL=100ms
+      - SERVICES=payment-api,order-api,inventory-api,user-api,auth-api,legacy-app,billing-api,notification-api
+      - ENVIRONMENTS=prod,staging,dev
+      - ENABLE_EDGE_CASES=false
       - ENABLE_HIGH_CARDINALITY=true
-      - ENABLE_BURST_TRAFFIC=true
-      - ENABLE_DIVERSE_METRICS=false
-      - HIGH_CARDINALITY_COUNT=20
-      - DIVERSE_METRIC_COUNT=50
-      - BURST_SIZE=100
-      - BURST_INTERVAL_SEC=60
+      - ENABLE_BURST_TRAFFIC=false
+      - ENABLE_DIVERSE_METRICS=true
+      - HIGH_CARDINALITY_COUNT=100
+      - DIVERSE_METRIC_COUNT=150
+      - BURST_SIZE=1000
+      - BURST_INTERVAL_SEC=30
       - STATS_INTERVAL_SEC=10
-      - TARGET_METRICS_PER_SEC=100
-      - TARGET_DATAPOINTS_PER_SEC=500
+      - TARGET_METRICS_PER_SEC=50000
+      - TARGET_DATAPOINTS_PER_SEC=75000
       - METRICS_PORT=9091
     depends_on:
       - otel-collector

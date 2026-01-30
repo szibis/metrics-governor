@@ -9,9 +9,9 @@ receivers:
 
 processors:
   batch:
-    timeout: 500ms
-    send_batch_size: 256
-    send_batch_max_size: 512
+    timeout: 200ms
+    send_batch_size: 2048
+    send_batch_max_size: 4096
 
 exporters:
   debug:
@@ -21,14 +21,14 @@ exporters:
     tls:
       insecure: true
     compression: zstd
-    timeout: 60s
+    timeout: 120s
     sending_queue:
       enabled: true
-      num_consumers: 4
-      queue_size: 1000
+      num_consumers: 16
+      queue_size: 10000
     retry_on_failure:
       enabled: true
-      initial_interval: 5s
+      initial_interval: 1s
       max_interval: 30s
       max_elapsed_time: 5m
 

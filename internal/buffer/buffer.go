@@ -28,6 +28,12 @@ type LimitsEnforcer interface {
 	Process(resourceMetrics []*metricspb.ResourceMetrics) []*metricspb.ResourceMetrics
 }
 
+// LogAggregator aggregates similar log messages.
+type LogAggregator interface {
+	Error(key string, message string, fields map[string]interface{}, datapoints int64)
+	Stop()
+}
+
 // MetricsBuffer buffers incoming metrics and flushes them periodically.
 type MetricsBuffer struct {
 	mu            sync.Mutex
@@ -40,10 +46,11 @@ type MetricsBuffer struct {
 	limits        LimitsEnforcer
 	flushChan     chan struct{}
 	doneChan      chan struct{}
+	logAggregator LogAggregator
 }
 
 // New creates a new MetricsBuffer.
-func New(maxSize, maxBatchSize int, flushInterval time.Duration, exporter Exporter, stats StatsCollector, limits LimitsEnforcer) *MetricsBuffer {
+func New(maxSize, maxBatchSize int, flushInterval time.Duration, exporter Exporter, stats StatsCollector, limits LimitsEnforcer, logAggregator LogAggregator) *MetricsBuffer {
 	return &MetricsBuffer{
 		metrics:       make([]*metricspb.ResourceMetrics, 0, maxSize),
 		maxSize:       maxSize,
@@ -54,6 +61,7 @@ func New(maxSize, maxBatchSize int, flushInterval time.Duration, exporter Export
 		limits:        limits,
 		flushChan:     make(chan struct{}, 1),
 		doneChan:      make(chan struct{}),
+		logAggregator: logAggregator,
 	}
 }
 
@@ -139,11 +147,20 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 		}
 
 		if err := b.exporter.Export(ctx, req); err != nil {
-			logging.Error("export failed", logging.F(
-				"error", err.Error(),
-				"batch_size", len(batch),
-				"datapoints", datapointCount,
-			))
+			if b.logAggregator != nil {
+				// Use aggregated logging to reduce log noise at high throughput
+				logKey := "export_error"
+				b.logAggregator.Error(logKey, "export failed", map[string]interface{}{
+					"error":      err.Error(),
+					"batch_size": len(batch),
+				}, int64(datapointCount))
+			} else {
+				logging.Error("export failed", logging.F(
+					"error", err.Error(),
+					"batch_size", len(batch),
+					"datapoints", datapointCount,
+				))
+			}
 			if b.stats != nil {
 				b.stats.RecordExportError()
 			}

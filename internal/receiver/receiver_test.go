@@ -25,7 +25,7 @@ func (m *mockExporter) Export(ctx context.Context, req *colmetricspb.ExportMetri
 }
 
 func newTestBuffer() *buffer.MetricsBuffer {
-	return buffer.New(100, 50, time.Second, &mockExporter{}, nil, nil)
+	return buffer.New(100, 50, time.Second, &mockExporter{}, nil, nil, nil)
 }
 
 func TestNewGRPC(t *testing.T) {
