@@ -1208,6 +1208,22 @@ curl -s localhost:9091/metrics | grep generator
 docker compose down
 ```
 
+### Test Environment Configurations
+
+Multiple Docker Compose configurations are available for different testing scenarios:
+
+| Config | Command | Datapoints/sec | Use Case |
+|--------|---------|----------------|----------|
+| **stable** | `docker compose -f docker-compose.yaml -f docker-compose.stable.yaml up -d` | ~1,300 | Predictable testing with 100 fixed metrics, 10 cardinality each, no randomness. Ideal for rate calculation verification. |
+| **light** | `docker compose -f docker-compose.yaml -f docker-compose.light.yaml up -d` | ~5,000-10,000 | Development and CI/CD. 3 services, low cardinality (20), diverse metrics (30). |
+| **default** | `docker compose up -d` | ~10,000-20,000 | General testing. 4 services, moderate cardinality (50), diverse metrics (50). |
+| **perf** | `docker compose -f docker-compose.yaml -f docker-compose.perf.yaml up -d` | ~100,000+ | Stress testing. 10 services, high cardinality (500), burst traffic enabled. |
+
+**Stable mode** is specifically designed for verifying rate calculations and dashboard accuracy:
+- 100 metrics with fixed cardinality of 10 each (1,000 total series)
+- Completely deterministic - no random variations
+- All variable features disabled (bursts, high cardinality, edge cases)
+
 ### Available Endpoints
 
 | Service | Endpoint | Description |
