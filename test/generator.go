@@ -447,13 +447,13 @@ func main() {
 				for i := 0; i < highCardinalityCount; i++ {
 					highCardinalityMetric.Add(ctx, 1,
 						metric.WithAttributes(
-							// Use small bounded pools to keep total cardinality manageable
-							// Max combinations: 50 * 100 * 10 * 5 * 10 = 2.5M (still high but bounded)
-							attribute.String("user_id", fmt.Sprintf("user_%d", rand.Intn(50))),
-							attribute.String("session_id", fmt.Sprintf("sess_%d", rand.Intn(100))),
-							attribute.String("request_path", fmt.Sprintf("/api/v%d/resource/%d", rand.Intn(2), rand.Intn(5))),
+							// Use very small bounded pools so cardinality stabilizes quickly
+							// Max combinations: 10 * 20 * 5 * 5 * 5 = 2,500 (stabilizes in seconds)
+							attribute.String("user_id", fmt.Sprintf("user_%d", rand.Intn(10))),
+							attribute.String("session_id", fmt.Sprintf("sess_%d", rand.Intn(20))),
+							attribute.String("request_path", fmt.Sprintf("/api/v%d/resource/%d", rand.Intn(1)+1, rand.Intn(5))),
 							attribute.String("region", fmt.Sprintf("region_%d", rand.Intn(5))),
-							attribute.String("instance", fmt.Sprintf("instance_%d", rand.Intn(10))),
+							attribute.String("instance", fmt.Sprintf("instance_%d", rand.Intn(5))),
 						))
 					batchDatapoints++
 				}
