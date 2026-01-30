@@ -1,2 +1,4 @@
 /bin
 metrics-governor
+test/verifier/verifier
+coverage.out

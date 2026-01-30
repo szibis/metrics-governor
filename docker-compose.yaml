@@ -7,18 +7,19 @@ services:
       - "4318:4318"   # HTTP receiver
       - "9090:9090"   # Prometheus metrics
     command:
-      - "-exporter-endpoint=otel-collector:4317"
+      - "-exporter-endpoint=dns:///otel-collector:4317"
       - "-exporter-insecure=true"
       - "-stats-labels=service,env"
       - "-limits-config=/etc/metrics-governor/limits.yaml"
       - "-limits-dry-run=true"
       - "-flush-interval=1s"
-      - "-batch-size=5000"
-      - "-buffer-size=100000"
+      - "-batch-size=500"
+      - "-buffer-size=10000"
     volumes:
       - ./examples/limits.yaml:/etc/metrics-governor/limits.yaml:ro
     depends_on:
       - otel-collector
+    restart: on-failure
 
   # OpenTelemetry Collector as the backend
   otel-collector:
@@ -26,6 +27,7 @@ services:
     ports:
       - "14317:4317"   # OTLP gRPC (external)
       - "14318:4318"   # OTLP HTTP (external)
+      - "8888:8888"    # Prometheus metrics
     volumes:
       - ./test/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
     command: ["--config=/etc/otelcol/config.yaml"]
@@ -51,6 +53,8 @@ services:
     build:
       context: ./test
       dockerfile: Dockerfile.generator
+    ports:
+      - "9091:9091"   # Prometheus metrics
     environment:
       - OTLP_ENDPOINT=metrics-governor:4317
       - METRICS_INTERVAL=100ms
@@ -65,6 +69,7 @@ services:
       - STATS_INTERVAL_SEC=10
       - TARGET_METRICS_PER_SEC=1000
       - TARGET_DATAPOINTS_PER_SEC=10000
+      - METRICS_PORT=9091
     depends_on:
       - metrics-governor
 
@@ -73,13 +78,32 @@ services:
     build:
       context: ./test/verifier
       dockerfile: Dockerfile
+    ports:
+      - "9092:9092"   # Prometheus metrics
     environment:
       - VM_ENDPOINT=http://victoriametrics:8428
       - MG_ENDPOINT=http://metrics-governor:9090
       - CHECK_INTERVAL=15s
       - VERIFICATION_METRIC=generator_verification_counter_total
       - PASS_THRESHOLD=95.0
+      - METRICS_PORT=9092
     depends_on:
       - victoriametrics
       - metrics-governor
       - metrics-generator
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:12.3.2
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - ./test/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./test/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - victoriametrics

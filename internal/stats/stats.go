@@ -30,6 +30,12 @@ type Collector struct {
 	// Global counters
 	totalDatapoints uint64
 	totalMetrics    uint64
+
+	// Export counters
+	datapointsReceived uint64
+	datapointsSent     uint64
+	batchesSent        uint64
+	exportErrors       uint64
 }
 
 // MetricStats holds stats for a single metric name.
@@ -217,6 +223,28 @@ func (c *Collector) GetGlobalStats() (datapoints uint64, uniqueMetrics uint64, t
 	return
 }
 
+// RecordReceived records datapoints received (before any filtering).
+func (c *Collector) RecordReceived(count int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.datapointsReceived += uint64(count)
+}
+
+// RecordExport records a successful batch export.
+func (c *Collector) RecordExport(datapointCount int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.batchesSent++
+	c.datapointsSent += uint64(datapointCount)
+}
+
+// RecordExportError records a failed export attempt.
+func (c *Collector) RecordExportError() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.exportErrors++
+}
+
 // StartPeriodicLogging starts logging global stats every interval.
 func (c *Collector) StartPeriodicLogging(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
@@ -279,6 +307,23 @@ func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# HELP metrics_governor_metrics_total Total number of unique metric names\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_metrics_total gauge\n")
 	fmt.Fprintf(w, "metrics_governor_metrics_total %d\n", c.totalMetrics)
+
+	// Export stats
+	fmt.Fprintf(w, "# HELP metrics_governor_datapoints_received_total Total number of datapoints received (before filtering)\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_datapoints_received_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_datapoints_received_total %d\n", c.datapointsReceived)
+
+	fmt.Fprintf(w, "# HELP metrics_governor_datapoints_sent_total Total number of datapoints sent to backend\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_datapoints_sent_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_datapoints_sent_total %d\n", c.datapointsSent)
+
+	fmt.Fprintf(w, "# HELP metrics_governor_batches_sent_total Total number of batches exported\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_batches_sent_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_batches_sent_total %d\n", c.batchesSent)
+
+	fmt.Fprintf(w, "# HELP metrics_governor_export_errors_total Total number of export errors\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_export_errors_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_export_errors_total %d\n", c.exportErrors)
 
 	// Per-metric stats
 	fmt.Fprintf(w, "# HELP metrics_governor_metric_datapoints_total Datapoints per metric name\n")

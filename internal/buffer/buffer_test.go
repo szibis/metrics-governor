@@ -47,14 +47,35 @@ func (m *mockExporter) getTotalResourceMetrics() int {
 
 // Mock stats collector
 type mockStatsCollector struct {
-	mu        sync.Mutex
-	processed int
+	mu           sync.Mutex
+	processed    int
+	received     int
+	exported     int
+	exportErrors int
 }
 
 func (m *mockStatsCollector) Process(resourceMetrics []*metricspb.ResourceMetrics) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.processed += len(resourceMetrics)
+}
+
+func (m *mockStatsCollector) RecordReceived(count int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.received += count
+}
+
+func (m *mockStatsCollector) RecordExport(datapointCount int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.exported += datapointCount
+}
+
+func (m *mockStatsCollector) RecordExportError() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.exportErrors++
 }
 
 func (m *mockStatsCollector) getProcessedCount() int {

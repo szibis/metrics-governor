@@ -10,6 +10,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -61,11 +63,27 @@ var (
 	lastCheckTime        time.Time
 )
 
+// VerifierStats tracks verifier metrics for Prometheus
+type VerifierStats struct {
+	StartTime        time.Time
+	ChecksTotal      atomic.Int64
+	ChecksPassed     atomic.Int64
+	ChecksFailed     atomic.Int64
+	LastIngestionRate atomic.Int64 // Stored as rate * 100 for precision
+
+	// Last result values (protected by mutex)
+	mu               sync.RWMutex
+	lastResult       *VerificationResult
+}
+
+var verifierStats = &VerifierStats{}
+
 func main() {
 	vmEndpoint := getEnv("VM_ENDPOINT", "http://localhost:8428")
 	mgEndpoint := getEnv("MG_ENDPOINT", "http://localhost:9090")
 	checkInterval := getEnvDuration("CHECK_INTERVAL", 15*time.Second)
 	passThreshold := getEnvFloat("PASS_THRESHOLD", 95.0)
+	metricsPort := getEnv("METRICS_PORT", "9092")
 
 	log.Printf("========================================")
 	log.Printf("  DATA VERIFICATION TOOL")
@@ -74,7 +92,12 @@ func main() {
 	log.Printf("Metrics Governor: %s", mgEndpoint)
 	log.Printf("Check Interval: %s", checkInterval)
 	log.Printf("Pass Threshold: %.1f%%", passThreshold)
+	log.Printf("Metrics Port: %s", metricsPort)
 	log.Printf("========================================")
+
+	// Start metrics server
+	verifierStats.StartTime = time.Now()
+	go startMetricsServer(metricsPort)
 
 	// Wait for services to be ready
 	log.Println("Waiting for services to be ready...")
@@ -84,19 +107,26 @@ func main() {
 	ticker := time.NewTicker(checkInterval)
 	defer ticker.Stop()
 
-	checkCount := 0
-	passCount := 0
-
 	for {
 		result := verify(vmEndpoint, mgEndpoint, passThreshold)
 		printResult(result)
 
-		checkCount++
+		// Update stats
+		verifierStats.ChecksTotal.Add(1)
 		if result.VerificationMatch {
-			passCount++
+			verifierStats.ChecksPassed.Add(1)
+		} else {
+			verifierStats.ChecksFailed.Add(1)
 		}
+		verifierStats.LastIngestionRate.Store(int64(result.IngestionRate * 100))
+
+		verifierStats.mu.Lock()
+		verifierStats.lastResult = &result
+		verifierStats.mu.Unlock()
 
 		// Print running summary
+		checkCount := verifierStats.ChecksTotal.Load()
+		passCount := verifierStats.ChecksPassed.Load()
 		passRate := float64(passCount) / float64(checkCount) * 100
 		log.Printf("Running verification: %d/%d checks passed (%.1f%%)", passCount, checkCount, passRate)
 		log.Printf("")
@@ -181,7 +211,7 @@ func (r *VerificationResult) calculateVerification() {
 		return
 	}
 
-	// 2. Check verification counter is incrementing
+	// 2. Check verification counter is incrementing (proves data reached VM)
 	if r.VMVerificationCounter == 0 {
 		r.VerificationMatch = false
 		r.VerificationMessage = "Verification counter not found or zero"
@@ -194,20 +224,13 @@ func (r *VerificationResult) calculateVerification() {
 		// Don't fail on errors alone, check other metrics
 	}
 
-	// 4. Calculate ingestion rate based on sent vs verification counter
-	// The verification counter is incremented by batch_id, so it tracks batches
-	if r.MGBatchesSent > 0 {
-		// Check if batches sent roughly matches verification counter progression
-		batchDiff := r.MGBatchesSent - r.VMVerificationCounter
-		if batchDiff < 0 {
-			batchDiff = -batchDiff
-		}
-
-		// Allow some lag (5 batches tolerance for timing)
-		if batchDiff <= 5 {
+	// 4. Calculate ingestion rate: datapoints sent / datapoints received
+	// This shows what percentage of received data was successfully forwarded
+	if r.MGDatapointsReceived > 0 {
+		r.IngestionRate = float64(r.MGDatapointsSent) / float64(r.MGDatapointsReceived) * 100
+		// Cap at 100% (shouldn't exceed but just in case of timing issues)
+		if r.IngestionRate > 100.0 {
 			r.IngestionRate = 100.0
-		} else {
-			r.IngestionRate = float64(r.VMVerificationCounter) / float64(r.MGBatchesSent) * 100
 		}
 	}
 
@@ -314,7 +337,7 @@ func queryMGStats(endpoint string) (MGStats, error) {
 
 	// Extract metrics
 	stats.DatapointsReceived = extractMetricValue(lines, "metrics_governor_datapoints_received_total")
-	stats.DatapointsSent = extractMetricValue(lines, "metrics_governor_datapoints_total")
+	stats.DatapointsSent = extractMetricValue(lines, "metrics_governor_datapoints_sent_total")
 	stats.QueueSize = int(extractMetricValue(lines, "metrics_governor_queue_size"))
 	stats.DroppedTotal = extractMetricValue(lines, "metrics_governor_queue_dropped_total")
 	stats.ExportErrors = extractMetricValue(lines, "metrics_governor_export_errors_total")
@@ -413,4 +436,100 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 		return d
 	}
 	return defaultValue
+}
+
+// startMetricsServer starts an HTTP server for Prometheus metrics
+func startMetricsServer(port string) {
+	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		elapsed := time.Since(verifierStats.StartTime).Seconds()
+		checksTotal := verifierStats.ChecksTotal.Load()
+		checksPassed := verifierStats.ChecksPassed.Load()
+		checksFailed := verifierStats.ChecksFailed.Load()
+		lastIngestionRate := float64(verifierStats.LastIngestionRate.Load()) / 100.0
+
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+
+		// Runtime
+		fmt.Fprintf(w, "# HELP verifier_runtime_seconds Total runtime of the verifier\n")
+		fmt.Fprintf(w, "# TYPE verifier_runtime_seconds counter\n")
+		fmt.Fprintf(w, "verifier_runtime_seconds %.3f\n", elapsed)
+
+		// Verification checks
+		fmt.Fprintf(w, "# HELP verifier_checks_total Total number of verification checks\n")
+		fmt.Fprintf(w, "# TYPE verifier_checks_total counter\n")
+		fmt.Fprintf(w, "verifier_checks_total %d\n", checksTotal)
+
+		fmt.Fprintf(w, "# HELP verifier_checks_passed_total Total number of passed checks\n")
+		fmt.Fprintf(w, "# TYPE verifier_checks_passed_total counter\n")
+		fmt.Fprintf(w, "verifier_checks_passed_total %d\n", checksPassed)
+
+		fmt.Fprintf(w, "# HELP verifier_checks_failed_total Total number of failed checks\n")
+		fmt.Fprintf(w, "# TYPE verifier_checks_failed_total counter\n")
+		fmt.Fprintf(w, "verifier_checks_failed_total %d\n", checksFailed)
+
+		// Pass rate
+		passRate := float64(0)
+		if checksTotal > 0 {
+			passRate = float64(checksPassed) / float64(checksTotal) * 100
+		}
+		fmt.Fprintf(w, "# HELP verifier_pass_rate_percent Current pass rate percentage\n")
+		fmt.Fprintf(w, "# TYPE verifier_pass_rate_percent gauge\n")
+		fmt.Fprintf(w, "verifier_pass_rate_percent %.2f\n", passRate)
+
+		// Last ingestion rate
+		fmt.Fprintf(w, "# HELP verifier_last_ingestion_rate_percent Last recorded ingestion rate\n")
+		fmt.Fprintf(w, "# TYPE verifier_last_ingestion_rate_percent gauge\n")
+		fmt.Fprintf(w, "verifier_last_ingestion_rate_percent %.2f\n", lastIngestionRate)
+
+		// Last result details
+		verifierStats.mu.RLock()
+		lastResult := verifierStats.lastResult
+		verifierStats.mu.RUnlock()
+
+		if lastResult != nil {
+			// VictoriaMetrics stats
+			fmt.Fprintf(w, "# HELP verifier_vm_time_series Total time series in VictoriaMetrics\n")
+			fmt.Fprintf(w, "# TYPE verifier_vm_time_series gauge\n")
+			fmt.Fprintf(w, "verifier_vm_time_series %d\n", lastResult.VMTotalTimeSeries)
+
+			fmt.Fprintf(w, "# HELP verifier_vm_unique_metrics Unique metric names in VictoriaMetrics\n")
+			fmt.Fprintf(w, "# TYPE verifier_vm_unique_metrics gauge\n")
+			fmt.Fprintf(w, "verifier_vm_unique_metrics %d\n", lastResult.VMUniqueMetricNames)
+
+			fmt.Fprintf(w, "# HELP verifier_vm_verification_counter Verification counter value from VictoriaMetrics\n")
+			fmt.Fprintf(w, "# TYPE verifier_vm_verification_counter gauge\n")
+			fmt.Fprintf(w, "verifier_vm_verification_counter %d\n", lastResult.VMVerificationCounter)
+
+			// Metrics-Governor stats observed by verifier
+			fmt.Fprintf(w, "# HELP verifier_mg_datapoints_received Datapoints received by metrics-governor\n")
+			fmt.Fprintf(w, "# TYPE verifier_mg_datapoints_received gauge\n")
+			fmt.Fprintf(w, "verifier_mg_datapoints_received %d\n", lastResult.MGDatapointsReceived)
+
+			fmt.Fprintf(w, "# HELP verifier_mg_datapoints_sent Datapoints sent by metrics-governor\n")
+			fmt.Fprintf(w, "# TYPE verifier_mg_datapoints_sent gauge\n")
+			fmt.Fprintf(w, "verifier_mg_datapoints_sent %d\n", lastResult.MGDatapointsSent)
+
+			fmt.Fprintf(w, "# HELP verifier_mg_batches_sent Batches sent by metrics-governor\n")
+			fmt.Fprintf(w, "# TYPE verifier_mg_batches_sent gauge\n")
+			fmt.Fprintf(w, "verifier_mg_batches_sent %d\n", lastResult.MGBatchesSent)
+
+			fmt.Fprintf(w, "# HELP verifier_mg_export_errors Export errors from metrics-governor\n")
+			fmt.Fprintf(w, "# TYPE verifier_mg_export_errors gauge\n")
+			fmt.Fprintf(w, "verifier_mg_export_errors %d\n", lastResult.MGExportErrors)
+
+			// Last check status (1 = pass, 0 = fail)
+			lastStatus := 0
+			if lastResult.VerificationMatch {
+				lastStatus = 1
+			}
+			fmt.Fprintf(w, "# HELP verifier_last_check_status Last check status (1=pass, 0=fail)\n")
+			fmt.Fprintf(w, "# TYPE verifier_last_check_status gauge\n")
+			fmt.Fprintf(w, "verifier_last_check_status %d\n", lastStatus)
+		}
+	})
+
+	log.Printf("Starting metrics server on :%s/metrics", port)
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Printf("Metrics server error: %v", err)
+	}
 }

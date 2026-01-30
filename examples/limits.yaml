@@ -12,8 +12,8 @@
 #   are exceeded, it will drop the groups with the highest contribution first.
 
 defaults:
-  max_datapoints_rate: 1000000  # per minute
-  max_cardinality: 100000
+  max_datapoints_rate: 10000000  # per minute - very high for testing
+  max_cardinality: 500000
   action: log
 
 rules:
@@ -23,8 +23,8 @@ rules:
       labels:
         service: "*"    # matches any service
         env: "prod"
-    max_datapoints_rate: 100000
-    max_cardinality: 5000
+    max_datapoints_rate: 1000000
+    max_cardinality: 100000
     action: adaptive
     group_by: ["service"]  # Track per service, drop worst offenders
 
@@ -32,23 +32,23 @@ rules:
   - name: "adaptive-http-metrics"
     match:
       metric_name: "http_request_.*"
-    max_cardinality: 2000
+    max_cardinality: 50000
     action: adaptive
     group_by: ["service", "endpoint"]  # Track per service+endpoint
 
-  # High-cardinality metric - hard drop (no adaptive)
+  # High-cardinality metric - log only for testing (not drop)
   - name: "high-cardinality-protection"
     match:
       metric_name: "http_request_duration_.*"  # regex pattern
-    max_cardinality: 1000
-    action: drop
+    max_cardinality: 50000
+    action: log
 
   # Adaptive for legacy app - track by request_id patterns
   - name: "legacy-app-adaptive"
     match:
       metric_name: "legacy_app_.*"
-    max_cardinality: 100
-    max_datapoints_rate: 10000
+    max_cardinality: 50000
+    max_datapoints_rate: 500000
     action: adaptive
     group_by: ["service", "env"]  # Group by service+env, drop worst first
 
@@ -57,14 +57,14 @@ rules:
     match:
       labels:
         env: "dev"
-    max_datapoints_rate: 500000
-    max_cardinality: 50000
+    max_datapoints_rate: 5000000
+    max_cardinality: 200000
     action: log
 
-  # Protect against runaway counters
+  # Protect against runaway counters - much higher limits
   - name: "runaway-counter-protection"
     match:
       metric_name: ".*_total"  # all counter metrics
-    max_cardinality: 10000
+    max_cardinality: 100000
     action: adaptive
     group_by: ["service", "env"]  # Fair share by service+env

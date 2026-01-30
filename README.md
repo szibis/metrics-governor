@@ -182,10 +182,16 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
   - [Running Tests](#running-tests)
   - [Project Structure](#project-structure)
 - [Testing](#testing)
+  - [Test Environment Architecture](#test-environment-architecture)
+  - [Components](#components)
   - [Quick Start](#quick-start)
   - [Available Endpoints](#available-endpoints)
-  - [Useful Commands](#useful-commands)
+  - [Grafana Dashboard](#grafana-dashboard)
+  - [Running Integration Tests](#running-integration-tests)
   - [Test Scenarios](#test-scenarios)
+  - [Useful Commands](#useful-commands)
+  - [Verifier Output](#verifier-output)
+  - [Troubleshooting](#troubleshooting)
 - [License](#license)
 
 ## Features
@@ -1105,21 +1111,92 @@ metrics-governor/
 
 ## Testing
 
-A complete test environment is provided using Docker Compose. It includes:
+A comprehensive test environment is provided using Docker Compose with full observability stack including Grafana dashboards, VictoriaMetrics storage, and automated verification.
 
-- **metrics-governor**: The main proxy with limits configuration
-- **otel-collector**: OpenTelemetry Collector as the backend
-- **prometheus**: For scraping and visualizing metrics
-- **metrics-generator**: A Go application that generates test metrics
+### Test Environment Architecture
+
+```mermaid
+flowchart TB
+    subgraph TestClients["Test Clients"]
+        Generator["Metrics Generator<br/>:9091/metrics<br/>• HTTP metrics<br/>• High cardinality<br/>• Burst traffic<br/>• Edge cases"]
+    end
+
+    subgraph MG["metrics-governor"]
+        Receiver["OTLP Receiver<br/>:4317 gRPC<br/>:4318 HTTP"]
+        Buffer["Buffer"]
+        Stats["Stats"]
+        Limits["Limits<br/>(dry-run)"]
+        Exporter["Exporter"]
+        MGMetrics[":9090/metrics"]
+    end
+
+    subgraph Backend["Backend Stack"]
+        OTel["OpenTelemetry Collector<br/>:14317 external<br/>:8888/metrics"]
+        VM["VictoriaMetrics<br/>:8428 API"]
+    end
+
+    subgraph Observability["Observability"]
+        Grafana["Grafana<br/>:3000<br/>admin/admin"]
+        Verifier["Data Verifier<br/>:9092/metrics<br/>• VM queries<br/>• MG queries<br/>• Pass/fail checks"]
+    end
+
+    Generator -->|"OTLP/gRPC"| Receiver
+    Receiver --> Buffer --> Stats --> Limits --> Exporter
+    Stats --> MGMetrics
+    Exporter -->|"OTLP/gRPC"| OTel
+    OTel -->|"Remote Write"| VM
+
+    VM -->|"Scrape"| Generator
+    VM -->|"Scrape"| MGMetrics
+    VM -->|"Scrape"| OTel
+    VM -->|"Scrape"| Verifier
+
+    Verifier -->|"Query API"| VM
+    Verifier -->|"Query /metrics"| MGMetrics
+
+    Grafana -->|"Query"| VM
+
+    style Generator fill:#e1f5fe
+    style MG fill:#fff3e0
+    style VM fill:#e8f5e9
+    style Grafana fill:#fce4ec
+    style Verifier fill:#f3e5f5
+```
+
+### Components
+
+| Service | Ports | Description |
+|---------|-------|-------------|
+| **metrics-governor** | 4317, 4318, 9090 | OTLP proxy with limits and stats |
+| **otel-collector** | 14317, 14318, 8888 | OpenTelemetry Collector backend |
+| **victoriametrics** | 8428 | Time-series database with Prometheus API |
+| **metrics-generator** | 9091 | Test traffic generator |
+| **verifier** | 9092 | Automated data flow verification |
+| **grafana** | 3000 | Visualization dashboards |
 
 ### Quick Start
 
 ```bash
-# Run the test environment
-./test/run-test.sh
+# Start the complete test environment
+docker compose up --build -d
 
-# Or manually with docker compose
-docker compose up --build
+# Wait for services to initialize
+sleep 30
+
+# Open Grafana dashboard
+open http://localhost:3000  # Login: admin/admin
+
+# View metrics-governor stats
+curl -s localhost:9090/metrics | grep metrics_governor
+
+# View verification status
+curl -s localhost:9092/metrics | grep verifier
+
+# View generator stats
+curl -s localhost:9091/metrics | grep generator
+
+# Stop all services
+docker compose down
 ```
 
 ### Available Endpoints
@@ -1128,9 +1205,93 @@ docker compose up --build
 |---------|----------|-------------|
 | metrics-governor gRPC | `localhost:4317` | OTLP gRPC receiver |
 | metrics-governor HTTP | `localhost:4318` | OTLP HTTP receiver |
-| metrics-governor stats | `http://localhost:9090/metrics` | Prometheus metrics |
-| OTel Collector | `localhost:14317` | Backend gRPC endpoint |
-| Prometheus UI | `http://localhost:9091` | Prometheus web interface |
+| metrics-governor stats | `http://localhost:9090/metrics` | Governor Prometheus metrics |
+| OTel Collector gRPC | `localhost:14317` | Backend gRPC endpoint |
+| OTel Collector metrics | `http://localhost:8888/metrics` | Collector internal metrics |
+| VictoriaMetrics API | `http://localhost:8428` | Query API and UI |
+| Generator metrics | `http://localhost:9091/metrics` | Generator stats |
+| Verifier metrics | `http://localhost:9092/metrics` | Verification stats |
+| Grafana | `http://localhost:3000` | Dashboard UI (admin/admin) |
+
+### Grafana Dashboard
+
+The pre-configured dashboard (`metrics-governor.json`) includes three sections:
+
+**Metrics Governor:**
+- Datapoints received vs sent (throughput)
+- Batches sent over time
+- Export errors
+- Queue size
+- Cardinality tracking
+
+**Generator:**
+- Metrics and datapoints per second
+- Batch latency (min/avg/max)
+- High cardinality metrics count
+- Burst events and burst metrics
+
+**Verifier:**
+- Verification pass rate
+- Last ingestion rate
+- VictoriaMetrics time series count
+- Export errors observed
+- Check status (pass/fail)
+
+### Running Integration Tests
+
+The project includes automated integration tests that verify the complete data flow:
+
+```bash
+# Start the test environment
+docker compose up -d
+
+# Wait for services to be ready
+sleep 30
+
+# Run integration tests (requires -tags=integration)
+go test -tags=integration -v ./test/...
+
+# Stop the environment
+docker compose down
+```
+
+**Integration test coverage:**
+- Service health checks for all components
+- Metrics flow from generator to VictoriaMetrics
+- Metrics-governor stats tracking
+- Ingestion rate validation (>90%)
+- High cardinality metrics handling
+- Verification pass rate (>80%)
+- Export error monitoring
+
+### Test Scenarios
+
+The metrics generator creates various test scenarios:
+
+| Scenario | Description | Configuration |
+|----------|-------------|---------------|
+| **Normal traffic** | HTTP request metrics for services | `SERVICES=payment-api,order-api,...` |
+| **High cardinality** | Unique user/session/request IDs | `ENABLE_HIGH_CARDINALITY=true` |
+| **Burst traffic** | Periodic traffic spikes | `BURST_SIZE=2000, BURST_INTERVAL_SEC=15` |
+| **Edge cases** | Extreme values (0, ±inf, π, e) | `ENABLE_EDGE_CASES=true` |
+| **Many datapoints** | Histograms with 15 buckets | Automatic with histograms |
+
+**Environment variables for generator:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OTLP_ENDPOINT` | `metrics-governor:4317` | Target endpoint |
+| `METRICS_INTERVAL` | `100ms` | Generation interval |
+| `SERVICES` | `payment-api,order-api,...` | Service names |
+| `ENVIRONMENTS` | `prod,staging,dev,qa` | Environment labels |
+| `ENABLE_EDGE_CASES` | `true` | Include edge case values |
+| `ENABLE_HIGH_CARDINALITY` | `true` | Generate high cardinality |
+| `ENABLE_BURST_TRAFFIC` | `true` | Enable burst patterns |
+| `HIGH_CARDINALITY_COUNT` | `100` | Unique labels per interval |
+| `BURST_SIZE` | `2000` | Metrics per burst |
+| `BURST_INTERVAL_SEC` | `15` | Seconds between bursts |
+| `TARGET_METRICS_PER_SEC` | `1000` | Target throughput |
+| `TARGET_DATAPOINTS_PER_SEC` | `10000` | Target datapoints |
 
 ### Useful Commands
 
@@ -1141,28 +1302,79 @@ curl -s localhost:9090/metrics | grep metrics_governor
 # Check limit violations
 curl -s localhost:9090/metrics | grep limit
 
-# View logs
+# Query VictoriaMetrics for time series count
+curl -s 'localhost:8428/api/v1/query?query=count({__name__=~".+"})'
+
+# Query verification counter
+curl -s 'localhost:8428/api/v1/query?query=max(generator_verification_counter_total)'
+
+# View verification results
+docker compose logs -f verifier
+
+# View metrics-governor logs
 docker compose logs -f metrics-governor
+
+# View generator stats
 docker compose logs -f metrics-generator
+
+# Check all service health
+docker compose ps
+
+# Restart a specific service
+docker compose restart metrics-governor
+
+# Scale generator (if needed)
+docker compose up -d --scale metrics-generator=2
 
 # Stop all services
 docker compose down
+
+# Stop and remove volumes
+docker compose down -v
 ```
 
-### Test Scenarios
+### Verifier Output
 
-The metrics generator creates various test scenarios:
+The verifier logs verification results every 15 seconds:
 
-1. **Normal traffic**: HTTP request metrics for multiple services and environments
-2. **High cardinality**: Legacy app metrics with unique request IDs (triggers limits)
-3. **Multiple services**: payment-api, order-api, inventory-api, legacy-app
-4. **Multiple environments**: prod, staging, dev
-
-Watch the metrics-governor logs to see limit violations being triggered:
-
-```bash
-docker compose logs -f metrics-governor | grep "limit exceeded"
 ```
+========================================
+  VERIFICATION RESULT - PASS
+========================================
+Timestamp: 2026-01-30T12:00:00Z
+
+VICTORIAMETRICS:
+  Total time series:      5000
+  Unique metric names:    50
+  High cardinality TS:    100
+  Verification counter:   1000
+
+METRICS-GOVERNOR:
+  Datapoints received:    100000
+  Datapoints sent:        98000
+  Batches sent:           1000
+  Queue size:             0
+  Dropped total:          0
+  Export errors:          0
+
+VERIFICATION:
+  Ingestion rate:         98.00%
+  Pass threshold:         95.00%
+  Status:                 PASS
+  Message:                Ingestion rate 98.00% meets threshold 95.00%
+========================================
+Running verification: 10/10 checks passed (100.0%)
+```
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| No metrics in VictoriaMetrics | Check otel-collector logs for errors; verify DNS resolution |
+| High export errors | Check network connectivity; increase timeout |
+| Verification failing | Check ingestion rate; may need to adjust limits |
+| Grafana no data | Wait 30s for metrics to populate; check datasource |
+| Generator not starting | Check OTLP_ENDPOINT; wait for metrics-governor |
 
 ## License
 

@@ -41,6 +41,9 @@ func (m *mockExporter) GetExported() []*colmetrics.ExportMetricsServiceRequest {
 type mockStatsCollector struct{}
 
 func (m *mockStatsCollector) Process(resourceMetrics []*metricspb.ResourceMetrics) {}
+func (m *mockStatsCollector) RecordReceived(count int)                             {}
+func (m *mockStatsCollector) RecordExport(datapointCount int)                      {}
+func (m *mockStatsCollector) RecordExportError()                                   {}
 
 // mockLimitsEnforcer implements buffer.LimitsEnforcer for testing
 type mockLimitsEnforcer struct{}

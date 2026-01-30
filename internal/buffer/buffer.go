@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/slawomirskowron/metrics-governor/internal/logging"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
@@ -17,6 +18,9 @@ type Exporter interface {
 // StatsCollector defines the interface for collecting stats.
 type StatsCollector interface {
 	Process(resourceMetrics []*metricspb.ResourceMetrics)
+	RecordReceived(count int)
+	RecordExport(datapointCount int)
+	RecordExportError()
 }
 
 // LimitsEnforcer defines the interface for enforcing limits.
@@ -55,6 +59,12 @@ func New(maxSize, maxBatchSize int, flushInterval time.Duration, exporter Export
 
 // Add adds metrics to the buffer.
 func (b *MetricsBuffer) Add(resourceMetrics []*metricspb.ResourceMetrics) {
+	// Track received datapoints
+	if b.stats != nil {
+		receivedCount := countDatapoints(resourceMetrics)
+		b.stats.RecordReceived(receivedCount)
+	}
+
 	// Process stats before any filtering
 	if b.stats != nil {
 		b.stats.Process(resourceMetrics)
@@ -123,14 +133,26 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 		}
 
 		batch := toSend[i:end]
+		datapointCount := countDatapoints(batch)
 		req := &colmetricspb.ExportMetricsServiceRequest{
 			ResourceMetrics: batch,
 		}
 
 		if err := b.exporter.Export(ctx, req); err != nil {
-			// TODO: implement retry logic or dead letter queue
-			// For now, just log and continue
+			logging.Error("export failed", logging.F(
+				"error", err.Error(),
+				"batch_size", len(batch),
+				"datapoints", datapointCount,
+			))
+			if b.stats != nil {
+				b.stats.RecordExportError()
+			}
 			continue
+		}
+
+		// Record successful export
+		if b.stats != nil {
+			b.stats.RecordExport(datapointCount)
 		}
 	}
 }
@@ -138,4 +160,28 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 // Wait waits for the buffer to finish flushing.
 func (b *MetricsBuffer) Wait() {
 	<-b.doneChan
+}
+
+// countDatapoints counts total datapoints in a slice of resource metrics.
+func countDatapoints(resourceMetrics []*metricspb.ResourceMetrics) int {
+	count := 0
+	for _, rm := range resourceMetrics {
+		for _, sm := range rm.GetScopeMetrics() {
+			for _, m := range sm.GetMetrics() {
+				switch d := m.Data.(type) {
+				case *metricspb.Metric_Gauge:
+					count += len(d.Gauge.GetDataPoints())
+				case *metricspb.Metric_Sum:
+					count += len(d.Sum.GetDataPoints())
+				case *metricspb.Metric_Histogram:
+					count += len(d.Histogram.GetDataPoints())
+				case *metricspb.Metric_ExponentialHistogram:
+					count += len(d.ExponentialHistogram.GetDataPoints())
+				case *metricspb.Metric_Summary:
+					count += len(d.Summary.GetDataPoints())
+				}
+			}
+		}
+	}
+	return count
 }

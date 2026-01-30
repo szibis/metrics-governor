@@ -7,6 +7,174 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-01-30
+
+### Added
+
+#### Comprehensive Docker Compose Test Environment
+
+A complete end-to-end testing environment with full observability stack:
+
+**New Services:**
+- **Grafana 12.3.2** - Visualization dashboard with auto-provisioned datasources
+- **VictoriaMetrics v1.134.0** - High-performance metrics storage with Prometheus-compatible API
+- **Data Verifier** - Automated verification tool for metrics flow validation
+
+**Docker Compose Architecture:**
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│ metrics-generator│────▶│ metrics-governor │────▶│ otel-collector  │
+│   :9091/metrics │     │  :4317 gRPC      │     │                 │
+└─────────────────┘     │  :4318 HTTP      │     └────────┬────────┘
+                        │  :9090 metrics   │              │
+                        └──────────────────┘              │
+                                                          ▼
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│    verifier     │────▶│ victoriametrics  │◀────│ prometheusremote│
+│   :9092/metrics │     │  :8428 API       │     │   write         │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+                                │
+                                ▼
+                        ┌──────────────────┐
+                        │     grafana      │
+                        │   :3000 UI       │
+                        │  admin/admin     │
+                        └──────────────────┘
+```
+
+**Comprehensive Grafana Dashboard:**
+- **Metrics Governor Section** - Datapoints received/sent, batches, export errors, queue size, cardinality
+- **Generator Section** - Throughput, latency, high cardinality tracking, burst metrics
+- **Verifier Section** - Check pass rate, ingestion rate, VM time series, export errors
+
+#### Generator and Verifier Prometheus Metrics
+
+**Generator Metrics (`:9091/metrics`):**
+| Metric | Type | Description |
+|--------|------|-------------|
+| `generator_runtime_seconds` | counter | Total runtime |
+| `generator_metrics_sent_total` | counter | Total metrics sent |
+| `generator_datapoints_sent_total` | counter | Total datapoints sent |
+| `generator_batches_sent_total` | counter | Total batches sent |
+| `generator_batch_latency_avg_seconds` | gauge | Average batch latency |
+| `generator_batch_latency_min_seconds` | gauge | Minimum batch latency |
+| `generator_batch_latency_max_seconds` | gauge | Maximum batch latency |
+| `generator_high_cardinality_metrics_total` | counter | High cardinality metrics |
+| `generator_bursts_sent_total` | counter | Burst traffic events |
+| `generator_burst_metrics_total` | counter | Metrics in bursts |
+| `generator_errors_total` | counter | Total errors |
+
+**Verifier Metrics (`:9092/metrics`):**
+| Metric | Type | Description |
+|--------|------|-------------|
+| `verifier_runtime_seconds` | counter | Total runtime |
+| `verifier_checks_total` | counter | Total verification checks |
+| `verifier_checks_passed_total` | counter | Passed checks |
+| `verifier_checks_failed_total` | counter | Failed checks |
+| `verifier_pass_rate_percent` | gauge | Overall pass rate |
+| `verifier_last_ingestion_rate_percent` | gauge | Last ingestion rate |
+| `verifier_vm_time_series` | gauge | Time series in VictoriaMetrics |
+| `verifier_vm_unique_metrics` | gauge | Unique metric names |
+| `verifier_vm_verification_counter` | gauge | Verification counter value |
+| `verifier_mg_datapoints_received` | gauge | Datapoints received by governor |
+| `verifier_mg_datapoints_sent` | gauge | Datapoints sent by governor |
+| `verifier_mg_export_errors` | gauge | Export errors from governor |
+| `verifier_last_check_status` | gauge | Last check (1=pass, 0=fail) |
+
+#### Metrics Governor Export Tracking
+
+New metrics for tracking export operations:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_datapoints_received_total` | counter | Total datapoints received |
+| `metrics_governor_datapoints_sent_total` | counter | Total datapoints successfully exported |
+| `metrics_governor_batches_sent_total` | counter | Total batches exported |
+| `metrics_governor_export_errors_total` | counter | Total export failures |
+
+#### Comprehensive Test Suite for Generator and Verifier
+
+**Unit Tests:**
+- `test/generator_test.go` - Environment parsing, stats tracking, calculations
+- `test/verifier/main_test.go` - Environment parsing, metric extraction, verification logic
+
+**Functional Tests:**
+- `test/functional_generator_test.go` - Metrics endpoint, stats tracking, concurrency
+- `test/verifier/functional_test.go` - VM queries, MG stats, verification with mocked services
+
+**E2E Integration Tests (`test/e2e_integration_test.go`):**
+- Service health checks for all components
+- Metrics flow verification from generator to VictoriaMetrics
+- Ingestion rate validation
+- High cardinality metrics handling
+- Verification pass rate tracking
+- Export error monitoring
+
+Run integration tests:
+```bash
+docker compose up -d
+sleep 30
+go test -tags=integration -v ./test/...
+docker compose down
+```
+
+### Changed
+
+#### Docker Compose Improvements
+
+- **gRPC DNS resolution** - Added `dns:///` prefix for proper service discovery
+- **Message size limits** - Configured 64MB max message size for otel-collector
+- **Batch size optimization** - Reduced from 5000 to 500 for better throughput
+- **Buffer size** - Reduced from 100000 to 10000 for faster flushing
+- **Service restart** - Added `restart: on-failure` for metrics-governor
+- **OTEL Collector config** - Updated telemetry configuration for v0.144.0 format
+
+#### Limits Configuration
+
+Adjusted `examples/limits.yaml` for better testing:
+- Increased default cardinality from 100k to 500k
+- Increased default datapoints rate from 1M to 10M per minute
+- Changed high-cardinality-protection action from `drop` to `log`
+- All rules configured for testing without blocking traffic
+
+### Fixed
+
+#### Data Flow Issues
+
+- **DNS resolution error** - Fixed "name resolver error: produced zero addresses" by adding `dns:///` prefix to exporter endpoint
+- **gRPC message size** - Fixed "received message larger than max" by configuring `max_recv_msg_size_mib: 64` in otel-collector
+- **OTEL Collector telemetry** - Fixed "'migration.MetricsConfigV030' has invalid keys" by updating to v0.144.0 telemetry format
+
+#### Verifier Ingestion Rate Calculation
+
+Fixed incorrect ingestion rate showing 928%:
+- Was comparing `VMVerificationCounter / MGBatchesSent`
+- Now correctly calculates `MGDatapointsSent / MGDatapointsReceived * 100`
+- Capped at 100% for timing edge cases
+
+#### Export Error Logging
+
+Added detailed export error logging in buffer:
+```go
+logging.Error("export failed", logging.F(
+    "error", err.Error(),
+    "batch_size", len(batch),
+    "datapoints", datapointCount,
+))
+```
+
+### New Files
+
+- `test/grafana/provisioning/datasources/datasources.yaml` - Grafana datasource config
+- `test/grafana/provisioning/dashboards/dashboards.yaml` - Dashboard provider config
+- `test/grafana/dashboards/metrics-governor.json` - Comprehensive dashboard
+- `test/vmscrape-config.yaml` - VictoriaMetrics scrape configuration
+- `test/generator_test.go` - Generator unit tests
+- `test/functional_generator_test.go` - Generator functional tests
+- `test/verifier/main_test.go` - Verifier unit tests
+- `test/verifier/functional_test.go` - Verifier functional tests
+- `test/e2e_integration_test.go` - E2E integration tests
+
 ## [0.3.1] - 2026-01-30
 
 ### Added
