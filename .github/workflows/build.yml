@@ -53,6 +53,19 @@ jobs:
           echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
           echo "Unit test coverage: $COVERAGE%"
 
+      - name: Check coverage threshold
+        run: |
+          COVERAGE="${{ steps.coverage.outputs.coverage }}"
+          THRESHOLD=90
+          echo "Coverage: $COVERAGE%"
+          echo "Required threshold: $THRESHOLD%"
+          if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+            echo "❌ Coverage $COVERAGE% is below the required threshold of $THRESHOLD%"
+            exit 1
+          else
+            echo "✅ Coverage $COVERAGE% meets the required threshold of $THRESHOLD%"
+          fi
+
       - name: Count tests
         id: count
         run: |
