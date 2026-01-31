@@ -93,14 +93,6 @@ jobs:
           path: coverage-unit.out
           retention-days: 7
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage-unit.out
-          fail_ci_if_error: false
-          verbose: true
-
   test-functional:
     runs-on: ubuntu-latest
     outputs:
