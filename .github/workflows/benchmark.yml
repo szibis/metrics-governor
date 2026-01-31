@@ -157,24 +157,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-benchmark
 
-      - name: Store benchmark result
-        uses: benchmark-action/github-action-benchmark@v1
-        with:
-          name: Go Benchmarks
-          tool: 'go'
-          output-file-path: benchmark-results.txt
-          external-data-json-path: ./cache/benchmark-data.json
-          # Don't fail on alert - CI benchmarks have high variance
-          # Real regressions should be caught in code review
-          fail-on-alert: false
-          alert-threshold: '200%'
-          comment-on-alert: true
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          auto-push: false
-          # Disabled to avoid "body is too long" error (max 65536 chars)
-          comment-always: false
-          summary-always: false
-
       - name: Save benchmark baseline
         run: |
           mkdir -p ./cache
