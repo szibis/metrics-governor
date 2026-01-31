@@ -43,9 +43,10 @@ jobs:
 
       - name: Run unit tests with coverage
         id: unit_tests
+        shell: bash
         run: |
-          go test -v -race -coverprofile=coverage-unit.out -covermode=atomic ./internal/... 2>&1 | tee unit-test-output.txt
-          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+          set -o pipefail
+          go test -v -race -coverprofile=coverage-unit.out -covermode=atomic ./internal/... 2>&1 | tee unit-test-output.txt && echo "exit_code=0" >> $GITHUB_OUTPUT || echo "exit_code=1" >> $GITHUB_OUTPUT
 
       - name: Extract coverage percentage
         id: coverage
@@ -118,9 +119,10 @@ jobs:
 
       - name: Run functional tests
         id: functional_tests
+        shell: bash
         run: |
-          go test -v -race ./functional/... 2>&1 | tee functional-test-output.txt
-          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+          set -o pipefail
+          go test -v -race ./functional/... 2>&1 | tee functional-test-output.txt && echo "exit_code=0" >> $GITHUB_OUTPUT || echo "exit_code=1" >> $GITHUB_OUTPUT
 
       - name: Count tests
         id: count
@@ -154,9 +156,10 @@ jobs:
 
       - name: Run e2e tests
         id: e2e_tests
+        shell: bash
         run: |
-          go test -v -race ./e2e/... 2>&1 | tee e2e-test-output.txt
-          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+          set -o pipefail
+          go test -v -race ./e2e/... 2>&1 | tee e2e-test-output.txt && echo "exit_code=0" >> $GITHUB_OUTPUT || echo "exit_code=1" >> $GITHUB_OUTPUT
 
       - name: Count tests
         id: count
