@@ -1,0 +1,100 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    # Default linters
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    # Additional linters
+    - bodyclose
+    - dogsled
+    - dupl
+    - exportloopref
+    - gochecknoinits
+    - goconst
+    - gocritic
+    - gocyclo
+    - gofmt
+    - goimports
+    - goprintffuncname
+    - gosec
+    - misspell
+    - nakedret
+    - noctx
+    - nolintlint
+    - prealloc
+    - revive
+    - rowserrcheck
+    - stylecheck
+    - typecheck
+    - unconvert
+    - unparam
+    - whitespace
+
+linters-settings:
+  govet:
+    check-shadowing: true
+  gocyclo:
+    min-complexity: 15
+  dupl:
+    threshold: 150
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+  misspell:
+    locale: US
+  revive:
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: if-return
+      - name: increment-decrement
+      - name: var-naming
+      - name: var-declaration
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+  staticcheck:
+    checks: ["all"]
+  stylecheck:
+    checks: ["all", "-ST1000", "-ST1003", "-ST1016"]
+  gosec:
+    excludes:
+      - G104  # Audit errors not checked (too noisy)
+      - G304  # File path provided as taint input (intentional in some cases)
+
+issues:
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - dupl
+        - gosec
+        - goconst
+    # Exclude some linters from running on benchmark files
+    - path: _benchmark_test\.go
+      linters:
+        - dupl
+        - goconst
+    # Exclude linters for generated code
+    - path: \.pb\.go
+      linters:
+        - all
+  max-issues-per-linter: 50
+  max-same-issues: 10

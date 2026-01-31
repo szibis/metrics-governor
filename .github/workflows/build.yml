@@ -181,8 +181,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: go vet
-        run: go vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
 
   lint-dockerfile:
     runs-on: ubuntu-latest
