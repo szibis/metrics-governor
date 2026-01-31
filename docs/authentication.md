@@ -1,10 +1,12 @@
 # Authentication
 
-metrics-governor supports bearer token and basic authentication for both OTLP and PRW (Prometheus Remote Write) receivers and exporters.
+metrics-governor supports bearer token and basic authentication for both receivers and exporters.
 
-## OTLP Receiver Authentication
+> **Dual Pipeline Support**: Authentication works identically for both OTLP and PRW pipelines. The only difference is that they are completely separate - use `-receiver-*` flags for OTLP and `-prw-receiver-*` flags for PRW.
 
-Require authentication for incoming OTLP connections (gRPC and HTTP):
+## Receiver Authentication
+
+Require authentication for incoming connections:
 
 ### Bearer Token Authentication
 
@@ -44,9 +46,9 @@ receiver:
       password: "password"
 ```
 
-## OTLP Exporter Authentication
+## Exporter Authentication
 
-Authenticate when connecting to the OTLP backend:
+Authenticate when connecting to the backend:
 
 ### Bearer Token Authentication
 
@@ -85,62 +87,13 @@ exporter:
       X-Tenant-ID: "tenant123"
 ```
 
-## PRW Receiver Authentication
-
-Require authentication for incoming Prometheus Remote Write requests:
-
-### Bearer Token Authentication
-
-```bash
-metrics-governor -prw-listen :9090 \
-    -prw-receiver-auth-enabled \
-    -prw-receiver-auth-bearer-token "your-secret-token"
-```
-
-Clients must include the header:
-```
-Authorization: Bearer your-secret-token
-```
-
-### YAML Configuration
-
-```yaml
-prw:
-  receiver:
-    address: ":9090"
-    auth:
-      enabled: true
-      bearer_token: "your-secret-token"
-```
-
-## PRW Exporter Authentication
-
-Authenticate when connecting to the PRW backend (VictoriaMetrics, Prometheus, etc.):
-
-### Bearer Token Authentication
-
-```bash
-metrics-governor -prw-exporter-endpoint http://victoriametrics:8428/api/v1/write \
-    -prw-exporter-auth-bearer-token "your-secret-token"
-```
-
-### YAML Configuration
-
-```yaml
-prw:
-  exporter:
-    endpoint: "http://victoriametrics:8428/api/v1/write"
-    auth:
-      bearer_token: "your-secret-token"
-```
-
 ## Authentication Options Reference
 
 ### OTLP Receiver Authentication Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-receiver-auth-enabled` | `false` | Enable authentication for OTLP receivers |
+| `-receiver-auth-enabled` | `false` | Enable authentication for receivers |
 | `-receiver-auth-bearer-token` | | Expected bearer token |
 | `-receiver-auth-basic-username` | | Basic auth username |
 | `-receiver-auth-basic-password` | | Basic auth password |
@@ -154,15 +107,10 @@ prw:
 | `-exporter-auth-basic-password` | | Basic auth password |
 | `-exporter-auth-headers` | | Custom headers (format: `key1=value1,key2=value2`) |
 
-### PRW Receiver Authentication Flags
+### PRW Authentication Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-prw-receiver-auth-enabled` | `false` | Enable authentication for PRW receiver |
 | `-prw-receiver-auth-bearer-token` | | Expected bearer token |
-
-### PRW Exporter Authentication Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
 | `-prw-exporter-auth-bearer-token` | | Bearer token to send with requests |

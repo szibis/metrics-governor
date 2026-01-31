@@ -4,6 +4,8 @@ metrics-governor supports two configuration methods:
 1. **YAML configuration file** (recommended for complex setups)
 2. **CLI flags** (for simple setups or quick overrides)
 
+> **Dual Pipeline Support**: All components (receivers, buffers, exporters, limits, sharding, queues) work identically for both OTLP and PRW pipelines. They are completely separate - OTLP options use standard flags, PRW options use `-prw-*` prefixed flags.
+
 ## YAML Configuration File
 
 Use the `-config` flag to specify a YAML configuration file:

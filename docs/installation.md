@@ -1,5 +1,7 @@
 # Installation
 
+> **Dual Pipeline Support**: metrics-governor supports both OTLP and PRW (Prometheus Remote Write) pipelines. They work identically but are completely separate - you can run either or both.
+
 ## From Source
 
 ```bash

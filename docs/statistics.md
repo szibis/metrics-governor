@@ -1,5 +1,7 @@
 # Statistics & Observability
 
+> **Dual Pipeline Support**: Statistics are collected separately for OTLP and PRW pipelines. OTLP metrics use the `metrics_governor_*` prefix, while PRW metrics use `metrics_governor_prw_*` prefix.
+
 ## Prometheus Metrics Endpoint
 
 Stats are exposed on `:9090/metrics` (configurable via `-stats-addr`):

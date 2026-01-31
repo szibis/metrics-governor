@@ -2,7 +2,7 @@
 
 Metrics Governor supports consistent sharding to distribute metrics across multiple backend endpoints. This is useful for horizontal scaling of time-series databases like VictoriaMetrics vminsert.
 
-**Both OTLP and PRW pipelines support sharding** with the same architecture and behavior. This page focuses on OTLP sharding; for PRW-specific configuration, see [PRW Sharding](prw.md#sharding).
+> **Dual Pipeline Support**: Sharding works identically for both OTLP and PRW pipelines. The only difference is that they are completely separate - use `-sharding-*` flags for OTLP and `-prw-sharding-*` flags for PRW. See [PRW Sharding](prw.md#sharding) for PRW-specific flags.
 
 ## Sharding Architecture
 

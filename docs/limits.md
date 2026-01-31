@@ -1,8 +1,8 @@
 # Limits Configuration
 
-Limits are configured via a YAML file specified with `-limits-config`. The same limits configuration applies to both **OTLP** and **PRW (Prometheus Remote Write)** pipelines.
+Limits are configured via a YAML file specified with `-limits-config`. See [examples/limits.yaml](../examples/limits.yaml) for a complete example.
 
-See [examples/limits.yaml](../examples/limits.yaml) for a complete example.
+> **Dual Pipeline Support**: Limits work identically for both OTLP and PRW pipelines. The same configuration file applies to both - they are completely separate pipelines using the same rules.
 
 ## Configuration Structure
 
@@ -217,38 +217,3 @@ metrics_governor_rule_current_cardinality{rule="adaptive-by-service"} 4500
 metrics_governor_rule_groups_total{rule="adaptive-by-service"} 15
 metrics_governor_rule_dropped_groups_total{rule="adaptive-by-service"} 2
 ```
-
-## PRW Pipeline Limits
-
-Limits apply equally to the PRW pipeline. The matching is based on:
-
-- **metric_name**: The `__name__` label from PRW timeseries
-- **labels**: All labels from the timeseries
-
-### PRW-Specific Configuration
-
-```bash
-# Enable limits for PRW pipeline
-metrics-governor \
-  -prw-listen :9090 \
-  -prw-exporter-endpoint http://victoriametrics:8428/api/v1/write \
-  -limits-config limits.yaml \
-  -limits-dry-run=false
-```
-
-### Example: Limiting PRW by Service
-
-```yaml
-rules:
-  - name: "prw-service-limits"
-    match:
-      labels:
-        job: "*"          # Prometheus job label
-        instance: "*"     # Prometheus instance label
-    max_cardinality: 10000
-    max_datapoints_rate: 100000
-    action: adaptive
-    group_by: ["job"]
-```
-
-This will track cardinality per Prometheus job and adaptively limit the highest contributors when limits are exceeded.

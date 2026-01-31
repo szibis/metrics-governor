@@ -2,6 +2,8 @@
 
 metrics-governor supports Prometheus Remote Write (PRW) protocol as a **separate pipeline** alongside the existing OTLP pipeline.
 
+> **Dual Pipeline Architecture**: All components (receivers, buffers, exporters, limits, sharding, queues) work identically for both OTLP and PRW. They are completely separate pipelines with no cross-protocol conversion.
+
 ## Architecture
 
 ```
