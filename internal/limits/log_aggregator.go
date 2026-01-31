@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/slawomirskowron/metrics-governor/internal/logging"
+	"github.com/szibis/metrics-governor/internal/logging"
 )
 
 // LogAggregator aggregates similar log messages and outputs them periodically.

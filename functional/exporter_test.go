@@ -17,7 +17,7 @@ import (
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 
-	"github.com/slawomirskowron/metrics-governor/internal/exporter"
+	"github.com/szibis/metrics-governor/internal/exporter"
 )
 
 // TestFunctional_Exporter_GRPC tests exporter with gRPC protocol

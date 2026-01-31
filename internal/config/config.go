@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/slawomirskowron/metrics-governor/internal/auth"
-	"github.com/slawomirskowron/metrics-governor/internal/compression"
-	"github.com/slawomirskowron/metrics-governor/internal/exporter"
-	"github.com/slawomirskowron/metrics-governor/internal/prw"
-	"github.com/slawomirskowron/metrics-governor/internal/receiver"
-	tlspkg "github.com/slawomirskowron/metrics-governor/internal/tls"
+	"github.com/szibis/metrics-governor/internal/auth"
+	"github.com/szibis/metrics-governor/internal/compression"
+	"github.com/szibis/metrics-governor/internal/exporter"
+	"github.com/szibis/metrics-governor/internal/prw"
+	"github.com/szibis/metrics-governor/internal/receiver"
+	tlspkg "github.com/szibis/metrics-governor/internal/tls"
 )
 
 // version is set at build time via ldflags

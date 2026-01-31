@@ -12,7 +12,7 @@ import (
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 
-	"github.com/slawomirskowron/metrics-governor/internal/stats"
+	"github.com/szibis/metrics-governor/internal/stats"
 )
 
 // noopExporter discards all exports

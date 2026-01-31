@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/slawomirskowron/metrics-governor/internal/prw"
+	"github.com/szibis/metrics-governor/internal/prw"
 )
 
 // mockPRWExporter is a mock PRW exporter for testing.

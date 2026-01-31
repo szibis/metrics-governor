@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/slawomirskowron/metrics-governor/internal/compression"
-	"github.com/slawomirskowron/metrics-governor/internal/prw"
+	"github.com/szibis/metrics-governor/internal/compression"
+	"github.com/szibis/metrics-governor/internal/prw"
 )
 
 // mockPRWBuffer is a mock PRW buffer for testing.

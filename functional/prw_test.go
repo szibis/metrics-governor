@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/slawomirskowron/metrics-governor/internal/compression"
-	"github.com/slawomirskowron/metrics-governor/internal/exporter"
-	"github.com/slawomirskowron/metrics-governor/internal/prw"
-	"github.com/slawomirskowron/metrics-governor/internal/receiver"
+	"github.com/szibis/metrics-governor/internal/compression"
+	"github.com/szibis/metrics-governor/internal/exporter"
+	"github.com/szibis/metrics-governor/internal/prw"
+	"github.com/szibis/metrics-governor/internal/receiver"
 )
 
 // mockPRWExporter implements prw.Exporter for testing

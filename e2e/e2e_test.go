@@ -20,11 +20,11 @@ import (
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 
-	"github.com/slawomirskowron/metrics-governor/internal/buffer"
-	"github.com/slawomirskowron/metrics-governor/internal/exporter"
-	"github.com/slawomirskowron/metrics-governor/internal/limits"
-	"github.com/slawomirskowron/metrics-governor/internal/receiver"
-	"github.com/slawomirskowron/metrics-governor/internal/stats"
+	"github.com/szibis/metrics-governor/internal/buffer"
+	"github.com/szibis/metrics-governor/internal/exporter"
+	"github.com/szibis/metrics-governor/internal/limits"
+	"github.com/szibis/metrics-governor/internal/receiver"
+	"github.com/szibis/metrics-governor/internal/stats"
 )
 
 // TestE2E_FullPipeline_GRPC tests the complete flow: gRPC client -> receiver -> buffer -> exporter -> backend
