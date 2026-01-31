@@ -19,8 +19,8 @@ import (
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 
-	"github.com/slawomirskowron/metrics-governor/internal/buffer"
-	"github.com/slawomirskowron/metrics-governor/internal/receiver"
+	"github.com/szibis/metrics-governor/internal/buffer"
+	"github.com/szibis/metrics-governor/internal/receiver"
 )
 
 // mockExporter implements buffer.Exporter for testing

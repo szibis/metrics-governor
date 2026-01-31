@@ -15,7 +15,7 @@ import (
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/slawomirskowron/metrics-governor/internal/buffer"
+	"github.com/szibis/metrics-governor/internal/buffer"
 )
 
 // noopExporter discards all exports

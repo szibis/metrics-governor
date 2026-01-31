@@ -15,17 +15,17 @@ import (
 
 // groupStats tracks statistics for a specific label combination (group).
 type groupStats struct {
-	datapoints  int64                  // Total datapoints in current window
-	cardinality map[string]struct{}    // Unique series keys
-	windowEnd   time.Time              // When the current window expires
+	datapoints  int64               // Total datapoints in current window
+	cardinality map[string]struct{} // Unique series keys
+	windowEnd   time.Time           // When the current window expires
 }
 
 // ruleStats tracks all groups for a specific rule.
 type ruleStats struct {
-	groups      map[string]*groupStats // groupKey -> stats
-	totalDPs    int64                  // Total datapoints across all groups
-	totalCard   int64                  // Total cardinality across all groups
-	windowEnd   time.Time              // Global window end
+	groups    map[string]*groupStats // groupKey -> stats
+	totalDPs  int64                  // Total datapoints across all groups
+	totalCard int64                  // Total cardinality across all groups
+	windowEnd time.Time              // Global window end
 }
 
 // Enforcer enforces limits on metrics based on configuration.
@@ -336,7 +336,7 @@ func (e *Enforcer) handleViolation(rule *Rule, groupKey string, m *metricspb.Met
 	}
 }
 
-func (e *Enforcer) handleAdaptive(rule *Rule, groupKey string, m *metricspb.Metric, resourceAttrs map[string]string, reason string, datapointsCount int) *metricspb.Metric {
+func (e *Enforcer) handleAdaptive(rule *Rule, groupKey string, m *metricspb.Metric, _ map[string]string, reason string, datapointsCount int) *metricspb.Metric {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -460,7 +460,7 @@ func (e *Enforcer) recordViolation(ruleName, reason string) {
 	}
 }
 
-func (e *Enforcer) recordDrop(ruleName string, count int, isNewGroup bool) {
+func (e *Enforcer) recordDrop(ruleName string, count int, _ bool) {
 	e.violations.mu.Lock()
 	defer e.violations.mu.Unlock()
 

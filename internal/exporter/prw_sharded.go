@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/slawomirskowron/metrics-governor/internal/logging"
-	"github.com/slawomirskowron/metrics-governor/internal/prw"
-	"github.com/slawomirskowron/metrics-governor/internal/sharding"
+	"github.com/szibis/metrics-governor/internal/logging"
+	"github.com/szibis/metrics-governor/internal/prw"
+	"github.com/szibis/metrics-governor/internal/sharding"
 )
 
 // PRWShardedConfig holds configuration for sharded PRW export.

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Release script for metrics-governor
-# Handles version bumping, changelog, tests coverage, badges, helm chart, and git operations
+# Creates a PR with version bumping, changelog, tests coverage, badges, helm chart updates
 
 set -e
 
@@ -115,7 +115,30 @@ if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
     error "Tag v${VERSION} already exists"
 fi
 
+# Check gh CLI is authenticated
+if ! gh auth status >/dev/null 2>&1; then
+    error "GitHub CLI not authenticated. Run 'gh auth login' first."
+fi
+
+# Fetch latest from origin
+git fetch origin main
+
 success "Prerequisites check passed"
+
+#######################################
+# Generate release notes from commits
+#######################################
+info "Generating release notes from commits..."
+
+LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+if [[ -n "$LAST_TAG" ]]; then
+    COMMIT_LOG=$(git log "${LAST_TAG}..HEAD" --oneline --no-merges)
+else
+    COMMIT_LOG=$(git log --oneline --no-merges -20)
+fi
+
+info "Commits since last release:"
+echo "$COMMIT_LOG"
 
 #######################################
 # Count tests and calculate coverage
@@ -168,7 +191,6 @@ info "Total tests: $TOTAL_TESTS"
 info "Checking for Helm chart changes..."
 
 HELM_CHANGED=false
-LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 
 if [[ -n "$LAST_TAG" ]]; then
     if git diff --name-only "$LAST_TAG"..HEAD | grep -q "^helm/"; then
@@ -287,11 +309,15 @@ else
 fi
 
 #######################################
-# Git operations
+# Create release branch and commit
 #######################################
-info "Committing changes..."
+BRANCH_NAME="release/v${VERSION}"
+
+info "Creating release branch: $BRANCH_NAME"
 
 if [[ "$DRY_RUN" == false ]]; then
+    git checkout -b "$BRANCH_NAME"
+
     # Stage all changes
     git add README.md CHANGELOG.md
     [[ "$HELM_CHANGED" == true ]] && git add helm/metrics-governor/Chart.yaml
@@ -312,63 +338,93 @@ ${MESSAGE}
         success "Changes committed"
     fi
 else
+    info "[DRY RUN] Would create branch: $BRANCH_NAME"
     info "[DRY RUN] Would commit: Release v${VERSION}"
 fi
 
 #######################################
-# Create and push tag
+# Push branch and create PR
 #######################################
-info "Creating release tag..."
+info "Pushing branch and creating PR..."
+
+# Format commit log for PR body
+PR_COMMIT_LOG=$(echo "$COMMIT_LOG" | sed 's/^/- /')
+
+PR_BODY="## Release v${VERSION}
+
+${MESSAGE}
+
+### Changes since last release
+
+${PR_COMMIT_LOG}
+
+### Test Coverage
+- Unit Tests: ${UNIT_TOTAL}
+- Functional Tests: ${FUNCTIONAL_TOTAL}
+- E2E Tests: ${E2E_TOTAL}
+- Benchmarks: ${BENCHMARK_TOTAL}
+- **Total: ${TOTAL_TESTS}+ tests**
+
+### Checklist
+- [x] README badges updated
+- [x] CHANGELOG updated
+- [x] Tests passing
+- [x] Helm chart version bumped (if applicable)
+
+---
+After merge, the tag will be created automatically and GitHub Actions will build the release."
 
 if [[ "$DRY_RUN" == false ]]; then
-    # Create annotated tag
-    git tag -a "v${VERSION}" -m "Release v${VERSION} - ${MESSAGE}"
-    success "Created tag v${VERSION}"
-
     echo ""
     echo "==========================================="
-    echo -e "${GREEN}Release v${VERSION} prepared!${NC}"
+    echo -e "${YELLOW}Touch your hardware security key to push${NC}"
     echo "==========================================="
     echo ""
-    echo "Next steps:"
-    echo "  1. Push changes:  git push origin main"
-    echo "  2. Push tag:      git push origin v${VERSION}"
-    echo ""
-    echo -e "${YELLOW}NOTE: Touch your hardware security key when prompted${NC}"
-    echo ""
-    echo "GitHub Actions will automatically:"
-    echo "  • Build binaries: darwin-arm64, linux-arm64, linux-amd64"
-    echo "  • Package Helm chart: metrics-governor-${VERSION}.tgz"
-    echo "  • Build & push Docker images:"
-    echo "    - docker.io/slaskoss/metrics-governor:${VERSION}"
-    echo "    - docker.io/slaskoss/metrics-governor:latest"
-    echo "    - ghcr.io/szibis/metrics-governor:${VERSION}"
-    echo "    - ghcr.io/szibis/metrics-governor:latest"
-    echo ""
 
-    read -p "Push now? (y/N) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        info "Pushing to origin... (touch your key)"
-        git push origin main
-        git push origin "v${VERSION}"
-        success "Release v${VERSION} pushed!"
-        echo ""
-        echo "GitHub Actions is now building the release."
-        echo ""
-        echo "Monitor progress:"
-        echo "  https://github.com/szibis/metrics-governor/actions"
-        echo ""
-        echo "Release page (after workflow completes):"
-        echo "  https://github.com/szibis/metrics-governor/releases/tag/v${VERSION}"
+    git push -u origin "$BRANCH_NAME"
+    success "Branch pushed"
+
+    # Create PR
+    PR_URL=$(gh pr create \
+        --title "Release v${VERSION}" \
+        --body "$PR_BODY" \
+        --base main)
+
+    success "PR created: $PR_URL"
+
+    # Enable auto-merge
+    info "Enabling auto-merge..."
+    if gh pr merge --auto --squash 2>/dev/null; then
+        success "Auto-merge enabled"
     else
-        info "Run manually when ready:"
-        echo "  git push origin main"
-        echo "  git push origin v${VERSION}"
+        warn "Could not enable auto-merge (may require repo settings adjustment)"
     fi
+
+    echo ""
+    echo "==========================================="
+    echo -e "${GREEN}Release PR created for v${VERSION}!${NC}"
+    echo "==========================================="
+    echo ""
+    echo "PR: $PR_URL"
+    echo ""
+    echo "Once CI passes and PR is merged:"
+    echo "  1. Tag v${VERSION} will be created automatically"
+    echo "  2. Release workflow will build and publish:"
+    echo "     - Binaries: darwin-arm64, linux-arm64, linux-amd64"
+    echo "     - Helm chart: metrics-governor-${VERSION}.tgz"
+    echo "     - Docker images to Docker Hub and GHCR"
+    echo ""
+    echo "Monitor: https://github.com/szibis/metrics-governor/actions"
+    echo ""
 else
-    info "[DRY RUN] Would create tag: v${VERSION}"
-    info "[DRY RUN] Would push to origin"
+    info "[DRY RUN] Would push branch: $BRANCH_NAME"
+    info "[DRY RUN] Would create PR: Release v${VERSION}"
+    info "[DRY RUN] Would enable auto-merge"
+    echo ""
+    echo "PR body would be:"
+    echo "---"
+    echo "$PR_BODY"
+    echo "---"
 fi
 
 success "Done!"

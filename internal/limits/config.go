@@ -94,7 +94,6 @@ func LoadConfig(path string) (*Config, error) {
 				rule.metricRegex = regex
 			}
 		}
-
 	}
 
 	return &cfg, nil

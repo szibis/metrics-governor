@@ -1,0 +1,85 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    # Default linters
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    # Additional linters
+    - bodyclose
+    - copyloopvar
+    - dogsled
+    - dupl
+    - gofmt
+    - goimports
+    - goprintffuncname
+    - gosec
+    - misspell
+    - nolintlint
+    - stylecheck
+    - typecheck
+    - unparam
+    - whitespace
+
+linters-settings:
+  dupl:
+    threshold: 200
+  misspell:
+    locale: US
+  staticcheck:
+    checks: ["all"]
+  stylecheck:
+    checks: ["all", "-ST1000", "-ST1003", "-ST1016", "-ST1005"]
+  gosec:
+    excludes:
+      - G104  # Audit errors not checked (too noisy)
+      - G112  # Slowloris - we handle timeouts at load balancer level
+      - G115  # Integer overflow conversions (too noisy for protobuf code)
+      - G304  # File path provided as taint input (intentional in some cases)
+      - G402  # TLS InsecureSkipVerify (intentional for skip-verify config option)
+
+issues:
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - bodyclose
+        - dupl
+        - errcheck
+        - gosec
+        - goconst
+        - gosimple
+        - ineffassign
+        - staticcheck
+        - unused
+        - unparam
+    # Exclude some linters from running on benchmark files
+    - path: _benchmark_test\.go
+      linters:
+        - dupl
+        - goconst
+        - unused
+    # Exclude linters for generated code
+    - path: \.pb\.go
+      linters:
+        - all
+    # Exclude linters for functional tests
+    - path: ^functional/
+      linters:
+        - bodyclose
+        - unused
+        - unparam
+    # Exclude linters for e2e tests
+    - path: ^e2e/
+      linters:
+        - bodyclose
+        - unused
+        - unparam
+  max-issues-per-linter: 50
+  max-same-issues: 10

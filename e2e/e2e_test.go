@@ -20,11 +20,11 @@ import (
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 
-	"github.com/slawomirskowron/metrics-governor/internal/buffer"
-	"github.com/slawomirskowron/metrics-governor/internal/exporter"
-	"github.com/slawomirskowron/metrics-governor/internal/limits"
-	"github.com/slawomirskowron/metrics-governor/internal/receiver"
-	"github.com/slawomirskowron/metrics-governor/internal/stats"
+	"github.com/szibis/metrics-governor/internal/buffer"
+	"github.com/szibis/metrics-governor/internal/exporter"
+	"github.com/szibis/metrics-governor/internal/limits"
+	"github.com/szibis/metrics-governor/internal/receiver"
+	"github.com/szibis/metrics-governor/internal/stats"
 )
 
 // TestE2E_FullPipeline_GRPC tests the complete flow: gRPC client -> receiver -> buffer -> exporter -> backend
@@ -839,16 +839,16 @@ func createHighCardinalityRequest(serviceName, userID, requestID string, datapoi
 
 func createEdgeCaseRequest() *colmetrics.ExportMetricsServiceRequest {
 	edgeValues := []float64{
-		0.0,                        // Zero
-		-0.0,                       // Negative zero
-		1.0,                        // Normal positive
-		-1.0,                       // Normal negative
-		1.7976931348623157e+308,    // Very large positive (close to MaxFloat64)
-		-1.7976931348623157e+308,   // Very large negative
-		1e-300,                     // Very small positive
-		-1e-300,                    // Very small negative
-		3.141592653589793,          // Pi
-		2.718281828459045,          // e
+		0.0,                      // Zero
+		-0.0,                     // Negative zero
+		1.0,                      // Normal positive
+		-1.0,                     // Normal negative
+		1.7976931348623157e+308,  // Very large positive (close to MaxFloat64)
+		-1.7976931348623157e+308, // Very large negative
+		1e-300,                   // Very small positive
+		-1e-300,                  // Very small negative
+		3.141592653589793,        // Pi
+		2.718281828459045,        // e
 	}
 
 	dps := make([]*metricspb.NumberDataPoint, len(edgeValues))

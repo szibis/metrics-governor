@@ -11,17 +11,17 @@ import (
 	colmetrics "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 
-	"github.com/slawomirskowron/metrics-governor/internal/exporter"
-	"github.com/slawomirskowron/metrics-governor/internal/queue"
+	"github.com/szibis/metrics-governor/internal/exporter"
+	"github.com/szibis/metrics-governor/internal/queue"
 )
 
 // failingExporter always fails
 type failingExporter struct {
-	mu         sync.Mutex
-	failCount  int
-	succeedAt  int // Start succeeding after this many failures
-	exports    []*colmetrics.ExportMetricsServiceRequest
-	closed     bool
+	mu        sync.Mutex
+	failCount int
+	succeedAt int // Start succeeding after this many failures
+	exports   []*colmetrics.ExportMetricsServiceRequest
+	closed    bool
 }
 
 func (f *failingExporter) Export(ctx context.Context, req *colmetrics.ExportMetricsServiceRequest) error {

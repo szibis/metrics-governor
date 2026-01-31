@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/slawomirskowron/metrics-governor/internal/auth"
-	"github.com/slawomirskowron/metrics-governor/internal/buffer"
-	"github.com/slawomirskowron/metrics-governor/internal/compression"
-	"github.com/slawomirskowron/metrics-governor/internal/logging"
-	tlspkg "github.com/slawomirskowron/metrics-governor/internal/tls"
+	"github.com/szibis/metrics-governor/internal/auth"
+	"github.com/szibis/metrics-governor/internal/buffer"
+	"github.com/szibis/metrics-governor/internal/compression"
+	"github.com/szibis/metrics-governor/internal/logging"
+	tlspkg "github.com/szibis/metrics-governor/internal/tls"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -183,7 +183,7 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 
 	w.Header().Set("Content-Type", "application/x-protobuf")
 	w.WriteHeader(http.StatusOK)
-	w.Write(respBytes)
+	_, _ = w.Write(respBytes)
 }
 
 // Start starts the HTTP server.

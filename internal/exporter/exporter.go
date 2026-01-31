@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/slawomirskowron/metrics-governor/internal/auth"
-	"github.com/slawomirskowron/metrics-governor/internal/compression"
-	tlspkg "github.com/slawomirskowron/metrics-governor/internal/tls"
+	"github.com/szibis/metrics-governor/internal/auth"
+	"github.com/szibis/metrics-governor/internal/compression"
+	tlspkg "github.com/szibis/metrics-governor/internal/tls"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
@@ -119,7 +119,7 @@ func New(ctx context.Context, cfg Config) (*OTLPExporter, error) {
 }
 
 // newGRPCExporter creates a gRPC-based exporter.
-func newGRPCExporter(ctx context.Context, cfg Config) (*OTLPExporter, error) {
+func newGRPCExporter(_ context.Context, cfg Config) (*OTLPExporter, error) {
 	var opts []grpc.DialOption
 
 	// Configure TLS or insecure connection
@@ -159,7 +159,7 @@ func newGRPCExporter(ctx context.Context, cfg Config) (*OTLPExporter, error) {
 }
 
 // newHTTPExporter creates an HTTP-based exporter.
-func newHTTPExporter(ctx context.Context, cfg Config) (*OTLPExporter, error) {
+func newHTTPExporter(_ context.Context, cfg Config) (*OTLPExporter, error) {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -307,7 +307,7 @@ func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportM
 	defer resp.Body.Close()
 
 	// Read and discard body to allow connection reuse
-	io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)

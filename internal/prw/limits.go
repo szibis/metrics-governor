@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/slawomirskowron/metrics-governor/internal/logging"
+	"github.com/szibis/metrics-governor/internal/logging"
 )
 
 // LimitsConfig holds the configuration for PRW limits enforcement.
@@ -34,7 +34,7 @@ type LimitRule struct {
 	Action LimitAction
 
 	// Compiled patterns
-	metricRegex *regexp.Regexp
+	metricRegex  *regexp.Regexp
 	labelRegexes map[string]*regexp.Regexp
 }
 
@@ -60,7 +60,7 @@ type LimitsEnforcer struct {
 	lastReset       time.Time
 
 	// Stats
-	totalDropped int64
+	totalDropped    int64
 	totalViolations int64
 }
 

@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/slawomirskowron/metrics-governor/internal/auth"
-	"github.com/slawomirskowron/metrics-governor/internal/compression"
-	"github.com/slawomirskowron/metrics-governor/internal/logging"
-	"github.com/slawomirskowron/metrics-governor/internal/prw"
-	tlspkg "github.com/slawomirskowron/metrics-governor/internal/tls"
+	"github.com/szibis/metrics-governor/internal/auth"
+	"github.com/szibis/metrics-governor/internal/compression"
+	"github.com/szibis/metrics-governor/internal/logging"
+	"github.com/szibis/metrics-governor/internal/prw"
+	tlspkg "github.com/szibis/metrics-governor/internal/tls"
 )
 
 // PRWServerConfig holds PRW HTTP server settings.

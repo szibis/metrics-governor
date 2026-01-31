@@ -9,15 +9,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/slawomirskowron/metrics-governor/internal/buffer"
-	"github.com/slawomirskowron/metrics-governor/internal/config"
-	"github.com/slawomirskowron/metrics-governor/internal/exporter"
-	"github.com/slawomirskowron/metrics-governor/internal/limits"
-	"github.com/slawomirskowron/metrics-governor/internal/logging"
-	"github.com/slawomirskowron/metrics-governor/internal/prw"
-	"github.com/slawomirskowron/metrics-governor/internal/queue"
-	"github.com/slawomirskowron/metrics-governor/internal/receiver"
-	"github.com/slawomirskowron/metrics-governor/internal/stats"
+	"github.com/szibis/metrics-governor/internal/buffer"
+	"github.com/szibis/metrics-governor/internal/config"
+	"github.com/szibis/metrics-governor/internal/exporter"
+	"github.com/szibis/metrics-governor/internal/limits"
+	"github.com/szibis/metrics-governor/internal/logging"
+	"github.com/szibis/metrics-governor/internal/prw"
+	"github.com/szibis/metrics-governor/internal/queue"
+	"github.com/szibis/metrics-governor/internal/receiver"
+	"github.com/szibis/metrics-governor/internal/stats"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
 
@@ -282,11 +282,11 @@ func main() {
 
 	// Graceful shutdown
 	grpcReceiver.Stop()
-	httpReceiver.Stop(ctx)
+	_ = httpReceiver.Stop(ctx)
 	if prwReceiver != nil {
-		prwReceiver.Stop(ctx)
+		_ = prwReceiver.Stop(ctx)
 	}
-	statsServer.Shutdown(ctx)
+	_ = statsServer.Shutdown(ctx)
 	cancel()
 	buf.Wait()
 	if prwBuffer != nil {

@@ -261,11 +261,11 @@ func TestReceiverAuthConfig(t *testing.T) {
 
 func TestGRPCReceiverConfig(t *testing.T) {
 	cfg := &Config{
-		GRPCListenAddr:         ":4317",
-		ReceiverTLSEnabled:     true,
-		ReceiverTLSCertFile:    "/etc/certs/server.crt",
-		ReceiverTLSKeyFile:     "/etc/certs/server.key",
-		ReceiverAuthEnabled:    true,
+		GRPCListenAddr:          ":4317",
+		ReceiverTLSEnabled:      true,
+		ReceiverTLSCertFile:     "/etc/certs/server.crt",
+		ReceiverTLSKeyFile:      "/etc/certs/server.key",
+		ReceiverAuthEnabled:     true,
 		ReceiverAuthBearerToken: "secret-token",
 	}
 
@@ -284,15 +284,15 @@ func TestGRPCReceiverConfig(t *testing.T) {
 
 func TestHTTPReceiverConfig(t *testing.T) {
 	cfg := &Config{
-		HTTPListenAddr:              ":4318",
-		ReceiverTLSEnabled:          true,
-		ReceiverAuthEnabled:         true,
-		ReceiverMaxRequestBodySize:  1024,
-		ReceiverReadTimeout:         30 * time.Second,
-		ReceiverReadHeaderTimeout:   10 * time.Second,
-		ReceiverWriteTimeout:        60 * time.Second,
-		ReceiverIdleTimeout:         120 * time.Second,
-		ReceiverKeepAlivesEnabled:   true,
+		HTTPListenAddr:             ":4318",
+		ReceiverTLSEnabled:         true,
+		ReceiverAuthEnabled:        true,
+		ReceiverMaxRequestBodySize: 1024,
+		ReceiverReadTimeout:        30 * time.Second,
+		ReceiverReadHeaderTimeout:  10 * time.Second,
+		ReceiverWriteTimeout:       60 * time.Second,
+		ReceiverIdleTimeout:        120 * time.Second,
+		ReceiverKeepAlivesEnabled:  true,
 	}
 
 	httpCfg := cfg.HTTPReceiverConfig()

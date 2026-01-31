@@ -12,18 +12,18 @@ import (
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 
-	"github.com/slawomirskowron/metrics-governor/internal/buffer"
-	"github.com/slawomirskowron/metrics-governor/internal/stats"
+	"github.com/szibis/metrics-governor/internal/buffer"
+	"github.com/szibis/metrics-governor/internal/stats"
 )
 
 // bufferMockExporter tracks exports for testing
 type bufferMockExporter struct {
-	mu           sync.Mutex
-	exports      []*colmetrics.ExportMetricsServiceRequest
-	exportCount  int64
-	failNext     bool
-	exportDelay  time.Duration
-	closed       bool
+	mu          sync.Mutex
+	exports     []*colmetrics.ExportMetricsServiceRequest
+	exportCount int64
+	failNext    bool
+	exportDelay time.Duration
+	closed      bool
 }
 
 func (m *bufferMockExporter) Export(ctx context.Context, req *colmetrics.ExportMetricsServiceRequest) error {

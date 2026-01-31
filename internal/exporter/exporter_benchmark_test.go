@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/slawomirskowron/metrics-governor/internal/compression"
+	"github.com/szibis/metrics-governor/internal/compression"
 )
 
 // mockGRPCServer is a mock OTLP gRPC server for benchmarking

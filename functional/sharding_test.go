@@ -16,8 +16,8 @@ import (
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 
-	"github.com/slawomirskowron/metrics-governor/internal/exporter"
-	"github.com/slawomirskowron/metrics-governor/internal/sharding"
+	"github.com/szibis/metrics-governor/internal/exporter"
+	"github.com/szibis/metrics-governor/internal/sharding"
 )
 
 // mockResolver implements sharding.Resolver for testing
@@ -32,11 +32,11 @@ func (m *mockResolver) LookupHost(ctx context.Context, host string) ([]string, e
 // mockShardBackend tracks metrics sent to each endpoint
 type mockShardBackend struct {
 	colmetrics.UnimplementedMetricsServiceServer
-	addr           string
-	mu             sync.Mutex
-	receivedCount  int64
+	addr            string
+	mu              sync.Mutex
+	receivedCount   int64
 	receivedMetrics []*metricspb.ResourceMetrics
-	server         *grpc.Server
+	server          *grpc.Server
 }
 
 func (m *mockShardBackend) Export(ctx context.Context, req *colmetrics.ExportMetricsServiceRequest) (*colmetrics.ExportMetricsServiceResponse, error) {

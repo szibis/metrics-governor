@@ -27,11 +27,11 @@ const (
 )
 
 var (
-	ErrCorrupted   = errors.New("WAL is corrupted")
-	ErrDiskFull    = errors.New("disk is full")
-	ErrQueueFull   = errors.New("queue is full")
-	ErrClosed      = errors.New("WAL is closed")
-	crc32Table     = crc32.MakeTable(crc32.Castagnoli)
+	ErrCorrupted = errors.New("WAL is corrupted")
+	ErrDiskFull  = errors.New("disk is full")
+	ErrQueueFull = errors.New("queue is full")
+	ErrClosed    = errors.New("WAL is closed")
+	crc32Table   = crc32.MakeTable(crc32.Castagnoli)
 )
 
 // WALEntry represents an entry in the write-ahead log.
@@ -58,11 +58,11 @@ type WAL struct {
 	totalBytes  int64
 
 	// Configuration
-	maxSize            int
-	maxBytes           int64
-	targetUtilization  float64 // Target 80-90% utilization
-	compactThreshold   float64 // Compact when consumed > this ratio
-	adaptiveEnabled    bool
+	maxSize           int
+	maxBytes          int64
+	targetUtilization float64 // Target 80-90% utilization
+	compactThreshold  float64 // Compact when consumed > this ratio
+	adaptiveEnabled   bool
 
 	// Adaptive limits
 	effectiveMaxSize  int
@@ -641,10 +641,10 @@ func (w *WAL) compact() {
 	oldWALPath := filepath.Join(w.path, walFileName)
 	oldIdxPath := filepath.Join(w.path, indexFileName)
 
-	os.Remove(oldWALPath)
-	os.Remove(oldIdxPath)
-	os.Rename(newWALPath, oldWALPath)
-	os.Rename(newIdxPath, oldIdxPath)
+	_ = os.Remove(oldWALPath)
+	_ = os.Remove(oldIdxPath)
+	_ = os.Rename(newWALPath, oldWALPath)
+	_ = os.Rename(newIdxPath, oldIdxPath)
 
 	// Reopen files
 	w.walFile, _ = os.OpenFile(oldWALPath, os.O_RDWR|os.O_APPEND, 0644)

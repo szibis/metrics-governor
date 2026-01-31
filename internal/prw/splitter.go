@@ -1,7 +1,7 @@
 package prw
 
 import (
-	"github.com/slawomirskowron/metrics-governor/internal/sharding"
+	"github.com/szibis/metrics-governor/internal/sharding"
 )
 
 // Splitter splits WriteRequests by shard key for routing to different endpoints.

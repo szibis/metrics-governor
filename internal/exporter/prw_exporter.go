@@ -10,10 +10,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/slawomirskowron/metrics-governor/internal/auth"
-	"github.com/slawomirskowron/metrics-governor/internal/compression"
-	"github.com/slawomirskowron/metrics-governor/internal/prw"
-	tlspkg "github.com/slawomirskowron/metrics-governor/internal/tls"
+	"github.com/szibis/metrics-governor/internal/auth"
+	"github.com/szibis/metrics-governor/internal/compression"
+	"github.com/szibis/metrics-governor/internal/prw"
+	tlspkg "github.com/szibis/metrics-governor/internal/tls"
 	"golang.org/x/net/http2"
 )
 
@@ -49,12 +49,12 @@ type VMRemoteWriteOptions struct {
 
 // PRWExporter exports metrics via Prometheus Remote Write protocol.
 type PRWExporter struct {
-	config       PRWExporterConfig
-	httpClient   *http.Client
-	endpoint     string
-	version      prw.Version
-	compression  compression.Type
-	extraLabels  []prw.Label
+	config      PRWExporterConfig
+	httpClient  *http.Client
+	endpoint    string
+	version     prw.Version
+	compression compression.Type
+	extraLabels []prw.Label
 }
 
 // NewPRW creates a new PRW exporter.
@@ -237,7 +237,7 @@ func (e *PRWExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 	defer resp.Body.Close()
 
 	// Read and discard body to allow connection reuse
-	io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	// Check response status
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

@@ -1,4 +1,4 @@
-module github.com/slawomirskowron/metrics-governor
+module github.com/szibis/metrics-governor
 
 go 1.25.6
 

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/slawomirskowron/metrics-governor/internal/logging"
+	"github.com/szibis/metrics-governor/internal/logging"
 )
 
 // PRWExporter defines the interface for sending PRW metrics.
@@ -198,9 +198,9 @@ func (b *Buffer) flush(ctx context.Context) {
 				// Use aggregated logging to reduce log noise at high throughput
 				logKey := "prw_export_error"
 				b.logAggregator.Error(logKey, "PRW export failed", map[string]interface{}{
-					"error":           err.Error(),
-					"timeseries":      timeseriesCount,
-					"datapoints":      datapointCount,
+					"error":      err.Error(),
+					"timeseries": timeseriesCount,
+					"datapoints": datapointCount,
 				}, int64(datapointCount))
 			} else {
 				logging.Error("PRW export failed", logging.F(

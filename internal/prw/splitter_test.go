@@ -3,7 +3,7 @@ package prw
 import (
 	"testing"
 
-	"github.com/slawomirskowron/metrics-governor/internal/sharding"
+	"github.com/szibis/metrics-governor/internal/sharding"
 )
 
 func TestSplitter_Split(t *testing.T) {

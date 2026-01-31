@@ -12,10 +12,10 @@ import (
 
 // Protobuf wire types
 const (
-	wireVarint     = 0
-	wireFixed64    = 1
+	wireVarint      = 0
+	wireFixed64     = 1
 	wireLengthDelim = 2
-	wireFixed32    = 5
+	wireFixed32     = 5
 )
 
 // Protobuf field numbers for WriteRequest
@@ -177,7 +177,7 @@ func (req *WriteRequest) estimateSize() int {
 	return size
 }
 
-func (ts *TimeSeries) marshal() ([]byte, error) {
+func (ts *TimeSeries) marshal() ([]byte, error) { //nolint:unparam // error kept for API consistency
 	buf := make([]byte, 0, ts.estimateSize())
 
 	// Encode labels

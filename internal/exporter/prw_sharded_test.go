@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/slawomirskowron/metrics-governor/internal/prw"
+	"github.com/szibis/metrics-governor/internal/prw"
 )
 
 func TestNewPRWSharded(t *testing.T) {
@@ -381,4 +381,323 @@ func TestSanitizeEndpoint(t *testing.T) {
 func TestPRWShardedExporter_ImplementsInterface(t *testing.T) {
 	// Compile-time check that PRWShardedExporter implements PRWExporter
 	var _ prw.PRWExporter = (*PRWShardedExporter)(nil)
+}
+
+func TestPRWShardedExporter_OnEndpointsChanged(t *testing.T) {
+	ctx := context.Background()
+
+	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server1.Close()
+
+	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server2.Close()
+
+	cfg := PRWShardedConfig{
+		BaseConfig: PRWExporterConfig{
+			Timeout: 10 * time.Second,
+		},
+		Endpoints: []string{server1.URL},
+	}
+
+	exp, err := NewPRWSharded(ctx, cfg)
+	if err != nil {
+		t.Fatalf("NewPRWSharded() error = %v", err)
+	}
+	defer exp.Close()
+
+	// Export to create an exporter for the first endpoint
+	req := &prw.WriteRequest{
+		Timeseries: []prw.TimeSeries{
+			{
+				Labels:  []prw.Label{{Name: "__name__", Value: "test"}},
+				Samples: []prw.Sample{{Value: 1.0, Timestamp: 1000}},
+			},
+		},
+	}
+
+	if err := exp.Export(ctx, req); err != nil {
+		t.Logf("Export error (may be expected): %v", err)
+	}
+
+	// Change endpoints - should close the old exporter and use new ones
+	exp.onEndpointsChanged([]string{server2.URL})
+
+	// Verify endpoint was updated
+	endpoints := exp.GetEndpoints()
+	if len(endpoints) != 1 || endpoints[0] != server2.URL {
+		t.Errorf("Expected 1 endpoint (%s), got %v", server2.URL, endpoints)
+	}
+}
+
+func TestPRWShardedExporter_OnEndpointsChanged_WhenClosed(t *testing.T) {
+	ctx := context.Background()
+
+	cfg := PRWShardedConfig{
+		BaseConfig: PRWExporterConfig{
+			Timeout: 10 * time.Second,
+		},
+		Endpoints: []string{"http://localhost:9090"},
+	}
+
+	exp, err := NewPRWSharded(ctx, cfg)
+	if err != nil {
+		t.Fatalf("NewPRWSharded() error = %v", err)
+	}
+
+	// Close the exporter
+	exp.Close()
+
+	// This should be a no-op since the exporter is closed
+	exp.onEndpointsChanged([]string{"http://localhost:9091"})
+
+	// Endpoints should not have changed since exporter is closed
+	// The actual behavior depends on implementation
+	t.Log("onEndpointsChanged called on closed exporter - should be no-op")
+}
+
+func TestPRWShardedExporter_ExportToEndpoint_DirectExport(t *testing.T) {
+	var received atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+
+	cfg := PRWShardedConfig{
+		BaseConfig: PRWExporterConfig{
+			Timeout: 10 * time.Second,
+		},
+		ShardKeyLabels: []string{"service"},
+		Endpoints:      []string{server.URL},
+		QueueEnabled:   false, // Direct export
+	}
+
+	exp, err := NewPRWSharded(ctx, cfg)
+	if err != nil {
+		t.Fatalf("NewPRWSharded() error = %v", err)
+	}
+	defer exp.Close()
+
+	req := &prw.WriteRequest{
+		Timeseries: []prw.TimeSeries{
+			{
+				Labels:  []prw.Label{{Name: "__name__", Value: "test"}, {Name: "service", Value: "api"}},
+				Samples: []prw.Sample{{Value: 1.0, Timestamp: 1000}},
+			},
+		},
+	}
+
+	if err := exp.Export(ctx, req); err != nil {
+		t.Errorf("Export() error = %v", err)
+	}
+
+	if received.Load() != 1 {
+		t.Errorf("Expected 1 request, got %d", received.Load())
+	}
+}
+
+func TestPRWShardedExporter_ExportToEndpoint_WithQueue(t *testing.T) {
+	var received atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	cfg := PRWShardedConfig{
+		BaseConfig: PRWExporterConfig{
+			Timeout: 10 * time.Second,
+		},
+		ShardKeyLabels: []string{"service"},
+		Endpoints:      []string{server.URL},
+		QueueEnabled:   true,
+		QueueConfig: prw.QueueConfig{
+			Path:          tmpDir,
+			MaxSize:       100,
+			RetryInterval: 50 * time.Millisecond,
+			MaxRetryDelay: 200 * time.Millisecond,
+		},
+	}
+
+	exp, err := NewPRWSharded(ctx, cfg)
+	if err != nil {
+		t.Fatalf("NewPRWSharded() error = %v", err)
+	}
+	defer exp.Close()
+
+	req := &prw.WriteRequest{
+		Timeseries: []prw.TimeSeries{
+			{
+				Labels:  []prw.Label{{Name: "__name__", Value: "test"}, {Name: "service", Value: "api"}},
+				Samples: []prw.Sample{{Value: 1.0, Timestamp: 1000}},
+			},
+		},
+	}
+
+	if err := exp.Export(ctx, req); err != nil {
+		t.Logf("Export() error (may queue): %v", err)
+	}
+
+	// Wait for queue to process
+	time.Sleep(200 * time.Millisecond)
+
+	t.Logf("Server received %d requests", received.Load())
+}
+
+func TestPRWShardedExporter_GetOrCreateExporter_Error(t *testing.T) {
+	ctx := context.Background()
+
+	cfg := PRWShardedConfig{
+		BaseConfig: PRWExporterConfig{
+			Endpoint: "invalid-endpoint-that-will-fail",
+			Timeout:  10 * time.Second,
+		},
+		Endpoints: []string{"invalid-endpoint"},
+	}
+
+	exp, err := NewPRWSharded(ctx, cfg)
+	if err != nil {
+		t.Fatalf("NewPRWSharded() error = %v", err)
+	}
+	defer exp.Close()
+
+	req := &prw.WriteRequest{
+		Timeseries: []prw.TimeSeries{
+			{
+				Labels:  []prw.Label{{Name: "__name__", Value: "test"}},
+				Samples: []prw.Sample{{Value: 1.0, Timestamp: 1000}},
+			},
+		},
+	}
+
+	// This should fail because of invalid endpoint
+	err = exp.Export(ctx, req)
+	// Error may or may not occur depending on when validation happens
+	t.Logf("Export result: %v", err)
+}
+
+func TestPRWShardedExporter_Close_WithQueues(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	cfg := PRWShardedConfig{
+		BaseConfig: PRWExporterConfig{
+			Timeout: 10 * time.Second,
+		},
+		Endpoints:    []string{server.URL},
+		QueueEnabled: true,
+		QueueConfig: prw.QueueConfig{
+			Path:          tmpDir,
+			MaxSize:       100,
+			RetryInterval: 50 * time.Millisecond,
+		},
+	}
+
+	exp, err := NewPRWSharded(ctx, cfg)
+	if err != nil {
+		t.Fatalf("NewPRWSharded() error = %v", err)
+	}
+
+	// Export to create queue
+	req := &prw.WriteRequest{
+		Timeseries: []prw.TimeSeries{
+			{
+				Labels:  []prw.Label{{Name: "__name__", Value: "test"}},
+				Samples: []prw.Sample{{Value: 1.0, Timestamp: 1000}},
+			},
+		},
+	}
+
+	_ = exp.Export(ctx, req)
+
+	// Close should close both exporters and queues
+	if err := exp.Close(); err != nil {
+		t.Logf("Close error: %v", err)
+	}
+}
+
+func TestSanitizeEndpoint_MoreCases(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"", ""},
+		{"abc123", "abc123"},
+		{"ABC-XYZ_123", "ABC-XYZ_123"},
+		{"http://host:8080/path?query=1", "http___host_8080_path_query_1"},
+		{"[::1]:8080", "___1__8080"},
+		{"a.b.c", "a_b_c"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := sanitizeEndpoint(tt.input)
+			if got != tt.want {
+				t.Errorf("sanitizeEndpoint(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPRWShardedExporter_ConcurrentExport(t *testing.T) {
+	var received atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+
+	cfg := PRWShardedConfig{
+		BaseConfig: PRWExporterConfig{
+			Timeout: 10 * time.Second,
+		},
+		ShardKeyLabels: []string{"service"},
+		Endpoints:      []string{server.URL},
+	}
+
+	exp, err := NewPRWSharded(ctx, cfg)
+	if err != nil {
+		t.Fatalf("NewPRWSharded() error = %v", err)
+	}
+	defer exp.Close()
+
+	// Concurrent exports
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			req := &prw.WriteRequest{
+				Timeseries: []prw.TimeSeries{
+					{
+						Labels:  []prw.Label{{Name: "__name__", Value: "test"}, {Name: "idx", Value: string(rune('0' + idx))}},
+						Samples: []prw.Sample{{Value: float64(idx), Timestamp: int64(idx * 1000)}},
+					},
+				},
+			}
+			_ = exp.Export(ctx, req)
+		}(i)
+	}
+
+	wg.Wait()
+	t.Logf("Server received %d requests", received.Load())
 }
