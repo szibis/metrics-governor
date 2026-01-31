@@ -343,7 +343,7 @@ jobs:
             });
 
             const botComment = comments.find(c =>
-              c.user.login === 'github-actions[bot]' &&
+              (c.user.login === 'github-actions[bot]' || c.user.login === 'github-actions') &&
               c.body.includes('Test Coverage Report')
             );
 

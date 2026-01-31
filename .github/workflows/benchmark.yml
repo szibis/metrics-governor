@@ -324,7 +324,7 @@ jobs:
             });
 
             const botComment = comments.find(comment =>
-              comment.user.login === 'github-actions[bot]' &&
+              (comment.user.login === 'github-actions[bot]' || comment.user.login === 'github-actions') &&
               comment.body.includes('Benchmark Comparison')
             );
 
