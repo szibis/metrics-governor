@@ -141,12 +141,13 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 		}
 
 		batch := toSend[i:end]
-		datapointCount := countDatapoints(batch)
 		req := &colmetricspb.ExportMetricsServiceRequest{
 			ResourceMetrics: batch,
 		}
 
 		if err := b.exporter.Export(ctx, req); err != nil {
+			// Only count datapoints when needed for logging
+			datapointCount := countDatapoints(batch)
 			if b.logAggregator != nil {
 				// Use aggregated logging to reduce log noise at high throughput
 				logKey := "export_error"
@@ -169,6 +170,7 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 
 		// Record successful export
 		if b.stats != nil {
+			datapointCount := countDatapoints(batch)
 			b.stats.RecordExport(datapointCount)
 		}
 	}
