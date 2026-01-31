@@ -157,28 +157,52 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-benchmark
 
-      - name: Store benchmark result
-        uses: benchmark-action/github-action-benchmark@v1
-        with:
-          name: Go Benchmarks
-          tool: 'go'
-          output-file-path: benchmark-results.txt
-          external-data-json-path: ./cache/benchmark-data.json
-          # Don't fail on alert - CI benchmarks have high variance
-          # Real regressions should be caught in code review
-          fail-on-alert: false
-          alert-threshold: '200%'
-          comment-on-alert: true
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          auto-push: false
-          # Disabled to avoid "body is too long" error (max 65536 chars)
-          comment-always: false
-          summary-always: false
-
-      - name: Save benchmark baseline
+      - name: Save benchmark baseline and history
         run: |
           mkdir -p ./cache
           cp benchmark-results.txt ./cache/benchmark-baseline.txt
+
+          # Parse benchmark results into JSON for historical tracking
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          COMMIT_SHA="${{ github.sha }}"
+          REF_NAME="${{ github.ref_name }}"
+
+          # Create JSON entry from benchmark results
+          # Format: {"timestamp": "...", "commit": "...", "ref": "...", "benchmarks": [...]}
+          echo "{" > ./cache/current-benchmark.json
+          echo "  \"timestamp\": \"$TIMESTAMP\"," >> ./cache/current-benchmark.json
+          echo "  \"commit\": \"$COMMIT_SHA\"," >> ./cache/current-benchmark.json
+          echo "  \"ref\": \"$REF_NAME\"," >> ./cache/current-benchmark.json
+          echo "  \"benchmarks\": [" >> ./cache/current-benchmark.json
+
+          # Parse benchmark lines: BenchmarkName-N  iterations  ns/op  bytes/op  allocs/op
+          grep -E '^Benchmark' benchmark-results.txt | while read line; do
+            NAME=$(echo "$line" | awk '{print $1}')
+            ITERATIONS=$(echo "$line" | awk '{print $2}')
+            NS_OP=$(echo "$line" | awk '{print $3}')
+            BYTES_OP=$(echo "$line" | awk '{print $5}' | tr -d 'B/op')
+            ALLOCS_OP=$(echo "$line" | awk '{print $7}' | tr -d 'allocs/op')
+
+            echo "    {\"name\": \"$NAME\", \"iterations\": $ITERATIONS, \"ns_op\": $NS_OP, \"bytes_op\": ${BYTES_OP:-0}, \"allocs_op\": ${ALLOCS_OP:-0}}," >> ./cache/current-benchmark.json
+          done
+
+          # Close JSON array (remove trailing comma)
+          sed -i '$ s/,$//' ./cache/current-benchmark.json
+          echo "  ]" >> ./cache/current-benchmark.json
+          echo "}" >> ./cache/current-benchmark.json
+
+          # Append to history file (keep last 50 entries)
+          if [ -f ./cache/benchmark-history.json ]; then
+            # Merge current with history
+            jq -s '.[1].entries = ([.[0]] + .[1].entries) | .[1].entries = .[1].entries[:50] | .[1]' \
+              ./cache/current-benchmark.json ./cache/benchmark-history.json > ./cache/benchmark-history-new.json \
+              2>/dev/null || echo '{"entries": []}' | jq --slurpfile current ./cache/current-benchmark.json '.entries = [$current[0]] + .entries | .entries = .entries[:50]' > ./cache/benchmark-history-new.json
+            mv ./cache/benchmark-history-new.json ./cache/benchmark-history.json
+          else
+            jq -n --slurpfile current ./cache/current-benchmark.json '{entries: [$current[0]]}' > ./cache/benchmark-history.json
+          fi
+
+          echo "Benchmark history updated with $(jq '.entries | length' ./cache/benchmark-history.json) entries"
 
       - name: Upload benchmark artifacts
         uses: actions/upload-artifact@v4
@@ -187,6 +211,8 @@ jobs:
           path: |
             benchmark-results.txt
             benchmark-results-full.txt
+            ./cache/current-benchmark.json
+            ./cache/benchmark-history.json
           retention-days: 90
 
   compare-baseline:
