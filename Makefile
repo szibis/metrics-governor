@@ -5,7 +5,7 @@ LDFLAGS=-ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/
 
 BUILD_DIR=bin
 
-.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all lint lint-dockerfile lint-yaml lint-helm lint-all release release-version release-dry-run tag compose-up compose-down compose-light compose-perf compose-logs
+.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all lint lint-dockerfile lint-yaml lint-helm lint-all ship ship-dry-run tag compose-up compose-down compose-light compose-perf compose-logs
 
 all: darwin-arm64 linux-arm64 linux-amd64
 
@@ -136,27 +136,27 @@ lint-helm:
 lint-all: lint lint-dockerfile lint-yaml lint-helm
 	@echo "All lints passed!"
 
-# Release targets
-# Usage: make release-version VERSION=0.5.2 MESSAGE="Add new feature"
-release-version:
+# Ship targets - creates PR-based releases
+# Usage: make ship VERSION=0.5.2 MESSAGE="Add new feature"
+ship:
 ifndef VERSION
-	$(error VERSION is required. Usage: make release-version VERSION=0.5.2 MESSAGE="Description")
+	$(error VERSION is required. Usage: make ship VERSION=0.5.2 MESSAGE="Description")
 endif
 ifndef MESSAGE
-	$(error MESSAGE is required. Usage: make release-version VERSION=0.5.2 MESSAGE="Description")
+	$(error MESSAGE is required. Usage: make ship VERSION=0.5.2 MESSAGE="Description")
 endif
 	@./scripts/release.sh $(VERSION) -m "$(MESSAGE)"
 
-release-dry-run:
+ship-dry-run:
 ifndef VERSION
-	$(error VERSION is required. Usage: make release-dry-run VERSION=0.5.2 MESSAGE="Description")
+	$(error VERSION is required. Usage: make ship-dry-run VERSION=0.5.2 MESSAGE="Description")
 endif
 ifndef MESSAGE
-	$(error MESSAGE is required. Usage: make release-dry-run VERSION=0.5.2 MESSAGE="Description")
+	$(error MESSAGE is required. Usage: make ship-dry-run VERSION=0.5.2 MESSAGE="Description")
 endif
 	@./scripts/release.sh $(VERSION) -m "$(MESSAGE)" --dry-run
 
-# Legacy tag target (deprecated, use release-version instead)
+# Legacy tag target (deprecated, use ship instead)
 tag:
 ifndef VERSION
 	$(error VERSION is required. Usage: make tag VERSION=v0.2.0)
@@ -165,8 +165,8 @@ endif
 	git tag -a $(VERSION) -m "Release $(VERSION)"
 	@echo "Tag created. Push with: git push origin $(VERSION)"
 
-release: test lint all
-	@echo "Build complete. Use: make release-version VERSION=X.Y.Z MESSAGE='Description'"
+build-release: test lint all
+	@echo "Build complete. Use: make ship VERSION=X.Y.Z MESSAGE='Description'"
 
 # Docker Compose test environment targets
 compose-up:
@@ -241,9 +241,9 @@ help:
 	@echo "  lint-yaml        - Lint YAML files with yamllint"
 	@echo "  lint-helm        - Lint Helm chart"
 	@echo "  lint-all         - Run all linters"
-	@echo "  release          - Run tests, lint, and build all platforms"
-	@echo "  release-version VERSION=X.Y.Z MESSAGE='...' - Full release workflow"
-	@echo "  release-dry-run VERSION=X.Y.Z MESSAGE='...' - Preview release changes"
+	@echo "  build-release    - Run tests, lint, and build all platforms"
+	@echo "  ship VERSION=X.Y.Z MESSAGE='...' - Create release PR with auto-merge"
+	@echo "  ship-dry-run VERSION=X.Y.Z MESSAGE='...' - Preview release changes"
 	@echo "  tag VERSION=vX.Y.Z - Create a git tag (deprecated)"
 	@echo "  clean            - Remove build artifacts"
 	@echo ""

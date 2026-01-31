@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-01-31
+
+### Changed
+
+Release workflow upgrades
+
+- Renamed release skill to ship skill
+- Switched to PR-based release workflow with auto-merge
+- Added draft release notes generation from commits
+- Updated Makefile targets: `ship` and `ship-dry-run`
+
+**Test Coverage:**
+- Unit Tests: 461
+- Functional Tests: 73
+- E2E Tests: 20
+- Benchmarks: 90
+- Total: 554+ tests
+
 ## [0.6.2] - 2026-01-31
 
 ### Fixed
