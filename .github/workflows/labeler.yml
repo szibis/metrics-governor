@@ -9,8 +9,95 @@ permissions:
   pull-requests: write
 
 jobs:
+  ensure-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure labels exist with colors
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labelsConfig = [
+              // Type labels (conventional commits)
+              { name: 'bug', color: 'd73a4a', description: 'Something isn\'t working' },
+              { name: 'enhancement', color: 'a2eeef', description: 'New feature or request' },
+              { name: 'documentation', color: '0075ca', description: 'Improvements or additions to documentation' },
+              { name: 'performance', color: 'f9d0c4', description: 'Performance improvements' },
+              { name: 'refactor', color: 'c5def5', description: 'Code refactoring' },
+              { name: 'testing', color: 'bfd4f2', description: 'Testing related changes' },
+              { name: 'ci', color: 'e6e6e6', description: 'CI/CD changes' },
+              { name: 'chore', color: 'fef2c0', description: 'Maintenance tasks' },
+              { name: 'build', color: 'd4c5f9', description: 'Build system changes' },
+              { name: 'release', color: '5319e7', description: 'Release related' },
+              { name: 'security', color: 'd93f0b', description: 'Security related changes' },
+              { name: 'dependencies', color: '0366d6', description: 'Dependency updates' },
+
+              // Component labels
+              { name: 'component/buffer', color: '1d76db', description: 'Buffer component' },
+              { name: 'component/queue', color: '1d76db', description: 'Queue component' },
+              { name: 'component/exporter', color: '1d76db', description: 'Exporter component' },
+              { name: 'component/receiver', color: '1d76db', description: 'Receiver component' },
+              { name: 'component/config', color: '1d76db', description: 'Config component' },
+              { name: 'component/compression', color: '1d76db', description: 'Compression component' },
+              { name: 'component/auth', color: '1d76db', description: 'Auth component' },
+              { name: 'component/limits', color: '1d76db', description: 'Limits component' },
+              { name: 'component/stats', color: '1d76db', description: 'Stats component' },
+              { name: 'component/sharding', color: '1d76db', description: 'Sharding component' },
+              { name: 'component/prw', color: '1d76db', description: 'PRW component' },
+              { name: 'component/tls', color: '1d76db', description: 'TLS component' },
+              { name: 'helm', color: '0052cc', description: 'Helm chart changes' },
+
+              // Size labels
+              { name: 'size/XS', color: '3cba54', description: 'Extra small PR (≤10 lines)' },
+              { name: 'size/S', color: '77c043', description: 'Small PR (≤50 lines)' },
+              { name: 'size/M', color: 'f9a825', description: 'Medium PR (≤200 lines)' },
+              { name: 'size/L', color: 'e65100', description: 'Large PR (≤500 lines)' },
+              { name: 'size/XL', color: 'd93f0b', description: 'Extra large PR (>500 lines)' },
+
+              // Special labels
+              { name: 'breaking-change', color: 'b60205', description: 'Breaking change' },
+              { name: 'work-in-progress', color: 'fbca04', description: 'Work in progress' },
+
+              // GitHub built-in (ensure they exist with correct colors)
+              { name: 'help wanted', color: '008672', description: 'Extra attention is needed' },
+              { name: 'good first issue', color: '7057ff', description: 'Good for newcomers' },
+            ];
+
+            for (const label of labelsConfig) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label.name,
+                });
+                // Label exists, update it
+                await github.rest.issues.updateLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label.name,
+                  color: label.color,
+                  description: label.description,
+                });
+                console.log(`Updated label: ${label.name}`);
+              } catch (e) {
+                if (e.status === 404) {
+                  // Label doesn't exist, create it
+                  await github.rest.issues.createLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: label.name,
+                    color: label.color,
+                    description: label.description,
+                  });
+                  console.log(`Created label: ${label.name}`);
+                } else {
+                  console.log(`Error with label ${label.name}: ${e.message}`);
+                }
+              }
+            }
+
   label:
     runs-on: ubuntu-latest
+    needs: ensure-labels
     steps:
       - uses: actions/checkout@v4
 
@@ -38,14 +125,15 @@ jobs:
             const labels = new Set();
 
             // === Type labels based on PR title (conventional commits) ===
-            if (title.startsWith('fix:') || title.startsWith('fix(')) {
-              labels.add('bug');
+            // Using GitHub built-in labels where possible
+            if (title.startsWith('fix:') || title.startsWith('fix(') || title.startsWith('bugfix')) {
+              labels.add('bug');  // GitHub built-in
             }
-            if (title.startsWith('feat:') || title.startsWith('feat(')) {
-              labels.add('enhancement');
+            if (title.startsWith('feat:') || title.startsWith('feat(') || title.startsWith('feature')) {
+              labels.add('enhancement');  // GitHub built-in
             }
             if (title.startsWith('docs:') || title.startsWith('docs(')) {
-              labels.add('documentation');
+              labels.add('documentation');  // GitHub built-in
             }
             if (title.startsWith('perf:') || title.startsWith('perf(')) {
               labels.add('performance');
@@ -65,8 +153,14 @@ jobs:
             if (title.startsWith('build:') || title.startsWith('build(')) {
               labels.add('build');
             }
-            if (title.startsWith('release:') || title.includes('release')) {
+            if (title.startsWith('release:') || title.startsWith('release/')) {
               labels.add('release');
+            }
+            if (title.startsWith('security:') || title.startsWith('security(') || title.includes('cve-') || title.includes('vulnerability')) {
+              labels.add('security');
+            }
+            if (title.startsWith('deps:') || title.startsWith('deps(') || title.includes('dependabot') || title.includes('dependency')) {
+              labels.add('dependencies');
             }
 
             // === Component labels based on changed files ===
@@ -85,7 +179,7 @@ jobs:
               'component/tls': /^internal\/tls\//,
               'helm': /^helm\//,
               'ci': /^\.github\//,
-              'documentation': /\.(md|MD)$|^docs\//,
+              'documentation': /\.(md|MD)$|^docs\//,  // GitHub built-in
             };
 
             for (const file of changedFiles) {
@@ -109,7 +203,7 @@ jobs:
               labels.add('size/XL');
             }
 
-            // === Special labels ===
+            // === Special labels using GitHub built-ins ===
             if (title.includes('breaking') || body.includes('breaking change')) {
               labels.add('breaking-change');
             }
@@ -121,6 +215,21 @@ jobs:
             }
             if (changedFiles.some(f => f.includes('benchmark'))) {
               labels.add('performance');
+            }
+
+            // Help wanted detection (GitHub built-in)
+            if (body.includes('help wanted') || body.includes('looking for help') || body.includes('contributions welcome')) {
+              labels.add('help wanted');
+            }
+
+            // Good first issue detection (GitHub built-in)
+            if (body.includes('good first issue') || body.includes('beginner friendly') || body.includes('easy fix')) {
+              labels.add('good first issue');
+            }
+
+            // Go module changes
+            if (changedFiles.includes('go.mod') || changedFiles.includes('go.sum')) {
+              labels.add('dependencies');
             }
 
             core.setOutput('labels', Array.from(labels).join(','));
