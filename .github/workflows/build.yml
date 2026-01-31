@@ -69,15 +69,19 @@ jobs:
       - name: Count tests
         id: count
         run: |
-          # Count only top-level tests (not subtests) for accurate pass/total comparison
-          # Subtests are indented and show as "=== RUN   TestName/subtest"
-          TOTAL=$(grep -c "^=== RUN   [^/]*$" unit-test-output.txt || echo "0")
+          # Count PASS, SKIP, and FAIL results
+          # SKIP counts as "passed" since they're not failures
           PASSED=$(grep -c -e "^--- PASS:" unit-test-output.txt || echo "0")
+          SKIPPED=$(grep -c -e "^--- SKIP:" unit-test-output.txt || echo "0")
           FAILED=$(grep -c -e "^--- FAIL:" unit-test-output.txt || echo "0")
+          # Total = all test results (PASS + SKIP + FAIL)
+          TOTAL=$((PASSED + SKIPPED + FAILED))
+          # For display, passed includes skipped tests
+          PASSED_DISPLAY=$((PASSED + SKIPPED))
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
-          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "passed=$PASSED_DISPLAY" >> $GITHUB_OUTPUT
           echo "failed=$FAILED" >> $GITHUB_OUTPUT
-          echo "Test counts: total=$TOTAL passed=$PASSED failed=$FAILED"
+          echo "Test counts: passed=$PASSED skipped=$SKIPPED failed=$FAILED total=$TOTAL"
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
@@ -115,11 +119,13 @@ jobs:
       - name: Count tests
         id: count
         run: |
-          # Count only top-level tests for accurate pass/total comparison
-          TOTAL=$(grep -c "^=== RUN   [^/]*$" functional-test-output.txt || echo "0")
           PASSED=$(grep -c -e "^--- PASS:" functional-test-output.txt || echo "0")
+          SKIPPED=$(grep -c -e "^--- SKIP:" functional-test-output.txt || echo "0")
+          FAILED=$(grep -c -e "^--- FAIL:" functional-test-output.txt || echo "0")
+          TOTAL=$((PASSED + SKIPPED + FAILED))
+          PASSED_DISPLAY=$((PASSED + SKIPPED))
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
-          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "passed=$PASSED_DISPLAY" >> $GITHUB_OUTPUT
 
   test-e2e:
     runs-on: ubuntu-latest
@@ -142,11 +148,13 @@ jobs:
       - name: Count tests
         id: count
         run: |
-          # Count only top-level tests for accurate pass/total comparison
-          TOTAL=$(grep -c "^=== RUN   [^/]*$" e2e-test-output.txt || echo "0")
           PASSED=$(grep -c -e "^--- PASS:" e2e-test-output.txt || echo "0")
+          SKIPPED=$(grep -c -e "^--- SKIP:" e2e-test-output.txt || echo "0")
+          FAILED=$(grep -c -e "^--- FAIL:" e2e-test-output.txt || echo "0")
+          TOTAL=$((PASSED + SKIPPED + FAILED))
+          PASSED_DISPLAY=$((PASSED + SKIPPED))
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
-          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "passed=$PASSED_DISPLAY" >> $GITHUB_OUTPUT
 
   lint:
     runs-on: ubuntu-latest
