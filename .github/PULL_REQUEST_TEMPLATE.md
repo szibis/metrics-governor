@@ -35,16 +35,6 @@
 <!-- List documentation changes, or remove if none -->
 -
 
-### 📊 Stats
-
-<!-- Update with actual stats from: git diff --stat main..<branch> -->
-
-**X commits** · **X files changed**
-
-🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥 **+X,XXX −XXX**
-
-<sup>XX% additions, XX% deletions</sup>
-
 ---
 
 ## Test Plan
