@@ -243,9 +243,11 @@ jobs:
       - name: Compare benchmarks
         id: compare
         run: |
-          echo "## Benchmark Comparison (PR vs Base)" > comparison.md
+          echo "## 🏎️ Benchmark Comparison" > comparison.md
           echo "" >> comparison.md
-          echo "Comparing benchmarks for changed packages against base branch." >> comparison.md
+          echo "<a name=\"benchmark-comparison\"></a>" >> comparison.md
+          echo "" >> comparison.md
+          echo "Comparing benchmarks for changed packages against base branch (\`${{ github.event.pull_request.base.ref }}\`)." >> comparison.md
           echo "" >> comparison.md
 
           PACKAGES='${{ needs.detect-changes.outputs.packages }}'

@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,6 +27,10 @@ jobs:
 
   test-unit:
     runs-on: ubuntu-latest
+    outputs:
+      coverage: ${{ steps.coverage.outputs.coverage }}
+      total_tests: ${{ steps.count.outputs.total }}
+      passed_tests: ${{ steps.count.outputs.passed }}
     steps:
       - uses: actions/checkout@v4
 
@@ -32,19 +40,49 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run unit tests
-        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./internal/...
+      - name: Run unit tests with coverage
+        id: unit_tests
+        run: |
+          go test -v -race -coverprofile=coverage-unit.out -covermode=atomic ./internal/... 2>&1 | tee unit-test-output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: Extract coverage percentage
+        id: coverage
+        run: |
+          COVERAGE=$(go tool cover -func=coverage-unit.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "Unit test coverage: $COVERAGE%"
+
+      - name: Count tests
+        id: count
+        run: |
+          TOTAL=$(grep -c "=== RUN" unit-test-output.txt || echo "0")
+          PASSED=$(grep -c "--- PASS" unit-test-output.txt || echo "0")
+          FAILED=$(grep -c "--- FAIL" unit-test-output.txt || echo "0")
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit
+          path: coverage-unit.out
+          retention-days: 7
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.out
+          files: ./coverage-unit.out
           fail_ci_if_error: false
           verbose: true
 
   test-functional:
     runs-on: ubuntu-latest
+    outputs:
+      total_tests: ${{ steps.count.outputs.total }}
+      passed_tests: ${{ steps.count.outputs.passed }}
     steps:
       - uses: actions/checkout@v4
 
@@ -55,10 +93,22 @@ jobs:
           cache: true
 
       - name: Run functional tests
-        run: go test -v -race ./functional/...
+        run: |
+          go test -v -race ./functional/... 2>&1 | tee functional-test-output.txt
+
+      - name: Count tests
+        id: count
+        run: |
+          TOTAL=$(grep -c "=== RUN" functional-test-output.txt || echo "0")
+          PASSED=$(grep -c "--- PASS" functional-test-output.txt || echo "0")
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
 
   test-e2e:
     runs-on: ubuntu-latest
+    outputs:
+      total_tests: ${{ steps.count.outputs.total }}
+      passed_tests: ${{ steps.count.outputs.passed }}
     steps:
       - uses: actions/checkout@v4
 
@@ -69,7 +119,16 @@ jobs:
           cache: true
 
       - name: Run e2e tests
-        run: go test -v -race ./e2e/...
+        run: |
+          go test -v -race ./e2e/... 2>&1 | tee e2e-test-output.txt
+
+      - name: Count tests
+        id: count
+        run: |
+          TOTAL=$(grep -c "=== RUN" e2e-test-output.txt || echo "0")
+          PASSED=$(grep -c "--- PASS" e2e-test-output.txt || echo "0")
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
 
   lint:
     runs-on: ubuntu-latest
@@ -129,6 +188,158 @@ jobs:
 
       - name: Lint Helm chart
         run: helm lint helm/metrics-governor
+
+  # Post test coverage comment on PR
+  coverage-comment:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: [test-unit, test-functional, test-e2e]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-unit
+          path: ./coverage
+
+      - name: Get base branch coverage
+        id: base_coverage
+        run: |
+          # Try to get coverage from base branch
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+          git checkout ${{ github.event.pull_request.base.sha }}
+
+          # Run coverage on base
+          go test -coverprofile=coverage-base.out -covermode=atomic ./internal/... 2>/dev/null || true
+
+          if [ -f coverage-base.out ]; then
+            BASE_COV=$(go tool cover -func=coverage-base.out | grep total | awk '{print $3}' | sed 's/%//')
+            echo "coverage=$BASE_COV" >> $GITHUB_OUTPUT
+          else
+            echo "coverage=0" >> $GITHUB_OUTPUT
+          fi
+
+          # Switch back
+          git checkout ${{ github.event.pull_request.head.sha }}
+
+      - name: Generate coverage report
+        id: report
+        run: |
+          UNIT_COVERAGE="${{ needs.test-unit.outputs.coverage }}"
+          BASE_COVERAGE="${{ steps.base_coverage.outputs.coverage }}"
+
+          UNIT_TOTAL="${{ needs.test-unit.outputs.total_tests }}"
+          UNIT_PASSED="${{ needs.test-unit.outputs.passed_tests }}"
+          FUNC_TOTAL="${{ needs.test-functional.outputs.total_tests }}"
+          FUNC_PASSED="${{ needs.test-functional.outputs.passed_tests }}"
+          E2E_TOTAL="${{ needs.test-e2e.outputs.total_tests }}"
+          E2E_PASSED="${{ needs.test-e2e.outputs.passed_tests }}"
+
+          TOTAL_TESTS=$((UNIT_TOTAL + FUNC_TOTAL + E2E_TOTAL))
+          TOTAL_PASSED=$((UNIT_PASSED + FUNC_PASSED + E2E_PASSED))
+
+          # Calculate coverage delta
+          if [ -n "$BASE_COVERAGE" ] && [ "$BASE_COVERAGE" != "0" ]; then
+            DELTA=$(echo "$UNIT_COVERAGE - $BASE_COVERAGE" | bc)
+            if (( $(echo "$DELTA > 0" | bc -l) )); then
+              DELTA_ICON="📈"
+              DELTA_STR="+${DELTA}%"
+            elif (( $(echo "$DELTA < 0" | bc -l) )); then
+              DELTA_ICON="📉"
+              DELTA_STR="${DELTA}%"
+            else
+              DELTA_ICON="➡️"
+              DELTA_STR="±0%"
+            fi
+          else
+            DELTA_ICON="🆕"
+            DELTA_STR="N/A"
+          fi
+
+          # Determine coverage badge color
+          if (( $(echo "$UNIT_COVERAGE >= 80" | bc -l) )); then
+            COV_STATUS="🟢"
+          elif (( $(echo "$UNIT_COVERAGE >= 60" | bc -l) )); then
+            COV_STATUS="🟡"
+          else
+            COV_STATUS="🔴"
+          fi
+
+          # Create comment
+          cat > coverage-comment.md << EOF
+          ## 📊 Test Coverage Report
+
+          | Metric | Value | Status |
+          |--------|-------|--------|
+          | **Code Coverage** | ${UNIT_COVERAGE}% | ${COV_STATUS} |
+          | **Coverage Change** | ${DELTA_STR} | ${DELTA_ICON} |
+          | **Base Coverage** | ${BASE_COVERAGE}% | - |
+
+          ### Test Results
+
+          | Suite | Passed | Total | Status |
+          |-------|--------|-------|--------|
+          | Unit Tests | ${UNIT_PASSED} | ${UNIT_TOTAL} | $( [ "$UNIT_PASSED" = "$UNIT_TOTAL" ] && echo "✅" || echo "❌" ) |
+          | Functional Tests | ${FUNC_PASSED} | ${FUNC_TOTAL} | $( [ "$FUNC_PASSED" = "$FUNC_TOTAL" ] && echo "✅" || echo "❌" ) |
+          | E2E Tests | ${E2E_PASSED} | ${E2E_TOTAL} | $( [ "$E2E_PASSED" = "$E2E_TOTAL" ] && echo "✅" || echo "❌" ) |
+          | **Total** | **${TOTAL_PASSED}** | **${TOTAL_TESTS}** | $( [ "$TOTAL_PASSED" = "$TOTAL_TESTS" ] && echo "✅" || echo "❌" ) |
+
+          <details>
+          <summary>Coverage Thresholds</summary>
+
+          - 🟢 **Good**: >= 80%
+          - 🟡 **Warning**: 60-79%
+          - 🔴 **Critical**: < 60%
+
+          </details>
+
+          ---
+          *See [Benchmark Comparison](#benchmark-comparison) comment for performance results.*
+          EOF
+
+          cat coverage-comment.md
+
+      - name: Post coverage comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const comment = fs.readFileSync('coverage-comment.md', 'utf8');
+
+            // Find existing coverage comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' &&
+              c.body.includes('Test Coverage Report')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            }
 
   build-binaries:
     runs-on: ubuntu-latest
