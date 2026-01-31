@@ -164,8 +164,14 @@ func (b *Buffer) flush(ctx context.Context) {
 	toSend := b.timeseries
 	metadata := b.metadata
 	b.timeseries = make([]TimeSeries, 0, b.config.MaxSize)
+	// Capture exporter reference while holding lock to avoid race with SetExporter
+	exporter := b.exporter
 	// Keep metadata across flushes (it doesn't need to be sent every time)
 	b.mu.Unlock()
+
+	if exporter == nil {
+		return
+	}
 
 	// Send in batches
 	for i := 0; i < len(toSend); i += b.config.MaxBatchSize {
@@ -187,7 +193,7 @@ func (b *Buffer) flush(ctx context.Context) {
 			req.Metadata = metadata
 		}
 
-		if err := b.exporter.Export(ctx, req); err != nil {
+		if err := exporter.Export(ctx, req); err != nil {
 			if b.logAggregator != nil {
 				// Use aggregated logging to reduce log noise at high throughput
 				logKey := "prw_export_error"
