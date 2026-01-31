@@ -282,11 +282,11 @@ func main() {
 
 	// Graceful shutdown
 	grpcReceiver.Stop()
-	httpReceiver.Stop(ctx)
+	_ = httpReceiver.Stop(ctx)
 	if prwReceiver != nil {
-		prwReceiver.Stop(ctx)
+		_ = prwReceiver.Stop(ctx)
 	}
-	statsServer.Shutdown(ctx)
+	_ = statsServer.Shutdown(ctx)
 	cancel()
 	buf.Wait()
 	if prwBuffer != nil {

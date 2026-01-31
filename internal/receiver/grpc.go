@@ -72,7 +72,7 @@ type pooledZstdReader struct {
 func (p *pooledZstdReader) Read(b []byte) (int, error) {
 	n, err := p.Decoder.Read(b)
 	if err == io.EOF {
-		p.Decoder.Reset(nil)
+		_ = p.Decoder.Reset(nil)
 		zstdReaderPool.Put(p.Decoder)
 	}
 	return n, err
