@@ -157,7 +157,8 @@ func (e *Enforcer) processMetric(m *metricspb.Metric, resourceAttrs map[string]s
 		if !e.dryRun {
 			return nil
 		}
-		return m
+		// In dry-run, inject "drop" label to show what would happen
+		return injectDatapointLabels(m, "drop", rule.Name)
 	}
 
 	// Update tracking and check limits
@@ -165,7 +166,7 @@ func (e *Enforcer) processMetric(m *metricspb.Metric, resourceAttrs map[string]s
 
 	if !exceeded {
 		e.recordPass(rule.Name, countDatapoints(m))
-		return m
+		return injectDatapointLabels(m, "passed", rule.Name)
 	}
 
 	// Handle violation based on action
@@ -316,13 +317,13 @@ func (e *Enforcer) handleViolation(rule *Rule, groupKey string, m *metricspb.Met
 	case ActionLog:
 		// Just log, pass through
 		e.recordPass(rule.Name, datapointsCount)
-		return m
+		return injectDatapointLabels(m, "log", rule.Name)
 
 	case ActionDrop:
 		// Drop everything for this metric
 		e.recordDrop(rule.Name, datapointsCount, false)
 		if e.dryRun {
-			return m
+			return injectDatapointLabels(m, "drop", rule.Name)
 		}
 		return nil
 
@@ -380,7 +381,7 @@ func (e *Enforcer) handleAdaptive(rule *Rule, groupKey string, m *metricspb.Metr
 	}
 
 	if excess <= 0 {
-		return m
+		return injectDatapointLabels(m, "adaptive", rule.Name)
 	}
 
 	// Mark top offenders for dropping until we're under limit
@@ -430,14 +431,14 @@ func (e *Enforcer) handleAdaptive(rule *Rule, groupKey string, m *metricspb.Metr
 	if isCurrentDropped {
 		e.recordDrop(rule.Name, datapointsCount, true)
 		if e.dryRun {
-			return m
+			return injectDatapointLabels(m, "adaptive", rule.Name)
 		}
 		return nil
 	}
 
 	// This group wasn't a top offender, pass through
 	e.recordPass(rule.Name, datapointsCount)
-	return m
+	return injectDatapointLabels(m, "adaptive", rule.Name)
 }
 
 func (e *Enforcer) recordViolation(ruleName, reason string) {
@@ -605,6 +606,49 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // Helper functions
+
+// injectDatapointLabels injects metrics.governor.action and metrics.governor.rule labels
+// into all datapoints of the metric. This modifies the metric in place.
+func injectDatapointLabels(m *metricspb.Metric, action, ruleName string) *metricspb.Metric {
+	labels := []*commonpb.KeyValue{
+		{
+			Key: "metrics.governor.action",
+			Value: &commonpb.AnyValue{
+				Value: &commonpb.AnyValue_StringValue{StringValue: action},
+			},
+		},
+		{
+			Key: "metrics.governor.rule",
+			Value: &commonpb.AnyValue{
+				Value: &commonpb.AnyValue_StringValue{StringValue: ruleName},
+			},
+		},
+	}
+
+	switch d := m.Data.(type) {
+	case *metricspb.Metric_Gauge:
+		for _, dp := range d.Gauge.DataPoints {
+			dp.Attributes = append(dp.Attributes, labels...)
+		}
+	case *metricspb.Metric_Sum:
+		for _, dp := range d.Sum.DataPoints {
+			dp.Attributes = append(dp.Attributes, labels...)
+		}
+	case *metricspb.Metric_Histogram:
+		for _, dp := range d.Histogram.DataPoints {
+			dp.Attributes = append(dp.Attributes, labels...)
+		}
+	case *metricspb.Metric_ExponentialHistogram:
+		for _, dp := range d.ExponentialHistogram.DataPoints {
+			dp.Attributes = append(dp.Attributes, labels...)
+		}
+	case *metricspb.Metric_Summary:
+		for _, dp := range d.Summary.DataPoints {
+			dp.Attributes = append(dp.Attributes, labels...)
+		}
+	}
+	return m
+}
 
 func extractAttributes(attrs []*commonpb.KeyValue) map[string]string {
 	result := make(map[string]string)

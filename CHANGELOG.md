@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-01-31
+
+### Added
+
+Add limiting metadata labels to metrics
+
+When a limiting rule matches a metric, two labels are now injected at the DataPoint level:
+- `metrics.governor.action`: The action taken (passed, log, drop, adaptive)
+- `metrics.governor.rule`: The name of the matching rule
+
+This enables downstream systems to identify which metrics were affected by limiting rules and what action was applied.
+
+**Test Coverage:**
+- Unit Tests: 345
+- Functional Tests: 64
+- E2E Tests: 8
+- Benchmarks: 76
+- Total: 493+ tests
+
 ## [0.5.4] - 2026-01-31
 
 ### Changed

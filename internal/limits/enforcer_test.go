@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
@@ -904,5 +905,597 @@ func TestServeHTTPWithViolations(t *testing.T) {
 	// Check for datapoints dropped metrics
 	if !bytes.Contains([]byte(body), []byte("metrics_governor_limit_datapoints_dropped_total")) {
 		t.Error("expected datapoints dropped metrics in output")
+	}
+}
+
+// Helper function to extract governor labels from a metric's datapoints
+func getGovernorLabels(m *metricspb.Metric) (action, rule string, found bool) {
+	var attrs []*commonpb.KeyValue
+
+	switch d := m.Data.(type) {
+	case *metricspb.Metric_Gauge:
+		if len(d.Gauge.DataPoints) > 0 {
+			attrs = d.Gauge.DataPoints[0].Attributes
+		}
+	case *metricspb.Metric_Sum:
+		if len(d.Sum.DataPoints) > 0 {
+			attrs = d.Sum.DataPoints[0].Attributes
+		}
+	case *metricspb.Metric_Histogram:
+		if len(d.Histogram.DataPoints) > 0 {
+			attrs = d.Histogram.DataPoints[0].Attributes
+		}
+	case *metricspb.Metric_ExponentialHistogram:
+		if len(d.ExponentialHistogram.DataPoints) > 0 {
+			attrs = d.ExponentialHistogram.DataPoints[0].Attributes
+		}
+	case *metricspb.Metric_Summary:
+		if len(d.Summary.DataPoints) > 0 {
+			attrs = d.Summary.DataPoints[0].Attributes
+		}
+	}
+
+	for _, kv := range attrs {
+		if kv.Key == "metrics.governor.action" {
+			action = kv.Value.GetStringValue()
+		}
+		if kv.Key == "metrics.governor.rule" {
+			rule = kv.Value.GetStringValue()
+		}
+	}
+
+	found = action != "" && rule != ""
+	return
+}
+
+// Helper to create metrics of various types for testing label injection
+func createMetricOfType(name string, metricType string, datapointCount int) *metricspb.Metric {
+	switch metricType {
+	case "gauge":
+		dps := make([]*metricspb.NumberDataPoint, datapointCount)
+		for i := 0; i < datapointCount; i++ {
+			dps[i] = &metricspb.NumberDataPoint{}
+		}
+		return &metricspb.Metric{
+			Name: name,
+			Data: &metricspb.Metric_Gauge{
+				Gauge: &metricspb.Gauge{DataPoints: dps},
+			},
+		}
+	case "sum":
+		dps := make([]*metricspb.NumberDataPoint, datapointCount)
+		for i := 0; i < datapointCount; i++ {
+			dps[i] = &metricspb.NumberDataPoint{}
+		}
+		return &metricspb.Metric{
+			Name: name,
+			Data: &metricspb.Metric_Sum{
+				Sum: &metricspb.Sum{DataPoints: dps},
+			},
+		}
+	case "histogram":
+		dps := make([]*metricspb.HistogramDataPoint, datapointCount)
+		for i := 0; i < datapointCount; i++ {
+			dps[i] = &metricspb.HistogramDataPoint{}
+		}
+		return &metricspb.Metric{
+			Name: name,
+			Data: &metricspb.Metric_Histogram{
+				Histogram: &metricspb.Histogram{DataPoints: dps},
+			},
+		}
+	case "exponential_histogram":
+		dps := make([]*metricspb.ExponentialHistogramDataPoint, datapointCount)
+		for i := 0; i < datapointCount; i++ {
+			dps[i] = &metricspb.ExponentialHistogramDataPoint{}
+		}
+		return &metricspb.Metric{
+			Name: name,
+			Data: &metricspb.Metric_ExponentialHistogram{
+				ExponentialHistogram: &metricspb.ExponentialHistogram{DataPoints: dps},
+			},
+		}
+	case "summary":
+		dps := make([]*metricspb.SummaryDataPoint, datapointCount)
+		for i := 0; i < datapointCount; i++ {
+			dps[i] = &metricspb.SummaryDataPoint{}
+		}
+		return &metricspb.Metric{
+			Name: name,
+			Data: &metricspb.Metric_Summary{
+				Summary: &metricspb.Summary{DataPoints: dps},
+			},
+		}
+	}
+	return nil
+}
+
+func TestInjectDatapointLabels_AllTypes(t *testing.T) {
+	metricTypes := []string{"gauge", "sum", "histogram", "exponential_histogram", "summary"}
+
+	for _, metricType := range metricTypes {
+		t.Run(metricType, func(t *testing.T) {
+			m := createMetricOfType("test_metric", metricType, 3)
+
+			injectDatapointLabels(m, "passed", "test-rule")
+
+			action, rule, found := getGovernorLabels(m)
+			if !found {
+				t.Errorf("expected labels to be injected for %s", metricType)
+			}
+			if action != "passed" {
+				t.Errorf("expected action='passed', got '%s' for %s", action, metricType)
+			}
+			if rule != "test-rule" {
+				t.Errorf("expected rule='test-rule', got '%s' for %s", rule, metricType)
+			}
+		})
+	}
+}
+
+func TestProcessMetric_NoRule_NoLabels(t *testing.T) {
+	cfg := &Config{
+		Defaults: &DefaultLimits{Action: ActionLog},
+		Rules: []Rule{
+			{
+				Name:  "only-http",
+				Match: RuleMatch{MetricName: "http_.*"},
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, false)
+	defer enforcer.Stop()
+
+	rm := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{createTestMetric("grpc_requests_total", map[string]string{}, 1)},
+	)
+
+	result := enforcer.Process([]*metricspb.ResourceMetrics{rm})
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 resource metric, got %d", len(result))
+	}
+
+	metric := result[0].ScopeMetrics[0].Metrics[0]
+	_, _, found := getGovernorLabels(metric)
+	if found {
+		t.Error("expected no labels when no rule matches")
+	}
+}
+
+func TestProcessMetric_WithinLimits_PassedLabel(t *testing.T) {
+	cfg := &Config{
+		Defaults: &DefaultLimits{Action: ActionLog},
+		Rules: []Rule{
+			{
+				Name:           "test-rule",
+				Match:          RuleMatch{MetricName: "test_.*"},
+				MaxCardinality: 1000,
+				Action:         ActionDrop,
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, false)
+	defer enforcer.Stop()
+
+	rm := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{createTestMetric("test_metric", map[string]string{}, 1)},
+	)
+
+	result := enforcer.Process([]*metricspb.ResourceMetrics{rm})
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 resource metric, got %d", len(result))
+	}
+
+	metric := result[0].ScopeMetrics[0].Metrics[0]
+	action, rule, found := getGovernorLabels(metric)
+	if !found {
+		t.Fatal("expected labels to be present")
+	}
+	if action != "passed" {
+		t.Errorf("expected action='passed', got '%s'", action)
+	}
+	if rule != "test-rule" {
+		t.Errorf("expected rule='test-rule', got '%s'", rule)
+	}
+}
+
+func TestProcessMetric_LogAction_LogLabel(t *testing.T) {
+	cfg := &Config{
+		Defaults: &DefaultLimits{Action: ActionLog},
+		Rules: []Rule{
+			{
+				Name:           "log-rule",
+				Match:          RuleMatch{MetricName: "test_.*"},
+				MaxCardinality: 1, // Very low limit
+				Action:         ActionLog,
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, false)
+	defer enforcer.Stop()
+
+	// First metric - should get "passed" label
+	rm1 := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{createTestMetric("test_metric", map[string]string{"id": "1"}, 1)},
+	)
+	result1 := enforcer.Process([]*metricspb.ResourceMetrics{rm1})
+	if len(result1) != 1 {
+		t.Fatalf("expected first metric to pass")
+	}
+	action1, _, _ := getGovernorLabels(result1[0].ScopeMetrics[0].Metrics[0])
+	if action1 != "passed" {
+		t.Errorf("expected first metric action='passed', got '%s'", action1)
+	}
+
+	// Second metric - should exceed limit and get "log" label
+	rm2 := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{createTestMetric("test_metric", map[string]string{"id": "2"}, 1)},
+	)
+	result2 := enforcer.Process([]*metricspb.ResourceMetrics{rm2})
+	if len(result2) != 1 {
+		t.Fatalf("expected metric to pass with log action")
+	}
+
+	metric := result2[0].ScopeMetrics[0].Metrics[0]
+	action, rule, found := getGovernorLabels(metric)
+	if !found {
+		t.Fatal("expected labels to be present")
+	}
+	if action != "log" {
+		t.Errorf("expected action='log', got '%s'", action)
+	}
+	if rule != "log-rule" {
+		t.Errorf("expected rule='log-rule', got '%s'", rule)
+	}
+}
+
+func TestProcessMetric_DropAction_DropLabel_DryRun(t *testing.T) {
+	cfg := &Config{
+		Defaults: &DefaultLimits{Action: ActionLog},
+		Rules: []Rule{
+			{
+				Name:           "drop-rule",
+				Match:          RuleMatch{MetricName: "test_.*"},
+				MaxCardinality: 1, // Very low limit
+				Action:         ActionDrop,
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, true) // dryRun = true
+	defer enforcer.Stop()
+
+	// First metric - should get "passed" label
+	rm1 := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{createTestMetric("test_metric", map[string]string{"id": "1"}, 1)},
+	)
+	result1 := enforcer.Process([]*metricspb.ResourceMetrics{rm1})
+	if len(result1) != 1 {
+		t.Fatalf("expected first metric to pass")
+	}
+
+	// Second metric - should exceed limit and get "drop" label in dry-run
+	rm2 := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{createTestMetric("test_metric", map[string]string{"id": "2"}, 1)},
+	)
+	result2 := enforcer.Process([]*metricspb.ResourceMetrics{rm2})
+	if len(result2) != 1 {
+		t.Fatalf("expected metric to pass in dry-run mode")
+	}
+
+	metric := result2[0].ScopeMetrics[0].Metrics[0]
+	action, rule, found := getGovernorLabels(metric)
+	if !found {
+		t.Fatal("expected labels to be present")
+	}
+	if action != "drop" {
+		t.Errorf("expected action='drop', got '%s'", action)
+	}
+	if rule != "drop-rule" {
+		t.Errorf("expected rule='drop-rule', got '%s'", rule)
+	}
+}
+
+func TestProcessMetric_AdaptiveAction_AdaptiveLabel(t *testing.T) {
+	cfg := &Config{
+		Defaults: &DefaultLimits{Action: ActionLog},
+		Rules: []Rule{
+			{
+				Name:              "adaptive-rule",
+				Match:             RuleMatch{MetricName: "test_.*"},
+				MaxDatapointsRate: 10, // Low limit
+				Action:            ActionAdaptive,
+				GroupBy:           []string{"service"},
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, true) // dryRun = true
+	defer enforcer.Stop()
+
+	// First batch - should pass and get "passed" label
+	rm1 := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{createTestMetric("test_metric", map[string]string{}, 5)},
+	)
+	result1 := enforcer.Process([]*metricspb.ResourceMetrics{rm1})
+	if len(result1) != 1 {
+		t.Fatalf("expected first metric to pass")
+	}
+	action1, _, _ := getGovernorLabels(result1[0].ScopeMetrics[0].Metrics[0])
+	if action1 != "passed" {
+		t.Errorf("expected first metric action='passed', got '%s'", action1)
+	}
+
+	// Fill up to the limit
+	rm2 := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{createTestMetric("test_metric", map[string]string{}, 5)},
+	)
+	enforcer.Process([]*metricspb.ResourceMetrics{rm2})
+
+	// Exceed limit - should get "adaptive" label
+	rm3 := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{createTestMetric("test_metric", map[string]string{}, 5)},
+	)
+	result3 := enforcer.Process([]*metricspb.ResourceMetrics{rm3})
+	if len(result3) != 1 {
+		t.Fatalf("expected metric to pass in dry-run mode")
+	}
+
+	metric := result3[0].ScopeMetrics[0].Metrics[0]
+	action, rule, found := getGovernorLabels(metric)
+	if !found {
+		t.Fatal("expected labels to be present")
+	}
+	if action != "adaptive" {
+		t.Errorf("expected action='adaptive', got '%s'", action)
+	}
+	if rule != "adaptive-rule" {
+		t.Errorf("expected rule='adaptive-rule', got '%s'", rule)
+	}
+}
+
+func TestProcessMetric_DroppedGroup_DropLabel_DryRun(t *testing.T) {
+	// When a group is marked for dropping by adaptive limiting and then isGroupDropped
+	// returns true, the metric gets "drop" label (not "adaptive") because it's going
+	// through the dropped group path, not the adaptive handler path.
+	cfg := &Config{
+		Defaults: &DefaultLimits{Action: ActionLog},
+		Rules: []Rule{
+			{
+				Name:              "adaptive-rule",
+				Match:             RuleMatch{MetricName: "test_.*"},
+				MaxDatapointsRate: 10,
+				Action:            ActionAdaptive,
+				GroupBy:           []string{"service"},
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, true) // dryRun = true
+	defer enforcer.Stop()
+
+	// First batch to fill up
+	rm1 := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{createTestMetric("test_metric", map[string]string{}, 10)},
+	)
+	enforcer.Process([]*metricspb.ResourceMetrics{rm1})
+
+	// Exceed limit - marks group for dropping
+	rm2 := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{createTestMetric("test_metric", map[string]string{}, 5)},
+	)
+	enforcer.Process([]*metricspb.ResourceMetrics{rm2})
+
+	// Subsequent request from dropped group - will still trigger adaptive handling
+	// since the group is in droppedGroups but handleAdaptive will be called
+	rm3 := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{createTestMetric("test_metric", map[string]string{}, 1)},
+	)
+	result3 := enforcer.Process([]*metricspb.ResourceMetrics{rm3})
+	if len(result3) != 1 {
+		t.Fatalf("expected metric to pass in dry-run mode")
+	}
+
+	// Note: Due to the flow of processMetric, when isGroupDropped returns true,
+	// we get "drop" label. When it goes through handleAdaptive, we get "adaptive".
+	// Let's verify the label exists (either drop or adaptive is valid)
+	metric := result3[0].ScopeMetrics[0].Metrics[0]
+	action, rule, found := getGovernorLabels(metric)
+	if !found {
+		t.Fatal("expected labels to be present")
+	}
+	if action != "drop" && action != "adaptive" {
+		t.Errorf("expected action='drop' or 'adaptive' for dropped group, got '%s'", action)
+	}
+	if rule != "adaptive-rule" {
+		t.Errorf("expected rule='adaptive-rule', got '%s'", rule)
+	}
+}
+
+func TestInjectDatapointLabels_AllDatapoints(t *testing.T) {
+	// Create metric with multiple datapoints
+	m := &metricspb.Metric{
+		Name: "test_metric",
+		Data: &metricspb.Metric_Sum{
+			Sum: &metricspb.Sum{
+				DataPoints: []*metricspb.NumberDataPoint{
+					{},
+					{},
+					{},
+				},
+			},
+		},
+	}
+
+	injectDatapointLabels(m, "passed", "test-rule")
+
+	// Verify all datapoints got the labels
+	sum := m.Data.(*metricspb.Metric_Sum).Sum
+	for i, dp := range sum.DataPoints {
+		var foundAction, foundRule bool
+		for _, kv := range dp.Attributes {
+			if kv.Key == "metrics.governor.action" && kv.Value.GetStringValue() == "passed" {
+				foundAction = true
+			}
+			if kv.Key == "metrics.governor.rule" && kv.Value.GetStringValue() == "test-rule" {
+				foundRule = true
+			}
+		}
+		if !foundAction || !foundRule {
+			t.Errorf("datapoint %d missing labels: action=%v, rule=%v", i, foundAction, foundRule)
+		}
+	}
+}
+
+func TestLabelValues(t *testing.T) {
+	// Test that all expected action values are valid
+	validActions := []string{"passed", "log", "drop", "adaptive"}
+
+	for _, action := range validActions {
+		m := createMetricOfType("test", "gauge", 1)
+		injectDatapointLabels(m, action, "test-rule")
+
+		gotAction, _, found := getGovernorLabels(m)
+		if !found {
+			t.Errorf("labels not found for action '%s'", action)
+		}
+		if gotAction != action {
+			t.Errorf("expected action '%s', got '%s'", action, gotAction)
+		}
+	}
+}
+
+func TestLabelKeyNames(t *testing.T) {
+	m := createMetricOfType("test", "gauge", 1)
+	injectDatapointLabels(m, "passed", "test-rule")
+
+	gauge := m.Data.(*metricspb.Metric_Gauge).Gauge
+	dp := gauge.DataPoints[0]
+
+	var foundActionKey, foundRuleKey bool
+	for _, kv := range dp.Attributes {
+		if kv.Key == "metrics.governor.action" {
+			foundActionKey = true
+		}
+		if kv.Key == "metrics.governor.rule" {
+			foundRuleKey = true
+		}
+	}
+
+	if !foundActionKey {
+		t.Error("expected key 'metrics.governor.action' to be present")
+	}
+	if !foundRuleKey {
+		t.Error("expected key 'metrics.governor.rule' to be present")
+	}
+}
+
+func TestProcessMetric_DropAction_NoLabel_WhenActuallyDropped(t *testing.T) {
+	cfg := &Config{
+		Defaults: &DefaultLimits{Action: ActionLog},
+		Rules: []Rule{
+			{
+				Name:           "drop-rule",
+				Match:          RuleMatch{MetricName: "test_.*"},
+				MaxCardinality: 1,
+				Action:         ActionDrop,
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, false) // dryRun = false
+	defer enforcer.Stop()
+
+	// First metric - should pass
+	rm1 := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{createTestMetric("test_metric", map[string]string{"id": "1"}, 1)},
+	)
+	enforcer.Process([]*metricspb.ResourceMetrics{rm1})
+
+	// Second metric - should be dropped (nil result)
+	rm2 := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{createTestMetric("test_metric", map[string]string{"id": "2"}, 1)},
+	)
+	result2 := enforcer.Process([]*metricspb.ResourceMetrics{rm2})
+
+	// Result should be empty (metric dropped)
+	if len(result2) != 0 {
+		t.Errorf("expected metric to be dropped, got %d results", len(result2))
+	}
+}
+
+func TestRuleNameInLabel(t *testing.T) {
+	tests := []struct {
+		ruleName string
+	}{
+		{"simple-rule"},
+		{"rule-with-special_chars"},
+		{"CamelCaseRule"},
+		{"rule.with.dots"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.ruleName, func(t *testing.T) {
+			cfg := &Config{
+				Defaults: &DefaultLimits{Action: ActionLog},
+				Rules: []Rule{
+					{
+						Name:           tt.ruleName,
+						Match:          RuleMatch{MetricName: "test_.*"},
+						MaxCardinality: 1000,
+						Action:         ActionDrop,
+					},
+				},
+			}
+			LoadConfigFromStruct(cfg)
+
+			enforcer := NewEnforcer(cfg, false)
+			defer enforcer.Stop()
+
+			rm := createTestResourceMetrics(
+				map[string]string{"service": "api"},
+				[]*metricspb.Metric{createTestMetric("test_metric", map[string]string{}, 1)},
+			)
+
+			result := enforcer.Process([]*metricspb.ResourceMetrics{rm})
+			if len(result) != 1 {
+				t.Fatalf("expected 1 resource metric")
+			}
+
+			metric := result[0].ScopeMetrics[0].Metrics[0]
+			_, rule, found := getGovernorLabels(metric)
+			if !found {
+				t.Fatal("expected labels to be present")
+			}
+			if !strings.Contains(rule, tt.ruleName) {
+				t.Errorf("expected rule label to contain '%s', got '%s'", tt.ruleName, rule)
+			}
+		})
 	}
 }

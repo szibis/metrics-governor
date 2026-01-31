@@ -384,3 +384,246 @@ func TestFunctional_Limits_HighVolume(t *testing.T) {
 		totalInput, elapsed, float64(totalInput)/elapsed.Seconds(),
 		totalOutput, float64(totalOutput)/float64(totalInput)*100)
 }
+
+// Helper to get governor labels from a metric
+func getGovernorLabels(rm []*metricspb.ResourceMetrics) (action, rule string, found bool) {
+	if len(rm) == 0 {
+		return "", "", false
+	}
+	if len(rm[0].ScopeMetrics) == 0 {
+		return "", "", false
+	}
+	if len(rm[0].ScopeMetrics[0].Metrics) == 0 {
+		return "", "", false
+	}
+
+	m := rm[0].ScopeMetrics[0].Metrics[0]
+	var attrs []*commonpb.KeyValue
+
+	switch d := m.Data.(type) {
+	case *metricspb.Metric_Gauge:
+		if len(d.Gauge.DataPoints) > 0 {
+			attrs = d.Gauge.DataPoints[0].Attributes
+		}
+	case *metricspb.Metric_Sum:
+		if len(d.Sum.DataPoints) > 0 {
+			attrs = d.Sum.DataPoints[0].Attributes
+		}
+	}
+
+	for _, kv := range attrs {
+		if kv.Key == "metrics.governor.action" {
+			action = kv.Value.GetStringValue()
+		}
+		if kv.Key == "metrics.governor.rule" {
+			rule = kv.Value.GetStringValue()
+		}
+	}
+
+	found = action != "" && rule != ""
+	return
+}
+
+// TestFunctional_Limits_Labels_Passed tests that "passed" label is added when within limits
+func TestFunctional_Limits_Labels_Passed(t *testing.T) {
+	cfg := &limits.Config{
+		Rules: []limits.Rule{
+			{
+				Name: "test-rule",
+				Match: limits.RuleMatch{
+					Labels: map[string]string{"service": "*"},
+				},
+				MaxCardinality:    1000,
+				MaxDatapointsRate: 10000,
+				Action:            "drop",
+			},
+		},
+	}
+
+	enforcer := limits.NewEnforcer(cfg, false)
+	defer enforcer.Stop()
+
+	// Send metrics that are within limits
+	metrics := createMetricsWithLabels("test_metric", map[string]string{"service": "api"}, 5)
+	result := enforcer.Process(metrics)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 resource metric, got %d", len(result))
+	}
+
+	action, rule, found := getGovernorLabels(result)
+	if !found {
+		t.Fatal("expected labels to be present on metric within limits")
+	}
+	if action != "passed" {
+		t.Errorf("expected action='passed', got '%s'", action)
+	}
+	if rule != "test-rule" {
+		t.Errorf("expected rule='test-rule', got '%s'", rule)
+	}
+}
+
+// TestFunctional_Limits_Labels_Drop tests that "drop" label is added in dry-run when limits exceeded
+func TestFunctional_Limits_Labels_Drop(t *testing.T) {
+	cfg := &limits.Config{
+		Rules: []limits.Rule{
+			{
+				Name: "drop-rule",
+				Match: limits.RuleMatch{
+					Labels: map[string]string{"service": "*"},
+				},
+				MaxCardinality:    1, // Very low limit
+				MaxDatapointsRate: 1, // Very low limit
+				Action:            "drop",
+			},
+		},
+	}
+
+	enforcer := limits.NewEnforcer(cfg, true) // dryRun = true
+	defer enforcer.Stop()
+
+	// First metric - within limits
+	metrics1 := createMetricsWithLabels("test_metric", map[string]string{"service": "api"}, 1)
+	result1 := enforcer.Process(metrics1)
+	if len(result1) != 1 {
+		t.Fatalf("expected first metric to pass")
+	}
+
+	// Second metric - exceeds limits, should get "drop" label in dry-run
+	metrics2 := createMetricsWithLabels("test_metric", map[string]string{"service": "api"}, 1)
+	result2 := enforcer.Process(metrics2)
+
+	if len(result2) != 1 {
+		t.Fatalf("expected metric to pass in dry-run mode, got %d results", len(result2))
+	}
+
+	action, rule, found := getGovernorLabels(result2)
+	if !found {
+		t.Fatal("expected labels to be present on metric exceeding limits")
+	}
+	if action != "drop" {
+		t.Errorf("expected action='drop', got '%s'", action)
+	}
+	if rule != "drop-rule" {
+		t.Errorf("expected rule='drop-rule', got '%s'", rule)
+	}
+}
+
+// TestFunctional_Limits_Labels_Adaptive tests that "adaptive" label is added when adaptive limiting is triggered
+func TestFunctional_Limits_Labels_Adaptive(t *testing.T) {
+	cfg := &limits.Config{
+		Rules: []limits.Rule{
+			{
+				Name: "adaptive-rule",
+				Match: limits.RuleMatch{
+					Labels: map[string]string{"service": "*"},
+				},
+				MaxCardinality:    100,
+				MaxDatapointsRate: 10, // Low limit
+				Action:            "adaptive",
+				GroupBy:           []string{"service"},
+			},
+		},
+	}
+
+	enforcer := limits.NewEnforcer(cfg, true) // dryRun = true
+	defer enforcer.Stop()
+
+	// Fill up to limit
+	metrics1 := createMetricsWithLabels("test_metric", map[string]string{"service": "api"}, 10)
+	enforcer.Process(metrics1)
+
+	// Exceed limit - should trigger adaptive
+	metrics2 := createMetricsWithLabels("test_metric", map[string]string{"service": "api"}, 5)
+	result2 := enforcer.Process(metrics2)
+
+	if len(result2) != 1 {
+		t.Fatalf("expected metric to pass in dry-run mode, got %d results", len(result2))
+	}
+
+	action, rule, found := getGovernorLabels(result2)
+	if !found {
+		t.Fatal("expected labels to be present on metric with adaptive limiting")
+	}
+	if action != "adaptive" {
+		t.Errorf("expected action='adaptive', got '%s'", action)
+	}
+	if rule != "adaptive-rule" {
+		t.Errorf("expected rule='adaptive-rule', got '%s'", rule)
+	}
+}
+
+// TestFunctional_Limits_Labels_Log tests that "log" label is added when log action is triggered
+func TestFunctional_Limits_Labels_Log(t *testing.T) {
+	cfg := &limits.Config{
+		Rules: []limits.Rule{
+			{
+				Name: "log-rule",
+				Match: limits.RuleMatch{
+					Labels: map[string]string{"service": "*"},
+				},
+				MaxCardinality:    1, // Very low limit
+				MaxDatapointsRate: 1, // Very low limit
+				Action:            "log",
+			},
+		},
+	}
+
+	enforcer := limits.NewEnforcer(cfg, false)
+	defer enforcer.Stop()
+
+	// First metric - within limits
+	metrics1 := createMetricsWithLabels("test_metric", map[string]string{"service": "api"}, 1)
+	enforcer.Process(metrics1)
+
+	// Second metric - exceeds limits, should get "log" label
+	metrics2 := createMetricsWithLabels("test_metric", map[string]string{"service": "api"}, 1)
+	result2 := enforcer.Process(metrics2)
+
+	if len(result2) != 1 {
+		t.Fatalf("expected metric to pass with log action, got %d results", len(result2))
+	}
+
+	action, rule, found := getGovernorLabels(result2)
+	if !found {
+		t.Fatal("expected labels to be present on metric with log action")
+	}
+	if action != "log" {
+		t.Errorf("expected action='log', got '%s'", action)
+	}
+	if rule != "log-rule" {
+		t.Errorf("expected rule='log-rule', got '%s'", rule)
+	}
+}
+
+// TestFunctional_Limits_Labels_NoRuleMatch tests that no labels are added when no rule matches
+func TestFunctional_Limits_Labels_NoRuleMatch(t *testing.T) {
+	cfg := &limits.Config{
+		Rules: []limits.Rule{
+			{
+				Name: "http-rule",
+				Match: limits.RuleMatch{
+					MetricName: "http_.*", // Only matches http_ prefix
+				},
+				MaxCardinality: 1000,
+				Action:         "drop",
+			},
+		},
+	}
+
+	enforcer := limits.NewEnforcer(cfg, false)
+	defer enforcer.Stop()
+
+	// Send metric that doesn't match any rule
+	metrics := createMetricsWithLabels("grpc_requests", map[string]string{"service": "api"}, 5)
+	result := enforcer.Process(metrics)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 resource metric, got %d", len(result))
+	}
+
+	_, _, found := getGovernorLabels(result)
+	if found {
+		t.Error("expected no labels when no rule matches the metric")
+	}
+}
