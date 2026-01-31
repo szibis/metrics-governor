@@ -8,7 +8,9 @@
 
 ---
 
-**metrics-governor** is a high-performance OTLP metrics proxy that sits between your applications and your metrics backend. It provides intelligent cardinality control, horizontal scaling via consistent sharding, and full observability for your metrics pipeline.
+**metrics-governor** is a high-performance metrics proxy supporting both **OTLP** and **Prometheus Remote Write (PRW)** protocols. It sits between your applications and your metrics backend, providing intelligent cardinality control, horizontal scaling via consistent sharding, and full observability for your metrics pipeline.
+
+> **Two Independent Pipelines**: OTLP→OTLP and PRW→PRW. No cross-protocol conversion - each protocol stays native for zero overhead and full feature support.
 
 ## Why metrics-governor?
 
@@ -22,8 +24,9 @@
 
 ## Key Features
 
+- **Dual Protocol Support** - Native OTLP (gRPC/HTTP) and Prometheus Remote Write (PRW 1.0/2.0) pipelines, each running independently with zero conversion overhead
 - **Intelligent Limiting** - Unlike simple rate limiters that drop everything, metrics-governor identifies and drops only the top offenders while preserving data from well-behaved services
-- **Consistent Sharding** - Automatic endpoint discovery from Kubernetes headless services with consistent hashing ensures the same time-series always route to the same backend
+- **Consistent Sharding** - Automatic endpoint discovery from Kubernetes headless services with consistent hashing ensures the same time-series always route to the same backend (works for both OTLP and PRW)
 - **Production-Ready** - WAL-based durable queue, TLS/mTLS, authentication, compression (gzip/zstd/snappy/lz4), and Helm chart included
 - **Zero Configuration Start** - Works out of the box with sensible defaults; add limits and sharding when needed
 
@@ -31,58 +34,57 @@
 
 ```mermaid
 flowchart LR
-    subgraph Clients["OTLP Clients"]
+    subgraph Clients["Metrics Sources"]
         App1["App 1<br/>(OTel SDK)"]
         App2["App 2<br/>(OTel SDK)"]
-        AppN["App N<br/>(OTel SDK)"]
+        Prom["Prometheus<br/>(remote_write)"]
     end
 
     subgraph MG["metrics-governor"]
         subgraph Receivers["Receivers"]
             GRPC["gRPC Receiver<br/>:4317"]
             HTTP["HTTP Receiver<br/>:4318"]
+            PRW["PRW Receiver<br/>:9091"]
         end
 
-        subgraph Buffer["Metrics Buffer"]
-            MemQueue["In-Memory<br/>Batch Queue"]
+        subgraph Pipelines["Independent Pipelines"]
+            subgraph OTLP_Pipeline["OTLP Pipeline"]
+                OBuf["Buffer"]
+                OStats["Stats"]
+                OLimits["Limits"]
+                OExp["Exporter"]
+            end
+            subgraph PRW_Pipeline["PRW Pipeline"]
+                PBuf["Buffer"]
+                PStats["Stats"]
+                PLimits["Limits"]
+                PExp["Exporter"]
+            end
         end
 
-        subgraph Pipeline["Processing Pipeline"]
-            Stats["Stats Collector<br/>• Per-metric datapoints<br/>• Per-metric cardinality<br/>• Per-label combinations"]
-            Limits["Limits Enforcer<br/>• Cardinality limits<br/>• Datapoints rate<br/>• Adaptive dropping<br/>• Per-group tracking"]
-        end
-
-        subgraph Export["Export Layer"]
-            Exporter["Exporter<br/>(gRPC/HTTP)"]
-            SendQueue["Persistent Queue<br/>(WAL-based)<br/>• Retry with backoff<br/>• Disk persistence<br/>• Adaptive sizing"]
+        subgraph Queue["Persistent Queues"]
+            OQueue["OTLP Queue<br/>(WAL)"]
+            PQueue["PRW Queue<br/>(WAL)"]
         end
     end
 
-    subgraph Backend["Backend"]
-        OTel["OTel Collector<br/>or Any OTLP Backend"]
-    end
-
-    subgraph Observability["Observability"]
-        Prom["Prometheus<br/>:9090/metrics"]
-        Logs["Structured Logs<br/>(JSON format)"]
+    subgraph Backends["Backends"]
+        OTel["OTel Collector"]
+        VM["VictoriaMetrics<br/>Prometheus<br/>Thanos"]
     end
 
     App1 -->|"OTLP/gRPC"| GRPC
     App2 -->|"OTLP/HTTP"| HTTP
-    AppN -->|"OTLP/gRPC"| GRPC
+    Prom -->|"PRW"| PRW
 
-    GRPC -->|"Auth/TLS<br/>Decompress"| Buffer
-    HTTP -->|"Auth/TLS<br/>Decompress"| Buffer
+    GRPC --> OBuf --> OStats --> OLimits --> OExp
+    HTTP --> OBuf
+    PRW --> PBuf --> PStats --> PLimits --> PExp
 
-    Buffer --> Pipeline
-    Stats --> Prom
-    Stats --> Logs
-    Limits --> Logs
-    Pipeline --> Exporter
-    Exporter -->|"Success"| OTel
-    Exporter -.->|"Failure"| SendQueue
-    SendQueue -.->|"Retry"| Exporter
-    SendQueue --> Prom
+    OExp -->|"Success"| OTel
+    OExp -.->|"Failure"| OQueue -.->|"Retry"| OExp
+    PExp -->|"Success"| VM
+    PExp -.->|"Failure"| PQueue -.->|"Retry"| PExp
 ```
 
 ## Quick Start
@@ -122,6 +124,7 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
 |:---:|-------|-------------|
 | 🚀 | [**Installation**](docs/installation.md) | Install from source, Docker, or Helm chart |
 | ⚙️ | [**Configuration**](docs/configuration.md) | YAML config and CLI flags reference |
+| 📡 | [**Prometheus Remote Write**](docs/prw.md) | PRW 1.0/2.0 protocol, VictoriaMetrics mode |
 | 🎯 | [**Limits**](docs/limits.md) | Adaptive limiting, cardinality control, dry-run mode |
 | 🔀 | [**Sharding**](docs/sharding.md) | Consistent hashing, K8s DNS discovery, horizontal scaling |
 | 📊 | [**Statistics**](docs/statistics.md) | Prometheus metrics, per-metric tracking, observability |
@@ -140,12 +143,13 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
 | Capability | Description |
 |------------|-------------|
 | **OTLP Protocol** | Full gRPC and HTTP receiver/exporter with TLS and authentication |
-| **Intelligent Buffering** | Configurable buffer with batching for optimal throughput |
+| **PRW Protocol** | Prometheus Remote Write 1.0/2.0 with native histograms, VictoriaMetrics mode |
+| **Intelligent Buffering** | Configurable buffer with batching for optimal throughput (both OTLP and PRW) |
 | **Adaptive Limits** | Per-group tracking with smart dropping of top offenders only |
 | **Real-time Statistics** | Per-metric cardinality, datapoints, and limit violation tracking |
 | **Prometheus Integration** | Native `/metrics` endpoint for monitoring the proxy itself |
-| **Consistent Sharding** | Distribute metrics across multiple backends via DNS discovery |
-| **Persistent Queue** | WAL-based durable queue with automatic retry |
+| **Consistent Sharding** | Distribute metrics across multiple backends via DNS discovery (OTLP and PRW) |
+| **Persistent Queue** | WAL-based durable queue with automatic retry (OTLP and PRW) |
 | **Production Ready** | Helm chart, multi-arch Docker images, graceful shutdown |
 
 ---
