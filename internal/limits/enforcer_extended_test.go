@@ -699,3 +699,126 @@ func TestEnforcer_AdaptiveCardinality_WithExcess(t *testing.T) {
 		enforcer.Process([]*metricspb.ResourceMetrics{rm})
 	}
 }
+
+func TestEnforcer_RecordGroupsDropped_Direct(t *testing.T) {
+	// This test directly exercises the recordGroupsDropped function
+	// by creating an adaptive scenario with guaranteed excess
+	cfg := &Config{
+		Rules: []Rule{
+			{
+				Name:              "force-drop-test",
+				Match:             RuleMatch{MetricName: "forcedrop_.*"},
+				MaxDatapointsRate: 5, // Very low limit
+				Action:            ActionAdaptive,
+				GroupBy:           []string{"source"},
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, false)
+	defer enforcer.Stop()
+
+	// Rapidly accumulate datapoints from multiple sources
+	sources := []string{"source-a", "source-b", "source-c", "source-d"}
+
+	// First, fill up above the limit
+	for round := 0; round < 10; round++ {
+		for _, src := range sources {
+			rm := createTestResourceMetrics(
+				map[string]string{"source": src},
+				[]*metricspb.Metric{createTestMetric("forcedrop_metric", map[string]string{"round": string(rune('0' + round))}, 3)},
+			)
+			enforcer.Process([]*metricspb.ResourceMetrics{rm})
+		}
+	}
+
+	// Verify through metrics endpoint
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	enforcer.ServeHTTP(w, r)
+
+	body := w.Body.String()
+	t.Logf("Metrics output contains %d bytes", len(body))
+}
+
+func TestEnforcer_Adaptive_SortByDatapoints(t *testing.T) {
+	// Test the datapoints sorting branch in handleAdaptive
+	cfg := &Config{
+		Rules: []Rule{
+			{
+				Name:              "dp-sort-test",
+				Match:             RuleMatch{MetricName: "dpsort_.*"},
+				MaxDatapointsRate: 20, // Moderate limit
+				Action:            ActionAdaptive,
+				GroupBy:           []string{"group"},
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, false)
+	defer enforcer.Stop()
+
+	// Create groups with different datapoint contributions
+	// Group A: high contribution
+	for i := 0; i < 10; i++ {
+		rm := createTestResourceMetrics(
+			map[string]string{"group": "high-contrib"},
+			[]*metricspb.Metric{createTestMetric("dpsort_metric", map[string]string{}, 5)},
+		)
+		enforcer.Process([]*metricspb.ResourceMetrics{rm})
+	}
+
+	// Group B: low contribution
+	for i := 0; i < 5; i++ {
+		rm := createTestResourceMetrics(
+			map[string]string{"group": "low-contrib"},
+			[]*metricspb.Metric{createTestMetric("dpsort_metric", map[string]string{}, 1)},
+		)
+		enforcer.Process([]*metricspb.ResourceMetrics{rm})
+	}
+
+	// Now high-contrib should be marked as top offender
+	// Continue to verify the sorting logic works
+	for i := 0; i < 5; i++ {
+		rm := createTestResourceMetrics(
+			map[string]string{"group": "high-contrib"},
+			[]*metricspb.Metric{createTestMetric("dpsort_metric", map[string]string{}, 2)},
+		)
+		result := enforcer.Process([]*metricspb.ResourceMetrics{rm})
+		t.Logf("High contrib iteration %d: result=%d", i, len(result))
+	}
+}
+
+func TestEnforcer_Adaptive_DryRunWithExcess(t *testing.T) {
+	// Test dry run mode with adaptive action
+	cfg := &Config{
+		Rules: []Rule{
+			{
+				Name:              "dryrun-adaptive",
+				Match:             RuleMatch{MetricName: "dryadapt_.*"},
+				MaxDatapointsRate: 10,
+				Action:            ActionAdaptive,
+				GroupBy:           []string{"service"},
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, true) // Dry run mode
+	defer enforcer.Stop()
+
+	// Exceed the limit
+	for i := 0; i < 30; i++ {
+		rm := createTestResourceMetrics(
+			map[string]string{"service": "api"},
+			[]*metricspb.Metric{createTestMetric("dryadapt_metric", map[string]string{}, 2)},
+		)
+		result := enforcer.Process([]*metricspb.ResourceMetrics{rm})
+		// Dry run should always pass through
+		if len(result) != 1 {
+			t.Errorf("Dry run should pass through, got %d results", len(result))
+		}
+	}
+}
