@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-01-31
+
+### Added
+
+Add PRW metrics, sharding, queue, and Grafana dashboards
+
+**PRW Enhancements:**
+- Consistent hash sharding for PRW (same as OTLP) - routes metrics to multiple backends
+- WAL-based persistent queue for PRW retry with exponential backoff
+- Shard key builder from metric name and configurable labels
+- Sharded PRW exporter with static endpoints or dynamic discovery
+
+**Prometheus Metrics:**
+- `metrics_governor_prw_datapoints_received_total` - PRW datapoints received
+- `metrics_governor_prw_timeseries_received_total` - PRW timeseries received
+- `metrics_governor_prw_datapoints_sent_total` - PRW datapoints sent
+- `metrics_governor_prw_timeseries_sent_total` - PRW timeseries sent
+- `metrics_governor_prw_batches_sent_total` - PRW batches exported
+- `metrics_governor_prw_export_errors_total` - PRW export errors
+
+**Grafana Dashboards:**
+- `dashboards/operations.json` - Operations dashboard with separate OTLP and PRW sections
+- `dashboards/e2e-testing.json` - E2E testing dashboard
+- `dashboards/README.md` - Dashboard documentation and installation guide
+
+**Bug Fixes:**
+- Fix race condition in PRW buffer SetExporter
+- Fix race condition in PRW queue processQueue
+
+**Test Coverage:**
+- Unit Tests: 461
+- Functional Tests: 73
+- E2E Tests: 8
+- Benchmarks: 90
+- Total: 632+ tests
+
 ## [0.6.0] - 2026-01-31
 
 ### Added

@@ -3,7 +3,7 @@
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/Build-passing-brightgreen?style=flat&logo=github)](https://github.com/szibis/metrics-governor/actions)
-[![Tests](https://img.shields.io/badge/Tests-608+-success?style=flat&logo=go)](https://github.com/szibis/metrics-governor)
+[![Tests](https://img.shields.io/badge/Tests-632+-success?style=flat&logo=go)](https://github.com/szibis/metrics-governor)
 [![Coverage](https://img.shields.io/badge/Coverage-85%25-brightgreen.svg)](https://github.com/szibis/metrics-governor)
 
 ---
