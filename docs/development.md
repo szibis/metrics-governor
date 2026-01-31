@@ -101,6 +101,75 @@ metrics-governor/
 4. Update documentation if needed
 5. Create pull request
 
+## Pull Request Labels
+
+Pull requests are automatically labeled based on their content. Labels are applied when PRs are opened, edited, or updated.
+
+### Type Labels (Conventional Commits)
+
+Based on PR title prefix:
+
+| Prefix | Label | Color | Description |
+|--------|-------|-------|-------------|
+| `fix:` | `bug` | ![#d73a4a](https://placehold.co/15x15/d73a4a/d73a4a) `#d73a4a` | Bug fixes |
+| `feat:` | `enhancement` | ![#a2eeef](https://placehold.co/15x15/a2eeef/a2eeef) `#a2eeef` | New features |
+| `docs:` | `documentation` | ![#0075ca](https://placehold.co/15x15/0075ca/0075ca) `#0075ca` | Documentation changes |
+| `perf:` | `performance` | ![#f9d0c4](https://placehold.co/15x15/f9d0c4/f9d0c4) `#f9d0c4` | Performance improvements |
+| `refactor:` | `refactor` | ![#c5def5](https://placehold.co/15x15/c5def5/c5def5) `#c5def5` | Code refactoring |
+| `test:` | `testing` | ![#bfd4f2](https://placehold.co/15x15/bfd4f2/bfd4f2) `#bfd4f2` | Test changes |
+| `ci:` | `ci` | ![#e6e6e6](https://placehold.co/15x15/e6e6e6/e6e6e6) `#e6e6e6` | CI/CD changes |
+| `chore:` | `chore` | ![#fef2c0](https://placehold.co/15x15/fef2c0/fef2c0) `#fef2c0` | Maintenance tasks |
+| `build:` | `build` | ![#d4c5f9](https://placehold.co/15x15/d4c5f9/d4c5f9) `#d4c5f9` | Build system changes |
+| `release:` | `release` | ![#5319e7](https://placehold.co/15x15/5319e7/5319e7) `#5319e7` | Release related |
+| `security:` | `security` | ![#d93f0b](https://placehold.co/15x15/d93f0b/d93f0b) `#d93f0b` | Security fixes |
+| `deps:` | `dependencies` | ![#0366d6](https://placehold.co/15x15/0366d6/0366d6) `#0366d6` | Dependency updates |
+
+### Component Labels
+
+Based on changed file paths:
+
+| Path Pattern | Label | Color |
+|--------------|-------|-------|
+| `internal/buffer/` | `component/buffer` | ![#1d76db](https://placehold.co/15x15/1d76db/1d76db) `#1d76db` |
+| `internal/queue/` | `component/queue` | ![#1d76db](https://placehold.co/15x15/1d76db/1d76db) `#1d76db` |
+| `internal/exporter/` | `component/exporter` | ![#1d76db](https://placehold.co/15x15/1d76db/1d76db) `#1d76db` |
+| `internal/receiver/` | `component/receiver` | ![#1d76db](https://placehold.co/15x15/1d76db/1d76db) `#1d76db` |
+| `internal/config/` | `component/config` | ![#1d76db](https://placehold.co/15x15/1d76db/1d76db) `#1d76db` |
+| `internal/compression/` | `component/compression` | ![#1d76db](https://placehold.co/15x15/1d76db/1d76db) `#1d76db` |
+| `internal/auth/` | `component/auth` | ![#1d76db](https://placehold.co/15x15/1d76db/1d76db) `#1d76db` |
+| `internal/limits/` | `component/limits` | ![#1d76db](https://placehold.co/15x15/1d76db/1d76db) `#1d76db` |
+| `internal/stats/` | `component/stats` | ![#1d76db](https://placehold.co/15x15/1d76db/1d76db) `#1d76db` |
+| `internal/sharding/` | `component/sharding` | ![#1d76db](https://placehold.co/15x15/1d76db/1d76db) `#1d76db` |
+| `internal/prw/` | `component/prw` | ![#1d76db](https://placehold.co/15x15/1d76db/1d76db) `#1d76db` |
+| `internal/tls/` | `component/tls` | ![#1d76db](https://placehold.co/15x15/1d76db/1d76db) `#1d76db` |
+| `helm/` | `helm` | ![#0052cc](https://placehold.co/15x15/0052cc/0052cc) `#0052cc` |
+| `.github/` | `ci` | ![#e6e6e6](https://placehold.co/15x15/e6e6e6/e6e6e6) `#e6e6e6` |
+| `*.md`, `docs/` | `documentation` | ![#0075ca](https://placehold.co/15x15/0075ca/0075ca) `#0075ca` |
+
+### Size Labels
+
+Based on total lines changed (additions + deletions):
+
+| Lines Changed | Label | Color | Description |
+|---------------|-------|-------|-------------|
+| ≤ 10 | `size/XS` | ![#3cba54](https://placehold.co/15x15/3cba54/3cba54) `#3cba54` | Extra small |
+| ≤ 50 | `size/S` | ![#77c043](https://placehold.co/15x15/77c043/77c043) `#77c043` | Small |
+| ≤ 200 | `size/M` | ![#f9a825](https://placehold.co/15x15/f9a825/f9a825) `#f9a825` | Medium |
+| ≤ 500 | `size/L` | ![#e65100](https://placehold.co/15x15/e65100/e65100) `#e65100` | Large |
+| > 500 | `size/XL` | ![#d93f0b](https://placehold.co/15x15/d93f0b/d93f0b) `#d93f0b` | Extra large |
+
+### Special Labels
+
+| Trigger | Label | Color | Description |
+|---------|-------|-------|-------------|
+| "breaking" in title/body | `breaking-change` | ![#b60205](https://placehold.co/15x15/b60205/b60205) `#b60205` | Breaking changes |
+| Draft PR or "wip" in title | `work-in-progress` | ![#fbca04](https://placehold.co/15x15/fbca04/fbca04) `#fbca04` | Work in progress |
+| `*_test.go` files changed | `testing` | ![#bfd4f2](https://placehold.co/15x15/bfd4f2/bfd4f2) `#bfd4f2` | Test changes |
+| `*benchmark*` files changed | `performance` | ![#f9d0c4](https://placehold.co/15x15/f9d0c4/f9d0c4) `#f9d0c4` | Benchmark changes |
+| `go.mod`/`go.sum` changed | `dependencies` | ![#0366d6](https://placehold.co/15x15/0366d6/0366d6) `#0366d6` | Dependency updates |
+| "help wanted" in body | `help wanted` | ![#008672](https://placehold.co/15x15/008672/008672) `#008672` | Extra attention needed |
+| "good first issue" in body | `good first issue` | ![#7057ff](https://placehold.co/15x15/7057ff/7057ff) `#7057ff` | Good for newcomers |
+
 ## Debugging
 
 ### Enable Verbose Logging
