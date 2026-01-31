@@ -18,13 +18,13 @@ type LogAggregator struct {
 
 // aggregatedEntry represents an aggregated log entry.
 type aggregatedEntry struct {
-	level        string
-	message      string
-	fields       map[string]interface{}
-	count        int64
-	firstSeen    time.Time
-	lastSeen     time.Time
-	totalDPs     int64 // Accumulated datapoints for this entry type
+	level     string
+	message   string
+	fields    map[string]interface{}
+	count     int64
+	firstSeen time.Time
+	lastSeen  time.Time
+	totalDPs  int64 // Accumulated datapoints for this entry type
 }
 
 // NewLogAggregator creates a new log aggregator with the specified flush interval.

@@ -76,7 +76,7 @@ func TestCompressZlib_AllLevels(t *testing.T) {
 
 	levels := []Level{
 		LevelDefault,
-		GzipBestSpeed,          // zlib uses same levels as gzip
+		GzipBestSpeed, // zlib uses same levels as gzip
 		GzipDefaultCompression,
 		GzipBestCompression,
 	}
@@ -109,7 +109,7 @@ func TestCompressDeflate_AllLevels(t *testing.T) {
 
 	levels := []Level{
 		LevelDefault,
-		GzipBestSpeed,          // deflate uses same levels as gzip
+		GzipBestSpeed, // deflate uses same levels as gzip
 		GzipDefaultCompression,
 		GzipBestCompression,
 	}

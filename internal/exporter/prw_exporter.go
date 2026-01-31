@@ -49,12 +49,12 @@ type VMRemoteWriteOptions struct {
 
 // PRWExporter exports metrics via Prometheus Remote Write protocol.
 type PRWExporter struct {
-	config       PRWExporterConfig
-	httpClient   *http.Client
-	endpoint     string
-	version      prw.Version
-	compression  compression.Type
-	extraLabels  []prw.Label
+	config      PRWExporterConfig
+	httpClient  *http.Client
+	endpoint    string
+	version     prw.Version
+	compression compression.Type
+	extraLabels []prw.Label
 }
 
 // NewPRW creates a new PRW exporter.

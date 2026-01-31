@@ -839,16 +839,16 @@ func createHighCardinalityRequest(serviceName, userID, requestID string, datapoi
 
 func createEdgeCaseRequest() *colmetrics.ExportMetricsServiceRequest {
 	edgeValues := []float64{
-		0.0,                        // Zero
-		-0.0,                       // Negative zero
-		1.0,                        // Normal positive
-		-1.0,                       // Normal negative
-		1.7976931348623157e+308,    // Very large positive (close to MaxFloat64)
-		-1.7976931348623157e+308,   // Very large negative
-		1e-300,                     // Very small positive
-		-1e-300,                    // Very small negative
-		3.141592653589793,          // Pi
-		2.718281828459045,          // e
+		0.0,                      // Zero
+		-0.0,                     // Negative zero
+		1.0,                      // Normal positive
+		-1.0,                     // Normal negative
+		1.7976931348623157e+308,  // Very large positive (close to MaxFloat64)
+		-1.7976931348623157e+308, // Very large negative
+		1e-300,                   // Very small positive
+		-1e-300,                  // Very small negative
+		3.141592653589793,        // Pi
+		2.718281828459045,        // e
 	}
 
 	dps := make([]*metricspb.NumberDataPoint, len(edgeValues))

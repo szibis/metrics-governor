@@ -26,24 +26,24 @@ import (
 
 // GeneratorStats tracks metrics generation statistics
 type GeneratorStats struct {
-	StartTime              time.Time
-	TotalMetricsSent       atomic.Int64
-	TotalDatapointsSent    atomic.Int64
-	TotalBytesSent         atomic.Int64
-	TotalBatchesSent       atomic.Int64
-	TotalErrors            atomic.Int64
-	LastBatchTime          atomic.Int64 // Unix nano
-	MinBatchLatency        atomic.Int64 // Nanoseconds
-	MaxBatchLatency        atomic.Int64 // Nanoseconds
-	TotalBatchLatency      atomic.Int64 // Nanoseconds (for average)
+	StartTime           time.Time
+	TotalMetricsSent    atomic.Int64
+	TotalDatapointsSent atomic.Int64
+	TotalBytesSent      atomic.Int64
+	TotalBatchesSent    atomic.Int64
+	TotalErrors         atomic.Int64
+	LastBatchTime       atomic.Int64 // Unix nano
+	MinBatchLatency     atomic.Int64 // Nanoseconds
+	MaxBatchLatency     atomic.Int64 // Nanoseconds
+	TotalBatchLatency   atomic.Int64 // Nanoseconds (for average)
 
 	// High cardinality tracking
 	HighCardinalityMetrics atomic.Int64
 	UniqueLabels           atomic.Int64
 
 	// Burst tracking
-	BurstsSent             atomic.Int64
-	BurstMetricsSent       atomic.Int64
+	BurstsSent       atomic.Int64
+	BurstMetricsSent atomic.Int64
 }
 
 var stats = &GeneratorStats{}
@@ -68,9 +68,9 @@ func main() {
 
 	// Stable mode configuration - for predictable testing
 	enableStableMode := getEnvBool("ENABLE_STABLE_MODE", false)
-	stableMetricCount := getEnvInt("STABLE_METRIC_COUNT", 100)         // Number of stable metrics
-	stableCardinalityPerMetric := getEnvInt("STABLE_CARDINALITY", 10)  // Series per metric
-	stableDatapointsPerInterval := getEnvInt("STABLE_DATAPOINTS", 1)   // Datapoints per series per interval
+	stableMetricCount := getEnvInt("STABLE_METRIC_COUNT", 100)        // Number of stable metrics
+	stableCardinalityPerMetric := getEnvInt("STABLE_CARDINALITY", 10) // Series per metric
+	stableDatapointsPerInterval := getEnvInt("STABLE_DATAPOINTS", 1)  // Datapoints per series per interval
 
 	interval, err := time.ParseDuration(intervalStr)
 	if err != nil {
@@ -343,16 +343,16 @@ func main() {
 
 	// Edge case values for testing
 	edgeValues := []float64{
-		0.0,                   // Zero
-		-1.0,                  // Negative (for gauges)
-		math.MaxFloat64 / 2,   // Very large positive
-		-math.MaxFloat64 / 2,  // Very large negative
-		0.0000001,             // Very small positive
-		-0.0000001,            // Very small negative
-		1e10,                  // Scientific notation large
-		1e-10,                 // Scientific notation small
-		math.Pi,               // Irrational number
-		math.E,                // Euler's number
+		0.0,                  // Zero
+		-1.0,                 // Negative (for gauges)
+		math.MaxFloat64 / 2,  // Very large positive
+		-math.MaxFloat64 / 2, // Very large negative
+		0.0000001,            // Very small positive
+		-0.0000001,           // Very small negative
+		1e10,                 // Scientific notation large
+		1e-10,                // Scientific notation small
+		math.Pi,              // Irrational number
+		math.E,               // Euler's number
 	}
 
 	log.Println("Starting to generate metrics...")
@@ -388,55 +388,55 @@ func main() {
 			// Standard metrics generation (skip in stable mode for predictability)
 			if !enableStableMode {
 				for _, service := range services {
-				for _, env := range environments {
-					// Generate HTTP request metrics - increased for higher throughput
-					numRequests := rand.Intn(50) + 25
-					for i := 0; i < numRequests; i++ {
-						method := methods[rand.Intn(len(methods))]
-						endpoint := endpoints[rand.Intn(len(endpoints))]
-						status := statuses[rand.Intn(len(statuses))]
+					for _, env := range environments {
+						// Generate HTTP request metrics - increased for higher throughput
+						numRequests := rand.Intn(50) + 25
+						for i := 0; i < numRequests; i++ {
+							method := methods[rand.Intn(len(methods))]
+							endpoint := endpoints[rand.Intn(len(endpoints))]
+							status := statuses[rand.Intn(len(statuses))]
 
-						attrs := []attribute.KeyValue{
-							attribute.String("service", service),
-							attribute.String("env", env),
-							attribute.String("method", method),
-							attribute.String("endpoint", endpoint),
-							attribute.String("status", status),
+							attrs := []attribute.KeyValue{
+								attribute.String("service", service),
+								attribute.String("env", env),
+								attribute.String("method", method),
+								attribute.String("endpoint", endpoint),
+								attribute.String("status", status),
+							}
+
+							httpRequestsTotal.Add(ctx, 1, metric.WithAttributes(attrs...))
+							httpRequestDuration.Record(ctx, rand.Float64()*0.5, metric.WithAttributes(attrs...))
+							batchMetrics += 2
+							batchDatapoints += 2
 						}
 
-						httpRequestsTotal.Add(ctx, 1, metric.WithAttributes(attrs...))
-						httpRequestDuration.Record(ctx, rand.Float64()*0.5, metric.WithAttributes(attrs...))
-						batchMetrics += 2
-						batchDatapoints += 2
-					}
-
-					// Generate active connections
-					activeConnections.Add(ctx, int64(rand.Intn(10)-5),
-						metric.WithAttributes(
-							attribute.String("service", service),
-							attribute.String("env", env),
-						))
-					batchMetrics++
-					batchDatapoints++
-
-					// Generate high-cardinality legacy metrics (to test limits)
-					if service == "legacy-app" || strings.HasPrefix(service, "legacy") {
-						numLegacy := rand.Intn(50) + 10
-						for i := 0; i < numLegacy; i++ {
-							// Use bounded request_id pool to prevent unbounded cardinality
-							reqID := fmt.Sprintf("req-%s-%d", service, rand.Intn(1000))
-							legacyAppRequestCount.Add(ctx, 1,
-								metric.WithAttributes(
-									attribute.String("service", service),
-									attribute.String("env", env),
-									attribute.String("request_id", reqID),
-								))
-							batchDatapoints++
-						}
+						// Generate active connections
+						activeConnections.Add(ctx, int64(rand.Intn(10)-5),
+							metric.WithAttributes(
+								attribute.String("service", service),
+								attribute.String("env", env),
+							))
 						batchMetrics++
+						batchDatapoints++
+
+						// Generate high-cardinality legacy metrics (to test limits)
+						if service == "legacy-app" || strings.HasPrefix(service, "legacy") {
+							numLegacy := rand.Intn(50) + 10
+							for i := 0; i < numLegacy; i++ {
+								// Use bounded request_id pool to prevent unbounded cardinality
+								reqID := fmt.Sprintf("req-%s-%d", service, rand.Intn(1000))
+								legacyAppRequestCount.Add(ctx, 1,
+									metric.WithAttributes(
+										attribute.String("service", service),
+										attribute.String("env", env),
+										attribute.String("request_id", reqID),
+									))
+								batchDatapoints++
+							}
+							batchMetrics++
+						}
 					}
 				}
-			}
 			} // end if !enableStableMode
 
 			// Edge case values
@@ -560,14 +560,14 @@ func main() {
 						attrs = []attribute.KeyValue{
 							attribute.String("service", services[rand.Intn(len(services))]),
 						}
-						value = float64(rand.Int63n(16*1024*1024*1024)) // up to 16GB
+						value = float64(rand.Int63n(16 * 1024 * 1024 * 1024)) // up to 16GB
 					case i < 29: // filesystem metrics
 						attrs = []attribute.KeyValue{
 							attribute.String("mountpoint", mounts[i%len(mounts)]),
 							attribute.String("device", devices[rand.Intn(len(devices))]),
 							attribute.String("fstype", "ext4"),
 						}
-						value = float64(rand.Int63n(500*1024*1024*1024)) // up to 500GB
+						value = float64(rand.Int63n(500 * 1024 * 1024 * 1024)) // up to 500GB
 					default:
 						attrs = []attribute.KeyValue{
 							attribute.String("service", services[rand.Intn(len(services))]),

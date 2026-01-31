@@ -48,14 +48,14 @@ type prwExporterInterface interface {
 
 // PRWQueuedExporter wraps a PRWExporter with an in-memory retry queue.
 type PRWQueuedExporter struct {
-	exporter   prwExporterInterface
-	queue      []*prwQueueEntry
-	maxSize    int
-	baseDelay  time.Duration
-	maxDelay   time.Duration
-	retryStop  chan struct{}
-	retryDone  chan struct{}
-	mu         sync.Mutex
+	exporter  prwExporterInterface
+	queue     []*prwQueueEntry
+	maxSize   int
+	baseDelay time.Duration
+	maxDelay  time.Duration
+	retryStop chan struct{}
+	retryDone chan struct{}
+	mu        sync.Mutex
 }
 
 // NewPRWQueued creates a new queued PRW exporter.

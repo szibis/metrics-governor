@@ -181,10 +181,10 @@ func TestGetEnvDuration(t *testing.T) {
 
 func TestExtractMetricValue(t *testing.T) {
 	tests := []struct {
-		name       string
+		name        string
 		metricsText string
-		metricName string
-		expected   int64
+		metricName  string
+		expected    int64
 	}{
 		{
 			name: "extracts simple metric",
@@ -228,10 +228,10 @@ test_metric 42`,
 			expected:   42,
 		},
 		{
-			name: "handles float values",
+			name:        "handles float values",
 			metricsText: `test_metric 123.456`,
-			metricName: "test_metric",
-			expected:   123,
+			metricName:  "test_metric",
+			expected:    123,
 		},
 		{
 			name: "handles real metrics-governor output",

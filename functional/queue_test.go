@@ -17,11 +17,11 @@ import (
 
 // failingExporter always fails
 type failingExporter struct {
-	mu         sync.Mutex
-	failCount  int
-	succeedAt  int // Start succeeding after this many failures
-	exports    []*colmetrics.ExportMetricsServiceRequest
-	closed     bool
+	mu        sync.Mutex
+	failCount int
+	succeedAt int // Start succeeding after this many failures
+	exports   []*colmetrics.ExportMetricsServiceRequest
+	closed    bool
 }
 
 func (f *failingExporter) Export(ctx context.Context, req *colmetrics.ExportMetricsServiceRequest) error {

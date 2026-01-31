@@ -17,7 +17,7 @@ type ShardKeyConfig struct {
 // ShardKeyBuilder constructs shard keys from metric name and attributes.
 type ShardKeyBuilder struct {
 	config     ShardKeyConfig
-	sortedKeys []string      // Pre-sorted label keys for deterministic ordering
+	sortedKeys []string        // Pre-sorted label keys for deterministic ordering
 	buf        strings.Builder // Reusable buffer for key building
 }
 

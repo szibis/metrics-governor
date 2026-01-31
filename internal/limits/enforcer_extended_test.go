@@ -393,7 +393,7 @@ func TestEnforcer_IsGroupDropped(t *testing.T) {
 	// Manually add a dropped group
 	enforcer.mu.Lock()
 	enforcer.droppedGroups["test-rule"] = make(map[string]time.Time)
-	enforcer.droppedGroups["test-rule"]["group-1"] = time.Now().Add(time.Hour) // Future expiry
+	enforcer.droppedGroups["test-rule"]["group-1"] = time.Now().Add(time.Hour)  // Future expiry
 	enforcer.droppedGroups["test-rule"]["group-2"] = time.Now().Add(-time.Hour) // Past expiry
 	enforcer.mu.Unlock()
 

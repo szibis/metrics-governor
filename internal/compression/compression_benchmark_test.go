@@ -26,7 +26,7 @@ func generateTestData(size int) []byte {
 			data[i] = byte(i%256 ^ (i/256)%256)
 		} else {
 			// Less compressible data
-			data[i] = byte((i * 7 + 13) % 256)
+			data[i] = byte((i*7 + 13) % 256)
 		}
 	}
 	return data

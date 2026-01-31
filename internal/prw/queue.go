@@ -235,23 +235,23 @@ func (q *Queue) drainQueue() {
 	}
 
 	for {
-		entry, err := q.sendQueue.Pop()
-		if err != nil || entry == nil {
+		entry, popErr := q.sendQueue.Pop()
+		if popErr != nil || entry == nil {
 			return
 		}
 
 		req := &WriteRequest{}
-		if err := req.Unmarshal(entry.Data); err != nil {
+		if unmarshalErr := req.Unmarshal(entry.Data); unmarshalErr != nil {
 			continue
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err = exporter.Export(ctx, req)
+		exportErr := exporter.Export(ctx, req)
 		cancel()
 
-		if err != nil {
+		if exportErr != nil {
 			logging.Warn("PRW drain failed", logging.F(
-				"error", err.Error(),
+				"error", exportErr.Error(),
 				"timeseries", len(req.Timeseries),
 			))
 		}

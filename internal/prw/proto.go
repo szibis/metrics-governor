@@ -12,10 +12,10 @@ import (
 
 // Protobuf wire types
 const (
-	wireVarint     = 0
-	wireFixed64    = 1
+	wireVarint      = 0
+	wireFixed64     = 1
 	wireLengthDelim = 2
-	wireFixed32    = 5
+	wireFixed32     = 5
 )
 
 // Protobuf field numbers for WriteRequest

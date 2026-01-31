@@ -58,8 +58,8 @@ func TestShardKeyBuilder_BuildKey(t *testing.T) {
 			want: "http_requests_total|service=api",
 		},
 		{
-			name:   "nil_timeseries",
-			labels: []string{"service"},
+			name:       "nil_timeseries",
+			labels:     []string{"service"},
 			timeseries: nil,
 			want:       "",
 		},

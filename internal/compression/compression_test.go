@@ -92,8 +92,8 @@ func TestCompressDecompress(t *testing.T) {
 	testData := []byte("Hello, World! This is some test data for compression testing. Let's make it a bit longer to see actual compression.")
 
 	tests := []struct {
-		name  string
-		cfg   Config
+		name string
+		cfg  Config
 	}{
 		{"none", Config{Type: TypeNone}},
 		{"gzip-default", Config{Type: TypeGzip, Level: LevelDefault}},

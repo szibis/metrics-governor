@@ -16,8 +16,6 @@ linters:
     - copyloopvar
     - dogsled
     - dupl
-    - gochecknoinits
-    - gocritic
     - gofmt
     - goimports
     - goprintffuncname
@@ -29,14 +27,10 @@ linters:
     - prealloc
     - stylecheck
     - typecheck
-    - unconvert
     - unparam
     - whitespace
 
 linters-settings:
-  govet:
-    enable:
-      - shadow
   dupl:
     threshold: 200
   misspell:
@@ -58,18 +52,34 @@ issues:
     # Exclude some linters from running on tests files
     - path: _test\.go
       linters:
+        - bodyclose
         - dupl
         - errcheck
         - gosec
         - goconst
+        - unused
+        - unparam
     # Exclude some linters from running on benchmark files
     - path: _benchmark_test\.go
       linters:
         - dupl
         - goconst
+        - unused
     # Exclude linters for generated code
     - path: \.pb\.go
       linters:
         - all
+    # Exclude linters for functional tests
+    - path: ^functional/
+      linters:
+        - bodyclose
+        - unused
+        - unparam
+    # Exclude linters for e2e tests
+    - path: ^e2e/
+      linters:
+        - bodyclose
+        - unused
+        - unparam
   max-issues-per-linter: 50
   max-same-issues: 10

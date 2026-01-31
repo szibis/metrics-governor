@@ -18,12 +18,12 @@ import (
 
 // bufferMockExporter tracks exports for testing
 type bufferMockExporter struct {
-	mu           sync.Mutex
-	exports      []*colmetrics.ExportMetricsServiceRequest
-	exportCount  int64
-	failNext     bool
-	exportDelay  time.Duration
-	closed       bool
+	mu          sync.Mutex
+	exports     []*colmetrics.ExportMetricsServiceRequest
+	exportCount int64
+	failNext    bool
+	exportDelay time.Duration
+	closed      bool
 }
 
 func (m *bufferMockExporter) Export(ctx context.Context, req *colmetrics.ExportMetricsServiceRequest) error {

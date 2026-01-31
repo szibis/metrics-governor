@@ -39,8 +39,8 @@ type VMTSDBStatusResponse struct {
 }
 
 type VMTSDBStatData struct {
-	TotalSeries          int64 `json:"totalSeries"`
-	TotalLabelValuePairs int64 `json:"totalLabelValuePairs"`
+	TotalSeries             int64 `json:"totalSeries"`
+	TotalLabelValuePairs    int64 `json:"totalLabelValuePairs"`
 	SeriesCountByMetricName []struct {
 		Name  string `json:"name"`
 		Count int64  `json:"value"`
@@ -80,15 +80,15 @@ var (
 
 // VerifierStats tracks verifier metrics for Prometheus
 type VerifierStats struct {
-	StartTime        time.Time
-	ChecksTotal      atomic.Int64
-	ChecksPassed     atomic.Int64
-	ChecksFailed     atomic.Int64
+	StartTime         time.Time
+	ChecksTotal       atomic.Int64
+	ChecksPassed      atomic.Int64
+	ChecksFailed      atomic.Int64
 	LastIngestionRate atomic.Int64 // Stored as rate * 100 for precision
 
 	// Last result values (protected by mutex)
-	mu               sync.RWMutex
-	lastResult       *VerificationResult
+	mu         sync.RWMutex
+	lastResult *VerificationResult
 }
 
 var verifierStats = &VerifierStats{}

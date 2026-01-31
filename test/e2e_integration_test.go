@@ -1,3 +1,4 @@
+//go:build integration
 // +build integration
 
 package test
@@ -31,9 +32,9 @@ const (
 	otelCollectorGRPC       = "localhost:4317"
 
 	// Test timeouts
-	testTimeout       = 60 * time.Second
-	pollInterval      = 5 * time.Second
-	dataFlowTimeout   = 120 * time.Second
+	testTimeout     = 60 * time.Second
+	pollInterval    = 5 * time.Second
+	dataFlowTimeout = 120 * time.Second
 )
 
 // TestE2E_ServiceHealth tests that all services are healthy

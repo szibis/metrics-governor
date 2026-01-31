@@ -13,13 +13,13 @@ import (
 
 // mockPRWExporter is a mock PRW exporter for testing.
 type mockPRWExporter struct {
-	exported     []*prw.WriteRequest
-	mu           sync.Mutex
-	failCount    int
-	failErr      error
-	exportCalls  int64
-	exportDelay  time.Duration
-	closed       bool
+	exported    []*prw.WriteRequest
+	mu          sync.Mutex
+	failCount   int
+	failErr     error
+	exportCalls int64
+	exportDelay time.Duration
+	closed      bool
 }
 
 func (m *mockPRWExporter) Export(ctx context.Context, req *prw.WriteRequest) error {

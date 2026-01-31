@@ -21,8 +21,8 @@ func TestFunctional_MetricsEndpoint(t *testing.T) {
 	testStats.TotalDatapointsSent.Store(500000)
 	testStats.TotalBatchesSent.Store(1000)
 	testStats.TotalErrors.Store(5)
-	testStats.MinBatchLatency.Store(1000000)      // 1ms in ns
-	testStats.MaxBatchLatency.Store(100000000)    // 100ms in ns
+	testStats.MinBatchLatency.Store(1000000)       // 1ms in ns
+	testStats.MaxBatchLatency.Store(100000000)     // 100ms in ns
 	testStats.TotalBatchLatency.Store(50000000000) // 50s total
 	testStats.HighCardinalityMetrics.Store(10000)
 	testStats.UniqueLabels.Store(10000)

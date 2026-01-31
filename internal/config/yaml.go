@@ -32,8 +32,8 @@ type GRPCReceiverYAMLConfig struct {
 
 // HTTPReceiverYAMLConfig holds HTTP receiver settings.
 type HTTPReceiverYAMLConfig struct {
-	Address string                  `yaml:"address"`
-	Server  HTTPServerYAMLConfig    `yaml:"server"`
+	Address string               `yaml:"address"`
+	Server  HTTPServerYAMLConfig `yaml:"server"`
 }
 
 // HTTPServerYAMLConfig holds HTTP server timeout settings.
@@ -65,16 +65,16 @@ type AuthServerYAMLConfig struct {
 
 // ExporterYAMLConfig holds exporter configuration.
 type ExporterYAMLConfig struct {
-	Endpoint    string                  `yaml:"endpoint"`
-	Protocol    string                  `yaml:"protocol"`
-	Insecure    *bool                   `yaml:"insecure"`
-	Timeout     Duration                `yaml:"timeout"`
-	TLS         TLSClientYAMLConfig     `yaml:"tls"`
-	Auth        AuthClientYAMLConfig    `yaml:"auth"`
-	Compression CompressionYAMLConfig   `yaml:"compression"`
-	HTTPClient  HTTPClientYAMLConfig    `yaml:"http_client"`
-	Queue       QueueYAMLConfig         `yaml:"queue"`
-	Sharding    ShardingYAMLConfig      `yaml:"sharding"`
+	Endpoint    string                `yaml:"endpoint"`
+	Protocol    string                `yaml:"protocol"`
+	Insecure    *bool                 `yaml:"insecure"`
+	Timeout     Duration              `yaml:"timeout"`
+	TLS         TLSClientYAMLConfig   `yaml:"tls"`
+	Auth        AuthClientYAMLConfig  `yaml:"auth"`
+	Compression CompressionYAMLConfig `yaml:"compression"`
+	HTTPClient  HTTPClientYAMLConfig  `yaml:"http_client"`
+	Queue       QueueYAMLConfig       `yaml:"queue"`
+	Sharding    ShardingYAMLConfig    `yaml:"sharding"`
 }
 
 // ShardingYAMLConfig holds sharding configuration.

@@ -32,11 +32,11 @@ func (m *mockResolver) LookupHost(ctx context.Context, host string) ([]string, e
 // mockShardBackend tracks metrics sent to each endpoint
 type mockShardBackend struct {
 	colmetrics.UnimplementedMetricsServiceServer
-	addr           string
-	mu             sync.Mutex
-	receivedCount  int64
+	addr            string
+	mu              sync.Mutex
+	receivedCount   int64
 	receivedMetrics []*metricspb.ResourceMetrics
-	server         *grpc.Server
+	server          *grpc.Server
 }
 
 func (m *mockShardBackend) Export(ctx context.Context, req *colmetrics.ExportMetricsServiceRequest) (*colmetrics.ExportMetricsServiceResponse, error) {

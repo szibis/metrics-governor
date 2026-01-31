@@ -62,14 +62,14 @@ type Config struct {
 	ExporterCompressionLevel int
 
 	// Exporter HTTP client settings
-	ExporterMaxIdleConns        int
-	ExporterMaxIdleConnsPerHost int
-	ExporterMaxConnsPerHost     int
-	ExporterIdleConnTimeout     time.Duration
-	ExporterDisableKeepAlives   bool
-	ExporterForceHTTP2          bool
+	ExporterMaxIdleConns         int
+	ExporterMaxIdleConnsPerHost  int
+	ExporterMaxConnsPerHost      int
+	ExporterIdleConnTimeout      time.Duration
+	ExporterDisableKeepAlives    bool
+	ExporterForceHTTP2           bool
 	ExporterHTTP2ReadIdleTimeout time.Duration
-	ExporterHTTP2PingTimeout    time.Duration
+	ExporterHTTP2PingTimeout     time.Duration
 
 	// Receiver HTTP server settings
 	ReceiverMaxRequestBodySize int64
@@ -93,16 +93,16 @@ type Config struct {
 	LimitsDryRun bool
 
 	// Queue settings
-	QueueEnabled          bool
-	QueuePath             string
-	QueueMaxSize          int
-	QueueMaxBytes         int64
-	QueueRetryInterval    time.Duration
-	QueueMaxRetryDelay    time.Duration
-	QueueFullBehavior     string
+	QueueEnabled           bool
+	QueuePath              string
+	QueueMaxSize           int
+	QueueMaxBytes          int64
+	QueueRetryInterval     time.Duration
+	QueueMaxRetryDelay     time.Duration
+	QueueFullBehavior      string
 	QueueTargetUtilization float64
-	QueueAdaptiveEnabled  bool
-	QueueCompactThreshold float64
+	QueueAdaptiveEnabled   bool
+	QueueCompactThreshold  float64
 
 	// Sharding settings
 	ShardingEnabled            bool
@@ -114,18 +114,18 @@ type Config struct {
 	ShardingFallbackOnEmpty    bool
 
 	// PRW Receiver settings
-	PRWListenAddr              string
-	PRWReceiverVersion         string
-	PRWReceiverTLSEnabled      bool
-	PRWReceiverTLSCertFile     string
-	PRWReceiverTLSKeyFile      string
-	PRWReceiverTLSCAFile       string
-	PRWReceiverTLSClientAuth   bool
-	PRWReceiverAuthEnabled     bool
-	PRWReceiverAuthBearerToken string
+	PRWListenAddr                 string
+	PRWReceiverVersion            string
+	PRWReceiverTLSEnabled         bool
+	PRWReceiverTLSCertFile        string
+	PRWReceiverTLSKeyFile         string
+	PRWReceiverTLSCAFile          string
+	PRWReceiverTLSClientAuth      bool
+	PRWReceiverAuthEnabled        bool
+	PRWReceiverAuthBearerToken    string
 	PRWReceiverMaxRequestBodySize int64
-	PRWReceiverReadTimeout     time.Duration
-	PRWReceiverWriteTimeout    time.Duration
+	PRWReceiverReadTimeout        time.Duration
+	PRWReceiverWriteTimeout       time.Duration
 
 	// PRW Exporter settings
 	PRWExporterEndpoint        string
@@ -143,9 +143,9 @@ type Config struct {
 	PRWExporterVMExtraLabels   string
 
 	// PRW Buffer settings
-	PRWBufferSize       int
-	PRWBatchSize        int
-	PRWFlushInterval    time.Duration
+	PRWBufferSize    int
+	PRWBatchSize     int
+	PRWFlushInterval time.Duration
 
 	// PRW Queue settings
 	PRWQueueEnabled       bool
@@ -1176,24 +1176,24 @@ func DefaultConfig() *Config {
 		ShardingVirtualNodes:        150,
 		ShardingFallbackOnEmpty:     true,
 		// PRW defaults
-		PRWListenAddr:           "", // Disabled by default
-		PRWReceiverVersion:      "auto",
-		PRWReceiverReadTimeout:  1 * time.Minute,
-		PRWReceiverWriteTimeout: 30 * time.Second,
-		PRWExporterEndpoint:     "", // Disabled by default
-		PRWExporterVersion:      "auto",
-		PRWExporterTimeout:      30 * time.Second,
+		PRWListenAddr:            "", // Disabled by default
+		PRWReceiverVersion:       "auto",
+		PRWReceiverReadTimeout:   1 * time.Minute,
+		PRWReceiverWriteTimeout:  30 * time.Second,
+		PRWExporterEndpoint:      "", // Disabled by default
+		PRWExporterVersion:       "auto",
+		PRWExporterTimeout:       30 * time.Second,
 		PRWExporterVMCompression: "snappy",
-		PRWBufferSize:           10000,
-		PRWBatchSize:            1000,
-		PRWFlushInterval:        5 * time.Second,
-		PRWQueueEnabled:         false,
-		PRWQueuePath:            "./prw-queue",
-		PRWQueueMaxSize:         10000,
-		PRWQueueMaxBytes:        1073741824, // 1GB
-		PRWQueueRetryInterval:   5 * time.Second,
-		PRWQueueMaxRetryDelay:   5 * time.Minute,
-		PRWLimitsEnabled:        false,
-		PRWLimitsDryRun:         true,
+		PRWBufferSize:            10000,
+		PRWBatchSize:             1000,
+		PRWFlushInterval:         5 * time.Second,
+		PRWQueueEnabled:          false,
+		PRWQueuePath:             "./prw-queue",
+		PRWQueueMaxSize:          10000,
+		PRWQueueMaxBytes:         1073741824, // 1GB
+		PRWQueueRetryInterval:    5 * time.Second,
+		PRWQueueMaxRetryDelay:    5 * time.Minute,
+		PRWLimitsEnabled:         false,
+		PRWLimitsDryRun:          true,
 	}
 }

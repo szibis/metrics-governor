@@ -34,7 +34,7 @@ type LimitRule struct {
 	Action LimitAction
 
 	// Compiled patterns
-	metricRegex *regexp.Regexp
+	metricRegex  *regexp.Regexp
 	labelRegexes map[string]*regexp.Regexp
 }
 
@@ -60,7 +60,7 @@ type LimitsEnforcer struct {
 	lastReset       time.Time
 
 	// Stats
-	totalDropped int64
+	totalDropped    int64
 	totalViolations int64
 }
 

@@ -57,10 +57,10 @@ const (
 
 // zstd levels
 const (
-	ZstdSpeedFastest          Level = 1
-	ZstdSpeedDefault          Level = 3
+	ZstdSpeedFastest           Level = 1
+	ZstdSpeedDefault           Level = 3
 	ZstdSpeedBetterCompression Level = 6
-	ZstdSpeedBestCompression  Level = 11
+	ZstdSpeedBestCompression   Level = 11
 )
 
 // Config holds compression configuration.
