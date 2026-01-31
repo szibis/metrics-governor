@@ -166,7 +166,7 @@ gh pr create \
 - [x] Helm chart version bumped (if applicable)
 
 ---
-After merge, the tag will be created and GitHub Actions will build the release." \
+After merge, the tag will be created automatically and GitHub Actions will build the release." \
   --base main
 
 # Enable auto-merge
@@ -184,20 +184,15 @@ PR: <PR_URL>
 
 The PR has auto-merge enabled. Once CI passes:
 1. PR will be automatically merged
-2. You'll need to create and push the tag manually:
-   git checkout main
-   git pull origin main
-   git tag -a "v<VERSION>" -m "Release v<VERSION> - <DESCRIPTION>"
-   git push origin "v<VERSION>"
-
-GitHub Actions will then:
-- Build binaries: darwin-arm64, linux-arm64, linux-amd64
-- Package Helm chart: metrics-governor-<VERSION>.tgz
-- Build & push Docker images:
-  - docker.io/slaskoss/metrics-governor:<VERSION>
-  - docker.io/slaskoss/metrics-governor:latest
-  - ghcr.io/szibis/metrics-governor:<VERSION>
-  - ghcr.io/szibis/metrics-governor:latest
+2. Tag v<VERSION> will be created automatically by GitHub Actions
+3. Release workflow will build and publish:
+   - Binaries: darwin-arm64, linux-arm64, linux-amd64
+   - Helm chart: metrics-governor-<VERSION>.tgz
+   - Docker images:
+     - docker.io/slaskoss/metrics-governor:<VERSION>
+     - docker.io/slaskoss/metrics-governor:latest
+     - ghcr.io/szibis/metrics-governor:<VERSION>
+     - ghcr.io/szibis/metrics-governor:latest
 
 Monitor: https://github.com/szibis/metrics-governor/actions
 ```

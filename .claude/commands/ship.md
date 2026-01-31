@@ -9,10 +9,10 @@ Ship release version **$ARGUMENTS** via Pull Request.
 ./scripts/release.sh 0.5.3 -m "Add new feature X"
 
 # Or via make
-make release-version VERSION=0.5.3 MESSAGE="Add new feature X"
+make ship VERSION=0.5.3 MESSAGE="Add new feature X"
 
 # Dry run to preview changes
-make release-dry-run VERSION=0.5.3 MESSAGE="Add new feature X"
+make ship-dry-run VERSION=0.5.3 MESSAGE="Add new feature X"
 ```
 
 ## What the Ship Process Does
@@ -24,23 +24,18 @@ make release-dry-run VERSION=0.5.3 MESSAGE="Add new feature X"
 5. **Runs tests** - Ensures all tests pass
 6. **Creates release branch** - `release/v<VERSION>`
 7. **Creates PR** - With auto-merge enabled
-8. **After merge** - You manually create and push the tag
 
-## After PR Merges
+## After PR Merges (Fully Automated)
 
 Once CI passes and the PR is merged:
 
-```bash
-git checkout main
-git pull origin main
-git tag -a "v<VERSION>" -m "Release v<VERSION> - <DESCRIPTION>"
-git push origin "v<VERSION>"
-```
+1. **Tag is created automatically** by the `tag-on-merge` workflow
+2. **Release workflow triggers** and builds:
+   - Binaries for darwin-arm64, linux-arm64, linux-amd64
+   - Helm chart package
+   - Docker images pushed to Docker Hub and GHCR
 
-GitHub Actions will then:
-- Build binaries for darwin-arm64, linux-arm64, linux-amd64
-- Package Helm chart
-- Build & push Docker images to Docker Hub and GHCR
+No manual steps required after PR merge!
 
 ## Troubleshooting
 

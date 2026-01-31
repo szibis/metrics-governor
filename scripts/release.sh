@@ -372,13 +372,7 @@ ${PR_COMMIT_LOG}
 - [x] Helm chart version bumped (if applicable)
 
 ---
-After merge, create and push the tag:
-\`\`\`bash
-git checkout main
-git pull origin main
-git tag -a \"v${VERSION}\" -m \"Release v${VERSION} - ${MESSAGE}\"
-git push origin \"v${VERSION}\"
-\`\`\`"
+After merge, the tag will be created automatically and GitHub Actions will build the release."
 
 if [[ "$DRY_RUN" == false ]]; then
     echo ""
@@ -414,21 +408,13 @@ if [[ "$DRY_RUN" == false ]]; then
     echo "PR: $PR_URL"
     echo ""
     echo "Once CI passes and PR is merged:"
-    echo "  1. git checkout main"
-    echo "  2. git pull origin main"
-    echo "  3. git tag -a \"v${VERSION}\" -m \"Release v${VERSION} - ${MESSAGE}\""
-    echo "  4. git push origin \"v${VERSION}\""
+    echo "  1. Tag v${VERSION} will be created automatically"
+    echo "  2. Release workflow will build and publish:"
+    echo "     - Binaries: darwin-arm64, linux-arm64, linux-amd64"
+    echo "     - Helm chart: metrics-governor-${VERSION}.tgz"
+    echo "     - Docker images to Docker Hub and GHCR"
     echo ""
-    echo -e "${YELLOW}NOTE: Touch your hardware security key when pushing the tag${NC}"
-    echo ""
-    echo "GitHub Actions will then:"
-    echo "  - Build binaries: darwin-arm64, linux-arm64, linux-amd64"
-    echo "  - Package Helm chart: metrics-governor-${VERSION}.tgz"
-    echo "  - Build & push Docker images:"
-    echo "    - docker.io/slaskoss/metrics-governor:${VERSION}"
-    echo "    - docker.io/slaskoss/metrics-governor:latest"
-    echo "    - ghcr.io/szibis/metrics-governor:${VERSION}"
-    echo "    - ghcr.io/szibis/metrics-governor:latest"
+    echo "Monitor: https://github.com/szibis/metrics-governor/actions"
     echo ""
 else
     info "[DRY RUN] Would push branch: $BRANCH_NAME"
