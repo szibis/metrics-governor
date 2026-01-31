@@ -31,11 +31,19 @@ type Collector struct {
 	totalDatapoints uint64
 	totalMetrics    uint64
 
-	// Export counters
+	// OTLP Export counters
 	datapointsReceived uint64
 	datapointsSent     uint64
 	batchesSent        uint64
 	exportErrors       uint64
+
+	// PRW counters
+	prwDatapointsReceived uint64
+	prwTimeseriesReceived uint64
+	prwDatapointsSent     uint64
+	prwTimeseriesSent     uint64
+	prwBatchesSent        uint64
+	prwExportErrors       uint64
 }
 
 // MetricStats holds stats for a single metric name.
@@ -245,6 +253,32 @@ func (c *Collector) RecordExportError() {
 	c.exportErrors++
 }
 
+// PRW Stats methods - implements prw.PRWStatsCollector interface
+
+// RecordPRWReceived records PRW datapoints and timeseries received.
+func (c *Collector) RecordPRWReceived(datapointCount, timeseriesCount int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.prwDatapointsReceived += uint64(datapointCount)
+	c.prwTimeseriesReceived += uint64(timeseriesCount)
+}
+
+// RecordPRWExport records a successful PRW export.
+func (c *Collector) RecordPRWExport(datapointCount, timeseriesCount int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.prwBatchesSent++
+	c.prwDatapointsSent += uint64(datapointCount)
+	c.prwTimeseriesSent += uint64(timeseriesCount)
+}
+
+// RecordPRWExportError records a failed PRW export attempt.
+func (c *Collector) RecordPRWExportError() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.prwExportErrors++
+}
+
 // StartPeriodicLogging starts logging global stats every interval.
 // It also resets cardinality tracking to prevent unbounded memory growth.
 func (c *Collector) StartPeriodicLogging(ctx context.Context, interval time.Duration) {
@@ -363,6 +397,31 @@ func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# HELP metrics_governor_export_errors_total Total number of export errors\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_export_errors_total counter\n")
 	fmt.Fprintf(w, "metrics_governor_export_errors_total %d\n", c.exportErrors)
+
+	// PRW stats
+	fmt.Fprintf(w, "# HELP metrics_governor_prw_datapoints_received_total Total PRW datapoints received\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_prw_datapoints_received_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_prw_datapoints_received_total %d\n", c.prwDatapointsReceived)
+
+	fmt.Fprintf(w, "# HELP metrics_governor_prw_timeseries_received_total Total PRW timeseries received\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_prw_timeseries_received_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_prw_timeseries_received_total %d\n", c.prwTimeseriesReceived)
+
+	fmt.Fprintf(w, "# HELP metrics_governor_prw_datapoints_sent_total Total PRW datapoints sent to backend\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_prw_datapoints_sent_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_prw_datapoints_sent_total %d\n", c.prwDatapointsSent)
+
+	fmt.Fprintf(w, "# HELP metrics_governor_prw_timeseries_sent_total Total PRW timeseries sent to backend\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_prw_timeseries_sent_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_prw_timeseries_sent_total %d\n", c.prwTimeseriesSent)
+
+	fmt.Fprintf(w, "# HELP metrics_governor_prw_batches_sent_total Total PRW batches exported\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_prw_batches_sent_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_prw_batches_sent_total %d\n", c.prwBatchesSent)
+
+	fmt.Fprintf(w, "# HELP metrics_governor_prw_export_errors_total Total PRW export errors\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_prw_export_errors_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_prw_export_errors_total %d\n", c.prwExportErrors)
 
 	// Per-metric stats
 	fmt.Fprintf(w, "# HELP metrics_governor_metric_datapoints_total Datapoints per metric name\n")
