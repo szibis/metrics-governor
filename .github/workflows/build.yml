@@ -31,6 +31,7 @@ jobs:
       coverage: ${{ steps.coverage.outputs.coverage }}
       total_tests: ${{ steps.count.outputs.total }}
       passed_tests: ${{ steps.count.outputs.passed }}
+      success: ${{ steps.count.outputs.success }}
     steps:
       - uses: actions/checkout@v4
 
@@ -69,19 +70,21 @@ jobs:
       - name: Count tests
         id: count
         run: |
-          # Count PASS, SKIP, and FAIL results
-          # SKIP counts as "passed" since they're not failures
-          PASSED=$(grep -c -e "^--- PASS:" unit-test-output.txt || echo "0")
-          SKIPPED=$(grep -c -e "^--- SKIP:" unit-test-output.txt || echo "0")
-          FAILED=$(grep -c -e "^--- FAIL:" unit-test-output.txt || echo "0")
-          # Total = all test results (PASS + SKIP + FAIL)
-          TOTAL=$((PASSED + SKIPPED + FAILED))
-          # For display, passed includes skipped tests
-          PASSED_DISPLAY=$((PASSED + SKIPPED))
-          echo "total=$TOTAL" >> $GITHUB_OUTPUT
-          echo "passed=$PASSED_DISPLAY" >> $GITHUB_OUTPUT
-          echo "failed=$FAILED" >> $GITHUB_OUTPUT
-          echo "Test counts: passed=$PASSED skipped=$SKIPPED failed=$FAILED total=$TOTAL"
+          # Count test results from package summaries (more reliable than individual test lines)
+          PASSED_PKGS=$(grep -c '^ok' unit-test-output.txt || echo "0")
+          FAILED_PKGS=$(grep -c '^FAIL' unit-test-output.txt || echo "0")
+          # Use exit code from test run to determine overall success
+          EXIT_CODE="${{ steps.unit_tests.outputs.exit_code }}"
+          if [ "$EXIT_CODE" = "0" ]; then
+            SUCCESS="true"
+          else
+            SUCCESS="false"
+          fi
+          echo "total=$PASSED_PKGS" >> $GITHUB_OUTPUT
+          echo "passed=$PASSED_PKGS" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED_PKGS" >> $GITHUB_OUTPUT
+          echo "success=$SUCCESS" >> $GITHUB_OUTPUT
+          echo "Test results: $PASSED_PKGS packages passed, $FAILED_PKGS failed, exit_code=$EXIT_CODE"
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
@@ -103,6 +106,7 @@ jobs:
     outputs:
       total_tests: ${{ steps.count.outputs.total }}
       passed_tests: ${{ steps.count.outputs.passed }}
+      success: ${{ steps.count.outputs.success }}
     steps:
       - uses: actions/checkout@v4
 
@@ -113,25 +117,32 @@ jobs:
           cache: true
 
       - name: Run functional tests
+        id: functional_tests
         run: |
           go test -v -race ./functional/... 2>&1 | tee functional-test-output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
 
       - name: Count tests
         id: count
         run: |
-          PASSED=$(grep -c -e "^--- PASS:" functional-test-output.txt || echo "0")
-          SKIPPED=$(grep -c -e "^--- SKIP:" functional-test-output.txt || echo "0")
-          FAILED=$(grep -c -e "^--- FAIL:" functional-test-output.txt || echo "0")
-          TOTAL=$((PASSED + SKIPPED + FAILED))
-          PASSED_DISPLAY=$((PASSED + SKIPPED))
-          echo "total=$TOTAL" >> $GITHUB_OUTPUT
-          echo "passed=$PASSED_DISPLAY" >> $GITHUB_OUTPUT
+          PASSED_PKGS=$(grep -c '^ok' functional-test-output.txt || echo "0")
+          FAILED_PKGS=$(grep -c '^FAIL' functional-test-output.txt || echo "0")
+          EXIT_CODE="${{ steps.functional_tests.outputs.exit_code }}"
+          if [ "$EXIT_CODE" = "0" ]; then
+            SUCCESS="true"
+          else
+            SUCCESS="false"
+          fi
+          echo "total=$PASSED_PKGS" >> $GITHUB_OUTPUT
+          echo "passed=$PASSED_PKGS" >> $GITHUB_OUTPUT
+          echo "success=$SUCCESS" >> $GITHUB_OUTPUT
 
   test-e2e:
     runs-on: ubuntu-latest
     outputs:
       total_tests: ${{ steps.count.outputs.total }}
       passed_tests: ${{ steps.count.outputs.passed }}
+      success: ${{ steps.count.outputs.success }}
     steps:
       - uses: actions/checkout@v4
 
@@ -142,19 +153,25 @@ jobs:
           cache: true
 
       - name: Run e2e tests
+        id: e2e_tests
         run: |
           go test -v -race ./e2e/... 2>&1 | tee e2e-test-output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
 
       - name: Count tests
         id: count
         run: |
-          PASSED=$(grep -c -e "^--- PASS:" e2e-test-output.txt || echo "0")
-          SKIPPED=$(grep -c -e "^--- SKIP:" e2e-test-output.txt || echo "0")
-          FAILED=$(grep -c -e "^--- FAIL:" e2e-test-output.txt || echo "0")
-          TOTAL=$((PASSED + SKIPPED + FAILED))
-          PASSED_DISPLAY=$((PASSED + SKIPPED))
-          echo "total=$TOTAL" >> $GITHUB_OUTPUT
-          echo "passed=$PASSED_DISPLAY" >> $GITHUB_OUTPUT
+          PASSED_PKGS=$(grep -c '^ok' e2e-test-output.txt || echo "0")
+          FAILED_PKGS=$(grep -c '^FAIL' e2e-test-output.txt || echo "0")
+          EXIT_CODE="${{ steps.e2e_tests.outputs.exit_code }}"
+          if [ "$EXIT_CODE" = "0" ]; then
+            SUCCESS="true"
+          else
+            SUCCESS="false"
+          fi
+          echo "total=$PASSED_PKGS" >> $GITHUB_OUTPUT
+          echo "passed=$PASSED_PKGS" >> $GITHUB_OUTPUT
+          echo "success=$SUCCESS" >> $GITHUB_OUTPUT
 
   lint:
     runs-on: ubuntu-latest
@@ -273,21 +290,31 @@ jobs:
 
           UNIT_TOTAL="${{ needs.test-unit.outputs.total_tests }}"
           UNIT_PASSED="${{ needs.test-unit.outputs.passed_tests }}"
+          UNIT_SUCCESS="${{ needs.test-unit.outputs.success }}"
           FUNC_TOTAL="${{ needs.test-functional.outputs.total_tests }}"
           FUNC_PASSED="${{ needs.test-functional.outputs.passed_tests }}"
+          FUNC_SUCCESS="${{ needs.test-functional.outputs.success }}"
           E2E_TOTAL="${{ needs.test-e2e.outputs.total_tests }}"
           E2E_PASSED="${{ needs.test-e2e.outputs.passed_tests }}"
+          E2E_SUCCESS="${{ needs.test-e2e.outputs.success }}"
 
           echo "=== Coverage Report Debug ==="
           echo "Unit coverage: $UNIT_COVERAGE%"
           echo "Base coverage: $BASE_COVERAGE%"
-          echo "Unit tests: $UNIT_PASSED/$UNIT_TOTAL"
-          echo "Functional tests: $FUNC_PASSED/$FUNC_TOTAL"
-          echo "E2E tests: $E2E_PASSED/$E2E_TOTAL"
+          echo "Unit tests: $UNIT_PASSED packages (success=$UNIT_SUCCESS)"
+          echo "Functional tests: $FUNC_PASSED packages (success=$FUNC_SUCCESS)"
+          echo "E2E tests: $E2E_PASSED packages (success=$E2E_SUCCESS)"
           echo "=============================="
 
           TOTAL_TESTS=$((UNIT_TOTAL + FUNC_TOTAL + E2E_TOTAL))
           TOTAL_PASSED=$((UNIT_PASSED + FUNC_PASSED + E2E_PASSED))
+
+          # Determine overall success
+          if [ "$UNIT_SUCCESS" = "true" ] && [ "$FUNC_SUCCESS" = "true" ] && [ "$E2E_SUCCESS" = "true" ]; then
+            ALL_SUCCESS="true"
+          else
+            ALL_SUCCESS="false"
+          fi
 
           # Calculate coverage delta
           if [ -n "$BASE_COVERAGE" ] && [ "$BASE_COVERAGE" != "0" ]; then
@@ -333,12 +360,12 @@ jobs:
 
           ### Test Results
 
-          | Suite | Passed | Total | Status |
-          |-------|--------|-------|--------|
-          | Unit Tests | ${UNIT_PASSED} | ${UNIT_TOTAL} | $( [ "$UNIT_PASSED" = "$UNIT_TOTAL" ] && echo "✅" || echo "❌" ) |
-          | Functional Tests | ${FUNC_PASSED} | ${FUNC_TOTAL} | $( [ "$FUNC_PASSED" = "$FUNC_TOTAL" ] && echo "✅" || echo "❌" ) |
-          | E2E Tests | ${E2E_PASSED} | ${E2E_TOTAL} | $( [ "$E2E_PASSED" = "$E2E_TOTAL" ] && echo "✅" || echo "❌" ) |
-          | **Total** | **${TOTAL_PASSED}** | **${TOTAL_TESTS}** | $( [ "$TOTAL_PASSED" = "$TOTAL_TESTS" ] && echo "✅" || echo "❌" ) |
+          | Suite | Packages | Status |
+          |-------|----------|--------|
+          | Unit Tests | ${UNIT_TOTAL} | $( [ "$UNIT_SUCCESS" = "true" ] && echo "✅ Passed" || echo "❌ Failed" ) |
+          | Functional Tests | ${FUNC_TOTAL} | $( [ "$FUNC_SUCCESS" = "true" ] && echo "✅ Passed" || echo "❌ Failed" ) |
+          | E2E Tests | ${E2E_TOTAL} | $( [ "$E2E_SUCCESS" = "true" ] && echo "✅ Passed" || echo "❌ Failed" ) |
+          | **Total** | **${TOTAL_TESTS}** | $( [ "$ALL_SUCCESS" = "true" ] && echo "✅ **All Passed**" || echo "❌ **Some Failed**" ) |
 
           <details>
           <summary>Coverage Thresholds</summary>
