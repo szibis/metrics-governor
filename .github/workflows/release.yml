@@ -73,6 +73,20 @@ jobs:
             echo ""
             echo "---"
             echo ""
+            echo "### Release Artifacts"
+            echo ""
+            echo "**Binaries:**"
+            echo "- \`metrics-governor-${VERSION}-darwin-arm64.tar.gz\` - macOS ARM64"
+            echo "- \`metrics-governor-${VERSION}-linux-arm64.tar.gz\` - Linux ARM64"
+            echo "- \`metrics-governor-${VERSION}-linux-amd64.tar.gz\` - Linux AMD64"
+            echo ""
+            echo "**Helm Chart:**"
+            echo "- \`metrics-governor-${VERSION_NUM}.tgz\` - Helm chart for Kubernetes deployment"
+            echo ""
+            echo "**Docker Images:**"
+            echo "- \`docker pull slaskoss/metrics-governor:${VERSION_NUM}\`"
+            echo "- \`docker pull ghcr.io/szibis/metrics-governor:${VERSION_NUM}\`"
+            echo ""
             echo "**Full Changelog:** $COMPARE_URL"
           } > "$CHANGELOG_FILE"
 
@@ -120,6 +134,22 @@ jobs:
           tar -czvf metrics-governor-${{ steps.version.outputs.VERSION }}-linux-arm64.tar.gz metrics-governor-linux-arm64
           tar -czvf metrics-governor-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz metrics-governor-linux-amd64
 
+      - name: Update Helm chart version
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          VERSION_NUM="${VERSION#v}"
+
+          # Update Chart.yaml with new version and appVersion
+          sed -i "s/^version:.*/version: ${VERSION_NUM}/" helm/metrics-governor/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION_NUM}\"/" helm/metrics-governor/Chart.yaml
+
+          echo "Updated Helm chart to version ${VERSION_NUM}"
+          cat helm/metrics-governor/Chart.yaml
+
+      - name: Package Helm chart
+        run: |
+          helm package helm/metrics-governor -d bin/
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -128,7 +158,16 @@ jobs:
             bin/metrics-governor-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz
             bin/metrics-governor-${{ steps.version.outputs.VERSION }}-linux-arm64.tar.gz
             bin/metrics-governor-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz
+            bin/metrics-governor-*.tgz
             bin/checksums.txt
+
+      - name: Commit Helm chart version update
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git add helm/metrics-governor/Chart.yaml
+          git diff --staged --quiet || git commit -m "Bump Helm chart to ${{ steps.version.outputs.VERSION }}"
+          git push origin HEAD:main || echo "Could not push Helm chart update"
 
       - name: Verify CHANGELOG.md has version entry
         run: |
