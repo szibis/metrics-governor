@@ -42,13 +42,11 @@ jobs:
             echo "EXISTS=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Extract description from PR body
+      - name: Extract description from PR title
         id: description
         if: steps.check_tag.outputs.EXISTS == 'false'
         run: |
-          # Get the first non-empty line after "## Release vX.Y.Z" that isn't a header
-          PR_BODY="${{ github.event.pull_request.body }}"
-          # Simple extraction: use PR title minus "Release "
+          # Extract description from PR title (after "Release vX.Y.Z")
           PR_TITLE="${{ github.event.pull_request.title }}"
           DESCRIPTION=$(echo "$PR_TITLE" | sed 's/^Release v[0-9.]*[[:space:]]*//' | sed 's/^-[[:space:]]*//')
           if [ -z "$DESCRIPTION" ]; then
