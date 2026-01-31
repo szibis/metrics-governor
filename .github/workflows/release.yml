@@ -36,7 +36,7 @@ jobs:
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ inputs.tag }}"
+            VERSION="${{ inputs.tag || '' }}"
           else
             VERSION="${GITHUB_REF#refs/tags/}"
           fi
@@ -44,8 +44,8 @@ jobs:
           echo "Building release for: $VERSION"
 
       - name: Checkout tag (for workflow_dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        run: git checkout ${{ inputs.tag }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: git checkout "${{ inputs.tag || '' }}"
 
       - name: Get previous tag
         id: prev_tag
