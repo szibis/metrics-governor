@@ -294,13 +294,17 @@ jobs:
             DELTA_STR="N/A"
           fi
 
-          # Determine coverage badge color (90% required)
-          if (( $(echo "$UNIT_COVERAGE >= 90" | bc -l) )); then
+          # Determine coverage badge color and threshold status (90% required)
+          THRESHOLD=90
+          if (( $(echo "$UNIT_COVERAGE >= $THRESHOLD" | bc -l) )); then
             COV_STATUS="🟢"
+            THRESHOLD_STATUS="✅ Passed"
           elif (( $(echo "$UNIT_COVERAGE >= 80" | bc -l) )); then
             COV_STATUS="🟡"
+            THRESHOLD_STATUS="⚠️ Below ${THRESHOLD}%"
           else
             COV_STATUS="🔴"
+            THRESHOLD_STATUS="❌ Below ${THRESHOLD}%"
           fi
 
           # Create comment
@@ -310,6 +314,7 @@ jobs:
           | Metric | Value | Status |
           |--------|-------|--------|
           | **Code Coverage** | ${UNIT_COVERAGE}% | ${COV_STATUS} |
+          | **Required Threshold** | ${THRESHOLD}% | ${THRESHOLD_STATUS} |
           | **Coverage Change** | ${DELTA_STR} | ${DELTA_ICON} |
           | **Base Coverage** | ${BASE_COVERAGE}% | - |
 
