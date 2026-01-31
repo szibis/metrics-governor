@@ -2,24 +2,57 @@
 
 <!-- Brief description of the changes in this PR -->
 
-## Changes
+### Changes
 
-<!-- Detailed list of changes -->
+#### 🔄 Breaking Changes
+<!-- List any breaking changes, or remove this section if none -->
+- None
 
+#### ✨ New Features
+<!-- List new features, or remove this section if none -->
 -
 
-## Test Plan
+#### 🐛 Bug Fixes
+<!-- List bug fixes, or remove this section if none -->
+-
 
-<!-- How were these changes tested? -->
+#### ✅ Test Coverage Improvements
+<!-- Update the table with actual coverage changes, or remove if not applicable -->
+
+| Package | Before | After | Change |
+|---------|--------|-------|--------|
+| package1 | X.X% | X.X% | 🟢 **+X.X%** |
+| package2 | X.X% | X.X% | 🔴 **-X.X%** |
+| package3 | — | X.X% | 🆕 |
+
+> 📈 **Total coverage change: ±X.X%**
+
+#### 🔧 CI/CD & Infrastructure
+<!-- List CI/CD or infrastructure changes, or remove if none -->
+-
+
+#### 📚 Documentation
+<!-- List documentation changes, or remove if none -->
+-
+
+### 📊 Stats
+
+<!-- Update with actual stats from: git diff --stat main..<branch> -->
+
+**X commits** · **X files changed**
+
+🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥 **+X,XXX −XXX**
+
+<sup>XX% additions, XX% deletions</sup>
+
+---
+
+## Test Plan
 
 - [ ] Unit tests pass (`make test-unit`)
 - [ ] Functional tests pass (`make test-functional`)
 - [ ] E2E tests pass (`make test-e2e`)
 - [ ] Benchmarks show no significant regression (`make bench`)
-
-## Benchmarks
-
-<!-- Include benchmark results if this PR affects performance-sensitive code -->
 
 <details>
 <summary>Benchmark Results</summary>
