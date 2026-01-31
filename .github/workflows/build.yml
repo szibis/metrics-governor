@@ -216,12 +216,13 @@ jobs:
         run: |
           # Store current branch/commit
           CURRENT_REF="${{ github.event.pull_request.head.sha }}"
+          echo "Current ref: $CURRENT_REF"
 
           # Fetch base branch
-          git fetch origin ${{ github.event.pull_request.base.ref }}
+          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
 
-          # Checkout base branch
-          git checkout ${{ github.event.pull_request.base.sha }}
+          # Checkout base branch (detached HEAD is fine)
+          git checkout ${{ github.event.pull_request.base.sha }} || git checkout origin/${{ github.event.pull_request.base.ref }}
 
           # Run coverage on base
           go test -coverprofile=coverage-base.out -covermode=atomic ./internal/... 2>/dev/null || true
@@ -229,12 +230,14 @@ jobs:
           if [ -f coverage-base.out ]; then
             BASE_COV=$(go tool cover -func=coverage-base.out | grep total | awk '{print $3}' | sed 's/%//')
             echo "coverage=$BASE_COV" >> $GITHUB_OUTPUT
+            echo "Base coverage: $BASE_COV%"
           else
             echo "coverage=0" >> $GITHUB_OUTPUT
+            echo "No base coverage file generated"
           fi
 
-          # Switch back to PR branch (fetch-depth: 0 ensures it's available)
-          git checkout $CURRENT_REF
+          # Switch back to PR branch
+          git checkout $CURRENT_REF || git checkout -
 
       - name: Generate coverage report
         id: report
@@ -248,6 +251,14 @@ jobs:
           FUNC_PASSED="${{ needs.test-functional.outputs.passed_tests }}"
           E2E_TOTAL="${{ needs.test-e2e.outputs.total_tests }}"
           E2E_PASSED="${{ needs.test-e2e.outputs.passed_tests }}"
+
+          echo "=== Coverage Report Debug ==="
+          echo "Unit coverage: $UNIT_COVERAGE%"
+          echo "Base coverage: $BASE_COVERAGE%"
+          echo "Unit tests: $UNIT_PASSED/$UNIT_TOTAL"
+          echo "Functional tests: $FUNC_PASSED/$FUNC_TOTAL"
+          echo "E2E tests: $E2E_PASSED/$E2E_TOTAL"
+          echo "=============================="
 
           TOTAL_TESTS=$((UNIT_TOTAL + FUNC_TOTAL + E2E_TOTAL))
           TOTAL_PASSED=$((UNIT_PASSED + FUNC_PASSED + E2E_PASSED))
@@ -318,7 +329,11 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const comment = fs.readFileSync('coverage-comment.md', 'utf8');
+            let comment = fs.readFileSync('coverage-comment.md', 'utf8');
+
+            // Add timestamp to track updates
+            const timestamp = new Date().toISOString();
+            comment += `\n\n_Last updated: ${timestamp}_`;
 
             // Find existing coverage comment
             const { data: comments } = await github.rest.issues.listComments({
@@ -328,11 +343,12 @@ jobs:
             });
 
             const botComment = comments.find(c =>
-              c.user.type === 'Bot' &&
+              c.user.login === 'github-actions[bot]' &&
               c.body.includes('Test Coverage Report')
             );
 
             if (botComment) {
+              console.log(`Updating existing comment ${botComment.id}`);
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -340,6 +356,7 @@ jobs:
                 body: comment
               });
             } else {
+              console.log('Creating new coverage comment');
               await github.rest.issues.createComment({
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
