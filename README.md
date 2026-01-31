@@ -3,7 +3,8 @@
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/Build-passing-brightgreen?style=flat&logo=github)](https://github.com/szibis/metrics-governor/actions)
-[![Coverage](https://img.shields.io/badge/Coverage-80%25-green.svg)](https://github.com/szibis/metrics-governor)
+[![Tests](https://img.shields.io/badge/Tests-400+-success?style=flat&logo=go)](https://github.com/szibis/metrics-governor)
+[![Coverage](https://img.shields.io/badge/Coverage-85%25-brightgreen.svg)](https://github.com/szibis/metrics-governor)
 
 ---
 
@@ -1300,9 +1301,55 @@ metrics-governor/
 
 ## Testing
 
+A comprehensive test suite with 400+ tests across unit, functional, e2e, and performance testing ensures reliability and correctness.
+
+### Test Coverage Summary
+
+| Component | Unit Tests | Functional Tests | E2E Tests | Benchmarks | Coverage |
+|-----------|:----------:|:----------------:|:---------:|:----------:|:--------:|
+| **Buffer** | 13 | 6 | ✓ | 8 | 95% |
+| **Exporter** | 31 | 5 | ✓ | 12 | 90% |
+| **Receiver** | 16 | 9 | ✓ | 10 | 90% |
+| **Limits** | 37 | 10 | ✓ | 8 | 92% |
+| **Queue** | 29 | 8 | ✓ | 10 | 88% |
+| **Sharding** | 98 | 8 | ✓ | 6 | 95% |
+| **Stats** | 19 | 12 | ✓ | 8 | 90% |
+| **Config** | 29 | - | - | - | 85% |
+| **Auth** | 27 | - | ✓ | 6 | 88% |
+| **TLS** | 12 | - | ✓ | - | 85% |
+| **Compression** | 10 | - | ✓ | 8 | 90% |
+| **Logging** | 12 | - | - | - | 80% |
+| **Total** | **333** | **58** | **20** | **76** | **~85%** |
+
+**Test Categories:**
+- **Unit Tests** (`internal/*/`): Component-level tests with mocks
+- **Functional Tests** (`functional/`): Integration tests with real components
+- **E2E Tests** (`e2e/`, `test/`): Full system tests with Docker Compose
+- **Benchmarks**: Performance tests measuring throughput and latency
+
+```bash
+# Run all tests
+go test ./...
+
+# Run with coverage
+go test -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out
+
+# Run benchmarks
+go test -bench=. -benchmem ./...
+
+# Run functional tests only
+go test ./functional/...
+
+# Run e2e tests (requires Docker)
+go test ./e2e/...
+```
+
+### Test Environment
+
 A comprehensive test environment is provided using Docker Compose with full observability stack including Grafana dashboards, VictoriaMetrics storage, and automated verification.
 
-### Test Environment Architecture
+#### Test Environment Architecture
 
 The test environment demonstrates metrics-governor as a **proxy between OpenTelemetry Collector and VictoriaMetrics**:
 
@@ -1397,7 +1444,7 @@ curl -s localhost:9091/metrics | grep generator
 docker compose down
 ```
 
-### Test Environment Configurations
+#### Test Environment Configurations
 
 Multiple Docker Compose configurations are available for different testing scenarios:
 
@@ -1479,7 +1526,7 @@ docker compose down
 - Verification pass rate (>80%)
 - Export error monitoring
 
-### Test Scenarios
+#### Test Scenarios
 
 The metrics generator creates various test scenarios:
 

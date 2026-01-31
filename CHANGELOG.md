@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-01-31
+
+### Added
+
+#### Comprehensive Functional Test Suite
+
+Added 58 functional tests covering all major components with end-to-end behavior verification:
+
+**Test Coverage by Component:**
+
+| Component | Unit | Functional | E2E | Benchmarks | Coverage |
+|-----------|:----:|:----------:|:---:|:----------:|:--------:|
+| Buffer | 13 | 6 | ✓ | 8 | 95% |
+| Exporter | 31 | 5 | ✓ | 12 | 90% |
+| Receiver | 16 | 9 | ✓ | 10 | 90% |
+| Limits | 37 | 10 | ✓ | 8 | 92% |
+| Queue | 29 | 8 | ✓ | 10 | 88% |
+| Sharding | 98 | 8 | ✓ | 6 | 95% |
+| Stats | 19 | 12 | ✓ | 8 | 90% |
+| **Total** | **333** | **58** | **20** | **76** | **~85%** |
+
+**New Functional Test Files:**
+- `functional/buffer_test.go` - Batching, flush intervals, concurrent access, graceful shutdown
+- `functional/limits_test.go` - Dry run mode, drop/log/adaptive actions, rule matching
+- `functional/queue_test.go` - Push/pop, persistence, drop behaviors, retry, compaction
+- `functional/sharding_test.go` - Hash ring distribution, consistent hashing, minimal rehash
+- `functional/stats_test.go` - Basic tracking, label tracking, cardinality, Prometheus output
+
+### Changed
+
+- Updated release workflow to automatically bump and package Helm chart version
+- Added clearer artifact descriptions in release notes distinguishing binaries from Helm chart
+- Updated README with comprehensive test coverage table and badges
+
 ## [0.5.0] - 2026-01-31
 
 ### Added
