@@ -14,6 +14,7 @@ import (
 	"github.com/slawomirskowron/metrics-governor/internal/exporter"
 	"github.com/slawomirskowron/metrics-governor/internal/limits"
 	"github.com/slawomirskowron/metrics-governor/internal/logging"
+	"github.com/slawomirskowron/metrics-governor/internal/prw"
 	"github.com/slawomirskowron/metrics-governor/internal/queue"
 	"github.com/slawomirskowron/metrics-governor/internal/receiver"
 	"github.com/slawomirskowron/metrics-governor/internal/stats"
@@ -201,6 +202,63 @@ func main() {
 	// Start periodic stats logging (every 30 seconds)
 	go statsCollector.StartPeriodicLogging(ctx, 30*time.Second)
 
+	// PRW Pipeline (separate from OTLP)
+	var prwReceiver *receiver.PRWReceiver
+	var prwBuffer *prw.Buffer
+	var prwExporter prw.PRWExporter
+	if cfg.PRWListenAddr != "" {
+		logging.Info("initializing PRW pipeline", logging.F(
+			"listen_addr", cfg.PRWListenAddr,
+			"exporter_endpoint", cfg.PRWExporterEndpoint,
+		))
+
+		// Create PRW exporter if configured
+		if cfg.PRWExporterEndpoint != "" {
+			prwExp, err := exporter.NewPRW(ctx, cfg.PRWExporterConfig())
+			if err != nil {
+				logging.Fatal("failed to create PRW exporter", logging.F("error", err.Error()))
+			}
+
+			// Wrap with queued exporter if enabled
+			if cfg.PRWQueueEnabled {
+				queuedPRWExp, queueErr := exporter.NewPRWQueued(prwExp, cfg.PRWQueueConfig())
+				if queueErr != nil {
+					logging.Fatal("failed to create PRW queued exporter", logging.F("error", queueErr.Error()))
+				}
+				prwExporter = queuedPRWExp
+				logging.Info("PRW queue enabled", logging.F(
+					"path", cfg.PRWQueuePath,
+					"max_size", cfg.PRWQueueMaxSize,
+				))
+			} else {
+				prwExporter = prwExp
+			}
+		}
+
+		// Create PRW log aggregator
+		prwLogAggregator := limits.NewLogAggregator(10 * time.Second)
+
+		// Create PRW buffer
+		prwBuffer = prw.NewBuffer(cfg.PRWBufferConfig(), prwExporter, nil, nil, prwLogAggregator)
+
+		// Start PRW buffer flush routine
+		go prwBuffer.Start(ctx)
+
+		// Create and start PRW receiver
+		prwReceiver = receiver.NewPRWWithConfig(cfg.PRWReceiverConfig(), prwBuffer)
+		go func() {
+			if err := prwReceiver.Start(); err != nil && err != http.ErrServerClosed {
+				logging.Error("PRW receiver error", logging.F("error", err.Error()))
+			}
+		}()
+
+		logging.Info("PRW pipeline started", logging.F(
+			"receiver_addr", cfg.PRWListenAddr,
+			"exporter_endpoint", cfg.PRWExporterEndpoint,
+			"vm_mode", cfg.PRWExporterVMMode,
+		))
+	}
+
 	logging.Info("metrics-governor started", logging.F(
 		"grpc_addr", cfg.GRPCListenAddr,
 		"http_addr", cfg.HTTPListenAddr,
@@ -212,6 +270,7 @@ func main() {
 		"limits_enabled", cfg.LimitsConfig != "",
 		"queue_enabled", cfg.QueueEnabled,
 		"sharding_enabled", cfg.ShardingEnabled,
+		"prw_enabled", cfg.PRWListenAddr != "",
 	))
 
 	// Wait for shutdown signal
@@ -224,9 +283,20 @@ func main() {
 	// Graceful shutdown
 	grpcReceiver.Stop()
 	httpReceiver.Stop(ctx)
+	if prwReceiver != nil {
+		prwReceiver.Stop(ctx)
+	}
 	statsServer.Shutdown(ctx)
 	cancel()
 	buf.Wait()
+	if prwBuffer != nil {
+		prwBuffer.Wait()
+	}
+
+	// Close PRW exporter
+	if prwExporter != nil {
+		prwExporter.Close()
+	}
 
 	// Stop log aggregators (flushes remaining entries)
 	bufferLogAggregator.Stop()

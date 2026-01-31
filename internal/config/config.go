@@ -10,6 +10,7 @@ import (
 	"github.com/slawomirskowron/metrics-governor/internal/auth"
 	"github.com/slawomirskowron/metrics-governor/internal/compression"
 	"github.com/slawomirskowron/metrics-governor/internal/exporter"
+	"github.com/slawomirskowron/metrics-governor/internal/prw"
 	"github.com/slawomirskowron/metrics-governor/internal/receiver"
 	tlspkg "github.com/slawomirskowron/metrics-governor/internal/tls"
 )
@@ -111,6 +112,53 @@ type Config struct {
 	ShardingLabels             string // Comma-separated
 	ShardingVirtualNodes       int
 	ShardingFallbackOnEmpty    bool
+
+	// PRW Receiver settings
+	PRWListenAddr              string
+	PRWReceiverVersion         string
+	PRWReceiverTLSEnabled      bool
+	PRWReceiverTLSCertFile     string
+	PRWReceiverTLSKeyFile      string
+	PRWReceiverTLSCAFile       string
+	PRWReceiverTLSClientAuth   bool
+	PRWReceiverAuthEnabled     bool
+	PRWReceiverAuthBearerToken string
+	PRWReceiverMaxRequestBodySize int64
+	PRWReceiverReadTimeout     time.Duration
+	PRWReceiverWriteTimeout    time.Duration
+
+	// PRW Exporter settings
+	PRWExporterEndpoint        string
+	PRWExporterVersion         string
+	PRWExporterTimeout         time.Duration
+	PRWExporterTLSEnabled      bool
+	PRWExporterTLSCertFile     string
+	PRWExporterTLSKeyFile      string
+	PRWExporterTLSCAFile       string
+	PRWExporterTLSSkipVerify   bool
+	PRWExporterAuthBearerToken string
+	PRWExporterVMMode          bool
+	PRWExporterVMCompression   string
+	PRWExporterVMShortEndpoint bool
+	PRWExporterVMExtraLabels   string
+
+	// PRW Buffer settings
+	PRWBufferSize       int
+	PRWBatchSize        int
+	PRWFlushInterval    time.Duration
+
+	// PRW Queue settings
+	PRWQueueEnabled       bool
+	PRWQueuePath          string
+	PRWQueueMaxSize       int
+	PRWQueueMaxBytes      int64
+	PRWQueueRetryInterval time.Duration
+	PRWQueueMaxRetryDelay time.Duration
+
+	// PRW Limits settings
+	PRWLimitsEnabled bool
+	PRWLimitsConfig  string
+	PRWLimitsDryRun  bool
 
 	// Flags
 	ShowHelp    bool
@@ -217,6 +265,53 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.ShardingLabels, "sharding-labels", "", "Comma-separated labels for shard key")
 	flag.IntVar(&cfg.ShardingVirtualNodes, "sharding-virtual-nodes", 150, "Virtual nodes per endpoint")
 	flag.BoolVar(&cfg.ShardingFallbackOnEmpty, "sharding-fallback-on-empty", true, "Use static endpoint if no DNS results")
+
+	// PRW Receiver flags
+	flag.StringVar(&cfg.PRWListenAddr, "prw-listen", "", "PRW receiver listen address (empty = disabled)")
+	flag.StringVar(&cfg.PRWReceiverVersion, "prw-receiver-version", "auto", "PRW protocol version: 1.0, 2.0, or auto")
+	flag.BoolVar(&cfg.PRWReceiverTLSEnabled, "prw-receiver-tls-enabled", false, "Enable TLS for PRW receiver")
+	flag.StringVar(&cfg.PRWReceiverTLSCertFile, "prw-receiver-tls-cert", "", "Path to PRW receiver TLS certificate file")
+	flag.StringVar(&cfg.PRWReceiverTLSKeyFile, "prw-receiver-tls-key", "", "Path to PRW receiver TLS private key file")
+	flag.StringVar(&cfg.PRWReceiverTLSCAFile, "prw-receiver-tls-ca", "", "Path to CA certificate for PRW client verification (mTLS)")
+	flag.BoolVar(&cfg.PRWReceiverTLSClientAuth, "prw-receiver-tls-client-auth", false, "Require client certificates for PRW (mTLS)")
+	flag.BoolVar(&cfg.PRWReceiverAuthEnabled, "prw-receiver-auth-enabled", false, "Enable authentication for PRW receiver")
+	flag.StringVar(&cfg.PRWReceiverAuthBearerToken, "prw-receiver-auth-bearer-token", "", "Bearer token for PRW receiver authentication")
+	flag.Int64Var(&cfg.PRWReceiverMaxRequestBodySize, "prw-receiver-max-body-size", 0, "Maximum PRW request body size (0 = no limit)")
+	flag.DurationVar(&cfg.PRWReceiverReadTimeout, "prw-receiver-read-timeout", 1*time.Minute, "PRW receiver read timeout")
+	flag.DurationVar(&cfg.PRWReceiverWriteTimeout, "prw-receiver-write-timeout", 30*time.Second, "PRW receiver write timeout")
+
+	// PRW Exporter flags
+	flag.StringVar(&cfg.PRWExporterEndpoint, "prw-exporter-endpoint", "", "PRW exporter endpoint (empty = disabled)")
+	flag.StringVar(&cfg.PRWExporterVersion, "prw-exporter-version", "auto", "PRW protocol version: 1.0, 2.0, or auto")
+	flag.DurationVar(&cfg.PRWExporterTimeout, "prw-exporter-timeout", 30*time.Second, "PRW exporter request timeout")
+	flag.BoolVar(&cfg.PRWExporterTLSEnabled, "prw-exporter-tls-enabled", false, "Enable TLS for PRW exporter")
+	flag.StringVar(&cfg.PRWExporterTLSCertFile, "prw-exporter-tls-cert", "", "Path to PRW client certificate (mTLS)")
+	flag.StringVar(&cfg.PRWExporterTLSKeyFile, "prw-exporter-tls-key", "", "Path to PRW client private key (mTLS)")
+	flag.StringVar(&cfg.PRWExporterTLSCAFile, "prw-exporter-tls-ca", "", "Path to CA certificate for PRW server verification")
+	flag.BoolVar(&cfg.PRWExporterTLSSkipVerify, "prw-exporter-tls-skip-verify", false, "Skip TLS certificate verification for PRW")
+	flag.StringVar(&cfg.PRWExporterAuthBearerToken, "prw-exporter-auth-bearer-token", "", "Bearer token for PRW exporter authentication")
+	flag.BoolVar(&cfg.PRWExporterVMMode, "prw-exporter-vm-mode", false, "Enable VictoriaMetrics mode for PRW exporter")
+	flag.StringVar(&cfg.PRWExporterVMCompression, "prw-exporter-vm-compression", "snappy", "PRW compression: snappy or zstd")
+	flag.BoolVar(&cfg.PRWExporterVMShortEndpoint, "prw-exporter-vm-short-endpoint", false, "Use /write instead of /api/v1/write")
+	flag.StringVar(&cfg.PRWExporterVMExtraLabels, "prw-exporter-vm-extra-labels", "", "Extra labels for VM (format: key1=val1,key2=val2)")
+
+	// PRW Buffer flags
+	flag.IntVar(&cfg.PRWBufferSize, "prw-buffer-size", 10000, "Maximum PRW requests to buffer")
+	flag.IntVar(&cfg.PRWBatchSize, "prw-batch-size", 1000, "Maximum batch size for PRW export")
+	flag.DurationVar(&cfg.PRWFlushInterval, "prw-flush-interval", 5*time.Second, "PRW buffer flush interval")
+
+	// PRW Queue flags
+	flag.BoolVar(&cfg.PRWQueueEnabled, "prw-queue-enabled", false, "Enable persistent queue for PRW retries")
+	flag.StringVar(&cfg.PRWQueuePath, "prw-queue-path", "./prw-queue", "PRW queue storage directory")
+	flag.IntVar(&cfg.PRWQueueMaxSize, "prw-queue-max-size", 10000, "Maximum PRW entries in queue")
+	flag.Int64Var(&cfg.PRWQueueMaxBytes, "prw-queue-max-bytes", 1073741824, "Maximum PRW queue size in bytes")
+	flag.DurationVar(&cfg.PRWQueueRetryInterval, "prw-queue-retry-interval", 5*time.Second, "PRW queue retry interval")
+	flag.DurationVar(&cfg.PRWQueueMaxRetryDelay, "prw-queue-max-retry-delay", 5*time.Minute, "Maximum PRW retry delay")
+
+	// PRW Limits flags
+	flag.BoolVar(&cfg.PRWLimitsEnabled, "prw-limits-enabled", false, "Enable limits for PRW pipeline")
+	flag.StringVar(&cfg.PRWLimitsConfig, "prw-limits-config", "", "Path to PRW limits configuration YAML")
+	flag.BoolVar(&cfg.PRWLimitsDryRun, "prw-limits-dry-run", true, "PRW limits dry run mode")
 
 	// Help and version
 	flag.BoolVar(&cfg.ShowHelp, "help", false, "Show help message")
@@ -452,6 +547,112 @@ func applyFlagOverrides(cfg *Config) {
 			}
 		case "sharding-fallback-on-empty":
 			cfg.ShardingFallbackOnEmpty = f.Value.String() == "true"
+		case "prw-listen":
+			cfg.PRWListenAddr = f.Value.String()
+		case "prw-receiver-version":
+			cfg.PRWReceiverVersion = f.Value.String()
+		case "prw-receiver-tls-enabled":
+			cfg.PRWReceiverTLSEnabled = f.Value.String() == "true"
+		case "prw-receiver-tls-cert":
+			cfg.PRWReceiverTLSCertFile = f.Value.String()
+		case "prw-receiver-tls-key":
+			cfg.PRWReceiverTLSKeyFile = f.Value.String()
+		case "prw-receiver-tls-ca":
+			cfg.PRWReceiverTLSCAFile = f.Value.String()
+		case "prw-receiver-tls-client-auth":
+			cfg.PRWReceiverTLSClientAuth = f.Value.String() == "true"
+		case "prw-receiver-auth-enabled":
+			cfg.PRWReceiverAuthEnabled = f.Value.String() == "true"
+		case "prw-receiver-auth-bearer-token":
+			cfg.PRWReceiverAuthBearerToken = f.Value.String()
+		case "prw-receiver-max-body-size":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int64); ok {
+					cfg.PRWReceiverMaxRequestBodySize = i
+				}
+			}
+		case "prw-receiver-read-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.PRWReceiverReadTimeout = d
+			}
+		case "prw-receiver-write-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.PRWReceiverWriteTimeout = d
+			}
+		case "prw-exporter-endpoint":
+			cfg.PRWExporterEndpoint = f.Value.String()
+		case "prw-exporter-version":
+			cfg.PRWExporterVersion = f.Value.String()
+		case "prw-exporter-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.PRWExporterTimeout = d
+			}
+		case "prw-exporter-tls-enabled":
+			cfg.PRWExporterTLSEnabled = f.Value.String() == "true"
+		case "prw-exporter-tls-cert":
+			cfg.PRWExporterTLSCertFile = f.Value.String()
+		case "prw-exporter-tls-key":
+			cfg.PRWExporterTLSKeyFile = f.Value.String()
+		case "prw-exporter-tls-ca":
+			cfg.PRWExporterTLSCAFile = f.Value.String()
+		case "prw-exporter-tls-skip-verify":
+			cfg.PRWExporterTLSSkipVerify = f.Value.String() == "true"
+		case "prw-exporter-auth-bearer-token":
+			cfg.PRWExporterAuthBearerToken = f.Value.String()
+		case "prw-exporter-vm-mode":
+			cfg.PRWExporterVMMode = f.Value.String() == "true"
+		case "prw-exporter-vm-compression":
+			cfg.PRWExporterVMCompression = f.Value.String()
+		case "prw-exporter-vm-short-endpoint":
+			cfg.PRWExporterVMShortEndpoint = f.Value.String() == "true"
+		case "prw-exporter-vm-extra-labels":
+			cfg.PRWExporterVMExtraLabels = f.Value.String()
+		case "prw-buffer-size":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.PRWBufferSize = i
+				}
+			}
+		case "prw-batch-size":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.PRWBatchSize = i
+				}
+			}
+		case "prw-flush-interval":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.PRWFlushInterval = d
+			}
+		case "prw-queue-enabled":
+			cfg.PRWQueueEnabled = f.Value.String() == "true"
+		case "prw-queue-path":
+			cfg.PRWQueuePath = f.Value.String()
+		case "prw-queue-max-size":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.PRWQueueMaxSize = i
+				}
+			}
+		case "prw-queue-max-bytes":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int64); ok {
+					cfg.PRWQueueMaxBytes = i
+				}
+			}
+		case "prw-queue-retry-interval":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.PRWQueueRetryInterval = d
+			}
+		case "prw-queue-max-retry-delay":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.PRWQueueMaxRetryDelay = d
+			}
+		case "prw-limits-enabled":
+			cfg.PRWLimitsEnabled = f.Value.String() == "true"
+		case "prw-limits-config":
+			cfg.PRWLimitsConfig = f.Value.String()
+		case "prw-limits-dry-run":
+			cfg.PRWLimitsDryRun = f.Value.String() == "true"
 		case "help", "h":
 			cfg.ShowHelp = f.Value.String() == "true"
 		case "version", "v":
@@ -634,6 +835,94 @@ func (c *Config) ShardingConfig() ShardingConfig {
 		Labels:             labels,
 		VirtualNodes:       c.ShardingVirtualNodes,
 		FallbackOnEmpty:    c.ShardingFallbackOnEmpty,
+	}
+}
+
+// PRWReceiverConfig returns the PRW receiver configuration.
+func (c *Config) PRWReceiverConfig() receiver.PRWConfig {
+	version, _ := prw.ParseVersion(c.PRWReceiverVersion)
+	return receiver.PRWConfig{
+		Addr:    c.PRWListenAddr,
+		Version: version,
+		TLS: tlspkg.ServerConfig{
+			Enabled:    c.PRWReceiverTLSEnabled,
+			CertFile:   c.PRWReceiverTLSCertFile,
+			KeyFile:    c.PRWReceiverTLSKeyFile,
+			CAFile:     c.PRWReceiverTLSCAFile,
+			ClientAuth: c.PRWReceiverTLSClientAuth,
+		},
+		Auth: auth.ServerConfig{
+			Enabled:     c.PRWReceiverAuthEnabled,
+			BearerToken: c.PRWReceiverAuthBearerToken,
+		},
+		Server: receiver.PRWServerConfig{
+			MaxRequestBodySize: c.PRWReceiverMaxRequestBodySize,
+			ReadTimeout:        c.PRWReceiverReadTimeout,
+			WriteTimeout:       c.PRWReceiverWriteTimeout,
+			ReadHeaderTimeout:  c.PRWReceiverReadTimeout,
+			IdleTimeout:        c.PRWReceiverReadTimeout,
+			KeepAlivesEnabled:  true,
+		},
+	}
+}
+
+// PRWExporterConfig returns the PRW exporter configuration.
+func (c *Config) PRWExporterConfig() exporter.PRWExporterConfig {
+	version, _ := prw.ParseVersion(c.PRWExporterVersion)
+
+	// Parse extra labels
+	extraLabels := make(map[string]string)
+	if c.PRWExporterVMExtraLabels != "" {
+		pairs := strings.Split(c.PRWExporterVMExtraLabels, ",")
+		for _, pair := range pairs {
+			kv := strings.SplitN(pair, "=", 2)
+			if len(kv) == 2 {
+				extraLabels[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+			}
+		}
+	}
+
+	return exporter.PRWExporterConfig{
+		Endpoint: c.PRWExporterEndpoint,
+		Version:  version,
+		Timeout:  c.PRWExporterTimeout,
+		TLS: tlspkg.ClientConfig{
+			Enabled:            c.PRWExporterTLSEnabled,
+			CertFile:           c.PRWExporterTLSCertFile,
+			KeyFile:            c.PRWExporterTLSKeyFile,
+			CAFile:             c.PRWExporterTLSCAFile,
+			InsecureSkipVerify: c.PRWExporterTLSSkipVerify,
+		},
+		Auth: auth.ClientConfig{
+			BearerToken: c.PRWExporterAuthBearerToken,
+		},
+		VMMode: c.PRWExporterVMMode,
+		VMOptions: exporter.VMRemoteWriteOptions{
+			ExtraLabels:      extraLabels,
+			Compression:      c.PRWExporterVMCompression,
+			UseShortEndpoint: c.PRWExporterVMShortEndpoint,
+		},
+		HTTPClient: c.ExporterHTTPClientConfig(),
+	}
+}
+
+// PRWBufferConfig returns the PRW buffer configuration.
+func (c *Config) PRWBufferConfig() prw.BufferConfig {
+	return prw.BufferConfig{
+		MaxSize:       c.PRWBufferSize,
+		MaxBatchSize:  c.PRWBatchSize,
+		FlushInterval: c.PRWFlushInterval,
+	}
+}
+
+// PRWQueueConfig returns the PRW queue configuration.
+func (c *Config) PRWQueueConfig() exporter.PRWQueueConfig {
+	return exporter.PRWQueueConfig{
+		Path:          c.PRWQueuePath,
+		MaxSize:       c.PRWQueueMaxSize,
+		MaxBytes:      c.PRWQueueMaxBytes,
+		RetryInterval: c.PRWQueueRetryInterval,
+		MaxRetryDelay: c.PRWQueueMaxRetryDelay,
 	}
 }
 
@@ -886,5 +1175,25 @@ func DefaultConfig() *Config {
 		ShardingDNSTimeout:          5 * time.Second,
 		ShardingVirtualNodes:        150,
 		ShardingFallbackOnEmpty:     true,
+		// PRW defaults
+		PRWListenAddr:           "", // Disabled by default
+		PRWReceiverVersion:      "auto",
+		PRWReceiverReadTimeout:  1 * time.Minute,
+		PRWReceiverWriteTimeout: 30 * time.Second,
+		PRWExporterEndpoint:     "", // Disabled by default
+		PRWExporterVersion:      "auto",
+		PRWExporterTimeout:      30 * time.Second,
+		PRWExporterVMCompression: "snappy",
+		PRWBufferSize:           10000,
+		PRWBatchSize:            1000,
+		PRWFlushInterval:        5 * time.Second,
+		PRWQueueEnabled:         false,
+		PRWQueuePath:            "./prw-queue",
+		PRWQueueMaxSize:         10000,
+		PRWQueueMaxBytes:        1073741824, // 1GB
+		PRWQueueRetryInterval:   5 * time.Second,
+		PRWQueueMaxRetryDelay:   5 * time.Minute,
+		PRWLimitsEnabled:        false,
+		PRWLimitsDryRun:         true,
 	}
 }

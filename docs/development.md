@@ -124,16 +124,27 @@ dlv debug ./cmd/metrics-governor -- -config config.yaml
 
 ## Release Process
 
-Releases are automated via GitHub Actions. To create a release:
+Releases are automated via GitHub Actions. Use the release script to create a release:
 
 ```bash
-/release <version> <description>
-# Example: /release 0.5.5 Add limiting metadata labels
+./scripts/release.sh <version> -m "Release message"
+
+# Examples:
+./scripts/release.sh 0.5.5 -m "Add new feature X"
+./scripts/release.sh 1.0.0 -m "Major release"
+./scripts/release.sh 0.5.6 -m "Bug fixes" --dry-run  # Preview changes
 ```
 
-This will:
-1. Update test coverage in README
-2. Update CHANGELOG
-3. Create git tag
-4. Push to GitHub
-5. Trigger CI/CD to build binaries and Docker images
+The script will:
+1. Verify prerequisites (main branch, clean working dir, tag doesn't exist)
+2. Count and update test coverage in README
+3. Update CHANGELOG with version entry
+4. Update Helm chart version (if helm/ has changes)
+5. Run tests to verify
+6. Commit changes and create git tag
+7. Optionally push to GitHub (prompts for confirmation)
+
+After pushing, GitHub Actions will:
+- Build binaries: darwin-arm64, linux-arm64, linux-amd64
+- Package Helm chart
+- Build and push Docker images to Docker Hub and GHCR

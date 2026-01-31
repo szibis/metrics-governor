@@ -54,9 +54,18 @@ stats:
 
 limits:
   dry_run: false
+
+# Prometheus Remote Write (optional)
+prw:
+  receiver:
+    address: ":9090"
+  exporter:
+    endpoint: "http://victoriametrics:8428"
 ```
 
 See [examples/config.yaml](../examples/config.yaml) for a complete example with all options documented.
+
+For Prometheus Remote Write configuration, see [prw.md](./prw.md).
 
 Additional example configs:
 - [examples/config-minimal.yaml](../examples/config-minimal.yaml) - Minimal configuration
@@ -183,4 +192,14 @@ metrics-governor -limits-config /etc/metrics-governor/limits.yaml
 
 # Enable limits enforcement with actual drop/sample
 metrics-governor -limits-config /etc/metrics-governor/limits.yaml -limits-dry-run=false
+
+# Enable Prometheus Remote Write pipeline
+metrics-governor -prw-listen :9090 -prw-exporter-endpoint http://victoriametrics:8428
+
+# Run both OTLP and PRW pipelines
+metrics-governor \
+  -grpc-listen :4317 \
+  -exporter-endpoint otel-collector:4317 \
+  -prw-listen :9090 \
+  -prw-exporter-endpoint http://victoriametrics:8428
 ```
