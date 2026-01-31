@@ -36,39 +36,81 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Create exporter with full configuration
-	exp, err := exporter.New(ctx, cfg.ExporterConfig())
-	if err != nil {
-		logging.Fatal("failed to create exporter", logging.F("error", err.Error()))
-	}
+	// Create exporter (either sharded or single endpoint)
+	var finalExporter exporter.Exporter
 
-	// Wrap with queued exporter if enabled
-	var finalExporter exporter.Exporter = exp
-	if cfg.QueueEnabled {
-		queueCfg := queue.Config{
-			Path:              cfg.QueuePath,
-			MaxSize:           cfg.QueueMaxSize,
-			MaxBytes:          cfg.QueueMaxBytes,
-			RetryInterval:     cfg.QueueRetryInterval,
-			MaxRetryDelay:     cfg.QueueMaxRetryDelay,
-			FullBehavior:      queue.FullBehavior(cfg.QueueFullBehavior),
-			TargetUtilization: cfg.QueueTargetUtilization,
-			AdaptiveEnabled:   cfg.QueueAdaptiveEnabled,
-			CompactThreshold:  cfg.QueueCompactThreshold,
+	if cfg.ShardingEnabled {
+		// Sharding mode: ShardedExporter manages multiple endpoints
+		shardingCfg := cfg.ShardingConfig()
+		shardedCfg := exporter.ShardedExporterConfig{
+			BaseConfig:         cfg.ExporterConfig(),
+			HeadlessService:    shardingCfg.HeadlessService,
+			DNSRefreshInterval: shardingCfg.DNSRefreshInterval,
+			DNSTimeout:         shardingCfg.DNSTimeout,
+			Labels:             shardingCfg.Labels,
+			VirtualNodes:       shardingCfg.VirtualNodes,
+			FallbackOnEmpty:    shardingCfg.FallbackOnEmpty,
+			QueueEnabled:       cfg.QueueEnabled,
+			QueueConfig: queue.Config{
+				Path:              cfg.QueuePath,
+				MaxSize:           cfg.QueueMaxSize,
+				MaxBytes:          cfg.QueueMaxBytes,
+				RetryInterval:     cfg.QueueRetryInterval,
+				MaxRetryDelay:     cfg.QueueMaxRetryDelay,
+				FullBehavior:      queue.FullBehavior(cfg.QueueFullBehavior),
+				TargetUtilization: cfg.QueueTargetUtilization,
+				AdaptiveEnabled:   cfg.QueueAdaptiveEnabled,
+				CompactThreshold:  cfg.QueueCompactThreshold,
+			},
 		}
 
-		queuedExp, queueErr := exporter.NewQueued(exp, queueCfg)
-		if queueErr != nil {
-			logging.Fatal("failed to create queued exporter", logging.F("error", queueErr.Error()))
+		shardedExp, err := exporter.NewSharded(ctx, shardedCfg)
+		if err != nil {
+			logging.Fatal("failed to create sharded exporter", logging.F("error", err.Error()))
 		}
-		finalExporter = queuedExp
-		logging.Info("queue enabled", logging.F(
-			"path", cfg.QueuePath,
-			"max_size", cfg.QueueMaxSize,
-			"max_bytes", cfg.QueueMaxBytes,
-			"retry_interval", cfg.QueueRetryInterval,
-			"full_behavior", cfg.QueueFullBehavior,
+		finalExporter = shardedExp
+
+		logging.Info("sharded exporter initialized", logging.F(
+			"headless_service", shardingCfg.HeadlessService,
+			"labels", cfg.ShardingLabels,
+			"virtual_nodes", shardingCfg.VirtualNodes,
+			"queue_enabled", cfg.QueueEnabled,
 		))
+	} else {
+		// Single endpoint mode
+		exp, err := exporter.New(ctx, cfg.ExporterConfig())
+		if err != nil {
+			logging.Fatal("failed to create exporter", logging.F("error", err.Error()))
+		}
+		finalExporter = exp
+
+		// Wrap with queued exporter if enabled
+		if cfg.QueueEnabled {
+			queueCfg := queue.Config{
+				Path:              cfg.QueuePath,
+				MaxSize:           cfg.QueueMaxSize,
+				MaxBytes:          cfg.QueueMaxBytes,
+				RetryInterval:     cfg.QueueRetryInterval,
+				MaxRetryDelay:     cfg.QueueMaxRetryDelay,
+				FullBehavior:      queue.FullBehavior(cfg.QueueFullBehavior),
+				TargetUtilization: cfg.QueueTargetUtilization,
+				AdaptiveEnabled:   cfg.QueueAdaptiveEnabled,
+				CompactThreshold:  cfg.QueueCompactThreshold,
+			}
+
+			queuedExp, queueErr := exporter.NewQueued(exp, queueCfg)
+			if queueErr != nil {
+				logging.Fatal("failed to create queued exporter", logging.F("error", queueErr.Error()))
+			}
+			finalExporter = queuedExp
+			logging.Info("queue enabled", logging.F(
+				"path", cfg.QueuePath,
+				"max_size", cfg.QueueMaxSize,
+				"max_bytes", cfg.QueueMaxBytes,
+				"retry_interval", cfg.QueueRetryInterval,
+				"full_behavior", cfg.QueueFullBehavior,
+			))
+		}
 	}
 	defer finalExporter.Close()
 
@@ -169,6 +211,7 @@ func main() {
 		"receiver_auth", cfg.ReceiverAuthEnabled,
 		"limits_enabled", cfg.LimitsConfig != "",
 		"queue_enabled", cfg.QueueEnabled,
+		"sharding_enabled", cfg.ShardingEnabled,
 	))
 
 	// Wait for shutdown signal

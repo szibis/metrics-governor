@@ -103,6 +103,15 @@ type Config struct {
 	QueueAdaptiveEnabled  bool
 	QueueCompactThreshold float64
 
+	// Sharding settings
+	ShardingEnabled            bool
+	ShardingHeadlessService    string
+	ShardingDNSRefreshInterval time.Duration
+	ShardingDNSTimeout         time.Duration
+	ShardingLabels             string // Comma-separated
+	ShardingVirtualNodes       int
+	ShardingFallbackOnEmpty    bool
+
 	// Flags
 	ShowHelp    bool
 	ShowVersion bool
@@ -199,6 +208,15 @@ func ParseFlags() *Config {
 	flag.Float64Var(&cfg.QueueTargetUtilization, "queue-target-utilization", 0.85, "Target disk utilization for adaptive sizing (0.0-1.0)")
 	flag.BoolVar(&cfg.QueueAdaptiveEnabled, "queue-adaptive-enabled", true, "Enable adaptive queue sizing based on disk space")
 	flag.Float64Var(&cfg.QueueCompactThreshold, "queue-compact-threshold", 0.5, "Ratio of consumed entries before compaction (0.0-1.0)")
+
+	// Sharding flags
+	flag.BoolVar(&cfg.ShardingEnabled, "sharding-enabled", false, "Enable consistent sharding")
+	flag.StringVar(&cfg.ShardingHeadlessService, "sharding-headless-service", "", "K8s headless service DNS name")
+	flag.DurationVar(&cfg.ShardingDNSRefreshInterval, "sharding-dns-refresh-interval", 30*time.Second, "DNS refresh interval")
+	flag.DurationVar(&cfg.ShardingDNSTimeout, "sharding-dns-timeout", 5*time.Second, "DNS lookup timeout")
+	flag.StringVar(&cfg.ShardingLabels, "sharding-labels", "", "Comma-separated labels for shard key")
+	flag.IntVar(&cfg.ShardingVirtualNodes, "sharding-virtual-nodes", 150, "Virtual nodes per endpoint")
+	flag.BoolVar(&cfg.ShardingFallbackOnEmpty, "sharding-fallback-on-empty", true, "Use static endpoint if no DNS results")
 
 	// Help and version
 	flag.BoolVar(&cfg.ShowHelp, "help", false, "Show help message")
@@ -412,6 +430,28 @@ func applyFlagOverrides(cfg *Config) {
 					cfg.QueueCompactThreshold = fv
 				}
 			}
+		case "sharding-enabled":
+			cfg.ShardingEnabled = f.Value.String() == "true"
+		case "sharding-headless-service":
+			cfg.ShardingHeadlessService = f.Value.String()
+		case "sharding-dns-refresh-interval":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.ShardingDNSRefreshInterval = d
+			}
+		case "sharding-dns-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.ShardingDNSTimeout = d
+			}
+		case "sharding-labels":
+			cfg.ShardingLabels = f.Value.String()
+		case "sharding-virtual-nodes":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.ShardingVirtualNodes = i
+				}
+			}
+		case "sharding-fallback-on-empty":
+			cfg.ShardingFallbackOnEmpty = f.Value.String() == "true"
 		case "help", "h":
 			cfg.ShowHelp = f.Value.String() == "true"
 		case "version", "v":
@@ -567,6 +607,36 @@ type QueueConfig struct {
 	CompactThreshold  float64
 }
 
+// ShardingConfig holds sharding configuration.
+type ShardingConfig struct {
+	Enabled            bool
+	HeadlessService    string
+	DNSRefreshInterval time.Duration
+	DNSTimeout         time.Duration
+	Labels             []string
+	VirtualNodes       int
+	FallbackOnEmpty    bool
+}
+
+// ShardingConfig returns the sharding configuration.
+func (c *Config) ShardingConfig() ShardingConfig {
+	var labels []string
+	if c.ShardingLabels != "" {
+		for _, l := range strings.Split(c.ShardingLabels, ",") {
+			labels = append(labels, strings.TrimSpace(l))
+		}
+	}
+	return ShardingConfig{
+		Enabled:            c.ShardingEnabled,
+		HeadlessService:    c.ShardingHeadlessService,
+		DNSRefreshInterval: c.ShardingDNSRefreshInterval,
+		DNSTimeout:         c.ShardingDNSTimeout,
+		Labels:             labels,
+		VirtualNodes:       c.ShardingVirtualNodes,
+		FallbackOnEmpty:    c.ShardingFallbackOnEmpty,
+	}
+}
+
 // PrintUsage prints the help message.
 func PrintUsage() {
 	fmt.Fprintf(os.Stderr, `metrics-governor - OTLP metrics proxy with buffering
@@ -669,6 +739,15 @@ OPTIONS:
         -queue-target-utilization <n>   Target disk utilization for adaptive sizing (default: 0.85)
         -queue-adaptive-enabled         Enable adaptive queue sizing based on disk space (default: true)
         -queue-compact-threshold <n>    Ratio of consumed entries before compaction (default: 0.5)
+
+    Sharding (Consistent Hash Distribution):
+        -sharding-enabled                Enable consistent sharding (default: false)
+        -sharding-headless-service       K8s headless service DNS name (e.g., vminsert-headless.monitoring.svc:8428)
+        -sharding-dns-refresh-interval   DNS refresh interval (default: 30s)
+        -sharding-dns-timeout            DNS lookup timeout (default: 5s)
+        -sharding-labels                 Comma-separated labels for shard key (e.g., service,env,cluster)
+        -sharding-virtual-nodes          Virtual nodes per endpoint (default: 150)
+        -sharding-fallback-on-empty      Use static endpoint if no DNS results (default: true)
 
     General:
         -h, -help                        Show this help message
@@ -802,5 +881,10 @@ func DefaultConfig() *Config {
 		QueueTargetUtilization:      0.85,
 		QueueAdaptiveEnabled:        true,
 		QueueCompactThreshold:       0.5,
+		ShardingEnabled:             false,
+		ShardingDNSRefreshInterval:  30 * time.Second,
+		ShardingDNSTimeout:          5 * time.Second,
+		ShardingVirtualNodes:        150,
+		ShardingFallbackOnEmpty:     true,
 	}
 }

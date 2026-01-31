@@ -74,6 +74,18 @@ type ExporterYAMLConfig struct {
 	Compression CompressionYAMLConfig   `yaml:"compression"`
 	HTTPClient  HTTPClientYAMLConfig    `yaml:"http_client"`
 	Queue       QueueYAMLConfig         `yaml:"queue"`
+	Sharding    ShardingYAMLConfig      `yaml:"sharding"`
+}
+
+// ShardingYAMLConfig holds sharding configuration.
+type ShardingYAMLConfig struct {
+	Enabled            *bool    `yaml:"enabled"`
+	HeadlessService    string   `yaml:"headless_service"`
+	DNSRefreshInterval Duration `yaml:"dns_refresh_interval"`
+	DNSTimeout         Duration `yaml:"dns_timeout"`
+	Labels             []string `yaml:"labels"`
+	VirtualNodes       int      `yaml:"virtual_nodes"`
+	FallbackOnEmpty    *bool    `yaml:"fallback_on_empty"`
 }
 
 // QueueYAMLConfig holds queue configuration.
@@ -298,6 +310,25 @@ func (y *YAMLConfig) ApplyDefaults() {
 	if y.Exporter.Queue.CompactThreshold == 0 {
 		y.Exporter.Queue.CompactThreshold = 0.5
 	}
+
+	// Sharding defaults
+	if y.Exporter.Sharding.Enabled == nil {
+		enabled := false
+		y.Exporter.Sharding.Enabled = &enabled
+	}
+	if y.Exporter.Sharding.DNSRefreshInterval == 0 {
+		y.Exporter.Sharding.DNSRefreshInterval = Duration(30 * time.Second)
+	}
+	if y.Exporter.Sharding.DNSTimeout == 0 {
+		y.Exporter.Sharding.DNSTimeout = Duration(5 * time.Second)
+	}
+	if y.Exporter.Sharding.VirtualNodes == 0 {
+		y.Exporter.Sharding.VirtualNodes = 150
+	}
+	if y.Exporter.Sharding.FallbackOnEmpty == nil {
+		fallback := true
+		y.Exporter.Sharding.FallbackOnEmpty = &fallback
+	}
 }
 
 // ToConfig converts YAMLConfig to the flat Config struct.
@@ -385,6 +416,15 @@ func (y *YAMLConfig) ToConfig() *Config {
 		QueueTargetUtilization: y.Exporter.Queue.TargetUtilization,
 		QueueAdaptiveEnabled:   *y.Exporter.Queue.AdaptiveEnabled,
 		QueueCompactThreshold:  y.Exporter.Queue.CompactThreshold,
+
+		// Sharding
+		ShardingEnabled:            *y.Exporter.Sharding.Enabled,
+		ShardingHeadlessService:    y.Exporter.Sharding.HeadlessService,
+		ShardingDNSRefreshInterval: time.Duration(y.Exporter.Sharding.DNSRefreshInterval),
+		ShardingDNSTimeout:         time.Duration(y.Exporter.Sharding.DNSTimeout),
+		ShardingLabels:             strings.Join(y.Exporter.Sharding.Labels, ","),
+		ShardingVirtualNodes:       y.Exporter.Sharding.VirtualNodes,
+		ShardingFallbackOnEmpty:    *y.Exporter.Sharding.FallbackOnEmpty,
 	}
 
 	return cfg

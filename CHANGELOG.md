@@ -7,6 +7,125 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-01-31
+
+### Added
+
+#### Consistent Sharding for Horizontal Scaling
+
+A major new feature that enables distributing metrics across multiple backend endpoints using consistent hashing. This allows horizontal scaling of time-series databases like VictoriaMetrics vminsert.
+
+**Core Features:**
+- **DNS-based endpoint discovery** - Automatically discovers backend pods from Kubernetes headless services
+- **Consistent hash ring** - Uses xxhash with configurable virtual nodes (default: 150) for even distribution
+- **Per-datapoint routing** - Each datapoint is routed independently based on shard key
+- **Minimal rehashing** - Adding/removing endpoints only moves ~1/n of the data
+- **Per-endpoint queuing** - When queue is enabled, each endpoint gets its own independent queue for retry
+
+**Shard Key Construction:**
+- Metric name is always included (automatic)
+- Additional labels can be configured for finer-grained sharding
+- Format: `metric_name|label1=value1|label2=value2` (sorted alphabetically)
+- All datapoints with the same shard key always go to the same endpoint
+
+**New CLI Flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-sharding-enabled` | `false` | Enable consistent sharding |
+| `-sharding-headless-service` | | K8s headless service DNS name |
+| `-sharding-dns-refresh-interval` | `30s` | DNS refresh interval |
+| `-sharding-dns-timeout` | `5s` | DNS lookup timeout |
+| `-sharding-labels` | | Comma-separated labels for shard key |
+| `-sharding-virtual-nodes` | `150` | Virtual nodes per endpoint |
+| `-sharding-fallback-on-empty` | `true` | Use static endpoint if DNS empty |
+
+**New YAML Configuration:**
+
+```yaml
+exporter:
+  sharding:
+    enabled: true
+    headless_service: "vminsert-headless.monitoring.svc.cluster.local:8480"
+    dns_refresh_interval: 30s
+    dns_timeout: 5s
+    labels:
+      - service
+      - env
+    virtual_nodes: 150
+    fallback_on_empty: true
+```
+
+**New Prometheus Metrics:**
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_sharding_endpoints_total` | gauge | Current number of active endpoints |
+| `metrics_governor_sharding_datapoints_total{endpoint}` | counter | Datapoints sent per endpoint |
+| `metrics_governor_sharding_export_errors_total{endpoint}` | counter | Export errors per endpoint |
+| `metrics_governor_sharding_rehash_total` | counter | Hash ring rehash events |
+| `metrics_governor_sharding_dns_refresh_total` | counter | DNS refresh attempts |
+| `metrics_governor_sharding_dns_errors_total` | counter | DNS lookup errors |
+| `metrics_governor_sharding_dns_latency_seconds` | histogram | DNS lookup latency |
+| `metrics_governor_sharding_export_latency_seconds{endpoint}` | histogram | Export latency per endpoint |
+
+**Exporter Configuration Matrix:**
+
+| Sharding | Queue | Result |
+|----------|-------|--------|
+| off | off | Single OTLPExporter |
+| off | on | QueuedExporter → OTLPExporter |
+| on | off | ShardedExporter → multiple OTLPExporters |
+| on | on | ShardedExporter → multiple (QueuedExporter → OTLPExporter) |
+
+**New Files:**
+- `internal/sharding/hashring.go` - Consistent hash ring with xxhash and virtual nodes
+- `internal/sharding/hashring_test.go` - Hash ring tests (distribution, consistency, concurrency)
+- `internal/sharding/shardkey.go` - Shard key builder from metric name + labels
+- `internal/sharding/shardkey_test.go` - Shard key tests
+- `internal/sharding/splitter.go` - Splits ResourceMetrics by shard key
+- `internal/sharding/splitter_test.go` - Splitter tests for all metric types
+- `internal/sharding/discovery.go` - DNS-based endpoint discovery
+- `internal/sharding/discovery_test.go` - Discovery tests with mock resolver
+- `internal/sharding/metrics.go` - Prometheus metrics for sharding
+- `internal/exporter/sharded.go` - ShardedExporter implementation
+- `internal/exporter/sharded_test.go` - ShardedExporter tests
+
+**Modified Files:**
+- `internal/config/yaml.go` - Added ShardingYAMLConfig struct
+- `internal/config/config.go` - Added sharding CLI flags and configuration
+- `cmd/metrics-governor/main.go` - Wired up ShardedExporter when sharding enabled
+
+#### Grafana Dashboard - Sharding Section
+
+New "Sharding" section with 9 panels:
+- Active Endpoints (stat)
+- Rehash Events (stat)
+- DNS Errors (stat)
+- DNS Refreshes/min (stat)
+- Datapoints Rate by Endpoint (timeseries)
+- Export Errors by Endpoint (timeseries)
+- Export Latency by Endpoint (timeseries)
+- DNS Lookup Latency (timeseries)
+- Endpoint Distribution (piechart)
+
+### Changed
+
+#### README Updates
+
+- Added "Core Value Proposition" table highlighting key challenges and solutions
+- Added "What Sets metrics-governor Apart" section
+- Added comprehensive "Consistent Sharding" documentation section with:
+  - Architecture diagram (Mermaid)
+  - Kubernetes headless service setup example
+  - Configuration examples (YAML and CLI)
+  - How sharding works explanation
+  - Sharding metrics table
+  - Default configuration table
+- Updated Features list to include Consistent Sharding
+- Updated Key Capabilities table
+- Updated Project Structure to include `internal/sharding/` package
+
 ## [0.4.4] - 2026-01-30
 
 ### Added

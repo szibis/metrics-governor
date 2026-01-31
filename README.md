@@ -9,17 +9,24 @@
 
 ## Overview
 
-**metrics-governor** is a high-performance OTLP metrics proxy designed to sit between your applications and your metrics backend (like OpenTelemetry Collector, Prometheus, or any OTLP-compatible system). It provides intelligent traffic management, cardinality control, and observability for your metrics pipeline.
+**metrics-governor** is a high-performance OTLP metrics proxy that sits between your applications and your metrics backend. It provides intelligent cardinality control, horizontal scaling via consistent sharding, and full observability for your metrics pipeline.
 
-### Why metrics-governor?
+### Core Value Proposition
 
-Modern observability platforms often struggle with:
-- **Cardinality explosions** - High-cardinality labels (like user IDs, request IDs) can overwhelm your metrics backend
-- **Unpredictable costs** - Cloud metrics services charge by datapoints; runaway metrics mean runaway bills
-- **Lack of visibility** - Hard to know which services or metrics are consuming the most resources
-- **All-or-nothing limits** - Traditional approaches either drop everything or nothing
+| Challenge | Solution |
+|-----------|----------|
+| **Cardinality explosions** crushing your backend | **Adaptive limiting** drops only the worst offenders, preserving well-behaved services |
+| **Single backend bottleneck** limiting throughput | **Consistent sharding** distributes load across multiple endpoints via K8s DNS discovery |
+| **Data loss during outages** | **WAL-based persistent queue** with automatic retry and exponential backoff |
+| **No visibility** into metrics pipeline | **Real-time statistics** with per-metric cardinality, datapoints, and Prometheus metrics |
+| **Unpredictable costs** from runaway metrics | **Per-group tracking** with configurable limits and dry-run mode for safe testing |
 
-metrics-governor solves these problems with **adaptive limiting** - it intelligently identifies and drops only the worst offenders while preserving valuable metrics from well-behaved services.
+### What Sets metrics-governor Apart
+
+1. **Intelligent Limiting** - Unlike simple rate limiters that drop everything, metrics-governor identifies and drops only the top offenders while preserving data from well-behaved services
+2. **Consistent Sharding** - Automatic endpoint discovery from Kubernetes headless services with consistent hashing ensures the same time-series always route to the same backend
+3. **Production-Ready** - WAL-based durable queue, TLS/mTLS, authentication, compression (gzip/zstd/snappy/lz4), and Helm chart included
+4. **Zero Configuration Start** - Works out of the box with sensible defaults; add limits and sharding when needed
 
 ### Key Capabilities
 
@@ -30,6 +37,7 @@ metrics-governor solves these problems with **adaptive limiting** - it intellige
 | **Adaptive Limits** | Per-group tracking with smart dropping of top offenders only |
 | **Real-time Statistics** | Per-metric cardinality, datapoints, and limit violation tracking |
 | **Prometheus Integration** | Native `/metrics` endpoint for monitoring the proxy itself |
+| **Consistent Sharding** | Distribute metrics across multiple backends via DNS discovery |
 | **Production Ready** | Helm chart, multi-arch Docker images, graceful shutdown |
 
 ### Architecture Diagram
@@ -178,6 +186,15 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
   - [Dry Run Mode](#dry-run-mode)
   - [Action Examples](#action-examples)
 - [Architecture](#architecture)
+- [Consistent Sharding](#consistent-sharding)
+  - [Sharding Architecture](#sharding-architecture)
+  - [When to Use Sharding](#when-to-use-sharding)
+  - [Kubernetes Headless Service Setup](#kubernetes-headless-service-setup)
+  - [Sharding Configuration](#sharding-configuration)
+  - [How Sharding Works](#how-sharding-works)
+  - [Sharding Metrics](#sharding-metrics)
+  - [Sharding Default Configuration](#sharding-default-configuration)
+  - [Exporter Configuration with Sharding](#exporter-configuration-with-sharding)
 - [Development](#development)
   - [Running Tests](#running-tests)
   - [Project Structure](#project-structure)
@@ -225,6 +242,12 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
   - Per-label-combination stats (configurable labels)
   - Prometheus `/metrics` endpoint for scraping
   - Periodic global stats logging (every 30s)
+- **Consistent Sharding:**
+  - Distribute metrics across multiple backend endpoints
+  - Kubernetes headless service DNS discovery
+  - Consistent hashing with configurable virtual nodes
+  - Per-endpoint queuing for independent retry
+  - Shard key based on metric name + configurable labels
 - **Operations:**
   - JSON structured logging
   - Helm chart for Kubernetes deployment
@@ -1066,6 +1089,171 @@ flowchart LR
 - **Exporter** - Sends batched metrics to OTLP backend
 - **Persistent Queue** - WAL-based durable queue for retry on export failures
 
+## Consistent Sharding
+
+Metrics Governor supports consistent sharding to distribute metrics across multiple backend endpoints. This is useful for horizontal scaling of time-series databases like VictoriaMetrics vminsert.
+
+### Sharding Architecture
+
+```mermaid
+flowchart TD
+    subgraph Receivers
+        GRPC[gRPC Receiver<br/>:4317]
+        HTTP[HTTP Receiver<br/>:4318]
+    end
+
+    subgraph Processing
+        Buffer[MetricsBuffer<br/>Batching & Filtering]
+        Limits[Limits Enforcer<br/>Rate Limiting]
+    end
+
+    subgraph Sharding["Sharded Export (when enabled)"]
+        Split[Metrics Splitter<br/>Per-datapoint routing]
+        Ring[Consistent Hash Ring<br/>150 virtual nodes/endpoint]
+        DNS[DNS Discovery<br/>K8s Headless Service]
+    end
+
+    subgraph Endpoints["Backend Endpoints"]
+        Q1[QueuedExporter]
+        Q2[QueuedExporter]
+        Q3[QueuedExporter]
+        E1[OTLPExporter<br/>10.0.0.1:8428]
+        E2[OTLPExporter<br/>10.0.0.2:8428]
+        E3[OTLPExporter<br/>10.0.0.3:8428]
+    end
+
+    GRPC --> Buffer
+    HTTP --> Buffer
+    Buffer --> Limits
+    Limits --> Split
+    DNS -.->|refresh every 30s| Ring
+    Split --> Ring
+    Ring --> Q1 --> E1
+    Ring --> Q2 --> E2
+    Ring --> Q3 --> E3
+```
+
+### When to Use Sharding
+
+- **Horizontal scaling** - Distribute write load across multiple VictoriaMetrics vminsert or similar backends
+- **High throughput** - When a single backend endpoint cannot handle your metrics volume
+- **Kubernetes deployments** - Automatically discover backend pods via headless service DNS
+
+### Kubernetes Headless Service Setup
+
+Create a headless service for your backend pods:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: vminsert-headless
+  namespace: monitoring
+spec:
+  clusterIP: None  # Headless service
+  selector:
+    app: vminsert
+  ports:
+    - port: 8480
+      targetPort: 8480
+      name: insert
+```
+
+### Sharding Configuration
+
+**YAML Configuration:**
+
+```yaml
+exporter:
+  endpoint: "victoriametrics:8428"  # Fallback when no DNS results
+  protocol: "http"
+
+  sharding:
+    enabled: true
+    headless_service: "vminsert-headless.monitoring.svc.cluster.local:8480"
+    dns_refresh_interval: 30s
+    dns_timeout: 5s
+
+    # Labels for shard key (metric name is always included)
+    labels:
+      - service
+      - env
+
+    virtual_nodes: 150           # Virtual nodes per endpoint
+    fallback_on_empty: true      # Use static endpoint if DNS empty
+
+  # Queue (optional, applied per-endpoint when sharding enabled)
+  queue:
+    enabled: true
+    path: "/var/lib/metrics-governor/queue"
+```
+
+**CLI Flags:**
+
+```bash
+metrics-governor \
+  -sharding-enabled \
+  -sharding-headless-service "vminsert-headless.monitoring.svc.cluster.local:8480" \
+  -sharding-labels "service,env" \
+  -sharding-dns-refresh-interval 30s \
+  -sharding-virtual-nodes 150 \
+  -queue-enabled
+```
+
+### How Sharding Works
+
+1. **Endpoint Discovery**: Periodically resolves the headless service DNS to get current pod IPs
+2. **Shard Key Construction**: Built from metric name + configured labels (sorted alphabetically)
+3. **Consistent Hashing**: Uses a hash ring with virtual nodes for even distribution and minimal reshuffling when endpoints change
+4. **Per-Datapoint Routing**: Each datapoint is routed independently to its target endpoint
+
+**Shard Key Example:**
+
+```
+Metric name: http_requests_total
+Attributes: {service: "api", env: "prod", method: "GET"}
+Configured labels: ["service", "env"]
+
+Shard key: "http_requests_total|env=prod|service=api"
+           ↑ metric name      ↑ labels sorted alphabetically
+```
+
+All datapoints with the same shard key always go to the same endpoint, ensuring consistent routing for time-series queries.
+
+### Sharding Metrics
+
+When sharding is enabled, additional Prometheus metrics are exposed:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_sharding_endpoints_total` | gauge | Current number of active endpoints |
+| `metrics_governor_sharding_datapoints_total{endpoint}` | counter | Datapoints sent per endpoint |
+| `metrics_governor_sharding_export_errors_total{endpoint}` | counter | Export errors per endpoint |
+| `metrics_governor_sharding_rehash_total` | counter | Hash ring rehash events |
+| `metrics_governor_sharding_dns_refresh_total` | counter | DNS refresh attempts |
+| `metrics_governor_sharding_dns_errors_total` | counter | DNS lookup errors |
+| `metrics_governor_sharding_dns_latency_seconds` | histogram | DNS lookup latency |
+| `metrics_governor_sharding_export_latency_seconds{endpoint}` | histogram | Export latency per endpoint |
+
+### Sharding Default Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `sharding.enabled` | `false` | Sharding disabled by default |
+| `sharding.dns_refresh_interval` | `30s` | DNS refresh interval |
+| `sharding.dns_timeout` | `5s` | DNS lookup timeout |
+| `sharding.virtual_nodes` | `150` | Virtual nodes per endpoint |
+| `sharding.fallback_on_empty` | `true` | Use static endpoint if DNS empty |
+
+### Exporter Configuration with Sharding
+
+| Sharding | Queue | Result |
+|----------|-------|--------|
+| off | off | Single OTLPExporter |
+| off | on | QueuedExporter → OTLPExporter |
+| on | off | ShardedExporter → multiple OTLPExporters |
+| on | on | ShardedExporter → multiple (QueuedExporter → OTLPExporter) |
+
 ## Development
 
 ### Running Tests
@@ -1098,6 +1286,7 @@ metrics-governor/
 │   ├── logging/             # JSON structured logging
 │   ├── queue/               # WAL-based persistent queue for retries
 │   ├── receiver/            # gRPC and HTTP receivers
+│   ├── sharding/            # Consistent hashing and DNS discovery
 │   ├── stats/               # Statistics collection
 │   └── tls/                 # TLS configuration utilities
 ├── helm/metrics-governor/   # Helm chart for Kubernetes
