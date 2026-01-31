@@ -641,10 +641,10 @@ func (w *WAL) compact() {
 	oldWALPath := filepath.Join(w.path, walFileName)
 	oldIdxPath := filepath.Join(w.path, indexFileName)
 
-	os.Remove(oldWALPath)
-	os.Remove(oldIdxPath)
-	os.Rename(newWALPath, oldWALPath)
-	os.Rename(newIdxPath, oldIdxPath)
+	_ = os.Remove(oldWALPath)
+	_ = os.Remove(oldIdxPath)
+	_ = os.Rename(newWALPath, oldWALPath)
+	_ = os.Rename(newIdxPath, oldIdxPath)
 
 	// Reopen files
 	w.walFile, _ = os.OpenFile(oldWALPath, os.O_RDWR|os.O_APPEND, 0644)

@@ -144,7 +144,7 @@ func (e *QueuedExporter) processQueue() {
 	req, err := entry.GetRequest()
 	if err != nil {
 		logging.Error("failed to deserialize queued request", logging.F("error", err.Error()))
-		e.queue.Remove(entry.ID)
+		_ = e.queue.Remove(entry.ID)
 		return
 	}
 
@@ -206,7 +206,7 @@ func (e *QueuedExporter) drainQueue() {
 
 		req, err := entry.GetRequest()
 		if err != nil {
-			e.queue.Remove(entry.ID)
+			_ = e.queue.Remove(entry.ID)
 			continue
 		}
 
@@ -215,7 +215,7 @@ func (e *QueuedExporter) drainQueue() {
 		exportCancel()
 
 		if err == nil {
-			e.queue.Remove(entry.ID)
+			_ = e.queue.Remove(entry.ID)
 			queue.IncrementRetrySuccessTotal()
 		} else {
 			// Leave entry in queue for recovery on restart

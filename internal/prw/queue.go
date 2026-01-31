@@ -188,7 +188,7 @@ func (q *Queue) processQueue() bool {
 	if err := req.Unmarshal(entry.Data); err != nil {
 		// Invalid data, remove from queue
 		logging.Error("PRW queue unmarshal failed, removing entry", logging.F("error", err.Error()))
-		q.sendQueue.Remove(entry.ID)
+		_ = q.sendQueue.Remove(entry.ID)
 		return false
 	}
 

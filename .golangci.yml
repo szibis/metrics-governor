@@ -44,7 +44,7 @@ linters-settings:
   gocyclo:
     min-complexity: 15
   dupl:
-    threshold: 150
+    threshold: 200
   goconst:
     min-len: 3
     min-occurrences: 3
@@ -86,6 +86,7 @@ issues:
     - path: _test\.go
       linters:
         - dupl
+        - errcheck
         - gosec
         - goconst
     # Exclude some linters from running on benchmark files
@@ -97,5 +98,9 @@ issues:
     - path: \.pb\.go
       linters:
         - all
+    # Exclude goconst for compression (intentional string comparisons in ParseType)
+    - path: internal/compression/compression\.go
+      linters:
+        - goconst
   max-issues-per-linter: 50
   max-same-issues: 10

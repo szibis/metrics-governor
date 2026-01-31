@@ -307,7 +307,7 @@ func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportM
 	defer resp.Body.Close()
 
 	// Read and discard body to allow connection reuse
-	io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)

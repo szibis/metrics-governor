@@ -237,7 +237,7 @@ func (e *PRWExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 	defer resp.Body.Close()
 
 	// Read and discard body to allow connection reuse
-	io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	// Check response status
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

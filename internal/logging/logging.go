@@ -54,8 +54,8 @@ func (l *Logger) log(level Level, msg string, fields map[string]interface{}) {
 	defer l.mu.Unlock()
 
 	data, _ := json.Marshal(entry)
-	l.output.Write(data)
-	l.output.Write([]byte("\n"))
+	_, _ = l.output.Write(data)
+	_, _ = l.output.Write([]byte("\n"))
 }
 
 // Info logs an info level message.

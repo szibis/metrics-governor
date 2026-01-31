@@ -316,7 +316,9 @@ func decompressDeflate(data []byte) ([]byte, error) {
 func compressLZ4(w io.Writer, data []byte, level Level) error {
 	lw := lz4.NewWriter(w)
 	if level != LevelDefault {
-		lw.Apply(lz4.CompressionLevelOption(lz4.CompressionLevel(level)))
+		if err := lw.Apply(lz4.CompressionLevelOption(lz4.CompressionLevel(level))); err != nil {
+			return fmt.Errorf("failed to apply lz4 compression level: %w", err)
+		}
 	}
 	if _, err := lw.Write(data); err != nil {
 		return fmt.Errorf("failed to write lz4 data: %w", err)
