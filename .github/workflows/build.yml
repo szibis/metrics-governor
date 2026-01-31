@@ -196,6 +196,8 @@ jobs:
     needs: [test-unit, test-functional, test-e2e]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -212,8 +214,13 @@ jobs:
       - name: Get base branch coverage
         id: base_coverage
         run: |
-          # Try to get coverage from base branch
+          # Store current branch/commit
+          CURRENT_REF="${{ github.event.pull_request.head.sha }}"
+
+          # Fetch base branch
           git fetch origin ${{ github.event.pull_request.base.ref }}
+
+          # Checkout base branch
           git checkout ${{ github.event.pull_request.base.sha }}
 
           # Run coverage on base
@@ -226,8 +233,8 @@ jobs:
             echo "coverage=0" >> $GITHUB_OUTPUT
           fi
 
-          # Switch back
-          git checkout ${{ github.event.pull_request.head.sha }}
+          # Switch back to PR branch (fetch-depth: 0 ensures it's available)
+          git checkout $CURRENT_REF
 
       - name: Generate coverage report
         id: report
