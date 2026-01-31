@@ -69,6 +69,16 @@ jobs:
 
           echo "Created and pushed tag: $VERSION"
 
+      - name: Trigger release workflow
+        if: steps.check_tag.outputs.EXISTS == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          echo "Triggering release workflow for $VERSION..."
+          gh workflow run release.yml -f tag="$VERSION"
+          echo "Release workflow triggered"
+
       - name: Summary
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
@@ -77,4 +87,4 @@ jobs:
           echo "- **Tag:** $VERSION" >> $GITHUB_STEP_SUMMARY
           echo "- **PR:** #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "The [Release workflow](https://github.com/${{ github.repository }}/actions/workflows/release.yml) will now build and publish the release." >> $GITHUB_STEP_SUMMARY
+          echo "The [Release workflow](https://github.com/${{ github.repository }}/actions/workflows/release.yml) has been triggered to build and publish the release." >> $GITHUB_STEP_SUMMARY
