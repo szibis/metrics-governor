@@ -276,15 +276,95 @@ Enable the retry queue for persistent retry storage:
 -prw-queue-path /var/lib/metrics-governor/prw-queue
 ```
 
+## Sharding
+
+PRW supports consistent sharding to distribute metrics across multiple backends, using the same architecture as OTLP sharding.
+
+### YAML Configuration
+
+```yaml
+prw:
+  exporter:
+    endpoint: "victoriametrics:8428"  # Fallback when no DNS results
+
+    sharding:
+      enabled: true
+      headless_service: "vminsert-headless.monitoring.svc.cluster.local:8480"
+      dns_refresh_interval: 30s
+      dns_timeout: 5s
+
+      # Labels for shard key (metric name is always included)
+      labels:
+        - service
+        - env
+
+      virtual_nodes: 150
+      fallback_on_empty: true
+
+    queue:
+      enabled: true
+      path: "/var/lib/metrics-governor/prw-queue"
+```
+
+### CLI Flags
+
+```bash
+metrics-governor \
+  -prw-listen :9090 \
+  -prw-sharding-enabled \
+  -prw-sharding-headless-service "vminsert-headless.monitoring.svc.cluster.local:8480" \
+  -prw-sharding-labels "service,env" \
+  -prw-queue-enabled
+```
+
+### Shard Key Construction
+
+The shard key is built from metric name + configured labels (sorted alphabetically):
+
+```
+Metric name: http_requests_total
+Labels: {service: "api", env: "prod", method: "GET"}
+Configured labels: ["service", "env"]
+
+Shard key: "http_requests_total|env=prod|service=api"
+           ↑ metric name      ↑ labels sorted alphabetically
+```
+
+All timeseries with the same shard key always route to the same endpoint, ensuring consistent routing for queries.
+
 ## Statistics
 
-PRW pipeline metrics are exposed at the stats endpoint:
+PRW pipeline metrics are exposed at the stats endpoint (`/metrics`):
 
-| Metric | Description |
-|--------|-------------|
-| `prw_received_timeseries_total` | Total PRW timeseries received |
-| `prw_received_datapoints_total` | Total PRW datapoints received |
-| `prw_exported_timeseries_total` | Total PRW timeseries exported |
-| `prw_exported_datapoints_total` | Total PRW datapoints exported |
-| `prw_export_errors_total` | Total PRW export errors |
-| `prw_queue_size` | Current PRW retry queue size |
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_prw_datapoints_received_total` | counter | Total PRW datapoints received |
+| `metrics_governor_prw_timeseries_received_total` | counter | Total PRW timeseries received |
+| `metrics_governor_prw_datapoints_sent_total` | counter | Total PRW datapoints sent to backend |
+| `metrics_governor_prw_timeseries_sent_total` | counter | Total PRW timeseries sent to backend |
+| `metrics_governor_prw_batches_sent_total` | counter | Total PRW batches exported |
+| `metrics_governor_prw_export_errors_total` | counter | Total PRW export errors |
+
+### Example PromQL Queries
+
+```promql
+# PRW datapoints per second
+rate(metrics_governor_prw_datapoints_received_total[5m])
+
+# PRW export success rate
+rate(metrics_governor_prw_batches_sent_total[5m]) /
+(rate(metrics_governor_prw_batches_sent_total[5m]) + rate(metrics_governor_prw_export_errors_total[5m]))
+
+# PRW timeseries throughput
+rate(metrics_governor_prw_timeseries_sent_total[1m])
+```
+
+## Grafana Dashboard
+
+A pre-built Grafana dashboard is available in `dashboards/operations.json` with a dedicated **PRW Throughput** section showing:
+
+- PRW Datapoints Rate (received vs sent)
+- PRW Timeseries & Batches
+- Export errors
+
+See [dashboards/README.md](../dashboards/README.md) for installation instructions.

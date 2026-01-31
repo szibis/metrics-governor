@@ -60,20 +60,22 @@ metrics-governor/
 ├── cmd/metrics-governor/    # Main application entry point
 ├── internal/
 │   ├── auth/                # Authentication (bearer token, basic auth)
-│   ├── buffer/              # Metrics buffering and batching
+│   ├── buffer/              # OTLP metrics buffering and batching
 │   ├── compression/         # Compression support (gzip, zstd, etc.)
 │   ├── config/              # Configuration management
-│   ├── exporter/            # OTLP gRPC and HTTP exporters
+│   ├── exporter/            # OTLP and PRW exporters
 │   ├── limits/              # Limits enforcement (adaptive, drop, log)
 │   ├── logging/             # JSON structured logging
-│   ├── queue/               # WAL-based persistent queue for retries
-│   ├── receiver/            # gRPC and HTTP receivers
+│   ├── prw/                 # Prometheus Remote Write support (buffer, queue, types)
+│   ├── queue/               # WAL-based persistent queue for OTLP retries
+│   ├── receiver/            # OTLP (gRPC/HTTP) and PRW receivers
 │   ├── sharding/            # Consistent hashing and DNS discovery
-│   ├── stats/               # Statistics collection
+│   ├── stats/               # Statistics collection (OTLP and PRW metrics)
 │   └── tls/                 # TLS configuration utilities
 ├── functional/              # Functional tests
 ├── e2e/                     # End-to-end tests
 ├── helm/metrics-governor/   # Helm chart for Kubernetes
+├── dashboards/              # Grafana dashboards
 ├── examples/                # Example configuration files
 ├── docs/                    # Documentation
 ├── test/                    # Integration test environment

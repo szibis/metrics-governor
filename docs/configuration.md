@@ -138,6 +138,60 @@ All settings can also be configured via CLI flags.
 | `-limits-config` | | Path to limits configuration YAML file |
 | `-limits-dry-run` | `true` | Dry run mode: log violations but don't drop/sample |
 
+### PRW Receiver Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-prw-listen` | | PRW receiver address (empty = disabled) |
+| `-prw-receiver-version` | `auto` | Protocol version: `1.0`, `2.0`, or `auto` |
+| `-prw-receiver-tls-enabled` | `false` | Enable TLS for PRW receiver |
+| `-prw-receiver-tls-cert` | | Certificate file path |
+| `-prw-receiver-tls-key` | | Private key file path |
+| `-prw-receiver-auth-enabled` | `false` | Enable authentication |
+| `-prw-receiver-auth-bearer-token` | | Expected bearer token |
+
+### PRW Exporter Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-prw-exporter-endpoint` | | PRW backend URL (empty = disabled) |
+| `-prw-exporter-version` | `auto` | Protocol version: `1.0`, `2.0`, or `auto` |
+| `-prw-exporter-timeout` | `30s` | Request timeout |
+| `-prw-exporter-tls-enabled` | `false` | Enable TLS |
+| `-prw-exporter-tls-cert` | | Client certificate (mTLS) |
+| `-prw-exporter-tls-key` | | Client key (mTLS) |
+| `-prw-exporter-tls-ca` | | CA certificate |
+| `-prw-exporter-auth-bearer-token` | | Bearer token for auth |
+| `-prw-exporter-vm-mode` | `false` | Enable VictoriaMetrics mode |
+| `-prw-exporter-vm-compression` | `snappy` | Compression: `snappy` or `zstd` |
+
+### PRW Buffer Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-prw-buffer-size` | `10000` | Maximum requests in buffer |
+| `-prw-flush-interval` | `5s` | Flush interval |
+| `-prw-batch-size` | `1000` | Batch size for export |
+
+### PRW Queue Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-prw-queue-enabled` | `false` | Enable persistent retry queue |
+| `-prw-queue-path` | `./prw-queue` | Queue directory |
+| `-prw-queue-max-size` | `10000` | Max queue entries |
+| `-prw-queue-retry-interval` | `5s` | Initial retry interval |
+
+### PRW Sharding Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-prw-sharding-enabled` | `false` | Enable consistent sharding |
+| `-prw-sharding-headless-service` | | K8s headless service DNS name with port |
+| `-prw-sharding-labels` | | Comma-separated labels for shard key |
+| `-prw-sharding-dns-refresh-interval` | `30s` | DNS refresh interval |
+| `-prw-sharding-virtual-nodes` | `150` | Virtual nodes per endpoint |
+
 ### General
 
 | Flag | Description |

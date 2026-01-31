@@ -50,6 +50,19 @@ curl localhost:9090/metrics
 | `metrics_governor_rule_groups_total{rule="..."}` | gauge | Number of tracked groups per rule |
 | `metrics_governor_rule_dropped_groups_total{rule="..."}` | gauge | Currently dropped groups per rule |
 
+### PRW Pipeline Statistics
+
+These metrics track the Prometheus Remote Write (PRW) pipeline:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_prw_datapoints_received_total` | counter | Total PRW datapoints received |
+| `metrics_governor_prw_timeseries_received_total` | counter | Total PRW timeseries received |
+| `metrics_governor_prw_datapoints_sent_total` | counter | Total PRW datapoints sent to backend |
+| `metrics_governor_prw_timeseries_sent_total` | counter | Total PRW timeseries sent to backend |
+| `metrics_governor_prw_batches_sent_total` | counter | Total PRW batches exported |
+| `metrics_governor_prw_export_errors_total` | counter | Total PRW export errors |
+
 ## Configuring Label Tracking
 
 Track specific labels for detailed statistics:

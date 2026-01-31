@@ -30,15 +30,36 @@ make docker
 docker build -t metrics-governor .
 ```
 
-### Running with Docker
+### Running with Docker (OTLP)
 
 ```bash
-docker run -p 4317:4317 -p 4318:4318 -p 9090:9090 metrics-governor \
+docker run -p 4317:4317 -p 4318:4318 -p 9091:9091 metrics-governor \
   -exporter-endpoint otel-collector:4317 \
   -stats-labels service,env,cluster
 ```
 
+### Running with Docker (PRW)
+
+```bash
+docker run -p 9090:9090 -p 9091:9091 metrics-governor \
+  -prw-listen :9090 \
+  -prw-exporter-endpoint http://victoriametrics:8428/api/v1/write \
+  -prw-exporter-vm-mode
+```
+
+### Running with Docker (Dual Pipeline - OTLP + PRW)
+
+```bash
+docker run -p 4317:4317 -p 4318:4318 -p 9090:9090 -p 9091:9091 metrics-governor \
+  -exporter-endpoint otel-collector:4317 \
+  -prw-listen :9090 \
+  -prw-exporter-endpoint http://victoriametrics:8428/api/v1/write \
+  -stats-labels service,env,cluster
+```
+
 ## Helm Chart
+
+### OTLP Pipeline
 
 ```bash
 # Install from local chart
@@ -49,8 +70,33 @@ helm install metrics-governor ./helm/metrics-governor \
   --set config.exporterEndpoint=otel-collector:4317 \
   --set limits.enabled=true \
   --set serviceMonitor.enabled=true
+```
 
-# Install as StatefulSet with persistence
+### PRW Pipeline
+
+```bash
+# Install for Prometheus Remote Write to VictoriaMetrics
+helm install metrics-governor ./helm/metrics-governor \
+  --set config.prwListenAddr=":9090" \
+  --set config.prwExporterEndpoint="http://vminsert:8480/insert/0/prometheus/api/v1/write" \
+  --set config.prwExporterVMMode=true
+```
+
+### Dual Pipeline (OTLP + PRW)
+
+```bash
+# Install with both OTLP and PRW pipelines
+helm install metrics-governor ./helm/metrics-governor \
+  --set config.exporterEndpoint=otel-collector:4317 \
+  --set config.prwListenAddr=":9090" \
+  --set config.prwExporterEndpoint="http://victoriametrics:8428/api/v1/write" \
+  --set limits.enabled=true
+```
+
+### Advanced Options
+
+```bash
+# Install as StatefulSet with persistence (for queues)
 helm install metrics-governor ./helm/metrics-governor \
   --set kind=statefulset \
   --set persistence.enabled=true \
