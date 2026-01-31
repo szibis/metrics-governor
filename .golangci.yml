@@ -1,9 +1,6 @@
 run:
   timeout: 5m
   modules-download-mode: readonly
-  # Use Go 1.24 for linting to match golangci-lint build version
-  # This avoids "Go version used to build golangci-lint is lower than targeted" errors
-  go: "1.24"
 
 linters:
   enable:
@@ -16,9 +13,9 @@ linters:
     - unused
     # Additional linters
     - bodyclose
+    - copyloopvar
     - dogsled
     - dupl
-    - exportloopref
     - gochecknoinits
     - goconst
     - gocritic

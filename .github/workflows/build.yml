@@ -71,8 +71,9 @@ jobs:
         id: count
         run: |
           # Count test results from package summaries
-          PASSED_PKGS=$(grep -c '^ok' unit-test-output.txt || echo "0")
-          FAILED_PKGS=$(grep -c '^FAIL' unit-test-output.txt || echo "0")
+          # Note: grep -c returns exit code 1 when no matches, so we handle it separately
+          PASSED_PKGS=$(grep -c '^ok' unit-test-output.txt) || PASSED_PKGS=0
+          FAILED_PKGS=$(grep -c '^FAIL' unit-test-output.txt) || FAILED_PKGS=0
           # Determine success based on whether any packages failed
           if [ "$FAILED_PKGS" = "0" ] && [ "$PASSED_PKGS" -gt "0" ]; then
             SUCCESS="true"
@@ -124,8 +125,8 @@ jobs:
       - name: Count tests
         id: count
         run: |
-          PASSED_PKGS=$(grep -c '^ok' functional-test-output.txt || echo "0")
-          FAILED_PKGS=$(grep -c '^FAIL' functional-test-output.txt || echo "0")
+          PASSED_PKGS=$(grep -c '^ok' functional-test-output.txt) || PASSED_PKGS=0
+          FAILED_PKGS=$(grep -c '^FAIL' functional-test-output.txt) || FAILED_PKGS=0
           if [ "$FAILED_PKGS" = "0" ] && [ "$PASSED_PKGS" -gt "0" ]; then
             SUCCESS="true"
           else
@@ -159,8 +160,8 @@ jobs:
       - name: Count tests
         id: count
         run: |
-          PASSED_PKGS=$(grep -c '^ok' e2e-test-output.txt || echo "0")
-          FAILED_PKGS=$(grep -c '^FAIL' e2e-test-output.txt || echo "0")
+          PASSED_PKGS=$(grep -c '^ok' e2e-test-output.txt) || PASSED_PKGS=0
+          FAILED_PKGS=$(grep -c '^FAIL' e2e-test-output.txt) || FAILED_PKGS=0
           if [ "$FAILED_PKGS" = "0" ] && [ "$PASSED_PKGS" -gt "0" ]; then
             SUCCESS="true"
           else
@@ -181,11 +182,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          args: --timeout=5m
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+      - name: Run golangci-lint
+        run: golangci-lint run --timeout=5m
 
   lint-dockerfile:
     runs-on: ubuntu-latest
