@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-01-31
+
+### Changed
+
+Updated release script and /release skill for Claude Code
+
+**Test Coverage:**
+- Unit Tests: 333
+- Functional Tests: 59
+- E2E Tests: 20
+- Benchmarks: 76
+- Total: 488+ tests
+
+### Added
+
+- Helm ConfigMap template for metrics-governor configuration
+
 ## [0.5.1] - 2026-01-31
 
 ### Added
