@@ -43,10 +43,9 @@ jobs:
 
       - name: Run unit tests with coverage
         id: unit_tests
-        shell: bash
+        continue-on-error: true
         run: |
-          set -o pipefail
-          go test -v -race -coverprofile=coverage-unit.out -covermode=atomic ./internal/... 2>&1 | tee unit-test-output.txt && echo "exit_code=0" >> $GITHUB_OUTPUT || echo "exit_code=1" >> $GITHUB_OUTPUT
+          go test -v -race -coverprofile=coverage-unit.out -covermode=atomic ./internal/... 2>&1 | tee unit-test-output.txt
 
       - name: Extract coverage percentage
         id: coverage
@@ -71,12 +70,11 @@ jobs:
       - name: Count tests
         id: count
         run: |
-          # Count test results from package summaries (more reliable than individual test lines)
+          # Count test results from package summaries
           PASSED_PKGS=$(grep -c '^ok' unit-test-output.txt || echo "0")
           FAILED_PKGS=$(grep -c '^FAIL' unit-test-output.txt || echo "0")
-          # Use exit code from test run to determine overall success
-          EXIT_CODE="${{ steps.unit_tests.outputs.exit_code }}"
-          if [ "$EXIT_CODE" = "0" ]; then
+          # Determine success based on whether any packages failed
+          if [ "$FAILED_PKGS" = "0" ] && [ "$PASSED_PKGS" -gt "0" ]; then
             SUCCESS="true"
           else
             SUCCESS="false"
@@ -85,7 +83,7 @@ jobs:
           echo "passed=$PASSED_PKGS" >> $GITHUB_OUTPUT
           echo "failed=$FAILED_PKGS" >> $GITHUB_OUTPUT
           echo "success=$SUCCESS" >> $GITHUB_OUTPUT
-          echo "Test results: $PASSED_PKGS packages passed, $FAILED_PKGS failed, exit_code=$EXIT_CODE"
+          echo "Test results: $PASSED_PKGS packages passed, $FAILED_PKGS failed"
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
@@ -119,18 +117,16 @@ jobs:
 
       - name: Run functional tests
         id: functional_tests
-        shell: bash
+        continue-on-error: true
         run: |
-          set -o pipefail
-          go test -v -race ./functional/... 2>&1 | tee functional-test-output.txt && echo "exit_code=0" >> $GITHUB_OUTPUT || echo "exit_code=1" >> $GITHUB_OUTPUT
+          go test -v -race ./functional/... 2>&1 | tee functional-test-output.txt
 
       - name: Count tests
         id: count
         run: |
           PASSED_PKGS=$(grep -c '^ok' functional-test-output.txt || echo "0")
           FAILED_PKGS=$(grep -c '^FAIL' functional-test-output.txt || echo "0")
-          EXIT_CODE="${{ steps.functional_tests.outputs.exit_code }}"
-          if [ "$EXIT_CODE" = "0" ]; then
+          if [ "$FAILED_PKGS" = "0" ] && [ "$PASSED_PKGS" -gt "0" ]; then
             SUCCESS="true"
           else
             SUCCESS="false"
@@ -156,18 +152,16 @@ jobs:
 
       - name: Run e2e tests
         id: e2e_tests
-        shell: bash
+        continue-on-error: true
         run: |
-          set -o pipefail
-          go test -v -race ./e2e/... 2>&1 | tee e2e-test-output.txt && echo "exit_code=0" >> $GITHUB_OUTPUT || echo "exit_code=1" >> $GITHUB_OUTPUT
+          go test -v -race ./e2e/... 2>&1 | tee e2e-test-output.txt
 
       - name: Count tests
         id: count
         run: |
           PASSED_PKGS=$(grep -c '^ok' e2e-test-output.txt || echo "0")
           FAILED_PKGS=$(grep -c '^FAIL' e2e-test-output.txt || echo "0")
-          EXIT_CODE="${{ steps.e2e_tests.outputs.exit_code }}"
-          if [ "$EXIT_CODE" = "0" ]; then
+          if [ "$FAILED_PKGS" = "0" ] && [ "$PASSED_PKGS" -gt "0" ]; then
             SUCCESS="true"
           else
             SUCCESS="false"
