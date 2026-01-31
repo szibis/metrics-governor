@@ -7,23 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.3] - 2026-01-31
+## [0.6.3] - 2026-02-01
 
-### Changed
+### Added
 
-Release workflow upgrades
+- **Ship skills restructure** - Separated ship workflow into `ship_release` and `ship_pr` skills for better organization (#3) @szibis
+  - `ship_release`: Creates release PRs with auto-generated changelog from merged PRs
+  - `ship_pr`: Creates regular PRs with conventional commits and automatic labels
 
-- Renamed release skill to ship skill
-- Switched to PR-based release workflow with auto-merge
-- Added draft release notes generation from commits
-- Updated Makefile targets: `ship` and `ship-dry-run`
+### Fixed
+
+- **tag-on-merge workflow** - Fixed PR body expansion error that caused shell commands to fail (#2) @szibis
+
+### CI/CD Improvements
+
+- Added golangci-lint with staticcheck to CI pipeline
+- Added automatic PR labeler with color-coded labels based on:
+  - Commit type (feat, fix, docs, perf, etc.)
+  - Changed components (buffer, queue, sharding, etc.)
+  - PR size (XS, S, M, L, XL)
+- Fixed test counting in CI workflow
+- Updated development documentation with labeler guide
+
+**Full Changelog**: https://github.com/szibis/metrics-governor/compare/v0.6.2...v0.6.3
 
 **Test Coverage:**
-- Unit Tests: 461
+- Unit Tests: 702
 - Functional Tests: 73
 - E2E Tests: 20
 - Benchmarks: 90
-- Total: 554+ tests
+- Total: 885+ tests
 
 ## [0.6.2] - 2026-01-31
 
