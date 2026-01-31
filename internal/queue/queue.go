@@ -149,6 +149,12 @@ func (q *SendQueue) Push(req *colmetricspb.ExportMetricsServiceRequest) error {
 	return q.pushData(data)
 }
 
+// PushData adds pre-serialized data to the queue.
+// This allows other protocols (like PRW) to use the same queue infrastructure.
+func (q *SendQueue) PushData(data []byte) error {
+	return q.pushData(data)
+}
+
 // pushData adds serialized data to the queue.
 func (q *SendQueue) pushData(data []byte) error {
 	q.mu.Lock()
