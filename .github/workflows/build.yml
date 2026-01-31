@@ -57,8 +57,8 @@ jobs:
         id: count
         run: |
           TOTAL=$(grep -c "=== RUN" unit-test-output.txt || echo "0")
-          PASSED=$(grep -c "--- PASS" unit-test-output.txt || echo "0")
-          FAILED=$(grep -c "--- FAIL" unit-test-output.txt || echo "0")
+          PASSED=$(grep -c -e "--- PASS" unit-test-output.txt || echo "0")
+          FAILED=$(grep -c -e "--- FAIL" unit-test-output.txt || echo "0")
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
           echo "passed=$PASSED" >> $GITHUB_OUTPUT
           echo "failed=$FAILED" >> $GITHUB_OUTPUT
@@ -100,7 +100,7 @@ jobs:
         id: count
         run: |
           TOTAL=$(grep -c "=== RUN" functional-test-output.txt || echo "0")
-          PASSED=$(grep -c "--- PASS" functional-test-output.txt || echo "0")
+          PASSED=$(grep -c -e "--- PASS" functional-test-output.txt || echo "0")
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
           echo "passed=$PASSED" >> $GITHUB_OUTPUT
 
@@ -126,7 +126,7 @@ jobs:
         id: count
         run: |
           TOTAL=$(grep -c "=== RUN" e2e-test-output.txt || echo "0")
-          PASSED=$(grep -c "--- PASS" e2e-test-output.txt || echo "0")
+          PASSED=$(grep -c -e "--- PASS" e2e-test-output.txt || echo "0")
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
           echo "passed=$PASSED" >> $GITHUB_OUTPUT
 
