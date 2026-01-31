@@ -36,10 +36,12 @@ linters:
     - unconvert
     - unparam
     - whitespace
+    - shadow
 
 linters-settings:
   govet:
-    check-shadowing: true
+    enable:
+      - shadow
   gocyclo:
     min-complexity: 15
   dupl:
