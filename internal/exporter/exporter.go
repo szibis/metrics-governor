@@ -119,7 +119,7 @@ func New(ctx context.Context, cfg Config) (*OTLPExporter, error) {
 }
 
 // newGRPCExporter creates a gRPC-based exporter.
-func newGRPCExporter(ctx context.Context, cfg Config) (*OTLPExporter, error) {
+func newGRPCExporter(_ context.Context, cfg Config) (*OTLPExporter, error) {
 	var opts []grpc.DialOption
 
 	// Configure TLS or insecure connection
@@ -159,7 +159,7 @@ func newGRPCExporter(ctx context.Context, cfg Config) (*OTLPExporter, error) {
 }
 
 // newHTTPExporter creates an HTTP-based exporter.
-func newHTTPExporter(ctx context.Context, cfg Config) (*OTLPExporter, error) {
+func newHTTPExporter(_ context.Context, cfg Config) (*OTLPExporter, error) {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{

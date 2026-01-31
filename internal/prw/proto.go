@@ -177,7 +177,7 @@ func (req *WriteRequest) estimateSize() int {
 	return size
 }
 
-func (ts *TimeSeries) marshal() ([]byte, error) {
+func (ts *TimeSeries) marshal() ([]byte, error) { //nolint:unparam // error kept for API consistency
 	buf := make([]byte, 0, ts.estimateSize())
 
 	// Encode labels

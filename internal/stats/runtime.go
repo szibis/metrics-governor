@@ -362,7 +362,7 @@ func (r *RuntimeStats) writeDiskIOMetrics(w http.ResponseWriter) {
 	// syscw: 200
 	// read_bytes: 4096
 	// write_bytes: 8192
-	// cancelled_write_bytes: 0
+	// cancelled_write_bytes: 0 //nolint:misspell // Linux kernel uses British spelling
 
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {

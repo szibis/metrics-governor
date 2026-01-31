@@ -336,7 +336,7 @@ func (e *Enforcer) handleViolation(rule *Rule, groupKey string, m *metricspb.Met
 	}
 }
 
-func (e *Enforcer) handleAdaptive(rule *Rule, groupKey string, m *metricspb.Metric, resourceAttrs map[string]string, reason string, datapointsCount int) *metricspb.Metric {
+func (e *Enforcer) handleAdaptive(rule *Rule, groupKey string, m *metricspb.Metric, _ map[string]string, reason string, datapointsCount int) *metricspb.Metric {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -460,7 +460,7 @@ func (e *Enforcer) recordViolation(ruleName, reason string) {
 	}
 }
 
-func (e *Enforcer) recordDrop(ruleName string, count int, isNewGroup bool) {
+func (e *Enforcer) recordDrop(ruleName string, count int, _ bool) {
 	e.violations.mu.Lock()
 	defer e.violations.mu.Unlock()
 

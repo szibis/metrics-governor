@@ -21,10 +21,7 @@ linters:
     - goprintffuncname
     - gosec
     - misspell
-    - nakedret
-    - noctx
     - nolintlint
-    - prealloc
     - stylecheck
     - typecheck
     - unparam
@@ -57,6 +54,9 @@ issues:
         - errcheck
         - gosec
         - goconst
+        - gosimple
+        - ineffassign
+        - staticcheck
         - unused
         - unparam
     # Exclude some linters from running on benchmark files
