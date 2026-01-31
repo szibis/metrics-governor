@@ -69,6 +69,16 @@ jobs:
 
           echo "Created and pushed tag: $VERSION"
 
+      - name: Trigger release workflow
+        if: steps.check_tag.outputs.EXISTS == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          echo "Triggering release workflow for $VERSION..."
+          gh workflow run release.yml -f tag="$VERSION"
+          echo "Release workflow triggered"
+
       - name: Summary
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
