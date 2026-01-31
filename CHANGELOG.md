@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-01-31
+
+### Added
+
+Add Prometheus Remote Write support
+
+Implement PRW protocol as a separate pipeline (PRW→PRW) alongside existing OTLP pipeline. No cross-protocol conversion - metrics stay in their original format.
+
+**Features:**
+- PRW 1.0 and 2.0 protocol support
+- Native histograms, exemplars, and metadata (PRW 2.0)
+- Snappy and zstd compression
+- VictoriaMetrics mode with extra labels and short endpoint
+- TLS and authentication support
+- Buffering with configurable batch size and flush interval
+- Retry queue with exponential backoff
+
+**New Components:**
+- `internal/prw/` - PRW types, buffer, limits, proto encoding
+- `internal/receiver/prw.go` - PRW HTTP receiver
+- `internal/exporter/prw_exporter.go` - PRW exporter
+- `internal/exporter/prw_queued.go` - Queued PRW exporter
+- `docs/prw.md` - PRW documentation
+
+**Test Coverage:**
+- Unit Tests: 427
+- Functional Tests: 73
+- E2E Tests: 20
+- Benchmarks: 88
+- Total: 608+ tests
+
 ## [0.5.5] - 2026-01-31
 
 ### Added
