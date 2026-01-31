@@ -69,12 +69,15 @@ jobs:
       - name: Count tests
         id: count
         run: |
-          TOTAL=$(grep -c "=== RUN" unit-test-output.txt || echo "0")
-          PASSED=$(grep -c -e "--- PASS" unit-test-output.txt || echo "0")
-          FAILED=$(grep -c -e "--- FAIL" unit-test-output.txt || echo "0")
+          # Count only top-level tests (not subtests) for accurate pass/total comparison
+          # Subtests are indented and show as "=== RUN   TestName/subtest"
+          TOTAL=$(grep -c "^=== RUN   [^/]*$" unit-test-output.txt || echo "0")
+          PASSED=$(grep -c -e "^--- PASS:" unit-test-output.txt || echo "0")
+          FAILED=$(grep -c -e "^--- FAIL:" unit-test-output.txt || echo "0")
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
           echo "passed=$PASSED" >> $GITHUB_OUTPUT
           echo "failed=$FAILED" >> $GITHUB_OUTPUT
+          echo "Test counts: total=$TOTAL passed=$PASSED failed=$FAILED"
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
@@ -112,8 +115,9 @@ jobs:
       - name: Count tests
         id: count
         run: |
-          TOTAL=$(grep -c "=== RUN" functional-test-output.txt || echo "0")
-          PASSED=$(grep -c -e "--- PASS" functional-test-output.txt || echo "0")
+          # Count only top-level tests for accurate pass/total comparison
+          TOTAL=$(grep -c "^=== RUN   [^/]*$" functional-test-output.txt || echo "0")
+          PASSED=$(grep -c -e "^--- PASS:" functional-test-output.txt || echo "0")
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
           echo "passed=$PASSED" >> $GITHUB_OUTPUT
 
@@ -138,8 +142,9 @@ jobs:
       - name: Count tests
         id: count
         run: |
-          TOTAL=$(grep -c "=== RUN" e2e-test-output.txt || echo "0")
-          PASSED=$(grep -c -e "--- PASS" e2e-test-output.txt || echo "0")
+          # Count only top-level tests for accurate pass/total comparison
+          TOTAL=$(grep -c "^=== RUN   [^/]*$" e2e-test-output.txt || echo "0")
+          PASSED=$(grep -c -e "^--- PASS:" e2e-test-output.txt || echo "0")
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
           echo "passed=$PASSED" >> $GITHUB_OUTPUT
 

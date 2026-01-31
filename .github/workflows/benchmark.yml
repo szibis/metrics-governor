@@ -253,59 +253,121 @@ jobs:
       - name: Compare benchmarks
         id: compare
         run: |
-          echo "## 🏎️ Benchmark Comparison" > comparison.md
-          echo "" >> comparison.md
-          echo "<a name=\"benchmark-comparison\"></a>" >> comparison.md
-          echo "" >> comparison.md
-          echo "Comparing benchmarks for changed packages against base branch (\`${{ github.event.pull_request.base.ref }}\`)." >> comparison.md
-          echo "" >> comparison.md
-
           PACKAGES='${{ needs.detect-changes.outputs.packages }}'
           HAS_REGRESSION=false
+          HAS_IMPROVEMENT=false
+          REGRESSION_THRESHOLD=20
+          IMPROVEMENT_THRESHOLD=10
+
+          # Temporary file for detailed results
+          echo "" > details.md
+
+          # Arrays to track summary
+          declare -a REGRESSION_PKGS
+          declare -a IMPROVEMENT_PKGS
+          declare -a STABLE_PKGS
 
           for pkg in $(echo "$PACKAGES" | jq -r '.[]'); do
-            echo "### Package: \`$pkg\`" >> comparison.md
-            echo "" >> comparison.md
-
             BASELINE_FILE="baseline/benchmark-$pkg.txt"
             CURRENT_FILE="current/benchmark-$pkg/benchmark-$pkg.txt"
 
             if [ -f "$BASELINE_FILE" ] && [ -f "$CURRENT_FILE" ]; then
-              echo "\`\`\`" >> comparison.md
-              benchstat "$BASELINE_FILE" "$CURRENT_FILE" >> comparison.md 2>&1 || echo "Error comparing benchmarks" >> comparison.md
-              echo "\`\`\`" >> comparison.md
+              BENCHSTAT_OUTPUT=$(benchstat "$BASELINE_FILE" "$CURRENT_FILE" 2>&1 || echo "Error")
 
               # Check for regressions (> 20%)
-              REGRESSIONS=$(benchstat "$BASELINE_FILE" "$CURRENT_FILE" 2>&1 | grep -E '\+[2-9][0-9]\.[0-9]+%|\+[0-9]{3,}\.[0-9]+%' || true)
+              REGRESSIONS=$(echo "$BENCHSTAT_OUTPUT" | grep -E '\+[2-9][0-9]\.[0-9]+%|\+[0-9]{3,}\.[0-9]+%' || true)
+
+              # Check for improvements (> 10%)
+              IMPROVEMENTS=$(echo "$BENCHSTAT_OUTPUT" | grep -E '\-[1-9][0-9]\.[0-9]+%|\-[0-9]{3,}\.[0-9]+%' || true)
+
               if [ -n "$REGRESSIONS" ]; then
-                echo "" >> comparison.md
-                echo "⚠️ **Potential regressions detected (>20%):**" >> comparison.md
-                echo "\`\`\`" >> comparison.md
-                echo "$REGRESSIONS" >> comparison.md
-                echo "\`\`\`" >> comparison.md
                 HAS_REGRESSION=true
+                REGRESSION_PKGS+=("$pkg")
+                echo "### 🔴 Package: \`$pkg\` - Regression Detected" >> details.md
+                echo "" >> details.md
+                echo "<details open>" >> details.md
+                echo "<summary>Benchmark Details</summary>" >> details.md
+                echo "" >> details.md
+                echo "\`\`\`" >> details.md
+                echo "$BENCHSTAT_OUTPUT" >> details.md
+                echo "\`\`\`" >> details.md
+                echo "" >> details.md
+                echo "**Regressions (>${REGRESSION_THRESHOLD}%):**" >> details.md
+                echo "\`\`\`" >> details.md
+                echo "$REGRESSIONS" >> details.md
+                echo "\`\`\`" >> details.md
+                echo "</details>" >> details.md
+                echo "" >> details.md
+              elif [ -n "$IMPROVEMENTS" ]; then
+                HAS_IMPROVEMENT=true
+                IMPROVEMENT_PKGS+=("$pkg")
+                echo "### 🟢 Package: \`$pkg\` - Improvement Detected" >> details.md
+                echo "" >> details.md
+                echo "<details>" >> details.md
+                echo "<summary>Benchmark Details</summary>" >> details.md
+                echo "" >> details.md
+                echo "\`\`\`" >> details.md
+                echo "$BENCHSTAT_OUTPUT" >> details.md
+                echo "\`\`\`" >> details.md
+                echo "" >> details.md
+                echo "**Improvements (>${IMPROVEMENT_THRESHOLD}%):**" >> details.md
+                echo "\`\`\`" >> details.md
+                echo "$IMPROVEMENTS" >> details.md
+                echo "\`\`\`" >> details.md
+                echo "</details>" >> details.md
+                echo "" >> details.md
+              else
+                STABLE_PKGS+=("$pkg")
               fi
-            else
-              echo "⚠️ Could not compare - missing baseline or current results" >> comparison.md
             fi
-            echo "" >> comparison.md
           done
 
+          # Build the final comment
+          echo "## 🏎️ Benchmark Comparison" > comparison.md
+          echo "" >> comparison.md
+          echo "<a name=\"benchmark-comparison\"></a>" >> comparison.md
+          echo "" >> comparison.md
+
+          # Summary table
+          echo "| Status | Packages |" >> comparison.md
+          echo "|--------|----------|" >> comparison.md
+
+          if [ ${#REGRESSION_PKGS[@]} -gt 0 ]; then
+            echo "| 🔴 **Regression** | ${REGRESSION_PKGS[*]} |" >> comparison.md
+          fi
+          if [ ${#IMPROVEMENT_PKGS[@]} -gt 0 ]; then
+            echo "| 🟢 **Improved** | ${IMPROVEMENT_PKGS[*]} |" >> comparison.md
+          fi
+          if [ ${#STABLE_PKGS[@]} -gt 0 ]; then
+            echo "| ⚪ **Stable** | ${STABLE_PKGS[*]} |" >> comparison.md
+          fi
+
+          echo "" >> comparison.md
+
+          # Add details if there are regressions or improvements
+          if [ "$HAS_REGRESSION" = "true" ] || [ "$HAS_IMPROVEMENT" = "true" ]; then
+            cat details.md >> comparison.md
+          else
+            echo "✅ **All benchmarks are stable** - no significant changes detected (threshold: ±${REGRESSION_THRESHOLD}%)" >> comparison.md
+          fi
+
+          echo "" >> comparison.md
+          echo "---" >> comparison.md
+
           if [ "$HAS_REGRESSION" = "true" ]; then
+            echo "### ⚠️ Action Required" >> comparison.md
             echo "" >> comparison.md
-            echo "---" >> comparison.md
-            echo "### ⚠️ Performance Regression Warning" >> comparison.md
-            echo "" >> comparison.md
-            echo "One or more benchmarks show >20% regression. Please review the changes." >> comparison.md
+            echo "Performance regressions detected (>${REGRESSION_THRESHOLD}%). Please review before merging." >> comparison.md
             echo "has_regression=true" >> $GITHUB_OUTPUT
           else
+            echo "### ✅ Ready to Merge" >> comparison.md
             echo "" >> comparison.md
-            echo "---" >> comparison.md
-            echo "### ✅ No Significant Regressions" >> comparison.md
-            echo "" >> comparison.md
-            echo "All benchmarks are within acceptable thresholds." >> comparison.md
+            echo "No performance regressions detected." >> comparison.md
             echo "has_regression=false" >> $GITHUB_OUTPUT
           fi
+
+          echo "" >> comparison.md
+          echo "_Thresholds: Regression >${REGRESSION_THRESHOLD}%, Improvement >${IMPROVEMENT_THRESHOLD}%_" >> comparison.md
 
           cat comparison.md >> $GITHUB_STEP_SUMMARY
 
