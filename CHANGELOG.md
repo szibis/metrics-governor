@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-01-31
+
+### Fixed
+
+Fix buffer benchmark regression, add dual pipeline docs
+
+**Performance:**
+- Fix buffer benchmark regression by lazy `countDatapoints()` evaluation
+- `countDatapoints()` now only computed when needed (error logging or stats recording)
+- Improved buffer add throughput from ~14.5 ns/op back to ~11.3 ns/op
+
+**Documentation:**
+- Add dual pipeline notices across all documentation
+- Clarify that OTLP and PRW pipelines are completely separate
+- Components (limits, buffer, exporters, sharding) work identically for both protocols
+
+**Test Coverage:**
+- Unit Tests: 461
+- Functional Tests: 73
+- E2E Tests: 20
+- Other Tests: 32
+- Benchmarks: 90
+- Total: 586+ tests
+
 ## [0.6.1] - 2026-01-31
 
 ### Added
