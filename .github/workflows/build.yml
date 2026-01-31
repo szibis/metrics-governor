@@ -270,10 +270,10 @@ jobs:
             DELTA_STR="N/A"
           fi
 
-          # Determine coverage badge color
-          if (( $(echo "$UNIT_COVERAGE >= 80" | bc -l) )); then
+          # Determine coverage badge color (90% required)
+          if (( $(echo "$UNIT_COVERAGE >= 90" | bc -l) )); then
             COV_STATUS="🟢"
-          elif (( $(echo "$UNIT_COVERAGE >= 60" | bc -l) )); then
+          elif (( $(echo "$UNIT_COVERAGE >= 80" | bc -l) )); then
             COV_STATUS="🟡"
           else
             COV_STATUS="🔴"
@@ -301,9 +301,9 @@ jobs:
           <details>
           <summary>Coverage Thresholds</summary>
 
-          - 🟢 **Good**: >= 80%
-          - 🟡 **Warning**: 60-79%
-          - 🔴 **Critical**: < 60%
+          - 🟢 **Good**: >= 90%
+          - 🟡 **Warning**: 80-89%
+          - 🔴 **Critical**: < 80%
 
           </details>
 
