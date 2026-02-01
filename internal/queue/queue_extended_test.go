@@ -900,3 +900,161 @@ func TestQueuePushManyThenPopAll(t *testing.T) {
 		t.Errorf("Expected empty queue after popping, got length %d", q.Len())
 	}
 }
+
+func TestQueueSyncModes(t *testing.T) {
+	modes := []SyncMode{SyncImmediate, SyncBatched, SyncAsync}
+
+	for _, mode := range modes {
+		t.Run(string(mode), func(t *testing.T) {
+			tmpDir := t.TempDir()
+
+			cfg := Config{
+				Path:          tmpDir,
+				MaxSize:       100,
+				SyncMode:      mode,
+				SyncBatchSize: 5,
+				SyncInterval:  10 * time.Millisecond,
+			}
+
+			q, err := New(cfg)
+			if err != nil {
+				t.Fatalf("Failed to create queue with sync mode %s: %v", mode, err)
+			}
+
+			// Push entries
+			for i := 0; i < 10; i++ {
+				if err := q.PushData([]byte("sync mode test")); err != nil {
+					t.Fatalf("PushData failed: %v", err)
+				}
+			}
+
+			if q.Len() != 10 {
+				t.Errorf("Expected 10 entries, got %d", q.Len())
+			}
+
+			// Close and recover
+			q.Close()
+
+			q2, err := New(cfg)
+			if err != nil {
+				t.Fatalf("Failed to recover queue: %v", err)
+			}
+			defer q2.Close()
+
+			if q2.Len() != 10 {
+				t.Errorf("Expected 10 entries after recovery, got %d", q2.Len())
+			}
+		})
+	}
+}
+
+func TestQueueWithCompression(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := Config{
+		Path:        tmpDir,
+		MaxSize:     100,
+		Compression: true,
+	}
+
+	q, err := New(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create queue: %v", err)
+	}
+
+	// Push entries with compressible data
+	testData := []byte("This is test data that should compress well because it has repeated patterns")
+	for i := 0; i < 10; i++ {
+		if err := q.PushData(testData); err != nil {
+			t.Fatalf("PushData failed: %v", err)
+		}
+	}
+
+	if q.Len() != 10 {
+		t.Errorf("Expected 10 entries, got %d", q.Len())
+	}
+
+	// Verify data can be read back correctly
+	entry, err := q.Peek()
+	if err != nil {
+		t.Fatalf("Peek failed: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("Expected entry, got nil")
+	}
+
+	if string(entry.Data) != string(testData) {
+		t.Errorf("Data mismatch: got %q, want %q", entry.Data, testData)
+	}
+
+	// Close and recover
+	q.Close()
+
+	q2, err := New(cfg)
+	if err != nil {
+		t.Fatalf("Failed to recover queue: %v", err)
+	}
+	defer q2.Close()
+
+	if q2.Len() != 10 {
+		t.Errorf("Expected 10 entries after recovery, got %d", q2.Len())
+	}
+
+	// Verify data integrity after recovery
+	entry2, err := q2.Peek()
+	if err != nil {
+		t.Fatalf("Peek after recovery failed: %v", err)
+	}
+	if string(entry2.Data) != string(testData) {
+		t.Errorf("Data mismatch after recovery: got %q, want %q", entry2.Data, testData)
+	}
+}
+
+func TestQueueRecoveryWithConsumedEntries(t *testing.T) {
+	// Test specifically for the buffered write offset bug fix
+	tmpDir := t.TempDir()
+
+	cfg := Config{
+		Path:     tmpDir,
+		MaxSize:  100,
+		SyncMode: SyncBatched, // Use batched mode to trigger the buffered path
+	}
+
+	// Create queue and push entries
+	q1, err := New(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create queue: %v", err)
+	}
+
+	// Push 10 entries
+	for i := 0; i < 10; i++ {
+		if err := q1.PushData([]byte("entry")); err != nil {
+			t.Fatalf("PushData %d failed: %v", i, err)
+		}
+	}
+
+	// Pop 5 entries (mark as consumed)
+	for i := 0; i < 5; i++ {
+		entry, err := q1.Pop()
+		if err != nil {
+			t.Fatalf("Pop %d failed: %v", i, err)
+		}
+		if entry == nil {
+			t.Fatalf("Pop %d returned nil", i)
+		}
+	}
+
+	expectedLen := q1.Len()
+	q1.Close()
+
+	// Recover and verify correct count
+	q2, err := New(cfg)
+	if err != nil {
+		t.Fatalf("Failed to recover queue: %v", err)
+	}
+	defer q2.Close()
+
+	if q2.Len() != expectedLen {
+		t.Errorf("Recovery: expected %d entries, got %d", expectedLen, q2.Len())
+	}
+}
