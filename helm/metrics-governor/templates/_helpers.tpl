@@ -254,6 +254,13 @@ stats:
 
 limits:
   dry_run: {{ .Values.config.limitsDryRun }}
+
+{{- if .Values.performance }}
+performance:
+  export_concurrency: {{ .Values.performance.exportConcurrency | default 0 }}
+  string_interning: {{ .Values.performance.stringInterning | default true }}
+  intern_max_value_length: {{ .Values.performance.internMaxValueLength | default 64 }}
+{{- end }}
 {{- end }}
 
 {{/*

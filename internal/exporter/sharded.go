@@ -33,6 +33,9 @@ type ShardedExporterConfig struct {
 	// Queue config (applied per-endpoint if enabled)
 	QueueEnabled bool
 	QueueConfig  queue.Config
+
+	// ExportConcurrency limits parallel export goroutines (0 = NumCPU * 4)
+	ExportConcurrency int
 }
 
 // ShardedExporter distributes metrics across multiple endpoints using consistent hashing.
@@ -41,6 +44,7 @@ type ShardedExporter struct {
 	discovery *sharding.Discovery
 	hashRing  *sharding.HashRing
 	splitter  *sharding.MetricsSplitter
+	limiter   *ConcurrencyLimiter
 
 	mu        sync.RWMutex
 	exporters map[string]Exporter // endpoint -> Exporter
@@ -68,6 +72,7 @@ func NewSharded(ctx context.Context, cfg ShardedExporterConfig) (*ShardedExporte
 	e := &ShardedExporter{
 		config:    cfg,
 		hashRing:  sharding.NewHashRing(cfg.VirtualNodes),
+		limiter:   NewConcurrencyLimiter(cfg.ExportConcurrency),
 		exporters: make(map[string]Exporter),
 		ctx:       exporterCtx,
 		cancel:    cancel,
@@ -112,7 +117,7 @@ func (e *ShardedExporter) Export(ctx context.Context, req *colmetricspb.ExportMe
 		return fmt.Errorf("no endpoints available")
 	}
 
-	// Export each shard in parallel
+	// Export each shard in parallel with concurrency limiting
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(shards))
 
@@ -120,6 +125,10 @@ func (e *ShardedExporter) Export(ctx context.Context, req *colmetricspb.ExportMe
 		wg.Add(1)
 		go func(ep string, ms []*metricspb.ResourceMetrics) {
 			defer wg.Done()
+
+			// Acquire semaphore slot to limit concurrency
+			e.limiter.Acquire()
+			defer e.limiter.Release()
 
 			startTime := time.Now()
 

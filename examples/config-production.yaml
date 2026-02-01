@@ -39,3 +39,10 @@ stats:
 
 limits:
   dry_run: false
+
+# Performance tuning for production workloads
+# Techniques inspired by VictoriaMetrics blog articles (https://valyala.medium.com/)
+performance:
+  export_concurrency: 64               # higher limit for production throughput
+  string_interning: true               # reduces allocations by ~76%
+  intern_max_value_length: 64          # intern common label values

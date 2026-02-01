@@ -3,6 +3,8 @@ package prw
 import (
 	"sort"
 	"strings"
+
+	"github.com/szibis/metrics-governor/internal/intern"
 )
 
 // ShardKeyConfig configures which labels are included in the shard key.
@@ -11,6 +13,15 @@ type ShardKeyConfig struct {
 	// Metric name (__name__) is ALWAYS included automatically.
 	Labels []string
 }
+
+// Interning pools for shard key components
+var (
+	// metricNameIntern is used for interning metric names (always repeated)
+	metricNameIntern = intern.NewPool()
+
+	// shardLabelKeyIntern is used for interning label keys in shard key building
+	shardLabelKeyIntern = intern.CommonLabels()
+)
 
 // ShardKeyBuilder constructs shard keys from metric name and labels.
 // This type is safe for concurrent use.
@@ -21,9 +32,11 @@ type ShardKeyBuilder struct {
 
 // NewShardKeyBuilder creates a new shard key builder.
 func NewShardKeyBuilder(cfg ShardKeyConfig) *ShardKeyBuilder {
-	// Sort label keys for deterministic ordering
+	// Sort label keys for deterministic ordering and intern them
 	sortedKeys := make([]string, len(cfg.Labels))
-	copy(sortedKeys, cfg.Labels)
+	for i, key := range cfg.Labels {
+		sortedKeys[i] = shardLabelKeyIntern.Intern(key)
+	}
 	sort.Strings(sortedKeys)
 
 	return &ShardKeyBuilder{
@@ -48,8 +61,8 @@ func (b *ShardKeyBuilder) BuildKey(ts *TimeSeries) string {
 
 	var buf strings.Builder
 
-	// Always start with metric name
-	metricName := ts.MetricName()
+	// Always start with metric name (interned for deduplication)
+	metricName := metricNameIntern.Intern(ts.MetricName())
 	buf.WriteString(metricName)
 
 	// Build a map of labels for quick lookup
@@ -74,7 +87,8 @@ func (b *ShardKeyBuilder) BuildKey(ts *TimeSeries) string {
 // BuildKeyFromLabels constructs a shard key from metric name and a label map.
 func (b *ShardKeyBuilder) BuildKeyFromLabels(metricName string, labels map[string]string) string {
 	var buf strings.Builder
-	buf.WriteString(metricName)
+	// Intern metric name
+	buf.WriteString(metricNameIntern.Intern(metricName))
 
 	// Add configured labels in sorted order
 	for _, key := range b.sortedKeys {
@@ -87,6 +101,13 @@ func (b *ShardKeyBuilder) BuildKeyFromLabels(metricName string, labels map[strin
 	}
 
 	return buf.String()
+}
+
+// ShardKeyInternStats returns interning statistics for shard key components.
+func ShardKeyInternStats() (metricHits, metricMisses, labelHits, labelMisses uint64) {
+	metricHits, metricMisses = metricNameIntern.Stats()
+	labelHits, labelMisses = shardLabelKeyIntern.Stats()
+	return
 }
 
 // GetConfiguredLabels returns a copy of the configured labels.

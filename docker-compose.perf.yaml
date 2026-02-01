@@ -44,6 +44,10 @@ services:
       - "-flush-interval=50ms"        # Fast flushing
       - "-batch-size=500"             # Larger batches
       - "-buffer-size=50000"          # Large buffer
+      # Performance tuning for high-throughput scenarios
+      - "-export-concurrency=64"      # Higher concurrency for perf testing
+      - "-string-interning=true"
+      - "-intern-max-value-length=64"
     deploy:
       resources:
         limits:

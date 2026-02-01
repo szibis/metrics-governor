@@ -31,6 +31,9 @@ services:
       - "-flush-interval=100ms"
       - "-batch-size=100"
       - "-buffer-size=5000"
+      # Performance tuning (inspired by VictoriaMetrics techniques)
+      - "-string-interning=true"
+      - "-intern-max-value-length=64"
     volumes:
       - ./examples/limits.yaml:/etc/metrics-governor/limits.yaml:ro
     depends_on:

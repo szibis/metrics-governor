@@ -41,6 +41,8 @@ services:
       - "-flush-interval=1s"          # Slower flushing
       - "-batch-size=50"              # Smaller batches
       - "-buffer-size=1000"           # Smaller buffer
+      # Performance tuning (defaults for development)
+      - "-string-interning=true"
 
   victoriametrics:
     deploy:
