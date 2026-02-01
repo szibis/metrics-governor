@@ -1671,6 +1671,608 @@
           "legendFormat": "Heap Objects"
         }
       ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 117 },
+      "id": 70,
+      "panels": [],
+      "title": "PSI (Pressure Stall Information)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 118 },
+      "id": 71,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "PSI Some (10s avg)",
+      "description": "Percentage of time tasks are delayed due to resource pressure (some = at least one task)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "metrics_governor_psi_cpu_some_avg10{job=~\".*metrics-governor.*\"}",
+          "legendFormat": "CPU"
+        },
+        {
+          "expr": "metrics_governor_psi_memory_some_avg10{job=~\".*metrics-governor.*\"}",
+          "legendFormat": "Memory"
+        },
+        {
+          "expr": "metrics_governor_psi_io_some_avg10{job=~\".*metrics-governor.*\"}",
+          "legendFormat": "I/O"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 118 },
+      "id": 72,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "PSI Full (10s avg)",
+      "description": "Percentage of time ALL tasks are delayed (full stall - more severe)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "metrics_governor_psi_memory_full_avg10{job=~\".*metrics-governor.*\"}",
+          "legendFormat": "Memory"
+        },
+        {
+          "expr": "metrics_governor_psi_io_full_avg10{job=~\".*metrics-governor.*\"}",
+          "legendFormat": "I/O"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 126 },
+      "id": 73,
+      "panels": [],
+      "title": "Process I/O",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "Bps"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 127 },
+      "id": 74,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Disk I/O Rate",
+      "description": "Process disk read/write bytes per second",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(metrics_governor_process_io_read_bytes_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "Read"
+        },
+        {
+          "expr": "rate(metrics_governor_process_io_write_bytes_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "Write"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "ops"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 127 },
+      "id": 75,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Disk I/O Syscalls",
+      "description": "Process read/write syscalls per second",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(metrics_governor_process_io_read_syscalls_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "Read Syscalls/s"
+        },
+        {
+          "expr": "rate(metrics_governor_process_io_write_syscalls_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "Write Syscalls/s"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 135 },
+      "id": 76,
+      "panels": [],
+      "title": "Network I/O",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "Bps"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 136 },
+      "id": 77,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Network Throughput",
+      "description": "Network bytes per second (all interfaces except loopback)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(metrics_governor_network_receive_bytes_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "Receive"
+        },
+        {
+          "expr": "rate(metrics_governor_network_transmit_bytes_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "Transmit"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "pps"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 136 },
+      "id": 78,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Network Packets",
+      "description": "Network packets per second",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(metrics_governor_network_receive_packets_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "Receive"
+        },
+        {
+          "expr": "rate(metrics_governor_network_transmit_packets_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "Transmit"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 144 },
+      "id": 79,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Network Errors & Drops",
+      "description": "Network errors and dropped packets per second",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(metrics_governor_network_receive_errors_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "Rx Errors/s"
+        },
+        {
+          "expr": "rate(metrics_governor_network_transmit_errors_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "Tx Errors/s"
+        },
+        {
+          "expr": "rate(metrics_governor_network_receive_dropped_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "Rx Dropped/s"
+        },
+        {
+          "expr": "rate(metrics_governor_network_transmit_dropped_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "Tx Dropped/s"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 152 },
+      "id": 80,
+      "panels": [],
+      "title": "Process CPU & Memory (metrics-governor)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 153 },
+      "id": 81,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Process CPU Time",
+      "description": "Cumulative CPU time breakdown",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(metrics_governor_process_cpu_user_seconds{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "User CPU/s"
+        },
+        {
+          "expr": "rate(metrics_governor_process_cpu_system_seconds{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "System CPU/s"
+        },
+        {
+          "expr": "rate(metrics_governor_process_cpu_total_seconds{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "Total CPU/s"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 153 },
+      "id": 82,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Process Memory (metrics-governor)",
+      "description": "Memory metrics from metrics-governor runtime",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "metrics_governor_memory_heap_alloc_bytes{job=~\".*metrics-governor.*\"}",
+          "legendFormat": "Heap Alloc"
+        },
+        {
+          "expr": "metrics_governor_memory_heap_inuse_bytes{job=~\".*metrics-governor.*\"}",
+          "legendFormat": "Heap In Use"
+        },
+        {
+          "expr": "metrics_governor_memory_stack_inuse_bytes{job=~\".*metrics-governor.*\"}",
+          "legendFormat": "Stack In Use"
+        },
+        {
+          "expr": "metrics_governor_memory_sys_bytes{job=~\".*metrics-governor.*\"}",
+          "legendFormat": "Sys Total"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 161 },
+      "id": 83,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "GC CPU Usage",
+      "description": "Percentage of CPU time spent in garbage collection",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "metrics_governor_gc_cpu_percent{job=~\".*metrics-governor.*\"}",
+          "legendFormat": "GC CPU %"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 161 },
+      "id": 84,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Goroutines & FDs (metrics-governor)",
+      "description": "Goroutines and file descriptors from metrics-governor runtime",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "metrics_governor_goroutines{job=~\".*metrics-governor.*\"}",
+          "legendFormat": "Goroutines"
+        },
+        {
+          "expr": "metrics_governor_process_open_fds{job=~\".*metrics-governor.*\"}",
+          "legendFormat": "Open FDs"
+        }
+      ]
     }
   ],
   "refresh": "10s",
