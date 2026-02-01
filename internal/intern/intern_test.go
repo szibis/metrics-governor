@@ -199,3 +199,79 @@ func BenchmarkWithoutIntern(b *testing.B) {
 		_ = string([]byte(s))
 	}
 }
+
+func TestCommonLabels(t *testing.T) {
+	pool := CommonLabels()
+
+	// Should return a non-nil pool
+	if pool == nil {
+		t.Fatal("CommonLabels returned nil")
+	}
+
+	// Pool should be pre-populated with common PRW labels
+	prwLabels := []string{
+		"__name__", "job", "instance", "le", "quantile",
+		"service", "env", "cluster", "namespace", "pod",
+	}
+
+	for _, label := range prwLabels {
+		// These should be hits since they're pre-populated
+		interned := pool.Intern(label)
+		if interned != label {
+			t.Errorf("expected %q, got %q", label, interned)
+		}
+	}
+
+	// Pool should be pre-populated with common OTLP labels
+	otlpLabels := []string{
+		"service.name", "service.namespace", "k8s.pod.name",
+		"http.method", "http.status_code", "db.system",
+	}
+
+	for _, label := range otlpLabels {
+		interned := pool.Intern(label)
+		if interned != label {
+			t.Errorf("expected %q, got %q", label, interned)
+		}
+	}
+
+	// Calling CommonLabels again should return the same pool (singleton)
+	pool2 := CommonLabels()
+	if pool != pool2 {
+		t.Error("CommonLabels should return the same pool instance")
+	}
+
+	// Check that hits are being counted (pre-populated labels should all be hits)
+	hits, _ := pool.Stats()
+	if hits == 0 {
+		t.Error("expected some cache hits from pre-populated labels")
+	}
+}
+
+func TestCommonLabelsConcurrent(t *testing.T) {
+	const goroutines = 50
+	const iterations = 100
+
+	labels := []string{
+		"__name__", "job", "instance", "service.name", "k8s.pod.name",
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			pool := CommonLabels()
+			for j := 0; j < iterations; j++ {
+				label := labels[(id+j)%len(labels)]
+				interned := pool.Intern(label)
+				if interned != label {
+					t.Errorf("interned label mismatch: got %q, want %q", interned, label)
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+}
