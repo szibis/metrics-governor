@@ -13,8 +13,12 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -22,8 +26,25 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Determine version
+        id: version
+        run: |
+          # Get version from git describe or Chart.yaml
+          if git describe --tags --exact-match 2>/dev/null; then
+            VERSION=$(git describe --tags --exact-match)
+          else
+            # For PRs/branches, use Chart.yaml version + short SHA
+            CHART_VERSION=$(grep '^version:' helm/metrics-governor/Chart.yaml | awk '{print $2}')
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            VERSION="${CHART_VERSION}-${SHORT_SHA}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "📦 Building version: ${VERSION}"
+
       - name: Build
-        run: go build -v ./...
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          go build -ldflags "-X github.com/szibis/metrics-governor/internal/config.version=${VERSION}" -v ./...
 
   test-unit:
     runs-on: ubuntu-latest
@@ -230,7 +251,7 @@ jobs:
   coverage-comment:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    needs: [test-unit, test-functional, test-e2e, test-e2e-docker]
+    needs: [build, test-unit, test-functional, test-e2e, test-e2e-docker]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -343,9 +364,14 @@ jobs:
             THRESHOLD_STATUS="❌ Below ${THRESHOLD}%"
           fi
 
+          # Get version from build job
+          BUILD_VERSION="${{ needs.build.outputs.version }}"
+
           # Create comment
           cat > coverage-comment.md << EOF
           ## 📊 Test Coverage Report
+
+          **Version:** \`${BUILD_VERSION}\`
 
           | Metric | Value | Status |
           |--------|-------|--------|
@@ -440,7 +466,10 @@ jobs:
       - name: Run Docker Compose E2E tests
         id: e2e_docker
         timeout-minutes: 15
+        env:
+          BUILD_VERSION: ${{ needs.build.outputs.version }}
         run: |
+          echo "📦 Testing version: ${BUILD_VERSION}"
           chmod +x test/e2e-docker-compose.sh
           ./test/e2e-docker-compose.sh 2>&1 | tee e2e-docker-output.txt
 
@@ -472,6 +501,8 @@ jobs:
     needs: [build, test-unit, test-functional, test-e2e, test-e2e-docker, lint, lint-dockerfile, lint-yaml, lint-helm]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -479,14 +510,32 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Get version
+        id: version
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "📦 Building binaries for version: ${VERSION}"
+
       - name: Build darwin-arm64
-        run: GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w" -o bin/metrics-governor-darwin-arm64 ./cmd/metrics-governor
+        run: |
+          LDFLAGS="-s -w -X github.com/szibis/metrics-governor/internal/config.version=${{ steps.version.outputs.version }}"
+          GOOS=darwin GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-darwin-arm64 ./cmd/metrics-governor
 
       - name: Build linux-arm64
-        run: GOOS=linux GOARCH=arm64 go build -ldflags "-s -w" -o bin/metrics-governor-linux-arm64 ./cmd/metrics-governor
+        run: |
+          LDFLAGS="-s -w -X github.com/szibis/metrics-governor/internal/config.version=${{ steps.version.outputs.version }}"
+          GOOS=linux GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-linux-arm64 ./cmd/metrics-governor
 
       - name: Build linux-amd64
-        run: GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o bin/metrics-governor-linux-amd64 ./cmd/metrics-governor
+        run: |
+          LDFLAGS="-s -w -X github.com/szibis/metrics-governor/internal/config.version=${{ steps.version.outputs.version }}"
+          GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-linux-amd64 ./cmd/metrics-governor
+
+      - name: Verify version
+        run: |
+          echo "Verifying embedded version..."
+          ./bin/metrics-governor-linux-amd64 -version
 
       - name: Upload binaries
         uses: actions/upload-artifact@v4

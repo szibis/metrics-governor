@@ -53,15 +53,29 @@ check_docker() {
     log_info "Docker is available"
 }
 
+# Get version for build
+get_version() {
+    if [ -n "$BUILD_VERSION" ]; then
+        echo "$BUILD_VERSION"
+    elif git describe --tags --exact-match 2>/dev/null; then
+        git describe --tags --exact-match
+    else
+        local chart_version=$(grep '^version:' helm/metrics-governor/Chart.yaml | awk '{print $2}')
+        local short_sha=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+        echo "${chart_version}-${short_sha}"
+    fi
+}
+
 # Build all images from scratch
 build_images() {
-    log_info "Building Docker images (no cache)..."
-    docker compose build --no-cache 2>&1 | tail -20
+    local version=$(get_version)
+    log_info "Building Docker images (no cache) - version: $version"
+    docker compose build --no-cache --build-arg VERSION="$version" 2>&1 | tail -20
     if [ $? -ne 0 ]; then
         log_error "Failed to build Docker images"
         exit 1
     fi
-    log_info "Docker images built successfully"
+    log_info "Docker images built successfully - version: $version"
 }
 
 # Start the stack
@@ -180,6 +194,18 @@ check_metrics_endpoint() {
     log_info "Metrics endpoint is healthy"
 }
 
+# Check and display running version
+check_version() {
+    log_info "Checking running version..."
+
+    local container_name="metrics-governor-metrics-governor-1"
+
+    # Try to get version from container
+    local running_version=$(docker exec "$container_name" /app/metrics-governor -version 2>/dev/null | head -1 || echo "unknown")
+
+    log_info "Running version: $running_version"
+}
+
 # Verify data is flowing
 verify_data_flow() {
     log_info "Verifying data flow (timeout: ${VERIFICATION_TIMEOUT}s)..."
@@ -261,7 +287,9 @@ check_verifier() {
 
 # Print final summary
 print_summary() {
+    local version=$(get_version)
     log_info "=== E2E Test Summary ==="
+    log_info "Version: $version"
 
     echo ""
     docker compose ps
@@ -293,6 +321,7 @@ main() {
     check_restart_loops
     check_oom
     check_metrics_endpoint
+    check_version
 
     # Wait for data to start flowing
     sleep 20
