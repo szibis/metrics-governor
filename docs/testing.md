@@ -1,30 +1,123 @@
 # Testing
 
-A comprehensive test suite with 490+ tests across unit, functional, e2e, and performance testing ensures reliability and correctness.
+A comprehensive test suite with **855+ tests** across unit, functional, e2e, and performance testing ensures reliability and correctness.
 
-## Test Coverage Summary
+[![Build Status](https://github.com/szibis/metrics-governor/actions/workflows/build.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
+[![Benchmarks](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml)
 
-| Component | Unit Tests | Functional Tests | E2E Tests | Benchmarks | Coverage |
-|-----------|:----------:|:----------------:|:---------:|:----------:|:--------:|
-| **Buffer** | 13 | 6 | ✓ | 8 | 95% |
-| **Exporter** | 31 | 5 | ✓ | 12 | 90% |
-| **Receiver** | 16 | 9 | ✓ | 10 | 90% |
-| **Limits** | 37 | 10 | ✓ | 8 | 92% |
-| **Queue** | 29 | 8 | ✓ | 10 | 88% |
-| **Sharding** | 98 | 8 | ✓ | 6 | 95% |
-| **Stats** | 19 | 12 | ✓ | 8 | 90% |
-| **Config** | 29 | - | - | - | 85% |
-| **Auth** | 27 | - | ✓ | 6 | 88% |
-| **TLS** | 12 | - | ✓ | - | 85% |
-| **Compression** | 10 | - | ✓ | 8 | 90% |
-| **Logging** | 12 | - | - | - | 80% |
-| **Total** | **345** | **64** | **8** | **76** | **~85%** |
+## Live Test Status
 
-**Test Categories:**
-- **Unit Tests** (`internal/*/`): Component-level tests with mocks
-- **Functional Tests** (`functional/`): Integration tests with real components
-- **E2E Tests** (`e2e/`, `test/`): Full system tests with Docker Compose
-- **Benchmarks**: Performance tests measuring throughput and latency
+View the latest test results and coverage reports:
+
+| Status | Link |
+|--------|------|
+| **Build & Tests** | [GitHub Actions - Build](https://github.com/szibis/metrics-governor/actions/workflows/build.yml) |
+| **Benchmarks** | [GitHub Actions - Benchmarks](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml) |
+| **Coverage Report** | [PR Coverage Comments](https://github.com/szibis/metrics-governor/pulls?q=is%3Apr+label%3Asize%2F) |
+
+## Test Coverage by Component
+
+| Component | Unit Tests | Functional | E2E | Benchmarks | Coverage |
+|-----------|:----------:|:----------:|:---:|:----------:|:--------:|
+| [**Auth**](../internal/auth/) | 27 | - | ✓ | 10 | ~88% |
+| [**Buffer**](../internal/buffer/) | 23 | 6 | ✓ | 6 | ~95% |
+| [**Compression**](../internal/compression/) | 19 | - | ✓ | 13 | ~90% |
+| [**Config**](../internal/config/) | 50 | - | - | - | ~85% |
+| [**Exporter**](../internal/exporter/) | 103 | 5 | ✓ | 14 | ~90% |
+| [**Limits**](../internal/limits/) | 77 | 10 | ✓ | 9 | ~92% |
+| [**Logging**](../internal/logging/) | 24 | - | - | - | ~80% |
+| [**PRW**](../internal/prw/) | 81 | 8 | ✓ | 6 | ~88% |
+| [**Queue**](../internal/queue/) | 78 | 8 | ✓ | 7 | ~88% |
+| [**Receiver**](../internal/receiver/) | 45 | 9 | ✓ | 9 | ~90% |
+| [**Sharding**](../internal/sharding/) | 98 | 8 | ✓ | 10 | ~95% |
+| [**Stats**](../internal/stats/) | 65 | 12 | ✓ | 6 | ~90% |
+| [**TLS**](../internal/tls/) | 12 | - | ✓ | - | ~85% |
+| **Functional** | - | 73 | - | - | - |
+| **E2E** | - | - | 8 | - | - |
+| **Test Utils** | - | - | 72 | - | - |
+| **Total** | **702** | **73** | **80** | **90** | **~85%** |
+
+## Test Categories Detail
+
+### Unit Tests (`internal/*/`)
+
+Component-level tests with mocks. Each package tests its core functionality in isolation.
+
+| Package | Tests | Key Test Areas |
+|---------|:-----:|----------------|
+| `auth` | 27 | Bearer token, basic auth, HTTP middleware, gRPC interceptors |
+| `buffer` | 23 | Add/flush operations, batching, concurrent access, graceful shutdown |
+| `compression` | 19 | gzip/zstd/snappy/lz4 compress/decompress, round-trips |
+| `config` | 50 | CLI parsing, YAML loading, validation, defaults |
+| `exporter` | 103 | gRPC/HTTP export, retries, sharded export, queued export |
+| `limits` | 77 | Rule matching, cardinality tracking, adaptive limiting, dry-run |
+| `logging` | 24 | JSON output, log levels, field formatting |
+| `prw` | 81 | PRW 1.0/2.0 encoding, buffer, limits, sharding |
+| `queue` | 78 | WAL operations, push/pop, compaction, persistence |
+| `receiver` | 45 | gRPC/HTTP receivers, TLS, authentication |
+| `sharding` | 98 | Hash ring, consistent hashing, DNS discovery, splitter |
+| `stats` | 65 | Metrics collection, cardinality tracking, Prometheus output |
+| `tls` | 12 | Certificate loading, mTLS, client/server config |
+
+### Functional Tests (`functional/`)
+
+Integration tests with real components working together.
+
+| File | Tests | Description |
+|------|:-----:|-------------|
+| `buffer_test.go` | 6 | Buffer with real stats collector |
+| `exporter_test.go` | 5 | Export to mock backends |
+| `limits_test.go` | 10 | Limits enforcement with real metrics |
+| `prw_test.go` | 8 | PRW pipeline end-to-end |
+| `queue_test.go` | 8 | Queue persistence and recovery |
+| `receiver_test.go` | 9 | Receiver with compression and auth |
+| `sharding_test.go` | 8 | Sharding with multiple endpoints |
+| `stats_test.go` | 12 | Stats with high cardinality |
+| `verifier_test.go` | 7 | Verification functions |
+
+### E2E Tests (`e2e/`)
+
+Full system tests with complete pipeline.
+
+| Test | Description |
+|------|-------------|
+| `TestE2E_GRPCFullPipeline` | Complete gRPC flow through all components |
+| `TestE2E_HTTPFullPipeline` | Complete HTTP flow through all components |
+| `TestE2E_BufferFlush` | Graceful shutdown and buffer flush |
+| `TestE2E_ConcurrentClients` | Multiple concurrent clients |
+| `TestE2E_HighCardinality` | High cardinality metric handling |
+| `TestE2E_ManyDatapoints` | Large batch processing |
+| `TestE2E_BurstTraffic` | Traffic burst handling |
+| `TestE2E_EdgeCaseValues` | Extreme float values |
+
+### Benchmarks
+
+Performance tests measuring throughput, latency, and memory usage.
+
+| Package | Benchmarks | Key Metrics |
+|---------|:----------:|-------------|
+| `auth` | 10 | Auth middleware overhead |
+| `buffer` | 6 | Add throughput, flush latency |
+| `compression` | 13 | Compression ratios and speeds |
+| `exporter` | 14 | Export throughput per protocol |
+| `limits` | 9 | Rule matching performance |
+| `prw` | 6 | PRW encoding/decoding speed |
+| `queue` | 7 | WAL write/read performance |
+| `receiver` | 9 | Request handling throughput |
+| `sharding` | 10 | Hash ring operations |
+| `stats` | 6 | Stats collection overhead |
+
+Run benchmarks:
+```bash
+# All benchmarks
+make bench
+
+# Specific package
+go test -bench=. -benchmem ./internal/buffer/...
+
+# Compare against baseline
+make bench-compare
+```
 
 ## Running Tests
 
