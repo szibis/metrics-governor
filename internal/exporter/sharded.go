@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -295,12 +296,15 @@ func collectErrors(errCh <-chan error) error {
 		return errs[0]
 	}
 
-	// Combine multiple errors
-	msg := "multiple export errors:"
+	// Combine multiple errors using strings.Builder for efficiency
+	var sb strings.Builder
+	sb.WriteString("multiple export errors:")
 	for _, err := range errs {
-		msg += " [" + err.Error() + "]"
+		sb.WriteString(" [")
+		sb.WriteString(err.Error())
+		sb.WriteByte(']')
 	}
-	return errors.New(msg)
+	return errors.New(sb.String())
 }
 
 // errorExporter is an exporter that always returns an error.

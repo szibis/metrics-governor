@@ -10,11 +10,13 @@ import (
 
 // testPRWStatsCollector implements PRWStatsCollector for testing
 type testPRWStatsCollector struct {
-	receivedDP int64
-	receivedTS int64
-	exportedDP int64
-	exportedTS int64
-	errors     int64
+	receivedDP    int64
+	receivedTS    int64
+	exportedDP    int64
+	exportedTS    int64
+	errors        int64
+	receivedBytes int64
+	sentBytes     int64
 }
 
 func (m *testPRWStatsCollector) RecordPRWReceived(datapointCount, timeseriesCount int) {
@@ -30,6 +32,20 @@ func (m *testPRWStatsCollector) RecordPRWExport(datapointCount, timeseriesCount 
 func (m *testPRWStatsCollector) RecordPRWExportError() {
 	atomic.AddInt64(&m.errors, 1)
 }
+
+func (m *testPRWStatsCollector) RecordPRWBytesReceived(bytes int) {
+	atomic.AddInt64(&m.receivedBytes, int64(bytes))
+}
+
+func (m *testPRWStatsCollector) RecordPRWBytesReceivedCompressed(bytes int) {}
+
+func (m *testPRWStatsCollector) RecordPRWBytesSent(bytes int) {
+	atomic.AddInt64(&m.sentBytes, int64(bytes))
+}
+
+func (m *testPRWStatsCollector) RecordPRWBytesSentCompressed(bytes int) {}
+
+func (m *testPRWStatsCollector) SetPRWBufferSize(size int) {}
 
 // testPRWLimits implements PRWLimitsEnforcer for testing
 type testPRWLimits struct {

@@ -34,8 +34,24 @@ services:
       # Performance tuning (inspired by VictoriaMetrics techniques)
       - "-string-interning=true"
       - "-intern-max-value-length=64"
+      # Queue configuration - persistent retry queue
+      - "-queue-enabled=true"
+      - "-queue-path=/data/queue"
+      - "-queue-max-size=10000"
+      - "-queue-max-bytes=536870912"
+      - "-queue-retry-interval=5s"
+      - "-queue-full-behavior=drop_oldest"
+      - "-queue-adaptive-enabled=true"
+      # Sharding configuration - consistent hashing across endpoints
+      - "-sharding-enabled=true"
+      - "-sharding-headless-service=victoriametrics"
+      - "-sharding-labels=service,env"
+      - "-sharding-virtual-nodes=150"
+      - "-sharding-fallback-on-empty=true"
+      - "-sharding-dns-refresh-interval=30s"
     volumes:
       - ./examples/limits.yaml:/etc/metrics-governor/limits.yaml:ro
+      - mg-queue-data:/data/queue
     depends_on:
       - victoriametrics
     restart: on-failure
@@ -126,6 +142,12 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
     volumes:
       - ./test/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./test/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./test/grafana/dashboards:/var/lib/grafana/dashboards/test:ro
+      - ./dashboards:/var/lib/grafana/dashboards/operations:ro
     depends_on:
       - victoriametrics
+
+# Named volumes for persistent data
+volumes:
+  mg-queue-data:
+    driver: local

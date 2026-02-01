@@ -19,6 +19,11 @@ type PRWStatsCollector interface {
 	RecordPRWReceived(datapointCount, timeseriesCount int)
 	RecordPRWExport(datapointCount, timeseriesCount int)
 	RecordPRWExportError()
+	RecordPRWBytesReceived(bytes int)
+	RecordPRWBytesReceivedCompressed(bytes int)
+	RecordPRWBytesSent(bytes int)
+	RecordPRWBytesSentCompressed(bytes int)
+	SetPRWBufferSize(size int)
 }
 
 // PRWLimitsEnforcer defines the interface for enforcing limits on PRW data.
@@ -86,11 +91,12 @@ func (b *Buffer) Add(req *WriteRequest) {
 		return
 	}
 
-	// Track received datapoints
+	// Track received datapoints and bytes (uncompressed)
 	if b.stats != nil {
 		datapointCount := req.TotalDatapoints()
 		timeseriesCount := req.TotalTimeseries()
 		b.stats.RecordPRWReceived(datapointCount, timeseriesCount)
+		b.stats.RecordPRWBytesReceived(req.EstimateSize())
 	}
 
 	// Apply limits enforcement (may filter/sample metrics)
@@ -103,11 +109,17 @@ func (b *Buffer) Add(req *WriteRequest) {
 	}
 
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	// Append timeseries
 	b.timeseries = append(b.timeseries, req.Timeseries...)
+	bufferSize := len(b.timeseries)
+	b.mu.Unlock()
 
+	// Update buffer size metric
+	if b.stats != nil {
+		b.stats.SetPRWBufferSize(bufferSize)
+	}
+
+	b.mu.Lock()
 	// Append metadata (deduplicate by metric family name)
 	for _, md := range req.Metadata {
 		found := false
@@ -131,6 +143,7 @@ func (b *Buffer) Add(req *WriteRequest) {
 		default:
 		}
 	}
+	b.mu.Unlock()
 }
 
 // Start starts the background flush routine.
@@ -169,6 +182,11 @@ func (b *Buffer) flush(ctx context.Context) {
 	// Keep metadata across flushes (it doesn't need to be sent every time)
 	b.mu.Unlock()
 
+	// Update buffer size metric (now empty after taking timeseries)
+	if b.stats != nil {
+		b.stats.SetPRWBufferSize(0)
+	}
+
 	if exporter == nil {
 		return
 	}
@@ -192,6 +210,9 @@ func (b *Buffer) flush(ctx context.Context) {
 		if i == 0 && len(metadata) > 0 {
 			req.Metadata = metadata
 		}
+
+		// Track bytes before sending (uncompressed size)
+		byteSize := req.EstimateSize()
 
 		if err := exporter.Export(ctx, req); err != nil {
 			if b.logAggregator != nil {
@@ -218,6 +239,7 @@ func (b *Buffer) flush(ctx context.Context) {
 		// Record successful export
 		if b.stats != nil {
 			b.stats.RecordPRWExport(datapointCount, timeseriesCount)
+			b.stats.RecordPRWBytesSent(byteSize)
 		}
 	}
 }

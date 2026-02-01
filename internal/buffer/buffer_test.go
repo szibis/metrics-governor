@@ -47,11 +47,14 @@ func (m *mockExporter) getTotalResourceMetrics() int {
 
 // Mock stats collector
 type mockStatsCollector struct {
-	mu           sync.Mutex
-	processed    int
-	received     int
-	exported     int
-	exportErrors int
+	mu             sync.Mutex
+	processed      int
+	received       int
+	exported       int
+	exportErrors   int
+	bytesReceived  int
+	bytesSent      int
+	otlpBufferSize int
 }
 
 func (m *mockStatsCollector) Process(resourceMetrics []*metricspb.ResourceMetrics) {
@@ -76,6 +79,24 @@ func (m *mockStatsCollector) RecordExportError() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.exportErrors++
+}
+
+func (m *mockStatsCollector) RecordOTLPBytesReceived(bytes int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.bytesReceived += bytes
+}
+
+func (m *mockStatsCollector) RecordOTLPBytesSent(bytes int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.bytesSent += bytes
+}
+
+func (m *mockStatsCollector) SetOTLPBufferSize(size int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.otlpBufferSize = size
 }
 
 func (m *mockStatsCollector) getProcessedCount() int {
