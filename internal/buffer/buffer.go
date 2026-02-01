@@ -8,6 +8,7 @@ import (
 	"github.com/szibis/metrics-governor/internal/logging"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 // Exporter defines the interface for sending metrics.
@@ -21,6 +22,9 @@ type StatsCollector interface {
 	RecordReceived(count int)
 	RecordExport(datapointCount int)
 	RecordExportError()
+	RecordOTLPBytesReceived(bytes int)
+	RecordOTLPBytesSent(bytes int)
+	SetOTLPBufferSize(size int)
 }
 
 // LimitsEnforcer defines the interface for enforcing limits.
@@ -67,10 +71,12 @@ func New(maxSize, maxBatchSize int, flushInterval time.Duration, exporter Export
 
 // Add adds metrics to the buffer.
 func (b *MetricsBuffer) Add(resourceMetrics []*metricspb.ResourceMetrics) {
-	// Track received datapoints
+	// Track received datapoints and bytes
 	if b.stats != nil {
 		receivedCount := countDatapoints(resourceMetrics)
 		b.stats.RecordReceived(receivedCount)
+		// Estimate received bytes (uncompressed)
+		b.stats.RecordOTLPBytesReceived(estimateResourceMetricsSize(resourceMetrics))
 	}
 
 	// Process stats before any filtering
@@ -88,12 +94,17 @@ func (b *MetricsBuffer) Add(resourceMetrics []*metricspb.ResourceMetrics) {
 	}
 
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	b.metrics = append(b.metrics, resourceMetrics...)
+	bufferSize := len(b.metrics)
+	b.mu.Unlock()
+
+	// Update buffer size metric
+	if b.stats != nil {
+		b.stats.SetOTLPBufferSize(bufferSize)
+	}
 
 	// Trigger flush if buffer is full
-	if len(b.metrics) >= b.maxSize {
+	if bufferSize >= b.maxSize {
 		select {
 		case b.flushChan <- struct{}{}:
 		default:
@@ -133,6 +144,11 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 	b.metrics = make([]*metricspb.ResourceMetrics, 0, b.maxSize)
 	b.mu.Unlock()
 
+	// Update buffer size metric (now empty after taking metrics)
+	if b.stats != nil {
+		b.stats.SetOTLPBufferSize(0)
+	}
+
 	// Send in batches
 	for i := 0; i < len(toSend); i += b.maxBatchSize {
 		end := i + b.maxBatchSize
@@ -144,6 +160,9 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 		req := &colmetricspb.ExportMetricsServiceRequest{
 			ResourceMetrics: batch,
 		}
+
+		// Estimate bytes before sending (uncompressed size)
+		byteSize := estimateResourceMetricsSize(batch)
 
 		if err := b.exporter.Export(ctx, req); err != nil {
 			// Only count datapoints when needed for logging
@@ -172,6 +191,7 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 		if b.stats != nil {
 			datapointCount := countDatapoints(batch)
 			b.stats.RecordExport(datapointCount)
+			b.stats.RecordOTLPBytesSent(byteSize)
 		}
 	}
 }
@@ -203,4 +223,13 @@ func countDatapoints(resourceMetrics []*metricspb.ResourceMetrics) int {
 		}
 	}
 	return count
+}
+
+// estimateResourceMetricsSize estimates the serialized size of resource metrics in bytes.
+func estimateResourceMetricsSize(resourceMetrics []*metricspb.ResourceMetrics) int {
+	size := 0
+	for _, rm := range resourceMetrics {
+		size += proto.Size(rm)
+	}
+	return size
 }

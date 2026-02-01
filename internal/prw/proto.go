@@ -196,6 +196,12 @@ func (req *WriteRequest) estimateSize() int {
 	return size
 }
 
+// EstimateSize returns an estimate of the marshaled size in bytes.
+// This is useful for tracking uncompressed payload sizes.
+func (req *WriteRequest) EstimateSize() int {
+	return req.estimateSize()
+}
+
 func (ts *TimeSeries) marshal() ([]byte, error) { //nolint:unparam // error kept for API consistency
 	buf := make([]byte, 0, ts.estimateSize())
 
