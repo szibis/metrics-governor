@@ -87,6 +87,16 @@ var knownMetrics = []string{
 	"metrics_governor_rule_group_cardinality",
 	"metrics_governor_limits_total_datapoints",
 	"metrics_governor_limits_total_cardinality",
+	"metrics_governor_rule_cardinality_memory_bytes",
+	"metrics_governor_limits_cardinality_memory_bytes",
+	"metrics_governor_limits_cardinality_trackers_total",
+
+	// Cardinality tracking (stats.go, limits/enforcer.go)
+	"metrics_governor_cardinality_mode",
+	"metrics_governor_cardinality_memory_bytes",
+	"metrics_governor_cardinality_trackers_total",
+	"metrics_governor_cardinality_config_expected_items",
+	"metrics_governor_cardinality_config_fp_rate",
 
 	// Runtime metrics (stats/runtime.go)
 	"metrics_governor_process_start_time_seconds",
@@ -371,6 +381,7 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_limit",
 		"metrics_governor_rule",
 		"metrics_governor_limits",
+		"metrics_governor_cardinality",
 		// Runtime metrics prefixes
 		"metrics_governor_process",
 		"metrics_governor_goroutines",

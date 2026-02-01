@@ -288,7 +288,8 @@ check_queue() {
     if [ "$queue_push" -gt 0 ]; then
         log_info "Queue is operational (pushes recorded)"
     else
-        log_warn "No queue pushes recorded (queue may not be enabled)"
+        # Queue only receives items when exports fail - zero pushes means exports are succeeding
+        log_info "No queue pushes recorded (expected when exports are successful)"
     fi
 
     if [ "$meta_sync" -gt 0 ]; then
@@ -312,17 +313,35 @@ check_verifier() {
     local checks_total=$(echo "$verifier_metrics" | grep "^verifier_checks_total" | awk '{print $2}' | cut -d'.' -f1)
     local checks_passed=$(echo "$verifier_metrics" | grep "^verifier_checks_passed_total" | awk '{print $2}' | cut -d'.' -f1)
     local last_status=$(echo "$verifier_metrics" | grep "^verifier_last_check_status" | awk '{print $2}' | cut -d'.' -f1)
+    local ingestion_rate=$(echo "$verifier_metrics" | grep "^verifier_last_ingestion_rate_percent" | awk '{print $2}')
+    local vm_counter=$(echo "$verifier_metrics" | grep "^verifier_vm_verification_counter" | awk '{print $2}' | cut -d'.' -f1)
+    local mg_received=$(echo "$verifier_metrics" | grep "^verifier_mg_datapoints_received" | awk '{print $2}' | cut -d'.' -f1)
+    local mg_sent=$(echo "$verifier_metrics" | grep "^verifier_mg_datapoints_sent" | awk '{print $2}' | cut -d'.' -f1)
 
     checks_total=${checks_total:-0}
     checks_passed=${checks_passed:-0}
     last_status=${last_status:-0}
+    ingestion_rate=${ingestion_rate:-0}
+    vm_counter=${vm_counter:-0}
+    mg_received=${mg_received:-0}
+    mg_sent=${mg_sent:-0}
 
     log_info "Verifier: $checks_passed/$checks_total checks passed, last status: $last_status"
+    log_info "Verifier details: VM counter=$vm_counter, MG received=$mg_received, MG sent=$mg_sent, Ingestion rate=$ingestion_rate"
 
     if [ "$checks_total" -gt 0 ]; then
         local pass_rate=$((checks_passed * 100 / checks_total))
         if [ $pass_rate -lt 80 ]; then
-            log_warn "Verifier pass rate is low: ${pass_rate}%"
+            # Provide more context on why verification might be failing
+            if [ "$vm_counter" -eq 0 ]; then
+                log_warn "Verifier pass rate low (${pass_rate}%): verification counter not found in VictoriaMetrics"
+            elif [ "$mg_received" -eq 0 ]; then
+                log_warn "Verifier pass rate low (${pass_rate}%): no datapoints_received metrics (check stats collector)"
+            else
+                log_warn "Verifier pass rate is low: ${pass_rate}%"
+            fi
+        else
+            log_info "Verifier pass rate: ${pass_rate}%"
         fi
     fi
 

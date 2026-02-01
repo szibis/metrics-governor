@@ -1134,9 +1134,9 @@ OPTIONS:
         -limits-dry-run                  Dry run mode: log only, don't drop/sample (default: true)
 
     Cardinality Tracking:
-        -cardinality-mode <mode>         Tracking mode: bloom (memory-efficient) or exact (100% accurate) (default: bloom)
+        -cardinality-mode <mode>         Tracking mode: bloom (memory-efficient) or exact (100%% accurate) (default: bloom)
         -cardinality-expected-items <n>  Expected unique items per tracker for Bloom sizing (default: 100000)
-        -cardinality-fp-rate <rate>      Bloom filter false positive rate (default: 0.01 = 1%)
+        -cardinality-fp-rate <rate>      Bloom filter false positive rate (default: 0.01 = 1%%)
 
     Queue (FastQueue - High-Performance Persistent Retry):
         -queue-enabled                   Enable persistent queue for export retries (default: false)
