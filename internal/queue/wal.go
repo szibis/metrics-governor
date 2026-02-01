@@ -111,10 +111,10 @@ type WALConfig struct {
 	CompactThreshold  float64 // Default 0.5 (50% consumed)
 	AdaptiveEnabled   bool    // Enable adaptive sizing
 	// I/O optimization options
-	SyncMode       SyncMode      // When to sync: immediate, batched, async
-	SyncBatchSize  int           // Number of writes before sync (batched mode)
-	SyncInterval   time.Duration // Max time between syncs (batched mode)
-	Compression    bool          // Enable snappy compression
+	SyncMode      SyncMode      // When to sync: immediate, batched, async
+	SyncBatchSize int           // Number of writes before sync (batched mode)
+	SyncInterval  time.Duration // Max time between syncs (batched mode)
+	Compression   bool          // Enable snappy compression
 }
 
 // NewWAL creates a new write-ahead log.

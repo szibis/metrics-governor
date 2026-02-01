@@ -1065,7 +1065,6 @@ func TestQueueRecoveryWithConsumedEntries(t *testing.T) {
 	}
 }
 
-
 func TestQueueDroppedReasons(t *testing.T) {
 	tmpDir := t.TempDir()
 
