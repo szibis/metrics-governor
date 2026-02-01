@@ -55,6 +55,9 @@ func init() {
 	prometheus.MustRegister(shardingDNSErrorsTotal)
 	prometheus.MustRegister(shardingDNSLatencySeconds)
 	prometheus.MustRegister(shardingExportLatencySeconds)
+
+	// Initialize gauge to 0 so it appears in Prometheus immediately
+	shardingEndpointsTotal.Set(0)
 }
 
 // SetEndpointsTotal sets the current number of endpoints.

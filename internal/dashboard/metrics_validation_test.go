@@ -32,6 +32,14 @@ var knownMetrics = []string{
 	// OTLP stats (stats.go)
 	"metrics_governor_otlp_bytes_total",
 
+	// OTLP exporter metrics (exporter/metrics.go)
+	"metrics_governor_otlp_export_bytes_total",
+	"metrics_governor_otlp_export_requests_total",
+	"metrics_governor_otlp_export_errors_total",
+
+	// gRPC receiver metrics (receiver/grpc.go)
+	"metrics_governor_grpc_received_bytes_total",
+
 	// Buffer stats (stats.go)
 	"metrics_governor_buffer_size",
 
@@ -61,6 +69,14 @@ var knownMetrics = []string{
 	"metrics_governor_fastqueue_chunk_rotations",
 	"metrics_governor_fastqueue_inmemory_flushes",
 
+	// Queue I/O optimization metrics (queue/metrics.go)
+	"metrics_governor_queue_sync_total",
+	"metrics_governor_queue_bytes_written_total",
+	"metrics_governor_queue_bytes_compressed_total",
+	"metrics_governor_queue_compression_ratio",
+	"metrics_governor_queue_pending_syncs",
+	"metrics_governor_queue_sync_latency_seconds",
+
 	// Sharding metrics (sharding/metrics.go)
 	"metrics_governor_sharding_endpoints_total",
 	"metrics_governor_sharding_datapoints_total",
@@ -87,6 +103,16 @@ var knownMetrics = []string{
 	"metrics_governor_rule_group_cardinality",
 	"metrics_governor_limits_total_datapoints",
 	"metrics_governor_limits_total_cardinality",
+	"metrics_governor_rule_cardinality_memory_bytes",
+	"metrics_governor_limits_cardinality_memory_bytes",
+	"metrics_governor_limits_cardinality_trackers_total",
+
+	// Cardinality tracking (stats.go, limits/enforcer.go)
+	"metrics_governor_cardinality_mode",
+	"metrics_governor_cardinality_memory_bytes",
+	"metrics_governor_cardinality_trackers_total",
+	"metrics_governor_cardinality_config_expected_items",
+	"metrics_governor_cardinality_config_fp_rate",
 
 	// Runtime metrics (stats/runtime.go)
 	"metrics_governor_process_start_time_seconds",
@@ -362,6 +388,7 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_export",
 		"metrics_governor_prw",
 		"metrics_governor_otlp",
+		"metrics_governor_grpc",
 		"metrics_governor_buffer",
 		"metrics_governor_metric_",
 		"metrics_governor_label_",
@@ -371,6 +398,7 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_limit",
 		"metrics_governor_rule",
 		"metrics_governor_limits",
+		"metrics_governor_cardinality",
 		// Runtime metrics prefixes
 		"metrics_governor_process",
 		"metrics_governor_goroutines",

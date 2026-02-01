@@ -9,7 +9,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/szibis/metrics-governor/internal/buffer"
+	"github.com/szibis/metrics-governor/internal/cardinality"
 	"github.com/szibis/metrics-governor/internal/config"
 	"github.com/szibis/metrics-governor/internal/exporter"
 	"github.com/szibis/metrics-governor/internal/limits"
@@ -36,6 +38,19 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Initialize cardinality tracking configuration
+	cardinalityCfg := cfg.CardinalityConfig()
+	cardinality.GlobalConfig = cardinality.Config{
+		Mode:              cardinality.ParseMode(cardinalityCfg.Mode),
+		ExpectedItems:     cardinalityCfg.ExpectedItems,
+		FalsePositiveRate: cardinalityCfg.FPRate,
+	}
+	logging.Info("cardinality tracking initialized", logging.F(
+		"mode", cardinalityCfg.Mode,
+		"expected_items", cardinalityCfg.ExpectedItems,
+		"fp_rate", cardinalityCfg.FPRate,
+	))
 
 	// Create exporter (either sharded or single endpoint)
 	var finalExporter exporter.Exporter
@@ -194,6 +209,8 @@ func main() {
 		}
 		// Write runtime metrics (goroutines, memory, GC, PSI)
 		runtimeStats.ServeHTTP(w, r)
+		// Write Prometheus registry metrics (queue, sharding, etc.)
+		promhttp.Handler().ServeHTTP(w, r)
 	})
 
 	statsServer := &http.Server{

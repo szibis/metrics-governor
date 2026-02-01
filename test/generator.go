@@ -172,9 +172,22 @@ func main() {
 	edgeCaseCounter, _ := meter.Int64Counter("edge_case_counter",
 		metric.WithDescription("Counter with edge case values"))
 
-	// High cardinality metrics
+	// High cardinality metrics - multiple metrics with different cardinality profiles
 	highCardinalityMetric, _ := meter.Int64Counter("high_cardinality_metric",
 		metric.WithDescription("Metric with many unique label combinations"))
+
+	// Additional high cardinality metrics for testing limits with different patterns
+	highCardUserEvents, _ := meter.Int64Counter("high_card_user_events",
+		metric.WithDescription("User events with high user_id cardinality"))
+	highCardAPIRequests, _ := meter.Int64Counter("high_card_api_requests",
+		metric.WithDescription("API requests with high endpoint cardinality"))
+	highCardDBQueries, _ := meter.Int64Counter("high_card_db_queries",
+		metric.WithDescription("DB queries with high query_hash cardinality"))
+	highCardCacheOps, _ := meter.Int64Counter("high_card_cache_operations",
+		metric.WithDescription("Cache operations with high cache_key cardinality"))
+	highCardHTTPPaths, _ := meter.Float64Histogram("high_card_http_duration",
+		metric.WithDescription("HTTP request duration with high path cardinality"),
+		metric.WithExplicitBucketBoundaries(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0))
 
 	// Burst traffic metric
 	burstMetric, _ := meter.Int64Counter("burst_traffic_metric",
@@ -490,6 +503,72 @@ func main() {
 				batchMetrics++
 				stats.HighCardinalityMetrics.Add(int64(highCardinalityCount))
 				stats.UniqueLabels.Add(int64(highCardinalityCount)) // Approximate
+
+				// Additional high cardinality metrics with different cardinality profiles
+				// These test different limit scenarios:
+
+				// 1. User events - high user_id cardinality (1000 users x 5 event types x 4 services = 20,000)
+				for i := 0; i < highCardinalityCount/2; i++ {
+					highCardUserEvents.Add(ctx, 1,
+						metric.WithAttributes(
+							attribute.String("service", services[rand.Intn(len(services))]),
+							attribute.String("user_id", fmt.Sprintf("uid_%d", rand.Intn(1000))),
+							attribute.String("event_type", fmt.Sprintf("event_%d", rand.Intn(5))),
+						))
+					batchDatapoints++
+				}
+				batchMetrics++
+
+				// 2. API requests - high endpoint cardinality (200 paths x 4 methods x 5 status = 4,000)
+				for i := 0; i < highCardinalityCount/2; i++ {
+					highCardAPIRequests.Add(ctx, 1,
+						metric.WithAttributes(
+							attribute.String("service", services[rand.Intn(len(services))]),
+							attribute.String("path", fmt.Sprintf("/api/v%d/entity/%d/action/%d", rand.Intn(3)+1, rand.Intn(50), rand.Intn(10))),
+							attribute.String("method", methods[rand.Intn(len(methods))]),
+							attribute.String("status", statuses[rand.Intn(len(statuses))]),
+						))
+					batchDatapoints++
+				}
+				batchMetrics++
+
+				// 3. DB queries - high query_hash cardinality (500 hashes x 4 services = 2,000)
+				for i := 0; i < highCardinalityCount/4; i++ {
+					highCardDBQueries.Add(ctx, 1,
+						metric.WithAttributes(
+							attribute.String("service", services[rand.Intn(len(services))]),
+							attribute.String("query_hash", fmt.Sprintf("qh_%08x", rand.Intn(500))),
+							attribute.String("database", fmt.Sprintf("db_%d", rand.Intn(3))),
+							attribute.String("operation", []string{"SELECT", "INSERT", "UPDATE", "DELETE"}[rand.Intn(4)]),
+						))
+					batchDatapoints++
+				}
+				batchMetrics++
+
+				// 4. Cache operations - high cache_key cardinality (2000 keys x 3 ops = 6,000)
+				for i := 0; i < highCardinalityCount/4; i++ {
+					highCardCacheOps.Add(ctx, 1,
+						metric.WithAttributes(
+							attribute.String("service", services[rand.Intn(len(services))]),
+							attribute.String("cache_key", fmt.Sprintf("key:%s:%d", []string{"user", "session", "product", "order", "inventory"}[rand.Intn(5)], rand.Intn(400))),
+							attribute.String("operation", []string{"get", "set", "delete"}[rand.Intn(3)]),
+							attribute.Bool("hit", rand.Float64() > 0.3),
+						))
+					batchDatapoints++
+				}
+				batchMetrics++
+
+				// 5. HTTP duration histogram - high path cardinality (100 paths x services = 400+)
+				for i := 0; i < highCardinalityCount/4; i++ {
+					highCardHTTPPaths.Record(ctx, rand.Float64()*2.0,
+						metric.WithAttributes(
+							attribute.String("service", services[rand.Intn(len(services))]),
+							attribute.String("path", fmt.Sprintf("/v%d/%s/%d", rand.Intn(2)+1, []string{"users", "orders", "products", "inventory", "payments"}[rand.Intn(5)], rand.Intn(20))),
+							attribute.String("method", methods[rand.Intn(len(methods))]),
+						))
+					batchDatapoints++
+				}
+				batchMetrics++
 			}
 
 			// Stable mode metrics - completely predictable for testing

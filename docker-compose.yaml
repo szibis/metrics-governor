@@ -48,7 +48,7 @@ services:
       - "-queue-stale-flush=5s"
       # Sharding configuration - consistent hashing across endpoints
       - "-sharding-enabled=true"
-      - "-sharding-headless-service=victoriametrics"
+      - "-sharding-headless-service=victoriametrics:8428"
       - "-sharding-labels=service,env"
       - "-sharding-virtual-nodes=150"
       - "-sharding-fallback-on-empty=true"
