@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      next_release: ${{ steps.next_release.outputs.version }}
+      release_bump: ${{ steps.next_release.outputs.bump }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,7 +28,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Determine version
+      - name: Determine current version
         id: version
         run: |
           # Get version from git describe or Chart.yaml
@@ -41,10 +43,111 @@ jobs:
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "📦 Building version: ${VERSION}"
 
+      - name: Calculate next release version
+        id: next_release
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const title = pr.title.toLowerCase();
+            const labels = pr.labels.map(l => l.name);
+
+            console.log('PR Title:', pr.title);
+            console.log('Labels:', labels);
+
+            // Get latest version tag
+            const { execSync } = require('child_process');
+            let latestTag = 'v0.0.0';
+            try {
+              latestTag = execSync("git tag -l 'v*' --sort=-v:refname | head -n1", { encoding: 'utf8' }).trim();
+              if (!latestTag) latestTag = 'v0.0.0';
+            } catch (e) {
+              console.log('No tags found, using v0.0.0');
+            }
+
+            console.log('Latest tag:', latestTag);
+
+            // Parse version
+            const versionMatch = latestTag.match(/v(\d+)\.(\d+)\.(\d+)/);
+            let major = 0, minor = 0, patch = 0;
+            if (versionMatch) {
+              major = parseInt(versionMatch[1]);
+              minor = parseInt(versionMatch[2]);
+              patch = parseInt(versionMatch[3]);
+            }
+
+            // Determine bump type
+            let bump = 'none';
+
+            // Check for skip label
+            if (labels.includes('release:skip')) {
+              bump = 'skip';
+            }
+            // Check for explicit version labels (highest priority)
+            else if (labels.includes('release:major')) {
+              bump = 'major';
+            } else if (labels.includes('release:minor')) {
+              bump = 'minor';
+            } else if (labels.includes('release:patch')) {
+              bump = 'patch';
+            }
+            // Check for breaking change
+            else if (labels.includes('breaking-change') || title.includes('!:') || title.includes('breaking')) {
+              bump = 'major';
+            }
+            // Determine from conventional commit type
+            else {
+              const conventionalTypes = {
+                'feat': 'minor',
+                'fix': 'patch',
+                'perf': 'patch',
+                'security': 'patch',
+                'deps': 'patch',
+              };
+
+              for (const [type, bumpType] of Object.entries(conventionalTypes)) {
+                if (title.startsWith(`${type}:`) || title.startsWith(`${type}(`)) {
+                  bump = bumpType;
+                  break;
+                }
+              }
+            }
+
+            // Calculate new version
+            let newVersion = 'no release';
+            if (bump === 'major') {
+              newVersion = `v${major + 1}.0.0`;
+            } else if (bump === 'minor') {
+              newVersion = `v${major}.${minor + 1}.0`;
+            } else if (bump === 'patch') {
+              newVersion = `v${major}.${minor}.${patch + 1}`;
+            } else if (bump === 'skip') {
+              newVersion = 'skipped';
+            }
+
+            console.log(`Bump: ${bump}, New version: ${newVersion}`);
+
+            core.setOutput('version', newVersion);
+            core.setOutput('bump', bump);
+            core.setOutput('current', latestTag);
+
       - name: Build
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           go build -ldflags "-X github.com/szibis/metrics-governor/internal/config.version=${VERSION}" -v ./...
+
+      - name: Version summary
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "## 📦 Version Info" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| | |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Version** | \`${{ steps.version.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Next Release** | \`${{ steps.next_release.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Bump Type** | ${{ steps.next_release.outputs.bump }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Current Tag** | ${{ steps.next_release.outputs.current }} |" >> $GITHUB_STEP_SUMMARY
 
   test-unit:
     runs-on: ubuntu-latest
@@ -366,12 +469,25 @@ jobs:
 
           # Get version from build job
           BUILD_VERSION="${{ needs.build.outputs.version }}"
+          NEXT_RELEASE="${{ needs.build.outputs.next_release }}"
+          RELEASE_BUMP="${{ needs.build.outputs.release_bump }}"
+
+          # Determine release badge
+          case "$RELEASE_BUMP" in
+            major) RELEASE_BADGE="🔴 Major" ;;
+            minor) RELEASE_BADGE="🟡 Minor" ;;
+            patch) RELEASE_BADGE="🟢 Patch" ;;
+            skip)  RELEASE_BADGE="⏭️ Skip" ;;
+            *)     RELEASE_BADGE="⚪ None" ;;
+          esac
 
           # Create comment
           cat > coverage-comment.md << EOF
           ## 📊 Test Coverage Report
 
-          **Version:** \`${BUILD_VERSION}\`
+          | Build | Release |
+          |-------|---------|
+          | \`${BUILD_VERSION}\` | **${NEXT_RELEASE}** (${RELEASE_BADGE}) |
 
           | Metric | Value | Status |
           |--------|-------|--------|
