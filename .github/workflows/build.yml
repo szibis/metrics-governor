@@ -104,6 +104,8 @@ jobs:
                 'perf': 'patch',
                 'security': 'patch',
                 'deps': 'patch',
+                'ci': 'patch',
+                'build': 'patch',
               };
 
               for (const [type, bumpType] of Object.entries(conventionalTypes)) {
