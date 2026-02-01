@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/szibis/metrics-governor/internal/intern"
 	"github.com/szibis/metrics-governor/internal/logging"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
@@ -477,27 +476,12 @@ func formatLabels(labels map[string]string) string {
 
 // Helper functions
 
-// attributeIntern is used for interning OTLP attribute keys and values
-var attributeIntern = intern.CommonLabels()
-
-// InternMaxValueLength controls max value length for interning (package-level for testing)
-var statsInternMaxValueLength = 64
-
 func extractAttributes(attrs []*commonpb.KeyValue) map[string]string {
 	result := make(map[string]string)
 	for _, kv := range attrs {
 		if kv.Value != nil {
 			if sv := kv.Value.GetStringValue(); sv != "" {
-				// Intern attribute keys (always, as they're from a fixed set)
-				key := attributeIntern.Intern(kv.Key)
-				// Intern short values (common values like env names, status codes)
-				var value string
-				if len(sv) <= statsInternMaxValueLength {
-					value = attributeIntern.Intern(sv)
-				} else {
-					value = sv
-				}
-				result[key] = value
+				result[kv.Key] = sv
 			}
 		}
 	}
