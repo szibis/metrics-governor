@@ -254,24 +254,36 @@ verify_data_flow() {
     done
 }
 
-# Check queue metrics
+# Check queue metrics (FastQueue)
 check_queue() {
-    log_info "Checking queue metrics..."
+    log_info "Checking FastQueue metrics..."
 
     local queue_metrics=$(curl -s http://localhost:9090/metrics 2>/dev/null)
 
-    # Check if queue is enabled and working
+    # Check basic queue metrics
     local queue_size=$(echo "$queue_metrics" | grep "^metrics_governor_queue_size " | awk '{print $2}' | cut -d'.' -f1)
     local queue_push=$(echo "$queue_metrics" | grep "^metrics_governor_queue_push_total " | awk '{print $2}' | cut -d'.' -f1)
-    local sync_total=$(echo "$queue_metrics" | grep "^metrics_governor_queue_sync_total " | awk '{print $2}' | cut -d'.' -f1)
-    local compression_ratio=$(echo "$queue_metrics" | grep "^metrics_governor_queue_compression_ratio " | awk '{print $2}')
+    local queue_bytes=$(echo "$queue_metrics" | grep "^metrics_governor_queue_bytes " | awk '{print $2}' | cut -d'.' -f1)
+
+    # Check FastQueue-specific metrics
+    local inmemory_blocks=$(echo "$queue_metrics" | grep "^metrics_governor_fastqueue_inmemory_blocks " | awk '{print $2}' | cut -d'.' -f1)
+    local disk_bytes=$(echo "$queue_metrics" | grep "^metrics_governor_fastqueue_disk_bytes " | awk '{print $2}' | cut -d'.' -f1)
+    local meta_sync=$(echo "$queue_metrics" | grep "^metrics_governor_fastqueue_meta_sync_total " | awk '{print $2}' | cut -d'.' -f1)
+    local chunk_rotations=$(echo "$queue_metrics" | grep "^metrics_governor_fastqueue_chunk_rotations " | awk '{print $2}' | cut -d'.' -f1)
+    local inmemory_flushes=$(echo "$queue_metrics" | grep "^metrics_governor_fastqueue_inmemory_flushes " | awk '{print $2}' | cut -d'.' -f1)
 
     queue_size=${queue_size:-0}
     queue_push=${queue_push:-0}
-    sync_total=${sync_total:-0}
-    compression_ratio=${compression_ratio:-1.0}
+    queue_bytes=${queue_bytes:-0}
+    inmemory_blocks=${inmemory_blocks:-0}
+    disk_bytes=${disk_bytes:-0}
+    meta_sync=${meta_sync:-0}
+    chunk_rotations=${chunk_rotations:-0}
+    inmemory_flushes=${inmemory_flushes:-0}
 
-    log_info "Queue size: $queue_size, Push total: $queue_push, Syncs: $sync_total, Compression ratio: $compression_ratio"
+    log_info "Queue: size=$queue_size, push_total=$queue_push, bytes=$queue_bytes"
+    log_info "FastQueue: inmemory_blocks=$inmemory_blocks, disk_bytes=$disk_bytes"
+    log_info "FastQueue ops: meta_syncs=$meta_sync, chunk_rotations=$chunk_rotations, flushes=$inmemory_flushes"
 
     if [ "$queue_push" -gt 0 ]; then
         log_info "Queue is operational (pushes recorded)"
@@ -279,8 +291,8 @@ check_queue() {
         log_warn "No queue pushes recorded (queue may not be enabled)"
     fi
 
-    if [ "$sync_total" -gt 0 ]; then
-        log_info "Queue syncs are occurring (I/O optimization working)"
+    if [ "$meta_sync" -gt 0 ]; then
+        log_info "FastQueue metadata syncs occurring (persistence working)"
     fi
 
     log_info "Queue check completed"
@@ -332,7 +344,11 @@ print_summary() {
     echo ""
 
     log_info "Queue metrics:"
-    curl -s http://localhost:9090/metrics 2>/dev/null | grep -E "^metrics_governor_queue_(size|push_total|sync_total|compression_ratio|bytes)" | head -10
+    curl -s http://localhost:9090/metrics 2>/dev/null | grep -E "^metrics_governor_queue_(size|push_total|bytes|retry)" | head -10
+    echo ""
+
+    log_info "FastQueue metrics:"
+    curl -s http://localhost:9090/metrics 2>/dev/null | grep -E "^metrics_governor_fastqueue_" | head -10
     echo ""
 
     log_info "VictoriaMetrics status:"

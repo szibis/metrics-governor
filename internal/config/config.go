@@ -103,11 +103,11 @@ type Config struct {
 	QueueTargetUtilization float64
 	QueueAdaptiveEnabled   bool
 	QueueCompactThreshold  float64
-	// Queue I/O optimization settings
-	QueueSyncMode      string        // immediate, batched, async
-	QueueSyncBatchSize int           // Number of writes before sync (batched mode)
-	QueueSyncInterval  time.Duration // Time between syncs (batched mode)
-	QueueCompression   bool          // Enable snappy compression
+	// FastQueue settings
+	QueueInmemoryBlocks     int           // In-memory channel size (default: 256)
+	QueueChunkSize          int64         // Chunk file size (default: 512MB)
+	QueueMetaSyncInterval   time.Duration // Metadata sync interval (default: 1s)
+	QueueStaleFlushInterval time.Duration // Stale flush interval (default: 5s)
 
 	// Sharding settings
 	ShardingEnabled            bool
@@ -266,11 +266,11 @@ func ParseFlags() *Config {
 	flag.Float64Var(&cfg.QueueTargetUtilization, "queue-target-utilization", 0.85, "Target disk utilization for adaptive sizing (0.0-1.0)")
 	flag.BoolVar(&cfg.QueueAdaptiveEnabled, "queue-adaptive-enabled", true, "Enable adaptive queue sizing based on disk space")
 	flag.Float64Var(&cfg.QueueCompactThreshold, "queue-compact-threshold", 0.5, "Ratio of consumed entries before compaction (0.0-1.0)")
-	// Queue I/O optimization flags
-	flag.StringVar(&cfg.QueueSyncMode, "queue-sync-mode", "batched", "Queue sync mode: immediate (sync every write), batched (sync periodically), async (no sync)")
-	flag.IntVar(&cfg.QueueSyncBatchSize, "queue-sync-batch-size", 100, "Number of writes before sync in batched mode")
-	flag.DurationVar(&cfg.QueueSyncInterval, "queue-sync-interval", 100*time.Millisecond, "Maximum time between syncs in batched mode")
-	flag.BoolVar(&cfg.QueueCompression, "queue-compression", true, "Enable snappy compression for queue data")
+	// FastQueue flags
+	flag.IntVar(&cfg.QueueInmemoryBlocks, "queue-inmemory-blocks", 256, "In-memory channel size for FastQueue")
+	flag.Int64Var(&cfg.QueueChunkSize, "queue-chunk-size", 536870912, "Chunk file size in bytes (512MB default)")
+	flag.DurationVar(&cfg.QueueMetaSyncInterval, "queue-meta-sync", 1*time.Second, "Metadata sync interval (max data loss window)")
+	flag.DurationVar(&cfg.QueueStaleFlushInterval, "queue-stale-flush", 5*time.Second, "Interval to flush stale in-memory blocks to disk")
 
 	// Sharding flags
 	flag.BoolVar(&cfg.ShardingEnabled, "sharding-enabled", false, "Enable consistent sharding")
@@ -544,6 +544,26 @@ func applyFlagOverrides(cfg *Config) {
 				if fv, ok := v.Get().(float64); ok {
 					cfg.QueueCompactThreshold = fv
 				}
+			}
+		case "queue-inmemory-blocks":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.QueueInmemoryBlocks = i
+				}
+			}
+		case "queue-chunk-size":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int64); ok {
+					cfg.QueueChunkSize = i
+				}
+			}
+		case "queue-meta-sync":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.QueueMetaSyncInterval = d
+			}
+		case "queue-stale-flush":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.QueueStaleFlushInterval = d
 			}
 		case "sharding-enabled":
 			cfg.ShardingEnabled = f.Value.String() == "true"
@@ -1070,7 +1090,7 @@ OPTIONS:
         -limits-config <path>            Path to limits configuration YAML file
         -limits-dry-run                  Dry run mode: log only, don't drop/sample (default: true)
 
-    Queue (Persistent Retry):
+    Queue (FastQueue - High-Performance Persistent Retry):
         -queue-enabled                   Enable persistent queue for export retries (default: false)
         -queue-path <path>               Queue storage directory (default: ./queue)
         -queue-max-size <n>              Maximum number of batches in queue (default: 10000)
@@ -1078,9 +1098,10 @@ OPTIONS:
         -queue-retry-interval <dur>      Initial retry interval (default: 5s)
         -queue-max-retry-delay <dur>     Maximum retry backoff delay (default: 5m)
         -queue-full-behavior <behavior>  Queue full behavior: drop_oldest, drop_newest, or block (default: drop_oldest)
-        -queue-target-utilization <n>   Target disk utilization for adaptive sizing (default: 0.85)
-        -queue-adaptive-enabled         Enable adaptive queue sizing based on disk space (default: true)
-        -queue-compact-threshold <n>    Ratio of consumed entries before compaction (default: 0.5)
+        -queue-inmemory-blocks <n>       In-memory channel size (default: 256)
+        -queue-chunk-size <n>            Chunk file size in bytes (default: 512MB)
+        -queue-meta-sync <dur>           Metadata sync interval / max data loss window (default: 1s)
+        -queue-stale-flush <dur>         Interval to flush stale in-memory blocks to disk (default: 5s)
 
     Sharding (Consistent Hash Distribution):
         -sharding-enabled                Enable consistent sharding (default: false)
@@ -1223,6 +1244,10 @@ func DefaultConfig() *Config {
 		QueueTargetUtilization:      0.85,
 		QueueAdaptiveEnabled:        true,
 		QueueCompactThreshold:       0.5,
+		QueueInmemoryBlocks:         256,
+		QueueChunkSize:              536870912, // 512MB
+		QueueMetaSyncInterval:       1 * time.Second,
+		QueueStaleFlushInterval:     5 * time.Second,
 		ShardingEnabled:             false,
 		ShardingDNSRefreshInterval:  30 * time.Second,
 		ShardingDNSTimeout:          5 * time.Second,

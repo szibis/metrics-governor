@@ -65,7 +65,7 @@ exporter:
     force_http2: false
     http2_read_idle_timeout: 0s
     http2_ping_timeout: 0s
-  # Persistent queue for export retries (WAL-based)
+  # Persistent queue for export retries (FastQueue-based)
   queue:
     enabled: false                     # enable persistent queue
     path: "./queue"                    # queue storage directory
@@ -76,7 +76,10 @@ exporter:
     full_behavior: drop_oldest         # drop_oldest, drop_newest, or block
     target_utilization: 0.85           # target disk utilization (0.0-1.0)
     adaptive_enabled: true             # enable adaptive sizing based on disk space
-    compact_threshold: 0.5             # compact when consumed entries > this ratio
+    inmemory_blocks: 256               # in-memory channel size
+    chunk_size: 536870912              # chunk file size (512MB)
+    meta_sync_interval: 1s             # metadata sync interval
+    stale_flush_interval: 5s           # flush stale in-memory data to disk
 
 # Buffer configuration - internal metrics buffering
 buffer:

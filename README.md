@@ -18,7 +18,7 @@
 |-----------|----------|
 | **Cardinality explosions** crushing your backend | **Adaptive limiting** drops only the worst offenders, preserving well-behaved services |
 | **Single backend bottleneck** limiting throughput | **Consistent sharding** distributes load across multiple endpoints via K8s DNS discovery |
-| **Data loss during outages** | **WAL-based persistent queue** with automatic retry and exponential backoff |
+| **Data loss during outages** | **High-performance persistent queue** with automatic retry and exponential backoff |
 | **No visibility** into metrics pipeline | **Real-time statistics** with per-metric cardinality, datapoints, and Prometheus metrics |
 | **Unpredictable costs** from runaway metrics | **Per-group tracking** with configurable limits and dry-run mode for safe testing |
 
@@ -27,7 +27,7 @@
 - **Dual Protocol Support** - Native OTLP (gRPC/HTTP) and Prometheus Remote Write (PRW 1.0/2.0) pipelines, each running independently with zero conversion overhead
 - **Intelligent Limiting** - Unlike simple rate limiters that drop everything, metrics-governor identifies and drops only the top offenders while preserving data from well-behaved services
 - **Consistent Sharding** - Automatic endpoint discovery from Kubernetes headless services with consistent hashing ensures the same time-series always route to the same backend (works for both OTLP and PRW)
-- **Production-Ready** - WAL-based durable queue, TLS/mTLS, authentication, compression (gzip/zstd/snappy/lz4), and Helm chart included
+- **Production-Ready** - FastQueue durable persistence, TLS/mTLS, authentication, compression (gzip/zstd/snappy/lz4), and Helm chart included
 - **High-Performance Optimizations** - String interning reduces allocations by 76%, concurrency limiting prevents goroutine explosion (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
 - **Zero Configuration Start** - Works out of the box with sensible defaults; add limits and sharding when needed
 
@@ -64,8 +64,8 @@ flowchart LR
         end
 
         subgraph Queue["Persistent Queues"]
-            OQueue["OTLP Queue<br/>(WAL)"]
-            PQueue["PRW Queue<br/>(WAL)"]
+            OQueue["OTLP Queue<br/>(FastQueue)"]
+            PQueue["PRW Queue<br/>(FastQueue)"]
         end
     end
 
@@ -150,7 +150,7 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
 | **Real-time Statistics** | Per-metric cardinality, datapoints, and limit violation tracking |
 | **Prometheus Integration** | Native `/metrics` endpoint for monitoring the proxy itself |
 | **Consistent Sharding** | Distribute metrics across multiple backends via DNS discovery (OTLP and PRW) |
-| **Persistent Queue** | WAL-based durable queue with automatic retry (OTLP and PRW) |
+| **Persistent Queue** | FastQueue durable persistence with automatic retry (OTLP and PRW) |
 | **Performance Optimized** | String interning and concurrency limiting for high-throughput workloads |
 | **Production Ready** | Helm chart, multi-arch Docker images, graceful shutdown |
 

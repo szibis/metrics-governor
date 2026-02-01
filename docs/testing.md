@@ -53,7 +53,7 @@ Component-level tests with mocks. Each package tests its core functionality in i
 | `limits` | 77 | Rule matching, cardinality tracking, adaptive limiting, dry-run |
 | `logging` | 24 | JSON output, log levels, field formatting |
 | `prw` | 81 | PRW 1.0/2.0 encoding, buffer, limits, sharding |
-| `queue` | 78 | WAL operations, push/pop, compaction, persistence |
+| `queue` | 187 | FastQueue operations, push/pop, persistence, recovery |
 | `receiver` | 45 | gRPC/HTTP receivers, TLS, authentication |
 | `sharding` | 98 | Hash ring, consistent hashing, DNS discovery, splitter |
 | `stats` | 65 | Metrics collection, cardinality tracking, Prometheus output |
@@ -102,7 +102,7 @@ Performance tests measuring throughput, latency, and memory usage.
 | `exporter` | 14 | Export throughput per protocol |
 | `limits` | 9 | Rule matching performance |
 | `prw` | 6 | PRW encoding/decoding speed |
-| `queue` | 7 | WAL write/read performance |
+| `queue` | 7 | FastQueue push/pop performance |
 | `receiver` | 9 | Request handling throughput |
 | `sharding` | 10 | Hash ring operations |
 | `stats` | 6 | Stats collection overhead |

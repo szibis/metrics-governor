@@ -123,9 +123,11 @@ func (e *QueuedExporter) retryLoop() {
 
 // processQueue attempts to process one entry from the queue.
 func (e *QueuedExporter) processQueue() {
-	entry, err := e.queue.Peek()
+	// Pop the entry from the queue - with FastQueue, we must use Pop() not Peek()
+	// because Remove() is a no-op in FastQueue
+	entry, err := e.queue.Pop()
 	if err != nil {
-		logging.Error("failed to peek queue", logging.F("error", err.Error()))
+		logging.Error("failed to pop queue", logging.F("error", err.Error()))
 		return
 	}
 
@@ -133,18 +135,10 @@ func (e *QueuedExporter) processQueue() {
 		return
 	}
 
-	// Calculate backoff delay
-	delay := e.calculateBackoff(entry.Retries)
-
-	// Check if enough time has passed since last attempt
-	if time.Since(entry.Timestamp) < delay && entry.Retries > 0 {
-		return
-	}
-
 	req, err := entry.GetRequest()
 	if err != nil {
 		logging.Error("failed to deserialize queued request", logging.F("error", err.Error()))
-		_ = e.queue.Remove(entry.ID)
+		// Don't re-push corrupted data
 		return
 	}
 
@@ -155,58 +149,55 @@ func (e *QueuedExporter) processQueue() {
 	cancel()
 
 	if err == nil {
-		// Success - remove from queue
-		if removeErr := e.queue.Remove(entry.ID); removeErr != nil {
-			logging.Error("failed to remove entry from queue", logging.F("error", removeErr.Error()))
-		}
+		// Success - entry already removed by Pop()
 		queue.IncrementRetrySuccessTotal()
 		logging.Info("retry succeeded", logging.F(
-			"retries", entry.Retries,
 			"queue_size", e.queue.Len(),
 		))
 	} else {
-		// Failure - update retry count
-		e.queue.UpdateRetries(entry.ID, entry.Retries+1)
+		// Failure - re-push to queue for later retry
+		// Note: This puts it at the back of the queue
+		if pushErr := e.queue.Push(req); pushErr != nil {
+			logging.Error("failed to re-queue failed entry", logging.F("error", pushErr.Error()))
+		}
 		logging.Info("retry failed", logging.F(
 			"error", err.Error(),
-			"retries", entry.Retries+1,
 			"queue_size", e.queue.Len(),
 		))
 	}
 }
 
 // drainQueue attempts to export all remaining entries.
-// Entries that fail to export remain in the queue for recovery on restart.
+// Entries that fail to export are re-pushed to the queue for recovery on restart.
 func (e *QueuedExporter) drainQueue() {
 	logging.Info("draining queue", logging.F("queue_size", e.queue.Len()))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	triedOffsets := make(map[int64]bool)
+	// Track failed entries to re-push after draining
+	var failedEntries []*colmetricspb.ExportMetricsServiceRequest
 
 	for {
 		select {
 		case <-ctx.Done():
 			logging.Warn("timeout draining queue", logging.F("remaining", e.queue.Len()))
+			// Re-push failed entries
+			for _, req := range failedEntries {
+				_ = e.queue.Push(req)
+			}
 			return
 		default:
 		}
 
-		entry, err := e.queue.Peek()
+		entry, err := e.queue.Pop()
 		if err != nil || entry == nil {
-			return
+			break
 		}
-
-		// Skip if we've already tried this entry
-		if triedOffsets[entry.Offset] {
-			return // All remaining entries have been tried
-		}
-		triedOffsets[entry.Offset] = true
 
 		req, err := entry.GetRequest()
 		if err != nil {
-			_ = e.queue.Remove(entry.ID)
+			// Skip corrupted entries
 			continue
 		}
 
@@ -215,12 +206,17 @@ func (e *QueuedExporter) drainQueue() {
 		exportCancel()
 
 		if err == nil {
-			_ = e.queue.Remove(entry.ID)
 			queue.IncrementRetrySuccessTotal()
 		} else {
-			// Leave entry in queue for recovery on restart
+			// Save for re-pushing after drain
+			failedEntries = append(failedEntries, req)
 			logging.Warn("failed to drain queue entry, will persist for recovery", logging.F("error", err.Error()))
 		}
+	}
+
+	// Re-push failed entries for persistence
+	for _, req := range failedEntries {
+		_ = e.queue.Push(req)
 	}
 }
 

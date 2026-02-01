@@ -1187,17 +1187,21 @@
         "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
-      "title": "WAL & Retry Operations",
-      "description": "WAL writes, compactions, retries and success rate",
+      "title": "FastQueue & Retry Operations",
+      "description": "FastQueue operations (meta syncs, chunk rotations, flushes) and retry rates",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(rate(metrics_governor_queue_wal_write_total[5m]))",
-          "legendFormat": "WAL Writes/s"
+          "expr": "sum(rate(metrics_governor_fastqueue_meta_sync_total[5m]))",
+          "legendFormat": "Meta Syncs/s"
         },
         {
-          "expr": "sum(rate(metrics_governor_queue_wal_compact_total[5m]))",
-          "legendFormat": "WAL Compactions/s"
+          "expr": "sum(rate(metrics_governor_fastqueue_chunk_rotations[5m]))",
+          "legendFormat": "Chunk Rotations/s"
+        },
+        {
+          "expr": "sum(rate(metrics_governor_fastqueue_inmemory_flushes[5m]))",
+          "legendFormat": "Memory Flushes/s"
         },
         {
           "expr": "sum(rate(metrics_governor_queue_retry_total[5m]))",
@@ -1302,6 +1306,60 @@
         {
           "expr": "sum(rate(metrics_governor_queue_disk_full_total[5m]))",
           "legendFormat": "Disk Full Events"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 83 },
+      "id": 60,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "FastQueue Storage",
+      "description": "FastQueue in-memory and disk storage usage",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "metrics_governor_fastqueue_inmemory_blocks * 1024",
+          "legendFormat": "In-Memory (est. bytes)"
+        },
+        {
+          "expr": "metrics_governor_fastqueue_disk_bytes",
+          "legendFormat": "Disk Bytes"
+        },
+        {
+          "expr": "metrics_governor_queue_disk_available_bytes",
+          "legendFormat": "Disk Available"
         }
       ]
     },

@@ -34,7 +34,7 @@ services:
       # Performance tuning (inspired by VictoriaMetrics techniques)
       - "-string-interning=true"
       - "-intern-max-value-length=64"
-      # Queue configuration - persistent retry queue with I/O optimizations
+      # Queue configuration - FastQueue persistent retry queue
       - "-queue-enabled=true"
       - "-queue-path=/data/queue"
       - "-queue-max-size=10000"
@@ -42,10 +42,10 @@ services:
       - "-queue-retry-interval=5s"
       - "-queue-full-behavior=drop_oldest"
       - "-queue-adaptive-enabled=true"
-      - "-queue-sync-mode=batched"
-      - "-queue-sync-batch-size=100"
-      - "-queue-sync-interval=100ms"
-      - "-queue-compression=true"
+      - "-queue-inmemory-blocks=256"
+      - "-queue-chunk-size=134217728"
+      - "-queue-meta-sync=1s"
+      - "-queue-stale-flush=5s"
       # Sharding configuration - consistent hashing across endpoints
       - "-sharding-enabled=true"
       - "-sharding-headless-service=victoriametrics"

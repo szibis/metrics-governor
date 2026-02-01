@@ -140,6 +140,24 @@ All settings can also be configured via CLI flags.
 | `-limits-config` | | Path to limits configuration YAML file |
 | `-limits-dry-run` | `true` | Dry run mode: log violations but don't drop/sample |
 
+### Queue Options (FastQueue)
+
+The queue uses a high-performance FastQueue implementation inspired by VictoriaMetrics' persistentqueue. It provides metadata-only persistence with in-memory buffering for high throughput.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-queue-enabled` | `false` | Enable persistent queue for export retries |
+| `-queue-path` | `./queue` | Queue storage directory |
+| `-queue-max-size` | `10000` | Maximum number of batches in queue |
+| `-queue-max-bytes` | `1073741824` | Maximum total queue size in bytes (1GB) |
+| `-queue-retry-interval` | `5s` | Initial retry interval |
+| `-queue-max-retry-delay` | `5m` | Maximum retry backoff delay |
+| `-queue-full-behavior` | `drop_oldest` | Queue full behavior: `drop_oldest`, `drop_newest`, or `block` |
+| `-queue-inmemory-blocks` | `256` | In-memory channel size for fast path |
+| `-queue-chunk-size` | `536870912` | Chunk file size in bytes (512MB) |
+| `-queue-meta-sync` | `1s` | Metadata sync interval (max data loss window) |
+| `-queue-stale-flush` | `5s` | Interval to flush stale in-memory blocks to disk |
+
 ### PRW Receiver Options
 
 | Flag | Default | Description |
