@@ -70,14 +70,14 @@ jobs:
               'perf': 'patch',
               'security': 'patch',
               'deps': 'patch',
+              'ci': 'patch',      // CI improvements trigger patch release
+              'build': 'patch',   // Build system changes trigger patch release
               // These types don't trigger release by default
               'docs': 'none',
-              'ci': 'none',
               'chore': 'none',
               'test': 'none',
               'refactor': 'none',
               'style': 'none',
-              'build': 'none',
             };
 
             let bump = 'none';
