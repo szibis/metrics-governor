@@ -45,6 +45,15 @@ type Config struct {
 	AdaptiveEnabled bool
 	// CompactThreshold is the ratio of consumed entries before compaction (default: 0.5).
 	CompactThreshold float64
+	// I/O optimization settings
+	// SyncMode controls when to sync: immediate, batched, async.
+	SyncMode SyncMode
+	// SyncBatchSize is the number of writes before sync in batched mode.
+	SyncBatchSize int
+	// SyncInterval is the max time between syncs in batched mode.
+	SyncInterval time.Duration
+	// Compression enables snappy compression for queue data.
+	Compression bool
 }
 
 // DefaultConfig returns a default queue configuration.
@@ -124,6 +133,10 @@ func New(cfg Config) (*SendQueue, error) {
 		TargetUtilization: cfg.TargetUtilization,
 		CompactThreshold:  cfg.CompactThreshold,
 		AdaptiveEnabled:   cfg.AdaptiveEnabled,
+		SyncMode:          cfg.SyncMode,
+		SyncBatchSize:     cfg.SyncBatchSize,
+		SyncInterval:      cfg.SyncInterval,
+		Compression:       cfg.Compression,
 	}
 
 	wal, err := NewWAL(walCfg)
