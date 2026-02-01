@@ -3,6 +3,7 @@ package queue
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -191,33 +192,29 @@ func (q *SendQueue) pushData(data []byte) error {
 				return nil // Drop incoming entry
 
 			case Block:
-				// Wait with timeout
-				q.mu.Unlock()
-				done := make(chan struct{})
-				go func() {
-					time.Sleep(q.config.BlockTimeout)
-					close(done)
+				// Wait with timeout using timer instead of goroutine
+				var timedOut atomic.Bool
+				timer := time.AfterFunc(q.config.BlockTimeout, func() {
+					timedOut.Store(true)
 					q.spaceCond.Broadcast()
-				}()
+				})
 
-				q.mu.Lock()
-				for {
-					select {
-					case <-done:
-						queueDroppedTotal.WithLabelValues("disk_full_timeout").Inc()
-						return fmt.Errorf("timeout waiting for disk space: %w", err)
-					default:
-						q.spaceCond.Wait()
-						if q.closed {
-							return fmt.Errorf("queue is closed")
-						}
-						// Retry append
-						if retryErr := q.wal.Append(data); retryErr == nil {
-							queuePushTotal.Inc()
-							return nil
-						}
+				for !timedOut.Load() {
+					q.spaceCond.Wait()
+					if q.closed {
+						timer.Stop()
+						return fmt.Errorf("queue is closed")
+					}
+					// Retry append
+					if retryErr := q.wal.Append(data); retryErr == nil {
+						timer.Stop()
+						queuePushTotal.Inc()
+						return nil
 					}
 				}
+				timer.Stop()
+				queueDroppedTotal.WithLabelValues("disk_full_timeout").Inc()
+				return fmt.Errorf("timeout waiting for disk space: %w", err)
 			}
 		}
 
@@ -237,31 +234,29 @@ func (q *SendQueue) pushData(data []byte) error {
 				return nil // Drop incoming entry
 
 			case Block:
-				// Wait with timeout
-				done := make(chan struct{})
-				go func() {
-					time.Sleep(q.config.BlockTimeout)
-					close(done)
+				// Wait with timeout using timer instead of goroutine
+				var timedOut atomic.Bool
+				timer := time.AfterFunc(q.config.BlockTimeout, func() {
+					timedOut.Store(true)
 					q.spaceCond.Broadcast()
-				}()
+				})
 
-				for {
-					select {
-					case <-done:
-						queueDroppedTotal.WithLabelValues("block_timeout").Inc()
-						return fmt.Errorf("timeout waiting for queue space")
-					default:
-						q.spaceCond.Wait()
-						if q.closed {
-							return fmt.Errorf("queue is closed")
-						}
-						// Retry append
-						if retryErr := q.wal.Append(data); retryErr == nil {
-							queuePushTotal.Inc()
-							return nil
-						}
+				for !timedOut.Load() {
+					q.spaceCond.Wait()
+					if q.closed {
+						timer.Stop()
+						return fmt.Errorf("queue is closed")
+					}
+					// Retry append
+					if retryErr := q.wal.Append(data); retryErr == nil {
+						timer.Stop()
+						queuePushTotal.Inc()
+						return nil
 					}
 				}
+				timer.Stop()
+				queueDroppedTotal.WithLabelValues("block_timeout").Inc()
+				return fmt.Errorf("timeout waiting for queue space")
 			}
 		}
 

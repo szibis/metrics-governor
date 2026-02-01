@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+
+	"github.com/szibis/metrics-governor/internal/intern"
 )
 
 // This file provides protobuf encoding/decoding for PRW wire format.
@@ -82,6 +84,23 @@ const (
 	fieldMetadataMetricFamilyName = 2
 	fieldMetadataHelp             = 3
 	fieldMetadataUnit             = 4
+)
+
+// Interning configuration
+var (
+	// labelNameIntern is used for interning label names (small fixed set)
+	labelNameIntern = intern.CommonLabels()
+
+	// labelValueIntern is used for interning short common label values
+	labelValueIntern = intern.NewPool()
+
+	// InternMaxValueLength is the maximum length for value interning.
+	// Values longer than this are not interned to avoid unbounded memory growth.
+	InternMaxValueLength = 64
+
+	// InternEnabled controls whether string interning is enabled.
+	// This can be set to false to disable interning for debugging or testing.
+	InternEnabled = true
 )
 
 // Marshal encodes a WriteRequest to protobuf wire format.
@@ -342,7 +361,12 @@ func (l *Label) unmarshal(data []byte) error {
 				return fmt.Errorf("invalid name length")
 			}
 			data = data[n:]
-			l.Name = string(nameBytes)
+			// Always intern label names (small fixed set like __name__, job, instance)
+			if InternEnabled {
+				l.Name = labelNameIntern.InternBytes(nameBytes)
+			} else {
+				l.Name = string(nameBytes)
+			}
 
 		case fieldLabelValue:
 			if wireType != wireLengthDelim {
@@ -353,7 +377,12 @@ func (l *Label) unmarshal(data []byte) error {
 				return fmt.Errorf("invalid value length")
 			}
 			data = data[n:]
-			l.Value = string(valueBytes)
+			// Only intern short values to avoid unbounded memory growth
+			if InternEnabled && len(valueBytes) <= InternMaxValueLength {
+				l.Value = labelValueIntern.InternBytes(valueBytes)
+			} else {
+				l.Value = string(valueBytes)
+			}
 
 		default:
 			n, err := skipField(data, wireType)
@@ -365,6 +394,13 @@ func (l *Label) unmarshal(data []byte) error {
 	}
 
 	return nil
+}
+
+// LabelInternStats returns interning statistics for label names and values.
+func LabelInternStats() (nameHits, nameMisses, valueHits, valueMisses uint64) {
+	nameHits, nameMisses = labelNameIntern.Stats()
+	valueHits, valueMisses = labelValueIntern.Stats()
+	return
 }
 
 func (l *Label) estimateSize() int {

@@ -26,6 +26,8 @@ type PRWShardedConfig struct {
 	QueueEnabled bool
 	// QueueConfig is the queue configuration (if enabled).
 	QueueConfig prw.QueueConfig
+	// ExportConcurrency limits parallel export goroutines (0 = NumCPU * 4).
+	ExportConcurrency int
 }
 
 // PRWShardedExporter exports PRW metrics across multiple sharded backends.
@@ -34,6 +36,7 @@ type PRWShardedExporter struct {
 	splitter   *prw.Splitter
 	hashRing   *sharding.HashRing
 	discovery  *sharding.Discovery
+	limiter    *ConcurrencyLimiter
 	exporters  map[string]prw.PRWExporter
 	queues     map[string]*prw.Queue
 	mu         sync.RWMutex
@@ -64,6 +67,7 @@ func NewPRWSharded(ctx context.Context, cfg PRWShardedConfig) (*PRWShardedExport
 		config:    cfg,
 		splitter:  splitter,
 		hashRing:  hashRing,
+		limiter:   NewConcurrencyLimiter(cfg.ExportConcurrency),
 		exporters: make(map[string]prw.PRWExporter),
 		queues:    make(map[string]*prw.Queue),
 	}
@@ -130,7 +134,7 @@ func (e *PRWShardedExporter) Export(ctx context.Context, req *prw.WriteRequest) 
 		return nil
 	}
 
-	// Export to each shard
+	// Export to each shard with concurrency limiting
 	var errs []error
 	var errMu sync.Mutex
 	var wg sync.WaitGroup
@@ -139,6 +143,10 @@ func (e *PRWShardedExporter) Export(ctx context.Context, req *prw.WriteRequest) 
 		wg.Add(1)
 		go func(ep string, r *prw.WriteRequest) {
 			defer wg.Done()
+
+			// Acquire semaphore slot to limit concurrency
+			e.limiter.Acquire()
+			defer e.limiter.Release()
 
 			if err := e.exportToEndpoint(ctx, ep, r); err != nil {
 				errMu.Lock()

@@ -160,6 +160,11 @@ type Config struct {
 	PRWLimitsConfig  string
 	PRWLimitsDryRun  bool
 
+	// Performance settings
+	ExportConcurrency    int
+	StringInterning      bool
+	InternMaxValueLength int
+
 	// Flags
 	ShowHelp    bool
 	ShowVersion bool
@@ -312,6 +317,11 @@ func ParseFlags() *Config {
 	flag.BoolVar(&cfg.PRWLimitsEnabled, "prw-limits-enabled", false, "Enable limits for PRW pipeline")
 	flag.StringVar(&cfg.PRWLimitsConfig, "prw-limits-config", "", "Path to PRW limits configuration YAML")
 	flag.BoolVar(&cfg.PRWLimitsDryRun, "prw-limits-dry-run", true, "PRW limits dry run mode")
+
+	// Performance tuning flags
+	flag.IntVar(&cfg.ExportConcurrency, "export-concurrency", 0, "Concurrency limit for parallel exports (0 = NumCPU * 4)")
+	flag.BoolVar(&cfg.StringInterning, "string-interning", true, "Enable string interning for label deduplication")
+	flag.IntVar(&cfg.InternMaxValueLength, "intern-max-value-length", 64, "Max length for value interning (longer values not interned)")
 
 	// Help and version
 	flag.BoolVar(&cfg.ShowHelp, "help", false, "Show help message")
@@ -653,6 +663,20 @@ func applyFlagOverrides(cfg *Config) {
 			cfg.PRWLimitsConfig = f.Value.String()
 		case "prw-limits-dry-run":
 			cfg.PRWLimitsDryRun = f.Value.String() == "true"
+		case "export-concurrency":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.ExportConcurrency = i
+				}
+			}
+		case "string-interning":
+			cfg.StringInterning = f.Value.String() == "true"
+		case "intern-max-value-length":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.InternMaxValueLength = i
+				}
+			}
 		case "help", "h":
 			cfg.ShowHelp = f.Value.String() == "true"
 		case "version", "v":
@@ -835,6 +859,25 @@ func (c *Config) ShardingConfig() ShardingConfig {
 		Labels:             labels,
 		VirtualNodes:       c.ShardingVirtualNodes,
 		FallbackOnEmpty:    c.ShardingFallbackOnEmpty,
+	}
+}
+
+// PerformanceConfig holds performance tuning configuration.
+type PerformanceConfig struct {
+	// ExportConcurrency limits parallel export goroutines (0 = NumCPU * 4)
+	ExportConcurrency int
+	// StringInterning enables string interning for label deduplication
+	StringInterning bool
+	// InternMaxValueLength is the max length for value interning
+	InternMaxValueLength int
+}
+
+// PerformanceConfig returns the performance tuning configuration.
+func (c *Config) PerformanceConfig() PerformanceConfig {
+	return PerformanceConfig{
+		ExportConcurrency:    c.ExportConcurrency,
+		StringInterning:      c.StringInterning,
+		InternMaxValueLength: c.InternMaxValueLength,
 	}
 }
 
@@ -1195,5 +1238,9 @@ func DefaultConfig() *Config {
 		PRWQueueMaxRetryDelay:    5 * time.Minute,
 		PRWLimitsEnabled:         false,
 		PRWLimitsDryRun:          true,
+		// Performance defaults
+		ExportConcurrency:    0, // 0 = NumCPU * 4
+		StringInterning:      true,
+		InternMaxValueLength: 64,
 	}
 }

@@ -10,11 +10,22 @@ import (
 
 // YAMLConfig represents the YAML configuration file structure.
 type YAMLConfig struct {
-	Receiver ReceiverYAMLConfig `yaml:"receiver"`
-	Exporter ExporterYAMLConfig `yaml:"exporter"`
-	Buffer   BufferYAMLConfig   `yaml:"buffer"`
-	Stats    StatsYAMLConfig    `yaml:"stats"`
-	Limits   LimitsYAMLConfig   `yaml:"limits"`
+	Receiver    ReceiverYAMLConfig    `yaml:"receiver"`
+	Exporter    ExporterYAMLConfig    `yaml:"exporter"`
+	Buffer      BufferYAMLConfig      `yaml:"buffer"`
+	Stats       StatsYAMLConfig       `yaml:"stats"`
+	Limits      LimitsYAMLConfig      `yaml:"limits"`
+	Performance PerformanceYAMLConfig `yaml:"performance"`
+}
+
+// PerformanceYAMLConfig holds performance tuning configuration.
+type PerformanceYAMLConfig struct {
+	// ExportConcurrency limits parallel export goroutines (0 = NumCPU * 4)
+	ExportConcurrency int `yaml:"export_concurrency"`
+	// StringInterning enables string interning for label deduplication
+	StringInterning *bool `yaml:"string_interning"`
+	// InternMaxValueLength is the max length for value interning (longer values not interned)
+	InternMaxValueLength int `yaml:"intern_max_value_length"`
 }
 
 // ReceiverYAMLConfig holds receiver configuration.
@@ -329,6 +340,16 @@ func (y *YAMLConfig) ApplyDefaults() {
 		fallback := true
 		y.Exporter.Sharding.FallbackOnEmpty = &fallback
 	}
+
+	// Performance defaults
+	if y.Performance.StringInterning == nil {
+		enabled := true
+		y.Performance.StringInterning = &enabled
+	}
+	if y.Performance.InternMaxValueLength == 0 {
+		y.Performance.InternMaxValueLength = 64
+	}
+	// ExportConcurrency defaults to 0 (which means NumCPU * 4 at runtime)
 }
 
 // ToConfig converts YAMLConfig to the flat Config struct.
@@ -425,6 +446,11 @@ func (y *YAMLConfig) ToConfig() *Config {
 		ShardingLabels:             strings.Join(y.Exporter.Sharding.Labels, ","),
 		ShardingVirtualNodes:       y.Exporter.Sharding.VirtualNodes,
 		ShardingFallbackOnEmpty:    *y.Exporter.Sharding.FallbackOnEmpty,
+
+		// Performance
+		ExportConcurrency:    y.Performance.ExportConcurrency,
+		StringInterning:      *y.Performance.StringInterning,
+		InternMaxValueLength: y.Performance.InternMaxValueLength,
 	}
 
 	return cfg

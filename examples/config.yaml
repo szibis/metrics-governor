@@ -94,3 +94,11 @@ stats:
 # Limits configuration (dry_run only - rules go in separate limits.yaml)
 limits:
   dry_run: true                        # log violations but don't drop
+
+# Performance tuning
+# Techniques inspired by VictoriaMetrics blog articles (https://valyala.medium.com/)
+# Original implementations using standard Go patterns
+performance:
+  export_concurrency: 0                # max concurrent export goroutines (0 = NumCPU * 4)
+  string_interning: true               # deduplicate label strings to reduce allocations
+  intern_max_value_length: 64          # max length for interned label values
