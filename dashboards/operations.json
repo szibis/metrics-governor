@@ -986,6 +986,260 @@
     {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 66 },
+      "id": 80,
+      "panels": [],
+      "title": "Bloom Filter Memory (Cardinality Tracking)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "options": { "1": { "text": "BLOOM", "color": "green" } }, "type": "value" },
+            { "options": { "0": { "text": "EXACT", "color": "yellow" } }, "type": "value" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "yellow", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 67 },
+      "id": 81,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value"
+      },
+      "title": "Cardinality Mode",
+      "description": "Active cardinality tracking mode. BLOOM (green) = memory-efficient probabilistic tracking with ~1% false positive rate. EXACT (yellow) = map-based tracking with 100% accuracy but higher memory usage. Bloom mode provides 98% memory savings.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "metrics_governor_cardinality_mode{mode=\"bloom\"}",
+          "legendFormat": "Mode"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10485760 },
+              { "color": "red", "value": 104857600 }
+            ]
+          },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 67 },
+      "id": 82,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Total Bloom Memory",
+      "description": "Combined memory usage of all Bloom filter cardinality trackers. Includes both stats collector trackers (per-metric tracking) and limits enforcer trackers (per-rule/group tracking). Green < 10MB, Yellow < 100MB, Red >= 100MB.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "metrics_governor_cardinality_memory_bytes + metrics_governor_limits_cardinality_memory_bytes",
+          "legendFormat": "Total Memory"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "green", "value": 95 }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 67 },
+      "id": 83,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Memory Savings",
+      "description": "Percentage of memory saved by using Bloom filters instead of maps. Calculated as: 1 - (actual_bloom_memory / estimated_map_memory). Values > 95% (green) indicate optimal Bloom filter performance.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "100 * (1 - ((metrics_governor_cardinality_memory_bytes + metrics_governor_limits_cardinality_memory_bytes) / ((sum(metrics_governor_metric_cardinality) + sum(metrics_governor_rule_group_cardinality)) * 75)))",
+          "legendFormat": "Savings %"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 67 },
+      "id": 84,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Total Trackers",
+      "description": "Total number of active Bloom filter trackers. Each unique metric name gets one tracker in stats, and each rule/group combination gets one tracker in limits.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "metrics_governor_cardinality_trackers_total + metrics_governor_limits_cardinality_trackers_total",
+          "legendFormat": "Trackers"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 71 },
+      "id": 85,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Memory by Limits Rule",
+      "description": "Memory usage breakdown by limits rule. Each rule tracks cardinality per group. Use to identify which rules consume the most resources.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "topk(10, metrics_governor_rule_cardinality_memory_bytes)",
+          "legendFormat": "{{rule}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 71 },
+      "id": 86,
+      "options": {
+        "legend": { "calcs": ["last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Bloom Filter Configuration",
+      "description": "Current Bloom filter configuration values. Expected Items: target number of unique series per tracker. FP Rate: target false positive rate (default: 0.01 = 1%).",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "metrics_governor_cardinality_config_expected_items",
+          "legendFormat": "Expected Items"
+        },
+        {
+          "expr": "metrics_governor_cardinality_config_fp_rate * 100",
+          "legendFormat": "FP Rate %"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 79 },
       "id": 40,
       "panels": [],
       "title": "Queue & Persistence",
@@ -1021,7 +1275,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 67 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 80 },
       "id": 41,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1070,7 +1324,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 67 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 80 },
       "id": 42,
       "options": {
         "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
