@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/szibis/metrics-governor/internal/auth"
 	"github.com/szibis/metrics-governor/internal/buffer"
 	"github.com/szibis/metrics-governor/internal/logging"
@@ -16,6 +17,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/encoding"
 	_ "google.golang.org/grpc/encoding/gzip" // Register gzip compressor
+	"google.golang.org/grpc/stats"
 )
 
 func init() {
@@ -101,6 +103,48 @@ func (p *zstdReaderPoolWrapper) Get(r io.Reader) (io.Reader, error) {
 var zstdWriterPoolW = &zstdWriterPoolWrapper{}
 var zstdReaderPoolW = &zstdReaderPoolWrapper{}
 
+// Prometheus metrics for gRPC receiver
+var (
+	grpcReceivedBytesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "metrics_governor_grpc_received_bytes_total",
+		Help: "Total gRPC bytes received by compression state",
+	}, []string{"compression"})
+)
+
+func init() {
+	prometheus.MustRegister(grpcReceivedBytesTotal)
+	// Initialize counters
+	grpcReceivedBytesTotal.WithLabelValues("compressed").Add(0)
+	grpcReceivedBytesTotal.WithLabelValues("uncompressed").Add(0)
+}
+
+// grpcStatsHandler tracks wire bytes for compression metrics
+type grpcStatsHandler struct{}
+
+func (h *grpcStatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
+	return ctx
+}
+
+func (h *grpcStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
+	if in, ok := s.(*stats.InPayload); ok {
+		// WireLength is the compressed size, Length is decompressed
+		if in.WireLength > 0 && in.WireLength < in.Length {
+			// Data was compressed
+			grpcReceivedBytesTotal.WithLabelValues("compressed").Add(float64(in.WireLength))
+			grpcReceivedBytesTotal.WithLabelValues("uncompressed").Add(float64(in.Length))
+		} else {
+			// Data was not compressed
+			grpcReceivedBytesTotal.WithLabelValues("uncompressed").Add(float64(in.Length))
+		}
+	}
+}
+
+func (h *grpcStatsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) context.Context {
+	return ctx
+}
+
+func (h *grpcStatsHandler) HandleConn(ctx context.Context, s stats.ConnStats) {}
+
 // GRPCConfig holds the gRPC receiver configuration.
 type GRPCConfig struct {
 	// Addr is the listen address.
@@ -133,6 +177,7 @@ func NewGRPCWithConfig(cfg GRPCConfig, buf *buffer.MetricsBuffer) *GRPCReceiver 
 	opts = append(opts,
 		grpc.MaxRecvMsgSize(maxMsgSize),
 		grpc.MaxSendMsgSize(maxMsgSize),
+		grpc.StatsHandler(&grpcStatsHandler{}),
 	)
 
 	// Configure TLS

@@ -569,11 +569,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"}[1m]))",
+          "expr": "sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[1m]))",
           "legendFormat": "Received (uncompressed)"
         },
         {
-          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"}[1m]))",
+          "expr": "sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[1m]))",
           "legendFormat": "Received (compressed)"
         },
         {

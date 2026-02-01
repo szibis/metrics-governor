@@ -32,6 +32,14 @@ var knownMetrics = []string{
 	// OTLP stats (stats.go)
 	"metrics_governor_otlp_bytes_total",
 
+	// OTLP exporter metrics (exporter/metrics.go)
+	"metrics_governor_otlp_export_bytes_total",
+	"metrics_governor_otlp_export_requests_total",
+	"metrics_governor_otlp_export_errors_total",
+
+	// gRPC receiver metrics (receiver/grpc.go)
+	"metrics_governor_grpc_received_bytes_total",
+
 	// Buffer stats (stats.go)
 	"metrics_governor_buffer_size",
 
@@ -380,6 +388,7 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_export",
 		"metrics_governor_prw",
 		"metrics_governor_otlp",
+		"metrics_governor_grpc",
 		"metrics_governor_buffer",
 		"metrics_governor_metric_",
 		"metrics_governor_label_",
