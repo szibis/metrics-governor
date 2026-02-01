@@ -126,6 +126,7 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
     volumes:
       - ./test/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./test/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./test/grafana/dashboards:/var/lib/grafana/dashboards/test:ro
+      - ./dashboards:/var/lib/grafana/dashboards/main:ro
     depends_on:
       - victoriametrics
