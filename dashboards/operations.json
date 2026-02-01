@@ -1094,8 +1094,274 @@
       ]
     },
     {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 75 },
+      "id": 43,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Queue Bytes & Disk",
+      "description": "Queue bytes usage and available disk space",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "metrics_governor_queue_bytes",
+          "legendFormat": "Queue Bytes"
+        },
+        {
+          "expr": "metrics_governor_queue_max_bytes",
+          "legendFormat": "Max Bytes"
+        },
+        {
+          "expr": "metrics_governor_queue_effective_max_bytes",
+          "legendFormat": "Effective Max"
+        },
+        {
+          "expr": "metrics_governor_queue_disk_available_bytes",
+          "legendFormat": "Disk Available"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 75 },
+      "id": 44,
+      "options": {
+        "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "WAL & Retry Operations",
+      "description": "WAL writes, compactions, retries and success rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(metrics_governor_queue_wal_write_total[5m]))",
+          "legendFormat": "WAL Writes/s"
+        },
+        {
+          "expr": "sum(rate(metrics_governor_queue_wal_compact_total[5m]))",
+          "legendFormat": "WAL Compactions/s"
+        },
+        {
+          "expr": "sum(rate(metrics_governor_queue_retry_total[5m]))",
+          "legendFormat": "Retries/s"
+        },
+        {
+          "expr": "sum(rate(metrics_governor_queue_retry_success_total[5m]))",
+          "legendFormat": "Retry Success/s"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 83 },
+      "id": 45,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Queue Utilization",
+      "description": "Queue utilization ratio (0-1, where 1 = full)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "metrics_governor_queue_utilization_ratio",
+          "legendFormat": "Utilization"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 83 },
+      "id": 46,
+      "options": {
+        "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Dropped by Reason",
+      "description": "Dropped batches by reason (queue full, disk full, etc)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (reason) (rate(metrics_governor_queue_dropped_total[5m]))",
+          "legendFormat": "{{reason}}"
+        },
+        {
+          "expr": "sum(rate(metrics_governor_queue_disk_full_total[5m]))",
+          "legendFormat": "Disk Full Events"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 83 },
+      "id": 47,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Export Batches & Errors",
+      "description": "Overall export batches and errors rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(metrics_governor_batches_sent_total[5m]))",
+          "legendFormat": "Batches Sent/s"
+        },
+        {
+          "expr": "sum(rate(metrics_governor_export_errors_total[5m]))",
+          "legendFormat": "Export Errors/s"
+        },
+        {
+          "expr": "sum(rate(metrics_governor_sharding_export_errors_total[5m]))",
+          "legendFormat": "Sharding Errors/s"
+        }
+      ]
+    },
+    {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 75 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 91 },
       "id": 50,
       "panels": [],
       "title": "Sharding (if enabled)",
@@ -1131,7 +1397,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 76 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 92 },
       "id": 51,
       "options": {
         "legend": { "calcs": ["last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1176,7 +1442,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 76 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 92 },
       "id": 52,
       "options": {
         "legend": { "calcs": ["mean", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1221,7 +1487,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 76 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 92 },
       "id": 53,
       "options": {
         "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1245,8 +1511,158 @@
       ]
     },
     {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 100 },
+      "id": 54,
+      "options": {
+        "legend": { "calcs": ["mean", "p95", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "DNS Lookup Latency",
+      "description": "DNS lookup latency for sharding endpoint discovery",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(metrics_governor_sharding_dns_latency_seconds_bucket[5m]))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(metrics_governor_sharding_dns_latency_seconds_bucket[5m]))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(metrics_governor_sharding_dns_latency_seconds_bucket[5m]))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 100 },
+      "id": 55,
+      "options": {
+        "legend": { "calcs": ["mean", "p95", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Export Latency by Endpoint",
+      "description": "Time to export metrics to each sharding endpoint",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (endpoint, le) (rate(metrics_governor_sharding_export_latency_seconds_bucket[5m])))",
+          "legendFormat": "{{endpoint}} p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (endpoint, le) (rate(metrics_governor_sharding_export_latency_seconds_bucket[5m])))",
+          "legendFormat": "{{endpoint}} p95"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 100 },
+      "id": 56,
+      "options": {
+        "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Export Errors by Endpoint",
+      "description": "Export errors per sharding endpoint - helps identify unhealthy endpoints",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (endpoint) (rate(metrics_governor_sharding_export_errors_total[5m]))",
+          "legendFormat": "{{endpoint}}"
+        }
+      ]
+    },
+    {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 84 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 108 },
       "id": 70,
       "panels": [],
       "title": "Runtime",
@@ -1282,7 +1698,7 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 118 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 142 },
       "id": 71,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1336,7 +1752,7 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 118 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 142 },
       "id": 72,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1358,7 +1774,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 126 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 150 },
       "id": 73,
       "panels": [],
       "title": "Process I/O",
@@ -1394,7 +1810,7 @@
           "unit": "Bps"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 127 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 151 },
       "id": 74,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1444,7 +1860,7 @@
           "unit": "ops"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 127 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 151 },
       "id": 75,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1466,7 +1882,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 135 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 159 },
       "id": 76,
       "panels": [],
       "title": "Network I/O",
@@ -1502,7 +1918,7 @@
           "unit": "Bps"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 136 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 160 },
       "id": 77,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1552,7 +1968,7 @@
           "unit": "pps"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 136 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 160 },
       "id": 78,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1602,7 +2018,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 144 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 168 },
       "id": 79,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1660,7 +2076,7 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 153 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 177 },
       "id": 81,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1714,7 +2130,7 @@
           "unit": "bytes"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 153 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 177 },
       "id": 82,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1772,7 +2188,7 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 161 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 185 },
       "id": 83,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1818,7 +2234,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 161 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 185 },
       "id": 84,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
