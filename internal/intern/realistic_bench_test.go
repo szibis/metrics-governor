@@ -11,7 +11,7 @@ import (
 // simulateMetricBatch simulates processing a batch of metrics with repeated labels
 func simulateMetricBatch(labels []string, useInterning bool, pool *intern.Pool) []string {
 	result := make([]string, 0, len(labels)*100)
-	
+
 	// Simulate 100 metrics, each with the same label set (common in real workloads)
 	for i := 0; i < 100; i++ {
 		for _, label := range labels {
@@ -33,10 +33,10 @@ func BenchmarkRealisticWorkload_WithInterning(b *testing.B) {
 		"host.name", "cloud.region", "deployment.environment",
 	}
 	pool := intern.CommonLabels()
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		_ = simulateMetricBatch(labels, true, pool)
 	}
@@ -48,10 +48,10 @@ func BenchmarkRealisticWorkload_WithoutInterning(b *testing.B) {
 		"http.method", "http.status_code", "http.route",
 		"host.name", "cloud.region", "deployment.environment",
 	}
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		_ = simulateMetricBatch(labels, false, nil)
 	}
@@ -72,7 +72,7 @@ func BenchmarkMemoryPressure(b *testing.B) {
 		"cloud.provider":         "aws",
 		"deployment.environment": "production",
 	}
-	
+
 	spanAttrs := map[string]string{
 		"http.method":      "POST",
 		"http.status_code": "200",
@@ -81,9 +81,9 @@ func BenchmarkMemoryPressure(b *testing.B) {
 		"db.name":          "payments",
 		"rpc.service":      "PaymentService",
 	}
-	
+
 	pool := intern.CommonLabels()
-	
+
 	b.Run("WithInterning", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
@@ -102,7 +102,7 @@ func BenchmarkMemoryPressure(b *testing.B) {
 			}
 		}
 	})
-	
+
 	b.Run("WithoutInterning", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
@@ -121,35 +121,35 @@ func BenchmarkMemoryPressure(b *testing.B) {
 
 func TestRealisticMemoryComparison(t *testing.T) {
 	fmt.Println("\n=== REALISTIC MEMORY COMPARISON ===")
-	
+
 	labels := []string{
 		"service.name", "k8s.pod.name", "k8s.namespace.name",
 		"http.method", "http.status_code", "cloud.region",
 	}
-	
+
 	// Measure memory with interning
 	runtime.GC()
 	var m1 runtime.MemStats
 	runtime.ReadMemStats(&m1)
-	
+
 	pool := intern.CommonLabels()
 	for i := 0; i < 10000; i++ {
 		for _, label := range labels {
 			_ = pool.Intern(label)
 		}
 	}
-	
+
 	runtime.GC()
 	var m2 runtime.MemStats
 	runtime.ReadMemStats(&m2)
-	
+
 	internAllocs := m2.TotalAlloc - m1.TotalAlloc
-	
+
 	// Measure memory without interning
 	runtime.GC()
 	var m3 runtime.MemStats
 	runtime.ReadMemStats(&m3)
-	
+
 	results := make([]string, 0, 60000)
 	for i := 0; i < 10000; i++ {
 		for _, label := range labels {
@@ -157,24 +157,24 @@ func TestRealisticMemoryComparison(t *testing.T) {
 		}
 	}
 	_ = results // prevent optimization
-	
+
 	runtime.GC()
 	var m4 runtime.MemStats
 	runtime.ReadMemStats(&m4)
-	
+
 	noInternAllocs := m4.TotalAlloc - m3.TotalAlloc
-	
+
 	fmt.Printf("Labels: %d, Iterations: 10000\n", len(labels))
 	fmt.Printf("Total lookups: %d\n", len(labels)*10000)
 	fmt.Println()
 	fmt.Printf("With interning:    %d bytes allocated\n", internAllocs)
 	fmt.Printf("Without interning: %d bytes allocated\n", noInternAllocs)
-	
+
 	if noInternAllocs > 0 {
 		reduction := float64(noInternAllocs-internAllocs) / float64(noInternAllocs) * 100
 		fmt.Printf("Memory reduction:  %.1f%%\n", reduction)
 	}
-	
+
 	hits, misses := pool.Stats()
 	fmt.Printf("\nIntern pool hits: %d, misses: %d\n", hits, misses)
 	fmt.Printf("Hit rate: %.2f%%\n", float64(hits)/float64(hits+misses)*100)
