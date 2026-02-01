@@ -94,10 +94,16 @@ jobs:
           if echo "$CHANGED_FILES" | grep -q "^internal/logging/"; then
             PACKAGES="$PACKAGES logging"
           fi
+          if echo "$CHANGED_FILES" | grep -q "^internal/cardinality/"; then
+            PACKAGES="$PACKAGES cardinality"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "^internal/dashboard/"; then
+            PACKAGES="$PACKAGES dashboard"
+          fi
 
           # Check for common dependencies that affect all packages
           if echo "$CHANGED_FILES" | grep -qE "^(go\.mod|go\.sum|Makefile)$"; then
-            PACKAGES="auth buffer compression config exporter limits logging prw queue receiver sharding stats tls"
+            PACKAGES="auth buffer cardinality compression config dashboard exporter limits logging prw queue receiver sharding stats tls"
           fi
 
           # Trim whitespace and convert to JSON array
@@ -127,16 +133,70 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check benchmark cache
+        id: cache-check
+        uses: actions/cache@v4
+        with:
+          path: ./benchmark-cache
+          key: benchmark-${{ github.event.pull_request.number }}-${{ matrix.package }}-${{ hashFiles(format('internal/{0}/**/*.go', matrix.package)) }}
+          restore-keys: |
+            benchmark-${{ github.event.pull_request.number }}-${{ matrix.package }}-
+
+      - name: Check if benchmark already ran
+        id: should-run
+        run: |
+          CACHE_FILE="./benchmark-cache/benchmark-${{ matrix.package }}.txt"
+          HASH_FILE="./benchmark-cache/${{ matrix.package }}.hash"
+          CURRENT_HASH="${{ hashFiles(format('internal/{0}/**/*.go', matrix.package)) }}"
+
+          if [ -f "$CACHE_FILE" ] && [ -f "$HASH_FILE" ]; then
+            CACHED_HASH=$(cat "$HASH_FILE")
+            if [ "$CACHED_HASH" = "$CURRENT_HASH" ]; then
+              echo "✅ Benchmark cache hit for ${{ matrix.package }} (hash: $CURRENT_HASH)"
+              echo "skip=true" >> $GITHUB_OUTPUT
+            else
+              echo "🔄 Hash changed for ${{ matrix.package }}: $CACHED_HASH -> $CURRENT_HASH"
+              echo "skip=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "📝 No cache found for ${{ matrix.package }}"
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Set up Go
+        if: steps.should-run.outputs.skip != 'true'
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Run benchmarks for ${{ matrix.package }}
+        if: steps.should-run.outputs.skip != 'true'
         run: |
           echo "Running benchmarks for package: ${{ matrix.package }}"
-          go test -bench=. -benchmem -count=5 ./internal/${{ matrix.package }}/... 2>&1 | tee benchmark-${{ matrix.package }}.txt
+          # Use count=3 for PRs (faster), count=5 for main branch
+          go test -bench=. -benchmem -count=3 ./internal/${{ matrix.package }}/... 2>&1 | tee benchmark-${{ matrix.package }}.txt
+
+          # Save to cache
+          mkdir -p ./benchmark-cache
+          cp benchmark-${{ matrix.package }}.txt ./benchmark-cache/
+          echo "${{ hashFiles(format('internal/{0}/**/*.go', matrix.package)) }}" > ./benchmark-cache/${{ matrix.package }}.hash
+
+      - name: Benchmark summary
+        if: always()
+        run: |
+          if [ "${{ steps.should-run.outputs.skip }}" = "true" ]; then
+            echo "### ⏭️ Benchmark Skipped: \`${{ matrix.package }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "Using cached results (no code changes detected)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ✅ Benchmark Completed: \`${{ matrix.package }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Use cached benchmark results
+        if: steps.should-run.outputs.skip == 'true'
+        run: |
+          echo "Using cached benchmark results for ${{ matrix.package }}"
+          cp ./benchmark-cache/benchmark-${{ matrix.package }}.txt .
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
@@ -271,12 +331,43 @@ jobs:
           path: ./current
           pattern: benchmark-*
 
+      - name: Restore baseline cache
+        id: baseline-cache
+        uses: actions/cache@v4
+        with:
+          path: ./baseline-cache
+          key: baseline-${{ github.event.pull_request.base.sha }}-${{ needs.detect-changes.outputs.packages }}
+          restore-keys: |
+            baseline-${{ github.event.pull_request.base.sha }}-
+
       - name: Run baseline benchmarks for changed packages
         id: baseline
         run: |
           # Get list of changed packages
           PACKAGES='${{ needs.detect-changes.outputs.packages }}'
           echo "Packages to compare: $PACKAGES"
+
+          mkdir -p baseline
+          mkdir -p baseline-cache
+
+          # Check which packages need baseline benchmarks
+          PACKAGES_TO_RUN=""
+          for pkg in $(echo "$PACKAGES" | jq -r '.[]'); do
+            CACHE_FILE="./baseline-cache/benchmark-$pkg.txt"
+            if [ -f "$CACHE_FILE" ]; then
+              echo "✅ Using cached baseline for $pkg"
+              cp "$CACHE_FILE" "baseline/benchmark-$pkg.txt"
+            else
+              echo "📝 Need to run baseline for $pkg"
+              PACKAGES_TO_RUN="$PACKAGES_TO_RUN $pkg"
+            fi
+          done
+
+          # If all packages are cached, skip checkout
+          if [ -z "$(echo $PACKAGES_TO_RUN | xargs)" ]; then
+            echo "All baseline benchmarks cached, skipping base checkout"
+            exit 0
+          fi
 
           # Store current ref
           CURRENT_REF="${{ github.event.pull_request.head.sha }}"
@@ -289,11 +380,12 @@ jobs:
           echo "Checking out base: ${{ github.event.pull_request.base.sha }}"
           git checkout ${{ github.event.pull_request.base.sha }} || git checkout origin/${{ github.event.pull_request.base.ref }}
 
-          # Run benchmarks for each changed package on base
-          mkdir -p baseline
-          for pkg in $(echo "$PACKAGES" | jq -r '.[]'); do
+          # Run benchmarks only for packages that need it
+          for pkg in $PACKAGES_TO_RUN; do
             echo "Running baseline benchmark for $pkg"
-            go test -bench=. -benchmem -count=5 ./internal/$pkg/... 2>&1 | tee baseline/benchmark-$pkg.txt || true
+            go test -bench=. -benchmem -count=3 ./internal/$pkg/... 2>&1 | tee baseline/benchmark-$pkg.txt || true
+            # Cache the result
+            cp "baseline/benchmark-$pkg.txt" "baseline-cache/benchmark-$pkg.txt"
           done
 
           # Switch back to PR branch
