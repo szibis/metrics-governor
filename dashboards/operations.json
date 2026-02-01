@@ -80,6 +80,7 @@
         "textMode": "auto"
       },
       "title": "Datapoints/sec",
+      "description": "Rate of datapoints processed per second across all metrics",
       "type": "stat",
       "targets": [
         {
@@ -114,6 +115,7 @@
         "textMode": "auto"
       },
       "title": "Unique Metrics",
+      "description": "Total number of unique metric names currently being tracked",
       "type": "stat",
       "targets": [
         {
@@ -150,6 +152,7 @@
         "textMode": "auto"
       },
       "title": "Total Cardinality",
+      "description": "Total unique time series across all metrics (sum of all metric cardinalities)",
       "type": "stat",
       "targets": [
         {
@@ -186,6 +189,7 @@
         "textMode": "auto"
       },
       "title": "Queue Size",
+      "description": "Current number of batches in the retry queue waiting to be sent",
       "type": "stat",
       "targets": [
         {
@@ -221,6 +225,7 @@
         "textMode": "auto"
       },
       "title": "Export Errors",
+      "description": "Export errors in the last 5 minutes - indicates backend connectivity issues",
       "type": "stat",
       "targets": [
         {
@@ -274,6 +279,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Datapoints Rate",
+      "description": "OTLP datapoints flow: received from clients, sent to backend, dropped by limits",
       "type": "timeseries",
       "targets": [
         {
@@ -327,6 +333,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Batches & Exports",
+      "description": "OTLP export batch rate and error rate to the configured backend",
       "type": "timeseries",
       "targets": [
         {
@@ -384,6 +391,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "PRW Datapoints Rate",
+      "description": "Prometheus Remote Write datapoints received and sent per second",
       "type": "timeseries",
       "targets": [
         {
@@ -433,6 +441,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "PRW Timeseries & Batches",
+      "description": "PRW unique timeseries, batch throughput and export errors",
       "type": "timeseries",
       "targets": [
         {
@@ -730,6 +739,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Limit Violations by Rule",
+      "description": "Rate of limit violations (cardinality or datapoints exceeded) per rule",
       "type": "timeseries",
       "targets": [
         {
@@ -779,6 +789,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Dropped vs Passed by Rule",
+      "description": "Datapoints passed vs dropped per rule - shows enforcement impact",
       "type": "timeseries",
       "targets": [
         {
@@ -828,6 +839,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Current Cardinality by Rule",
+      "description": "Current unique series count per rule (vs configured max_cardinality)",
       "type": "timeseries",
       "targets": [
         {
@@ -873,6 +885,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Dropped Groups by Rule (Adaptive)",
+      "description": "Groups currently being dropped by adaptive limiting - identifies top offenders",
       "type": "timeseries",
       "targets": [
         {
@@ -930,6 +943,7 @@
         "tooltip": { "mode": "single", "sort": "none" }
       },
       "title": "Top 10 Metrics by Cardinality",
+      "description": "Metrics with the most unique label combinations (highest series count)",
       "type": "timeseries",
       "targets": [
         {
@@ -975,6 +989,7 @@
         "tooltip": { "mode": "single", "sort": "none" }
       },
       "title": "Top 10 Metrics by Datapoints/s",
+      "description": "Metrics generating the most datapoints per second (highest throughput)",
       "type": "timeseries",
       "targets": [
         {
@@ -1282,6 +1297,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Queue Size",
+      "description": "Current queue size vs maximum configured size (batches count)",
       "type": "timeseries",
       "targets": [
         {
@@ -1331,6 +1347,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Queue Operations",
+      "description": "Queue operations: pushes (failures queued), drops (queue full), retries",
       "type": "timeseries",
       "targets": [
         {
@@ -1957,6 +1974,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Active Endpoints",
+      "description": "Number of backend endpoints discovered via DNS for sharding",
       "type": "timeseries",
       "targets": [
         {
@@ -2002,6 +2020,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Datapoints by Endpoint",
+      "description": "Distribution of datapoints across sharded endpoints (should be balanced)",
       "type": "timeseries",
       "targets": [
         {
@@ -2047,6 +2066,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "DNS & Rehash Events",
+      "description": "DNS discovery refreshes, consistent hash ring rebuilds, and DNS errors",
       "type": "timeseries",
       "targets": [
         {
