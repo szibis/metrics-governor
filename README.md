@@ -186,10 +186,66 @@ metrics-governor -cardinality-mode exact
 ```
 
 **Observability metrics:**
-- `metrics_governor_cardinality_mode{mode}` - Active tracking mode
-- `metrics_governor_cardinality_memory_bytes` - Total memory used by trackers
-- `metrics_governor_cardinality_trackers_total` - Number of active trackers
-- `metrics_governor_rule_cardinality_memory_bytes{rule}` - Memory per limits rule
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_cardinality_mode{mode}` | gauge | Active tracking mode (bloom=1 or exact=1) |
+| `metrics_governor_cardinality_memory_bytes` | gauge | Total memory used by all stats trackers |
+| `metrics_governor_cardinality_trackers_total` | gauge | Number of active trackers in stats collector |
+| `metrics_governor_cardinality_config_expected_items` | gauge | Configured expected items per tracker |
+| `metrics_governor_cardinality_config_fp_rate` | gauge | Configured false positive rate |
+| `metrics_governor_rule_cardinality_memory_bytes{rule}` | gauge | Memory used per limits rule |
+| `metrics_governor_limits_cardinality_memory_bytes` | gauge | Total memory used by limits trackers |
+| `metrics_governor_limits_cardinality_trackers_total` | gauge | Number of trackers in limits enforcer |
+
+**Monitoring use cases:**
+
+1. **Monitor memory savings** - Compare actual vs expected map-based memory:
+   ```promql
+   # Actual Bloom filter memory usage
+   metrics_governor_cardinality_memory_bytes + metrics_governor_limits_cardinality_memory_bytes
+
+   # Estimated map-based memory (75 bytes per series)
+   (sum(metrics_governor_metric_cardinality) + sum(metrics_governor_rule_group_cardinality)) * 75
+
+   # Memory savings ratio
+   1 - (metrics_governor_cardinality_memory_bytes / (sum(metrics_governor_metric_cardinality) * 75))
+   ```
+
+2. **Detect undersized trackers** - Alert when cardinality exceeds expected items:
+   ```promql
+   # If any metric has cardinality >> expected_items, Bloom filter may have higher FP rate
+   max(metrics_governor_metric_cardinality) > metrics_governor_cardinality_config_expected_items * 2
+
+   # Recommendation: increase -cardinality-expected-items if this fires frequently
+   ```
+
+3. **Track memory by rule** - Identify which limits rules use most memory:
+   ```promql
+   # Top 5 rules by memory usage
+   topk(5, metrics_governor_rule_cardinality_memory_bytes)
+
+   # Memory per tracker (avg bytes per group)
+   metrics_governor_rule_cardinality_memory_bytes / metrics_governor_rule_groups_total
+   ```
+
+4. **Verify Bloom mode is active** - Confirm memory-efficient mode:
+   ```promql
+   # Should return 1 for bloom mode
+   metrics_governor_cardinality_mode{mode="bloom"}
+
+   # Alert if accidentally in exact mode (high memory)
+   metrics_governor_cardinality_mode{mode="exact"} == 1
+   ```
+
+5. **Capacity planning** - Project memory needs:
+   ```promql
+   # Current bytes per tracker
+   metrics_governor_cardinality_memory_bytes / metrics_governor_cardinality_trackers_total
+
+   # Projected memory for 10x more trackers
+   (metrics_governor_cardinality_memory_bytes / metrics_governor_cardinality_trackers_total) * 10
+   ```
 
 ### String Interning
 
