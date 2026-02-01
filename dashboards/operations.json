@@ -577,12 +577,12 @@
           "legendFormat": "Received (compressed)"
         },
         {
-          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m]))",
-          "legendFormat": "Sent (uncompressed)"
+          "expr": "sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[1m]))",
+          "legendFormat": "Exported (uncompressed)"
         },
         {
-          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[1m]))",
-          "legendFormat": "Sent (compressed)"
+          "expr": "sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"compressed\"}[1m]))",
+          "legendFormat": "Exported (compressed)"
         }
       ]
     },
@@ -639,8 +639,8 @@
           "legendFormat": "OTLP Receive"
         },
         {
-          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m]))",
-          "legendFormat": "OTLP Send"
+          "expr": "sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[5m]))",
+          "legendFormat": "OTLP Export"
         }
       ]
     },
