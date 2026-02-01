@@ -180,6 +180,11 @@ func TestIsDiskFullError(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "fmt.Errorf wrapped ENOSPC",
+			err:      fmt.Errorf("write failed: %w", syscall.ENOSPC),
+			expected: true,
+		},
+		{
 			name:     "other syscall error",
 			err:      syscall.EPERM,
 			expected: false,
