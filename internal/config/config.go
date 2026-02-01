@@ -103,6 +103,11 @@ type Config struct {
 	QueueTargetUtilization float64
 	QueueAdaptiveEnabled   bool
 	QueueCompactThreshold  float64
+	// Queue I/O optimization settings
+	QueueSyncMode      string        // immediate, batched, async
+	QueueSyncBatchSize int           // Number of writes before sync (batched mode)
+	QueueSyncInterval  time.Duration // Time between syncs (batched mode)
+	QueueCompression   bool          // Enable snappy compression
 
 	// Sharding settings
 	ShardingEnabled            bool
@@ -261,6 +266,11 @@ func ParseFlags() *Config {
 	flag.Float64Var(&cfg.QueueTargetUtilization, "queue-target-utilization", 0.85, "Target disk utilization for adaptive sizing (0.0-1.0)")
 	flag.BoolVar(&cfg.QueueAdaptiveEnabled, "queue-adaptive-enabled", true, "Enable adaptive queue sizing based on disk space")
 	flag.Float64Var(&cfg.QueueCompactThreshold, "queue-compact-threshold", 0.5, "Ratio of consumed entries before compaction (0.0-1.0)")
+	// Queue I/O optimization flags
+	flag.StringVar(&cfg.QueueSyncMode, "queue-sync-mode", "batched", "Queue sync mode: immediate (sync every write), batched (sync periodically), async (no sync)")
+	flag.IntVar(&cfg.QueueSyncBatchSize, "queue-sync-batch-size", 100, "Number of writes before sync in batched mode")
+	flag.DurationVar(&cfg.QueueSyncInterval, "queue-sync-interval", 100*time.Millisecond, "Maximum time between syncs in batched mode")
+	flag.BoolVar(&cfg.QueueCompression, "queue-compression", true, "Enable snappy compression for queue data")
 
 	// Sharding flags
 	flag.BoolVar(&cfg.ShardingEnabled, "sharding-enabled", false, "Enable consistent sharding")
