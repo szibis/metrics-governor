@@ -262,6 +262,16 @@ receiverHTTPServer:
   # -- Enable HTTP keep-alives for receiver
   keepAlivesEnabled: true
 
+# -- Performance tuning configuration
+# Techniques inspired by VictoriaMetrics articles (original implementations)
+performance:
+  # -- Max concurrent export goroutines (0 = NumCPU * 4)
+  exportConcurrency: 0
+  # -- Enable string interning for label/attribute deduplication
+  stringInterning: true
+  # -- Max length for label value interning (longer values not interned)
+  internMaxValueLength: 64
+
 # -- Limits configuration (creates ConfigMap)
 limits:
   # -- Enable limits enforcement
