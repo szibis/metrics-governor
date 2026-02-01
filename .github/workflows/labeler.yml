@@ -57,6 +57,12 @@ jobs:
               { name: 'breaking-change', color: 'b60205', description: 'Breaking change' },
               { name: 'work-in-progress', color: 'fbca04', description: 'Work in progress' },
 
+              // Release control labels
+              { name: 'release:major', color: 'b60205', description: 'Force major version bump' },
+              { name: 'release:minor', color: '5319e7', description: 'Force minor version bump' },
+              { name: 'release:patch', color: '0e8a16', description: 'Force patch version bump' },
+              { name: 'release:skip', color: 'e6e6e6', description: 'Skip automatic release' },
+
               // GitHub built-in (ensure they exist with correct colors)
               { name: 'help wanted', color: '008672', description: 'Extra attention is needed' },
               { name: 'good first issue', color: '7057ff', description: 'Good for newcomers' },

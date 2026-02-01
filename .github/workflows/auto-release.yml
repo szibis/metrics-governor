@@ -1,0 +1,241 @@
+name: Auto Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  auto-release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version bump
+        id: bump
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const title = pr.title.toLowerCase();
+            const labels = pr.labels.map(l => l.name);
+
+            console.log('PR Title:', pr.title);
+            console.log('Labels:', labels);
+
+            // Check for skip label
+            if (labels.includes('release:skip')) {
+              console.log('Skipping release: release:skip label found');
+              core.setOutput('skip', 'true');
+              return;
+            }
+
+            // Check for explicit version labels (highest priority)
+            if (labels.includes('release:major')) {
+              core.setOutput('bump', 'major');
+              core.setOutput('skip', 'false');
+              return;
+            }
+            if (labels.includes('release:minor')) {
+              core.setOutput('bump', 'minor');
+              core.setOutput('skip', 'false');
+              return;
+            }
+            if (labels.includes('release:patch')) {
+              core.setOutput('bump', 'patch');
+              core.setOutput('skip', 'false');
+              return;
+            }
+
+            // Check for breaking change
+            if (labels.includes('breaking-change') || title.includes('!:') || title.includes('breaking')) {
+              core.setOutput('bump', 'major');
+              core.setOutput('skip', 'false');
+              return;
+            }
+
+            // Determine bump from conventional commit type
+            const conventionalTypes = {
+              'feat': 'minor',
+              'fix': 'patch',
+              'perf': 'patch',
+              'security': 'patch',
+              'deps': 'patch',
+              // These types don't trigger release by default
+              'docs': 'none',
+              'ci': 'none',
+              'chore': 'none',
+              'test': 'none',
+              'refactor': 'none',
+              'style': 'none',
+              'build': 'none',
+            };
+
+            let bump = 'none';
+            for (const [type, bumpType] of Object.entries(conventionalTypes)) {
+              if (title.startsWith(`${type}:`) || title.startsWith(`${type}(`)) {
+                bump = bumpType;
+                break;
+              }
+            }
+
+            if (bump === 'none') {
+              console.log('No release: PR type does not trigger release');
+              core.setOutput('skip', 'true');
+              return;
+            }
+
+            core.setOutput('bump', bump);
+            core.setOutput('skip', 'false');
+
+      - name: Get current version
+        if: steps.bump.outputs.skip != 'true'
+        id: current
+        run: |
+          # Get latest version tag
+          LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n1)
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG="v0.0.0"
+          fi
+          echo "Latest tag: $LATEST_TAG"
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+          # Parse version components
+          VERSION="${LATEST_TAG#v}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+          echo "major=$MAJOR" >> $GITHUB_OUTPUT
+          echo "minor=$MINOR" >> $GITHUB_OUTPUT
+          echo "patch=$PATCH" >> $GITHUB_OUTPUT
+
+      - name: Calculate new version
+        if: steps.bump.outputs.skip != 'true'
+        id: new_version
+        run: |
+          BUMP="${{ steps.bump.outputs.bump }}"
+          MAJOR="${{ steps.current.outputs.major }}"
+          MINOR="${{ steps.current.outputs.minor }}"
+          PATCH="${{ steps.current.outputs.patch }}"
+
+          case "$BUMP" in
+            major)
+              NEW_MAJOR=$((MAJOR + 1))
+              NEW_VERSION="v${NEW_MAJOR}.0.0"
+              ;;
+            minor)
+              NEW_MINOR=$((MINOR + 1))
+              NEW_VERSION="v${MAJOR}.${NEW_MINOR}.0"
+              ;;
+            patch)
+              NEW_PATCH=$((PATCH + 1))
+              NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+              ;;
+          esac
+
+          echo "New version: $NEW_VERSION (bump: $BUMP)"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        if: steps.bump.outputs.skip != 'true'
+        id: check_tag
+        run: |
+          VERSION="${{ steps.new_version.outputs.version }}"
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists!"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create and push tag
+        if: steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
+        id: release
+        run: |
+          VERSION="${{ steps.new_version.outputs.version }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "$VERSION" -m "$PR_TITLE"
+          git push origin "$VERSION"
+
+          echo "Created and pushed tag: $VERSION"
+          echo "released=true" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate release notes
+        if: steps.release.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          PREV_TAG="${{ steps.current.outputs.tag }}"
+
+          echo "Creating release $VERSION..."
+
+          # Create release with auto-generated notes
+          gh release create "$VERSION" \
+            --title "Release $VERSION" \
+            --generate-notes \
+            --notes-start-tag "$PREV_TAG"
+
+          echo "Release created: $VERSION"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Auto Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.bump.outputs.skip }}" == "true" ]; then
+            echo "**Status:** Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "No release triggered. To force a release, add one of these labels:" >> $GITHUB_STEP_SUMMARY
+            echo "- \`release:patch\` - Patch version bump" >> $GITHUB_STEP_SUMMARY
+            echo "- \`release:minor\` - Minor version bump" >> $GITHUB_STEP_SUMMARY
+            echo "- \`release:major\` - Major version bump" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.check_tag.outputs.exists }}" == "true" ]; then
+            echo "**Status:** Skipped (tag exists)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Tag ${{ steps.new_version.outputs.version }} already exists." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.release.outputs.released }}" == "true" ]; then
+            echo "**Status:** Released" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| | |" >> $GITHUB_STEP_SUMMARY
+            echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+            echo "| **Version** | ${{ steps.release.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Bump** | ${{ steps.bump.outputs.bump }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Previous** | ${{ steps.current.outputs.tag }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **PR** | #${{ github.event.pull_request.number }} |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "[View Release](https://github.com/${{ github.repository }}/releases/tag/${{ steps.release.outputs.version }})" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Trigger the release workflow to build binaries and Docker images
+  trigger-release-build:
+    needs: auto-release
+    if: needs.auto-release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Waiting for tag to propagate..."
+          sleep 5
+
+          VERSION="${{ needs.auto-release.outputs.version }}"
+          echo "Release workflow will be triggered by the tag push for $VERSION"
+          echo "The release.yml workflow triggers on v* tags automatically."
