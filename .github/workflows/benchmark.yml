@@ -3,8 +3,20 @@ name: Benchmarks
 on:
   pull_request:
     branches: [main]
+    paths:
+      - 'internal/**'
+      - 'cmd/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
   push:
     branches: [main]
+    paths:
+      - 'internal/**'
+      - 'cmd/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
     tags:
       - 'v*'
 
@@ -70,10 +82,22 @@ jobs:
           if echo "$CHANGED_FILES" | grep -q "^internal/stats/"; then
             PACKAGES="$PACKAGES stats"
           fi
+          if echo "$CHANGED_FILES" | grep -q "^internal/sharding/"; then
+            PACKAGES="$PACKAGES sharding"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "^internal/prw/"; then
+            PACKAGES="$PACKAGES prw"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "^internal/tls/"; then
+            PACKAGES="$PACKAGES tls"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "^internal/logging/"; then
+            PACKAGES="$PACKAGES logging"
+          fi
 
           # Check for common dependencies that affect all packages
           if echo "$CHANGED_FILES" | grep -qE "^(go\.mod|go\.sum|Makefile)$"; then
-            PACKAGES="auth buffer compression config exporter limits queue receiver stats"
+            PACKAGES="auth buffer compression config exporter limits logging prw queue receiver sharding stats tls"
           fi
 
           # Trim whitespace and convert to JSON array
