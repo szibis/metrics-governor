@@ -23,6 +23,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `-cardinality-expected-items` - Expected unique items per tracker for Bloom sizing (default: 100000)
   - `-cardinality-fp-rate` - Bloom filter false positive rate (default: 0.01 = 1%)
 
+- **Cardinality Observability Metrics** - New Prometheus metrics for Bloom filter monitoring:
+  | Metric | Type | Description |
+  |--------|------|-------------|
+  | `metrics_governor_cardinality_mode{mode}` | gauge | Active tracking mode (bloom/exact) |
+  | `metrics_governor_cardinality_trackers_total` | gauge | Number of active trackers (stats) |
+  | `metrics_governor_cardinality_memory_bytes` | gauge | Total memory used by trackers (stats) |
+  | `metrics_governor_cardinality_config_expected_items` | gauge | Configured expected items |
+  | `metrics_governor_cardinality_config_fp_rate` | gauge | Configured false positive rate |
+  | `metrics_governor_rule_cardinality_memory_bytes{rule}` | gauge | Memory per rule (limits) |
+  | `metrics_governor_limits_cardinality_trackers_total` | gauge | Total trackers in enforcer |
+  | `metrics_governor_limits_cardinality_memory_bytes` | gauge | Total memory (limits) |
+
 ### Performance
 
 - **Memory Optimization** - Cardinality tracking memory usage:

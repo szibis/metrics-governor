@@ -577,6 +577,40 @@ func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "metrics_governor_label_cardinality{%s} %d\n", labelStr, ls.cardinality.Count())
 		}
 	}
+
+	// Cardinality tracking metrics (Bloom filter observability)
+	var totalMemoryBytes uint64
+	trackerCount := len(c.metricStats) + len(c.labelStats)
+	for _, ms := range c.metricStats {
+		totalMemoryBytes += ms.cardinality.MemoryUsage()
+	}
+	for _, ls := range c.labelStats {
+		totalMemoryBytes += ls.cardinality.MemoryUsage()
+	}
+
+	fmt.Fprintf(w, "# HELP metrics_governor_cardinality_trackers_total Number of active cardinality trackers\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_trackers_total gauge\n")
+	fmt.Fprintf(w, "metrics_governor_cardinality_trackers_total %d\n", trackerCount)
+
+	fmt.Fprintf(w, "# HELP metrics_governor_cardinality_memory_bytes Total memory used by cardinality trackers\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_memory_bytes gauge\n")
+	fmt.Fprintf(w, "metrics_governor_cardinality_memory_bytes %d\n", totalMemoryBytes)
+
+	fmt.Fprintf(w, "# HELP metrics_governor_cardinality_mode Cardinality tracking mode (1=bloom, 0=exact)\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_mode gauge\n")
+	if cardinality.GlobalConfig.Mode == cardinality.ModeBloom {
+		fmt.Fprintf(w, "metrics_governor_cardinality_mode{mode=\"bloom\"} 1\n")
+	} else {
+		fmt.Fprintf(w, "metrics_governor_cardinality_mode{mode=\"exact\"} 1\n")
+	}
+
+	fmt.Fprintf(w, "# HELP metrics_governor_cardinality_config_expected_items Configured expected items per tracker\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_config_expected_items gauge\n")
+	fmt.Fprintf(w, "metrics_governor_cardinality_config_expected_items %d\n", cardinality.GlobalConfig.ExpectedItems)
+
+	fmt.Fprintf(w, "# HELP metrics_governor_cardinality_config_fp_rate Configured false positive rate for Bloom filter\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_config_fp_rate gauge\n")
+	fmt.Fprintf(w, "metrics_governor_cardinality_config_fp_rate %f\n", cardinality.GlobalConfig.FalsePositiveRate)
 }
 
 // formatLabels formats a label map as Prometheus label string.

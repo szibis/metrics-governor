@@ -604,6 +604,29 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# HELP metrics_governor_limits_total_cardinality Total cardinality across all rules in current window\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_limits_total_cardinality gauge\n")
 	fmt.Fprintf(w, "metrics_governor_limits_total_cardinality %d\n", totalCardinalityAllRules)
+
+	// Cardinality tracker memory usage per rule
+	fmt.Fprintf(w, "# HELP metrics_governor_rule_cardinality_memory_bytes Memory used by cardinality trackers per rule\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_rule_cardinality_memory_bytes gauge\n")
+	var totalLimitsMemory uint64
+	var totalLimitsTrackers int
+	for ruleName, rs := range e.ruleStats {
+		var ruleMemory uint64
+		for _, gs := range rs.groups {
+			ruleMemory += gs.cardinality.MemoryUsage()
+		}
+		totalLimitsMemory += ruleMemory
+		totalLimitsTrackers += len(rs.groups)
+		fmt.Fprintf(w, "metrics_governor_rule_cardinality_memory_bytes{rule=%q} %d\n", ruleName, ruleMemory)
+	}
+
+	fmt.Fprintf(w, "# HELP metrics_governor_limits_cardinality_trackers_total Total cardinality trackers in limits enforcer\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_limits_cardinality_trackers_total gauge\n")
+	fmt.Fprintf(w, "metrics_governor_limits_cardinality_trackers_total %d\n", totalLimitsTrackers)
+
+	fmt.Fprintf(w, "# HELP metrics_governor_limits_cardinality_memory_bytes Total memory used by limits cardinality trackers\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_limits_cardinality_memory_bytes gauge\n")
+	fmt.Fprintf(w, "metrics_governor_limits_cardinality_memory_bytes %d\n", totalLimitsMemory)
 }
 
 // Helper functions
