@@ -212,6 +212,43 @@ The queue uses a high-performance FastQueue implementation inspired by VictoriaM
 | `-prw-sharding-dns-refresh-interval` | `30s` | DNS refresh interval |
 | `-prw-sharding-virtual-nodes` | `150` | Virtual nodes per endpoint |
 
+### OTLP Queue Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-queue-enabled` | `false` | Enable persistent retry queue |
+| `-queue-path` | `./queue` | Queue directory path |
+| `-queue-max-size` | `10000` | Max queue entries |
+| `-queue-max-bytes` | `536870912` | Max queue size in bytes (512MB) |
+| `-queue-retry-interval` | `5s` | Initial retry interval |
+| `-queue-full-behavior` | `drop_oldest` | Behavior when full: `drop_oldest`, `drop_newest`, `block` |
+| `-queue-adaptive-enabled` | `true` | Enable adaptive queue sizing |
+| `-queue-sync-mode` | `batched` | Sync mode: `immediate`, `batched`, `async` |
+| `-queue-sync-batch-size` | `100` | Number of entries before sync (batched mode) |
+| `-queue-sync-interval` | `100ms` | Time interval for sync (batched mode) |
+| `-queue-compression` | `false` | Enable snappy compression for WAL entries |
+| `-queue-write-ahead` | `true` | Enable write-ahead logging for crash safety |
+
+> **Warning: WAL Compression CPU Impact**
+>
+> Enabling `-queue-compression=true` can significantly increase CPU usage at high throughput.
+> At 200k datapoints/s, compression can add 60-100% CPU overhead due to snappy compression
+> on every WAL write. For high-throughput environments, we recommend:
+> - `-queue-compression=false` (default)
+> - `-queue-sync-batch-size=1000` (batch more entries per sync)
+> - `-queue-sync-interval=250ms` (less frequent syncs with bigger batches)
+
+### Sharding Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-sharding-enabled` | `false` | Enable consistent sharding |
+| `-sharding-headless-service` | | K8s headless service DNS name with port |
+| `-sharding-labels` | | Comma-separated labels for shard key |
+| `-sharding-dns-refresh-interval` | `30s` | DNS refresh interval |
+| `-sharding-virtual-nodes` | `150` | Virtual nodes per endpoint |
+| `-sharding-fallback-on-empty` | `false` | Fall back to default exporter if no labels match |
+
 ### Performance Options
 
 | Flag | Default | Description |

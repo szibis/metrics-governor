@@ -115,6 +115,19 @@ func init() {
 	prometheus.MustRegister(fastqueueMetaSyncTotal)
 	prometheus.MustRegister(fastqueueChunkRotations)
 	prometheus.MustRegister(fastqueueInmemoryFlushes)
+
+	// Initialize gauges to 0 so they appear in Prometheus immediately
+	// (before queue is created or used)
+	queueSize.Set(0)
+	queueBytes.Set(0)
+	queueMaxSize.Set(0)
+	queueMaxBytes.Set(0)
+	queueEffectiveMaxSize.Set(0)
+	queueEffectiveMaxBytes.Set(0)
+	queueUtilizationRatio.Set(0)
+	queueDiskAvailableBytes.Set(0)
+	fastqueueInmemoryBlocks.Set(0)
+	fastqueueDiskBytes.Set(0)
 }
 
 // IncrementRetryTotal increments the retry counter.

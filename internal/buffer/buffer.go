@@ -23,6 +23,7 @@ type StatsCollector interface {
 	RecordExport(datapointCount int)
 	RecordExportError()
 	RecordOTLPBytesReceived(bytes int)
+	RecordOTLPBytesReceivedCompressed(bytes int)
 	RecordOTLPBytesSent(bytes int)
 	SetOTLPBufferSize(size int)
 }

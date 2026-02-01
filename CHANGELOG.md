@@ -5,6 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-02-01
+
+### Added
+
+- **Bloom Filter Cardinality Tracking** - Memory-efficient probabilistic cardinality tracking using Bloom filters
+  - New `internal/cardinality/` package with `Tracker` interface
+  - `BloomTracker` implementation using [bits-and-blooms/bloom/v3](https://github.com/bits-and-blooms/bloom)
+  - `ExactTracker` implementation for 100% accurate tracking (backward compatibility)
+  - **98% memory reduction** compared to map-based tracking (75MB → 1.2MB per 1M series)
+  - Configurable false positive rate (default: 1%)
+  - Thread-safe concurrent access with `sync.RWMutex`
+  - Applied to both limits enforcer (`internal/limits/enforcer.go`) and stats collector (`internal/stats/stats.go`)
+
+- **Cardinality Configuration** - New CLI flags for cardinality tracking:
+  - `-cardinality-mode` - Tracking mode: `bloom` (memory-efficient) or `exact` (100% accurate)
+  - `-cardinality-expected-items` - Expected unique items per tracker for Bloom sizing (default: 100000)
+  - `-cardinality-fp-rate` - Bloom filter false positive rate (default: 0.01 = 1%)
+
+- **Cardinality Observability Metrics** - New Prometheus metrics for Bloom filter monitoring:
+  | Metric | Type | Description |
+  |--------|------|-------------|
+  | `metrics_governor_cardinality_mode{mode}` | gauge | Active tracking mode (bloom/exact) |
+  | `metrics_governor_cardinality_trackers_total` | gauge | Number of active trackers (stats) |
+  | `metrics_governor_cardinality_memory_bytes` | gauge | Total memory used by trackers (stats) |
+  | `metrics_governor_cardinality_config_expected_items` | gauge | Configured expected items |
+  | `metrics_governor_cardinality_config_fp_rate` | gauge | Configured false positive rate |
+  | `metrics_governor_rule_cardinality_memory_bytes{rule}` | gauge | Memory per rule (limits) |
+  | `metrics_governor_limits_cardinality_trackers_total` | gauge | Total trackers in enforcer |
+  | `metrics_governor_limits_cardinality_memory_bytes` | gauge | Total memory (limits) |
+
+### Performance
+
+- **Memory Optimization** - Cardinality tracking memory usage:
+  | Items | map[string]struct{} | Bloom (1% FPR) | Savings |
+  |-------|---------------------|----------------|---------|
+  | 10K   | 750KB               | 12KB           | 98%     |
+  | 100K  | 7.5MB               | 120KB          | 98%     |
+  | 1M    | 75MB                | 1.2MB          | 98%     |
+  | 10M   | 750MB               | 12MB           | 98%     |
+
+- **False Positive Impact** - With 1% false positive rate:
+  - ~1% undercount of cardinality (acceptable for rate limiting and dashboards)
+  - Slightly more permissive limits enforcement (~1% more series allowed)
+
+### Changed
+
+- `groupStats.cardinality` in `internal/limits/enforcer.go` now uses `cardinality.Tracker` interface
+- `MetricStats.UniqueSeries` and `LabelStats.UniqueSeries` in `internal/stats/stats.go` now use `cardinality.Tracker` interface
+- `GetGlobalStats()` return type changed from `int` to `int64` for cardinality count
+
+### New Files
+
+- `internal/cardinality/tracker.go` - Tracker interface and BloomTracker implementation
+- `internal/cardinality/exact.go` - ExactTracker implementation (map-based)
+- `internal/cardinality/config.go` - Global configuration and factory functions
+- `internal/cardinality/tracker_test.go` - Comprehensive tests and benchmarks (94.4% coverage)
+
+### Dependencies
+
+- Added `github.com/bits-and-blooms/bloom/v3 v3.7.1`
+- Added `github.com/bits-and-blooms/bitset v1.24.2` (indirect)
+
 ## [0.7.0] - 2026-02-01
 
 ### Added

@@ -80,6 +80,7 @@
         "textMode": "auto"
       },
       "title": "Datapoints/sec",
+      "description": "Rate of datapoints processed per second across all metrics",
       "type": "stat",
       "targets": [
         {
@@ -114,6 +115,7 @@
         "textMode": "auto"
       },
       "title": "Unique Metrics",
+      "description": "Total number of unique metric names currently being tracked",
       "type": "stat",
       "targets": [
         {
@@ -150,6 +152,7 @@
         "textMode": "auto"
       },
       "title": "Total Cardinality",
+      "description": "Total unique time series across all metrics (sum of all metric cardinalities)",
       "type": "stat",
       "targets": [
         {
@@ -186,6 +189,7 @@
         "textMode": "auto"
       },
       "title": "Queue Size",
+      "description": "Current number of batches in the retry queue waiting to be sent",
       "type": "stat",
       "targets": [
         {
@@ -221,6 +225,7 @@
         "textMode": "auto"
       },
       "title": "Export Errors",
+      "description": "Export errors in the last 5 minutes - indicates backend connectivity issues",
       "type": "stat",
       "targets": [
         {
@@ -274,6 +279,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Datapoints Rate",
+      "description": "OTLP datapoints flow: received from clients, sent to backend, dropped by limits",
       "type": "timeseries",
       "targets": [
         {
@@ -327,6 +333,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Batches & Exports",
+      "description": "OTLP export batch rate and error rate to the configured backend",
       "type": "timeseries",
       "targets": [
         {
@@ -384,6 +391,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "PRW Datapoints Rate",
+      "description": "Prometheus Remote Write datapoints received and sent per second",
       "type": "timeseries",
       "targets": [
         {
@@ -433,6 +441,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "PRW Timeseries & Batches",
+      "description": "PRW unique timeseries, batch throughput and export errors",
       "type": "timeseries",
       "targets": [
         {
@@ -560,20 +569,20 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"}[1m]))",
+          "expr": "sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[1m]))",
           "legendFormat": "Received (uncompressed)"
         },
         {
-          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"}[1m]))",
+          "expr": "sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[1m]))",
           "legendFormat": "Received (compressed)"
         },
         {
-          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m]))",
-          "legendFormat": "Sent (uncompressed)"
+          "expr": "sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[1m]))",
+          "legendFormat": "Exported (uncompressed)"
         },
         {
-          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[1m]))",
-          "legendFormat": "Sent (compressed)"
+          "expr": "sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"compressed\"}[1m]))",
+          "legendFormat": "Exported (compressed)"
         }
       ]
     },
@@ -630,8 +639,8 @@
           "legendFormat": "OTLP Receive"
         },
         {
-          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m]))",
-          "legendFormat": "OTLP Send"
+          "expr": "sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[5m]))",
+          "legendFormat": "OTLP Export"
         }
       ]
     },
@@ -730,6 +739,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Limit Violations by Rule",
+      "description": "Rate of limit violations (cardinality or datapoints exceeded) per rule",
       "type": "timeseries",
       "targets": [
         {
@@ -779,6 +789,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Dropped vs Passed by Rule",
+      "description": "Datapoints passed vs dropped per rule - shows enforcement impact",
       "type": "timeseries",
       "targets": [
         {
@@ -828,6 +839,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Current Cardinality by Rule",
+      "description": "Current unique series count per rule (vs configured max_cardinality)",
       "type": "timeseries",
       "targets": [
         {
@@ -873,6 +885,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Dropped Groups by Rule (Adaptive)",
+      "description": "Groups currently being dropped by adaptive limiting - identifies top offenders",
       "type": "timeseries",
       "targets": [
         {
@@ -930,6 +943,7 @@
         "tooltip": { "mode": "single", "sort": "none" }
       },
       "title": "Top 10 Metrics by Cardinality",
+      "description": "Metrics with the most unique label combinations (highest series count)",
       "type": "timeseries",
       "targets": [
         {
@@ -975,6 +989,7 @@
         "tooltip": { "mode": "single", "sort": "none" }
       },
       "title": "Top 10 Metrics by Datapoints/s",
+      "description": "Metrics generating the most datapoints per second (highest throughput)",
       "type": "timeseries",
       "targets": [
         {
@@ -986,6 +1001,260 @@
     {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 66 },
+      "id": 80,
+      "panels": [],
+      "title": "Bloom Filter Memory (Cardinality Tracking)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "options": { "1": { "text": "BLOOM", "color": "green" } }, "type": "value" },
+            { "options": { "0": { "text": "EXACT", "color": "yellow" } }, "type": "value" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "yellow", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 67 },
+      "id": 81,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value"
+      },
+      "title": "Cardinality Mode",
+      "description": "Active cardinality tracking mode. BLOOM (green) = memory-efficient probabilistic tracking with ~1% false positive rate. EXACT (yellow) = map-based tracking with 100% accuracy but higher memory usage. Bloom mode provides 98% memory savings.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "metrics_governor_cardinality_mode{mode=\"bloom\"}",
+          "legendFormat": "Mode"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10485760 },
+              { "color": "red", "value": 104857600 }
+            ]
+          },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 67 },
+      "id": 82,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Total Bloom Memory",
+      "description": "Combined memory usage of all Bloom filter cardinality trackers. Includes both stats collector trackers (per-metric tracking) and limits enforcer trackers (per-rule/group tracking). Green < 10MB, Yellow < 100MB, Red >= 100MB.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "metrics_governor_cardinality_memory_bytes + metrics_governor_limits_cardinality_memory_bytes",
+          "legendFormat": "Total Memory"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "green", "value": 95 }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 67 },
+      "id": 83,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Memory Savings",
+      "description": "Percentage of memory saved by using Bloom filters instead of maps. Calculated as: 1 - (actual_bloom_memory / estimated_map_memory). Values > 95% (green) indicate optimal Bloom filter performance.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "100 * (1 - ((metrics_governor_cardinality_memory_bytes + metrics_governor_limits_cardinality_memory_bytes) / ((sum(metrics_governor_metric_cardinality) + sum(metrics_governor_rule_group_cardinality)) * 75)))",
+          "legendFormat": "Savings %"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 67 },
+      "id": 84,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Total Trackers",
+      "description": "Total number of active Bloom filter trackers. Each unique metric name gets one tracker in stats, and each rule/group combination gets one tracker in limits.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "metrics_governor_cardinality_trackers_total + metrics_governor_limits_cardinality_trackers_total",
+          "legendFormat": "Trackers"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 71 },
+      "id": 85,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Memory by Limits Rule",
+      "description": "Memory usage breakdown by limits rule. Each rule tracks cardinality per group. Use to identify which rules consume the most resources.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "topk(10, metrics_governor_rule_cardinality_memory_bytes)",
+          "legendFormat": "{{rule}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 71 },
+      "id": 86,
+      "options": {
+        "legend": { "calcs": ["last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Bloom Filter Configuration",
+      "description": "Current Bloom filter configuration values. Expected Items: target number of unique series per tracker. FP Rate: target false positive rate (default: 0.01 = 1%).",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "metrics_governor_cardinality_config_expected_items",
+          "legendFormat": "Expected Items"
+        },
+        {
+          "expr": "metrics_governor_cardinality_config_fp_rate * 100",
+          "legendFormat": "FP Rate %"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 79 },
       "id": 40,
       "panels": [],
       "title": "Queue & Persistence",
@@ -1021,13 +1290,14 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 67 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 80 },
       "id": 41,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Queue Size",
+      "description": "Current queue size vs maximum configured size (batches count)",
       "type": "timeseries",
       "targets": [
         {
@@ -1070,13 +1340,14 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 67 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 80 },
       "id": 42,
       "options": {
         "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Queue Operations",
+      "description": "Queue operations: pushes (failures queued), drops (queue full), retries",
       "type": "timeseries",
       "targets": [
         {
@@ -1123,7 +1394,7 @@
           "unit": "bytes"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 75 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 88 },
       "id": 43,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1181,7 +1452,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 75 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 88 },
       "id": 44,
       "options": {
         "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1243,7 +1514,7 @@
           "unit": "percentunit"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 83 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 96 },
       "id": 45,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1289,7 +1560,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 83 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 96 },
       "id": 46,
       "options": {
         "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1393,7 +1664,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 83 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 96 },
       "id": 47,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1419,7 +1690,248 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 91 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 104 },
+      "id": 200,
+      "panels": [],
+      "title": "Queue I/O Optimization",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 105 },
+      "id": 201,
+      "options": {
+        "legend": { "calcs": ["mean", "p99", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Sync Latency",
+      "description": "WAL fsync latency distribution (batched sync mode)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(metrics_governor_queue_sync_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(metrics_governor_queue_sync_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 105 },
+      "id": 202,
+      "options": {
+        "legend": { "calcs": ["mean", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Compression Ratio",
+      "description": "Snappy compression ratio (lower is better, 1.0 = no compression)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "metrics_governor_queue_compression_ratio",
+          "legendFormat": "Ratio"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 105 },
+      "id": 203,
+      "options": {
+        "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Sync Operations",
+      "description": "WAL sync operations and pending writes",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(metrics_governor_queue_sync_total[5m]))",
+          "legendFormat": "Syncs/s"
+        },
+        {
+          "expr": "metrics_governor_queue_pending_syncs",
+          "legendFormat": "Pending"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "Bps"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 113 },
+      "id": 204,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Write Throughput",
+      "description": "Original vs compressed bytes written per second",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(metrics_governor_queue_bytes_written_total[5m]))",
+          "legendFormat": "Original"
+        },
+        {
+          "expr": "sum(rate(metrics_governor_queue_bytes_compressed_total[5m]))",
+          "legendFormat": "Compressed"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "red", "value": 0.9 }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 113 },
+      "id": 205,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Space Savings",
+      "description": "Disk space saved by compression (1 - ratio)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "1 - metrics_governor_queue_compression_ratio",
+          "legendFormat": "Savings"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 121 },
       "id": 50,
       "panels": [],
       "title": "Sharding (if enabled)",
@@ -1455,13 +1967,14 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 92 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 122 },
       "id": 51,
       "options": {
         "legend": { "calcs": ["last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Active Endpoints",
+      "description": "Number of backend endpoints discovered via DNS for sharding",
       "type": "timeseries",
       "targets": [
         {
@@ -1500,13 +2013,14 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 92 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 122 },
       "id": 52,
       "options": {
         "legend": { "calcs": ["mean", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Datapoints by Endpoint",
+      "description": "Distribution of datapoints across sharded endpoints (should be balanced)",
       "type": "timeseries",
       "targets": [
         {
@@ -1545,13 +2059,14 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 92 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 122 },
       "id": 53,
       "options": {
         "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "DNS & Rehash Events",
+      "description": "DNS discovery refreshes, consistent hash ring rebuilds, and DNS errors",
       "type": "timeseries",
       "targets": [
         {
@@ -1598,7 +2113,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 100 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 130 },
       "id": 54,
       "options": {
         "legend": { "calcs": ["mean", "p95", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1652,7 +2167,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 100 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 130 },
       "id": 55,
       "options": {
         "legend": { "calcs": ["mean", "p95", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1702,7 +2217,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 100 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 130 },
       "id": 56,
       "options": {
         "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1720,7 +2235,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 108 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 138 },
       "id": 70,
       "panels": [],
       "title": "Runtime",
@@ -1756,7 +2271,7 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 142 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 155 },
       "id": 71,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1810,7 +2325,7 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 142 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 155 },
       "id": 72,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1832,7 +2347,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 150 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 163 },
       "id": 73,
       "panels": [],
       "title": "Process I/O",
@@ -1868,7 +2383,7 @@
           "unit": "Bps"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 151 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 164 },
       "id": 74,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1918,7 +2433,7 @@
           "unit": "ops"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 151 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 164 },
       "id": 75,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1940,7 +2455,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 159 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 172 },
       "id": 76,
       "panels": [],
       "title": "Network I/O",
@@ -1976,7 +2491,7 @@
           "unit": "Bps"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 160 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 173 },
       "id": 77,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -2026,7 +2541,7 @@
           "unit": "pps"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 160 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 173 },
       "id": 78,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -2076,7 +2591,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 168 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 181 },
       "id": 79,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -2134,7 +2649,7 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 177 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 190 },
       "id": 81,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -2188,7 +2703,7 @@
           "unit": "bytes"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 177 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 190 },
       "id": 82,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -2246,7 +2761,7 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 185 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 198 },
       "id": 83,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -2292,7 +2807,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 185 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 198 },
       "id": 84,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },

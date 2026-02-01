@@ -87,6 +87,10 @@ func (m *mockStatsCollector) RecordOTLPBytesReceived(bytes int) {
 	m.bytesReceived += bytes
 }
 
+func (m *mockStatsCollector) RecordOTLPBytesReceivedCompressed(bytes int) {
+	// No-op for mock
+}
+
 func (m *mockStatsCollector) RecordOTLPBytesSent(bytes int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
