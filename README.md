@@ -159,7 +159,9 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
 
 ## Performance Optimizations
 
-metrics-governor includes several high-performance optimizations for production workloads:
+metrics-governor includes several high-performance optimizations for production workloads. **All optimizations apply to both OTLP and PRW pipelines.**
+
+> **Note**: These optimizations are protocol-agnostic and work identically for both pipelines. The same memory savings, allocation reductions, and concurrency controls apply whether you're processing OTLP or Prometheus Remote Write metrics.
 
 ### Bloom Filter Cardinality Tracking
 
@@ -172,6 +174,8 @@ Cardinality tracking uses Bloom filters instead of maps for 98% memory reduction
 | 1,000,000     | 75 MB               | 1.2 MB                 | **98%**        |
 | 10,000,000    | 750 MB              | 12 MB                  | **98%**        |
 
+**Applies to:** OTLP limits enforcer, OTLP stats collector, PRW limits enforcer, PRW stats collector
+
 Configure via CLI flags:
 ```bash
 # Use Bloom filter mode (default, memory-efficient)
@@ -181,19 +185,49 @@ metrics-governor -cardinality-mode bloom -cardinality-expected-items 100000 -car
 metrics-governor -cardinality-mode exact
 ```
 
+**Observability metrics:**
+- `metrics_governor_cardinality_mode{mode}` - Active tracking mode
+- `metrics_governor_cardinality_memory_bytes` - Total memory used by trackers
+- `metrics_governor_cardinality_trackers_total` - Number of active trackers
+- `metrics_governor_rule_cardinality_memory_bytes{rule}` - Memory per limits rule
+
 ### String Interning
 
 Label string deduplication reduces allocations by 76%:
 - Pre-populated pool for common Prometheus labels (`__name__`, `job`, `instance`, etc.)
 - Zero-allocation cache hits using `sync.Map`
-- Applied to PRW label parsing and shard key building
+- Configurable max value length to balance memory vs deduplication
+
+**Applies to:** OTLP shard key building, PRW label parsing, PRW shard key building
+
+Configure via CLI flags:
+```bash
+# Enable string interning (default: true)
+metrics-governor -string-interning=true -intern-max-value-length=64
+```
 
 ### Concurrency Limiting
 
 Semaphore-based limiting prevents goroutine explosion:
 - Bounded at `NumCPU * 4` by default
 - 88% reduction in concurrent goroutines under load
-- Configurable via `-export-concurrency`
+- Prevents memory exhaustion during traffic spikes
+
+**Applies to:** OTLP sharded exporter, PRW sharded exporter
+
+Configure via CLI flags:
+```bash
+# Limit concurrent exports (default: NumCPU * 4)
+metrics-governor -export-concurrency=32
+```
+
+### Summary
+
+| Optimization | OTLP | PRW | Memory Impact | CPU Impact |
+|--------------|:----:|:---:|---------------|------------|
+| Bloom Filters | ✓ | ✓ | -98% for cardinality tracking | Minimal |
+| String Interning | ✓ | ✓ | -76% allocations | -12% CPU |
+| Concurrency Limiting | ✓ | ✓ | Bounded goroutines | Controlled parallelism |
 
 ---
 
