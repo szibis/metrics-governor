@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] - 2026-02-01
 
 ### Added
 
@@ -36,10 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
-- **PRW Label Parsing**: 76% reduction in memory allocations
-- **Intern Hit Rate**: 99.96% for common labels
+- **PRW Label Parsing**: 66% reduction in allocations, 12.5% reduction in memory
+- **Intern Hit Rate**: 99.99% for common Prometheus labels
 - **Goroutine Reduction**: 88% fewer concurrent goroutines under load
-- **GC Pressure**: Significantly reduced due to string deduplication
+- **GC Pressure**: Significantly reduced due to string deduplication in PRW pipeline
 
 ## [0.6.3] - 2026-02-01
 
