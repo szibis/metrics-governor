@@ -62,6 +62,10 @@ func main() {
 				TargetUtilization: cfg.QueueTargetUtilization,
 				AdaptiveEnabled:   cfg.QueueAdaptiveEnabled,
 				CompactThreshold:  cfg.QueueCompactThreshold,
+				SyncMode:          queue.SyncMode(cfg.QueueSyncMode),
+				SyncBatchSize:     cfg.QueueSyncBatchSize,
+				SyncInterval:      cfg.QueueSyncInterval,
+				Compression:       cfg.QueueCompression,
 			},
 		}
 
@@ -97,6 +101,10 @@ func main() {
 				TargetUtilization: cfg.QueueTargetUtilization,
 				AdaptiveEnabled:   cfg.QueueAdaptiveEnabled,
 				CompactThreshold:  cfg.QueueCompactThreshold,
+				SyncMode:          queue.SyncMode(cfg.QueueSyncMode),
+				SyncBatchSize:     cfg.QueueSyncBatchSize,
+				SyncInterval:      cfg.QueueSyncInterval,
+				Compression:       cfg.QueueCompression,
 			}
 
 			queuedExp, queueErr := exporter.NewQueued(exp, queueCfg)
