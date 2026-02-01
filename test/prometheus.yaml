@@ -3,8 +3,9 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
-  # Scrape metrics-governor stats
+  # Scrape metrics-governor stats (more frequent for better resolution)
   - job_name: 'metrics-governor'
+    scrape_interval: 5s
     static_configs:
       - targets: ['metrics-governor:9090']
     metrics_path: /metrics

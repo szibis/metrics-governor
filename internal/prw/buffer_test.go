@@ -46,6 +46,8 @@ type mockStats struct {
 	exportedDatapoints int64
 	exportedTimeseries int64
 	exportErrors       int64
+	receivedBytes      int64
+	sentBytes          int64
 }
 
 func (m *mockStats) RecordPRWReceived(datapointCount, timeseriesCount int) {
@@ -61,6 +63,20 @@ func (m *mockStats) RecordPRWExport(datapointCount, timeseriesCount int) {
 func (m *mockStats) RecordPRWExportError() {
 	atomic.AddInt64(&m.exportErrors, 1)
 }
+
+func (m *mockStats) RecordPRWBytesReceived(bytes int) {
+	atomic.AddInt64(&m.receivedBytes, int64(bytes))
+}
+
+func (m *mockStats) RecordPRWBytesReceivedCompressed(bytes int) {}
+
+func (m *mockStats) RecordPRWBytesSent(bytes int) {
+	atomic.AddInt64(&m.sentBytes, int64(bytes))
+}
+
+func (m *mockStats) RecordPRWBytesSentCompressed(bytes int) {}
+
+func (m *mockStats) SetPRWBufferSize(size int) {}
 
 func TestBuffer_Add(t *testing.T) {
 	exp := &mockExporter{}

@@ -407,3 +407,209 @@ func BenchmarkWriteRequest_Unmarshal(b *testing.B) {
 		_ = result.Unmarshal(data)
 	}
 }
+
+func TestWriteRequest_EstimateSize(t *testing.T) {
+	tests := []struct {
+		name string
+		req  *WriteRequest
+	}{
+		{
+			name: "empty request",
+			req:  &WriteRequest{},
+		},
+		{
+			name: "single timeseries",
+			req: &WriteRequest{
+				Timeseries: []TimeSeries{
+					{
+						Labels: []Label{
+							{Name: "__name__", Value: "test_metric"},
+						},
+						Samples: []Sample{
+							{Value: 1.0, Timestamp: 1000},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "multiple timeseries with multiple samples",
+			req: &WriteRequest{
+				Timeseries: []TimeSeries{
+					{
+						Labels: []Label{
+							{Name: "__name__", Value: "http_requests_total"},
+							{Name: "method", Value: "GET"},
+							{Name: "status", Value: "200"},
+						},
+						Samples: []Sample{
+							{Value: 100.0, Timestamp: 1609459200000},
+							{Value: 101.0, Timestamp: 1609459201000},
+							{Value: 102.0, Timestamp: 1609459202000},
+						},
+					},
+					{
+						Labels: []Label{
+							{Name: "__name__", Value: "http_requests_total"},
+							{Name: "method", Value: "POST"},
+						},
+						Samples: []Sample{
+							{Value: 50.0, Timestamp: 1609459200000},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			estimated := tt.req.EstimateSize()
+
+			// Marshal and compare
+			marshaled, err := tt.req.Marshal()
+			if err != nil {
+				t.Fatalf("failed to marshal: %v", err)
+			}
+
+			actualSize := len(marshaled)
+
+			// Estimate should be >= actual size (may include padding for varints)
+			if estimated < actualSize {
+				t.Errorf("EstimateSize() = %d, actual marshaled size = %d; estimate should be >= actual",
+					estimated, actualSize)
+			}
+
+			// Estimate should be within reasonable bounds (not more than 2x actual)
+			if estimated > actualSize*2 {
+				t.Errorf("EstimateSize() = %d is too large compared to actual %d",
+					estimated, actualSize)
+			}
+		})
+	}
+}
+
+func TestWriteRequest_EstimateSize_WithMetadata(t *testing.T) {
+	req := &WriteRequest{
+		Timeseries: []TimeSeries{
+			{
+				Labels: []Label{
+					{Name: "__name__", Value: "test_metric"},
+				},
+				Samples: []Sample{
+					{Value: 1.0, Timestamp: 1000},
+				},
+			},
+		},
+		Metadata: []MetricMetadata{
+			{
+				Type:             MetricTypeCounter,
+				MetricFamilyName: "test_metric",
+				Help:             "A test metric",
+				Unit:             "bytes",
+			},
+		},
+	}
+
+	estimated := req.EstimateSize()
+	if estimated <= 0 {
+		t.Error("EstimateSize() should return positive value for non-empty request")
+	}
+
+	marshaled, err := req.Marshal()
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	if estimated < len(marshaled) {
+		t.Errorf("EstimateSize() = %d < actual %d", estimated, len(marshaled))
+	}
+}
+
+func TestLabelInternStats(t *testing.T) {
+	// Create and unmarshal some labels to generate intern stats
+	data := []byte{
+		0x0a, 0x1a, // timeseries tag + length
+		0x0a, 0x0e, // labels tag + length
+		0x0a, 0x08, '_', '_', 'n', 'a', 'm', 'e', '_', '_', // name field
+		0x12, 0x04, 't', 'e', 's', 't', // value field
+	}
+
+	req := &WriteRequest{}
+	_ = req.Unmarshal(data)
+
+	// Get stats
+	nameHits, nameMisses, valueHits, valueMisses := LabelInternStats()
+
+	// We should have some stats (exact values depend on previous tests)
+	// Just verify the function returns and doesn't panic
+	t.Logf("Label intern stats: nameHits=%d, nameMisses=%d, valueHits=%d, valueMisses=%d",
+		nameHits, nameMisses, valueHits, valueMisses)
+
+	// Stats should be non-negative
+	if nameHits < 0 || nameMisses < 0 || valueHits < 0 || valueMisses < 0 {
+		t.Error("intern stats should be non-negative")
+	}
+}
+
+func TestLabelInterning(t *testing.T) {
+	// Test that label names are properly interned
+	req1 := &WriteRequest{
+		Timeseries: []TimeSeries{
+			{
+				Labels: []Label{
+					{Name: "__name__", Value: "metric1"},
+					{Name: "job", Value: "test"},
+				},
+				Samples: []Sample{{Value: 1.0, Timestamp: 1000}},
+			},
+		},
+	}
+
+	req2 := &WriteRequest{
+		Timeseries: []TimeSeries{
+			{
+				Labels: []Label{
+					{Name: "__name__", Value: "metric2"},
+					{Name: "job", Value: "test"},
+				},
+				Samples: []Sample{{Value: 2.0, Timestamp: 2000}},
+			},
+		},
+	}
+
+	// Marshal and unmarshal both requests
+	data1, _ := req1.Marshal()
+	data2, _ := req2.Marshal()
+
+	result1 := &WriteRequest{}
+	result2 := &WriteRequest{}
+
+	_ = result1.Unmarshal(data1)
+	_ = result2.Unmarshal(data2)
+
+	// Verify labels are correctly parsed
+	if len(result1.Timeseries) == 0 || len(result1.Timeseries[0].Labels) == 0 {
+		t.Fatal("result1 should have labels")
+	}
+	if len(result2.Timeseries) == 0 || len(result2.Timeseries[0].Labels) == 0 {
+		t.Fatal("result2 should have labels")
+	}
+
+	// Check that common label names are the same string pointer (interned)
+	// Both requests have "__name__" and "job" labels
+	name1 := result1.Timeseries[0].Labels[0].Name
+	name2 := result2.Timeseries[0].Labels[0].Name
+
+	if name1 != "__name__" || name2 != "__name__" {
+		t.Errorf("expected __name__ labels, got %q and %q", name1, name2)
+	}
+
+	// The label "job" should also be interned
+	job1 := result1.Timeseries[0].Labels[1].Name
+	job2 := result2.Timeseries[0].Labels[1].Name
+
+	if job1 != "job" || job2 != "job" {
+		t.Errorf("expected job labels, got %q and %q", job1, job2)
+	}
+}

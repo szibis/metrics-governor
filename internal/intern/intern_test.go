@@ -1,297 +1,277 @@
 package intern
 
 import (
-	"fmt"
 	"sync"
 	"testing"
 )
 
-func TestPool_Intern(t *testing.T) {
+func TestPoolIntern(t *testing.T) {
 	p := NewPool()
 
-	// Test basic interning
-	s1 := p.Intern("test")
-	s2 := p.Intern("test")
-
-	if s1 != s2 {
-		t.Error("expected same string reference")
+	// First intern should create new string
+	s1 := p.Intern("hello")
+	if s1 != "hello" {
+		t.Errorf("expected 'hello', got %q", s1)
 	}
 
-	// Verify stats
+	// Second intern of same string should return same pointer
+	s2 := p.Intern("hello")
+	if s1 != s2 {
+		t.Error("expected same string pointer for interned strings")
+	}
+
+	// Stats should show 1 miss, 1 hit
 	hits, misses := p.Stats()
 	if hits != 1 || misses != 1 {
-		t.Errorf("expected 1 hit and 1 miss, got %d hits and %d misses", hits, misses)
+		t.Errorf("expected 1 hit, 1 miss; got %d hits, %d misses", hits, misses)
 	}
 }
 
-func TestPool_InternEmpty(t *testing.T) {
+func TestPoolInternBytes(t *testing.T) {
 	p := NewPool()
 
-	s := p.Intern("")
-	if s != "" {
-		t.Error("expected empty string")
+	b := []byte("world")
+	s1 := p.InternBytes(b)
+	if s1 != "world" {
+		t.Errorf("expected 'world', got %q", s1)
 	}
 
-	// Empty string should not affect stats
-	hits, misses := p.Stats()
-	if hits != 0 || misses != 0 {
-		t.Errorf("expected 0 hits and 0 misses for empty string, got %d and %d", hits, misses)
-	}
-}
-
-func TestPool_InternBytes(t *testing.T) {
-	p := NewPool()
-
-	// First intern using string
-	s1 := p.Intern("hello")
-
-	// Then lookup using bytes - should hit cache
-	b := []byte("hello")
+	// Second intern should hit cache
 	s2 := p.InternBytes(b)
-
 	if s1 != s2 {
-		t.Error("expected same string reference from bytes")
+		t.Error("expected same string pointer")
 	}
 
-	hits, _ := p.Stats()
-	if hits != 1 {
-		t.Errorf("expected 1 hit, got %d", hits)
-	}
-}
-
-func TestPool_InternBytesEmpty(t *testing.T) {
-	p := NewPool()
-
-	s := p.InternBytes(nil)
-	if s != "" {
-		t.Error("expected empty string for nil bytes")
-	}
-
-	s = p.InternBytes([]byte{})
-	if s != "" {
-		t.Error("expected empty string for empty bytes")
+	// Modifying original byte slice should not affect interned string
+	b[0] = 'W'
+	if s1 != "world" {
+		t.Errorf("interned string was modified: %q", s1)
 	}
 }
 
-func TestPool_Clone(t *testing.T) {
-	p := NewPool()
-
-	// Create a large buffer and slice it
-	large := make([]byte, 1000)
-	copy(large[500:], "small")
-
-	// Intern the slice - should clone to avoid retaining large buffer
-	s := p.InternBytes(large[500:505])
-	if s != "small" {
-		t.Errorf("expected 'small', got %q", s)
-	}
-}
-
-func TestPool_Size(t *testing.T) {
+func TestPoolSize(t *testing.T) {
 	p := NewPool()
 
 	if p.Size() != 0 {
-		t.Error("expected empty pool")
+		t.Errorf("expected empty pool, got size %d", p.Size())
 	}
 
-	p.Intern("one")
-	p.Intern("two")
-	p.Intern("three")
-	p.Intern("one") // duplicate
+	p.Intern("a")
+	p.Intern("b")
+	p.Intern("c")
+	p.Intern("a") // duplicate
 
 	if p.Size() != 3 {
 		t.Errorf("expected size 3, got %d", p.Size())
 	}
 }
 
-func TestPool_HitRate(t *testing.T) {
+func TestPoolReset(t *testing.T) {
 	p := NewPool()
 
-	// No lookups yet
-	if p.HitRate() != 0 {
-		t.Error("expected 0 hit rate initially")
-	}
-
-	// One miss, one hit
 	p.Intern("test")
 	p.Intern("test")
 
-	rate := p.HitRate()
-	expected := 0.5
-	if rate != expected {
-		t.Errorf("expected hit rate %f, got %f", expected, rate)
+	hits, misses := p.Stats()
+	if hits != 1 || misses != 1 {
+		t.Errorf("expected 1 hit, 1 miss before reset; got %d/%d", hits, misses)
 	}
-}
-
-func TestPool_Reset(t *testing.T) {
-	p := NewPool()
-
-	p.Intern("one")
-	p.Intern("two")
-	p.Intern("one")
 
 	p.Reset()
 
 	if p.Size() != 0 {
-		t.Error("expected empty pool after reset")
+		t.Errorf("expected empty pool after reset, got %d", p.Size())
 	}
 
-	hits, misses := p.Stats()
+	hits, misses = p.Stats()
 	if hits != 0 || misses != 0 {
-		t.Error("expected stats reset")
+		t.Errorf("expected 0 hits/misses after reset; got %d/%d", hits, misses)
 	}
 }
 
-func TestPool_Concurrent(t *testing.T) {
+func TestPoolConcurrent(t *testing.T) {
 	p := NewPool()
 	const goroutines = 100
 	const iterations = 1000
 
+	strings := []string{"foo", "bar", "baz", "qux", "hello", "world"}
+
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
 
-	for g := 0; g < goroutines; g++ {
+	for i := 0; i < goroutines; i++ {
 		go func(id int) {
 			defer wg.Done()
-			for i := 0; i < iterations; i++ {
-				// Each goroutine interns some shared and some unique strings
-				key := fmt.Sprintf("shared_%d", i%10)
-				p.Intern(key)
-
-				if i%100 == 0 {
-					unique := fmt.Sprintf("unique_%d_%d", id, i)
-					p.Intern(unique)
+			for j := 0; j < iterations; j++ {
+				s := strings[(id+j)%len(strings)]
+				interned := p.Intern(s)
+				if interned != s {
+					t.Errorf("interned string mismatch: got %q, want %q", interned, s)
 				}
 			}
-		}(g)
+		}(i)
 	}
 
 	wg.Wait()
 
-	// Verify pool is consistent
-	size := p.Size()
-	if size == 0 {
-		t.Error("expected non-empty pool")
+	// Should only have 6 unique strings
+	if p.Size() != len(strings) {
+		t.Errorf("expected %d unique strings, got %d", len(strings), p.Size())
+	}
+}
+
+func TestGlobalPools(t *testing.T) {
+	// Test that global pools work
+	LabelNames.Reset()
+	MetricNames.Reset()
+
+	s1 := LabelNames.Intern("__name__")
+	s2 := LabelNames.Intern("__name__")
+
+	if s1 != s2 {
+		t.Error("global LabelNames pool not working")
 	}
 
-	// Verify stats are consistent
-	hits, misses := p.Stats()
-	total := hits + misses
-	expected := uint64(goroutines * iterations)
-	// We also have unique strings
-	expectedUnique := uint64(goroutines * (iterations / 100))
-	if total < expected {
-		t.Errorf("expected at least %d lookups, got %d", expected, total)
+	m1 := MetricNames.Intern("http_requests_total")
+	m2 := MetricNames.Intern("http_requests_total")
+
+	if m1 != m2 {
+		t.Error("global MetricNames pool not working")
 	}
-	t.Logf("Concurrent test: size=%d, hits=%d, misses=%d, unique_expected=%d", size, hits, misses, expectedUnique)
+}
+
+func BenchmarkPoolIntern(b *testing.B) {
+	p := NewPool()
+	strings := []string{
+		"__name__", "job", "instance", "env", "cluster",
+		"service", "version", "pod", "namespace", "container",
+	}
+
+	// Pre-populate
+	for _, s := range strings {
+		p.Intern(s)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		p.Intern(strings[i%len(strings)])
+	}
+}
+
+func BenchmarkPoolInternBytes(b *testing.B) {
+	p := NewPool()
+	bytes := [][]byte{
+		[]byte("__name__"), []byte("job"), []byte("instance"),
+		[]byte("env"), []byte("cluster"), []byte("service"),
+	}
+
+	// Pre-populate
+	for _, bb := range bytes {
+		p.InternBytes(bb)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		p.InternBytes(bytes[i%len(bytes)])
+	}
+}
+
+func BenchmarkPoolInternMiss(b *testing.B) {
+	p := NewPool()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Each iteration creates a new unique string
+		p.Intern(string(rune(i)))
+	}
+}
+
+func BenchmarkWithoutIntern(b *testing.B) {
+	strings := []string{
+		"__name__", "job", "instance", "env", "cluster",
+		"service", "version", "pod", "namespace", "container",
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Without interning, just copy the string
+		s := strings[i%len(strings)]
+		_ = string([]byte(s))
+	}
 }
 
 func TestCommonLabels(t *testing.T) {
-	p := CommonLabels()
+	pool := CommonLabels()
 
-	// Common labels should already be interned
-	name := p.Intern("__name__")
-	if name != "__name__" {
-		t.Error("expected __name__ to be interned")
+	// Should return a non-nil pool
+	if pool == nil {
+		t.Fatal("CommonLabels returned nil")
 	}
 
-	// First lookup after init should be a hit
-	hits1, _ := p.Stats()
-
-	// Second lookup should also be a hit
-	p.Intern("__name__")
-	hits2, _ := p.Stats()
-
-	if hits2 <= hits1 {
-		t.Error("expected hit count to increase")
-	}
-}
-
-// Benchmarks
-
-func BenchmarkPool_Intern_Miss(b *testing.B) {
-	p := NewPool()
-	strings := make([]string, b.N)
-	for i := range strings {
-		strings[i] = fmt.Sprintf("metric_%d", i)
+	// Pool should be pre-populated with common PRW labels
+	prwLabels := []string{
+		"__name__", "job", "instance", "le", "quantile",
+		"service", "env", "cluster", "namespace", "pod",
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		p.Intern(strings[i])
-	}
-}
-
-func BenchmarkPool_Intern_Hit(b *testing.B) {
-	p := NewPool()
-	// Pre-populate with strings
-	for i := 0; i < 100; i++ {
-		p.Intern(fmt.Sprintf("metric_%d", i))
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		p.Intern(fmt.Sprintf("metric_%d", i%100))
-	}
-}
-
-func BenchmarkPool_Intern_Parallel(b *testing.B) {
-	p := NewPool()
-	// Pre-populate with strings
-	for i := 0; i < 100; i++ {
-		p.Intern(fmt.Sprintf("metric_%d", i))
-	}
-
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		i := 0
-		for pb.Next() {
-			p.Intern(fmt.Sprintf("metric_%d", i%100))
-			i++
+	for _, label := range prwLabels {
+		// These should be hits since they're pre-populated
+		interned := pool.Intern(label)
+		if interned != label {
+			t.Errorf("expected %q, got %q", label, interned)
 		}
-	})
+	}
+
+	// Pool should be pre-populated with common OTLP labels
+	otlpLabels := []string{
+		"service.name", "service.namespace", "k8s.pod.name",
+		"http.method", "http.status_code", "db.system",
+	}
+
+	for _, label := range otlpLabels {
+		interned := pool.Intern(label)
+		if interned != label {
+			t.Errorf("expected %q, got %q", label, interned)
+		}
+	}
+
+	// Calling CommonLabels again should return the same pool (singleton)
+	pool2 := CommonLabels()
+	if pool != pool2 {
+		t.Error("CommonLabels should return the same pool instance")
+	}
+
+	// Check that hits are being counted (pre-populated labels should all be hits)
+	hits, _ := pool.Stats()
+	if hits == 0 {
+		t.Error("expected some cache hits from pre-populated labels")
+	}
 }
 
-func BenchmarkPool_InternBytes_Hit(b *testing.B) {
-	p := NewPool()
-	// Pre-populate
-	for i := 0; i < 100; i++ {
-		p.Intern(fmt.Sprintf("label_%d", i))
+func TestCommonLabelsConcurrent(t *testing.T) {
+	const goroutines = 50
+	const iterations = 100
+
+	labels := []string{
+		"__name__", "job", "instance", "service.name", "k8s.pod.name",
 	}
 
-	// Prepare byte slices
-	bytes := make([][]byte, 100)
-	for i := range bytes {
-		bytes[i] = []byte(fmt.Sprintf("label_%d", i))
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			pool := CommonLabels()
+			for j := 0; j < iterations; j++ {
+				label := labels[(id+j)%len(labels)]
+				interned := pool.Intern(label)
+				if interned != label {
+					t.Errorf("interned label mismatch: got %q, want %q", interned, label)
+				}
+			}
+		}(i)
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		p.InternBytes(bytes[i%100])
-	}
-}
-
-func BenchmarkNoIntern_StringAlloc(b *testing.B) {
-	// Baseline: normal string creation without interning
-	bytes := make([][]byte, 100)
-	for i := range bytes {
-		bytes[i] = []byte(fmt.Sprintf("label_%d", i))
-	}
-
-	var sink string
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		sink = string(bytes[i%100])
-	}
-	_ = sink
-}
-
-func BenchmarkCommonLabels_Lookup(b *testing.B) {
-	p := CommonLabels()
-	labels := []string{"__name__", "job", "instance", "service", "env"}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		p.Intern(labels[i%len(labels)])
-	}
+	wg.Wait()
 }

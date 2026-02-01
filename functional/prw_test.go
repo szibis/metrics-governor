@@ -37,6 +37,8 @@ type mockPRWStats struct {
 	receivedTimeseries int64
 	exportedDatapoints int64
 	exportedTimeseries int64
+	receivedBytes      int64
+	sentBytes          int64
 }
 
 func (m *mockPRWStats) RecordPRWReceived(datapointCount, timeseriesCount int) {
@@ -50,6 +52,20 @@ func (m *mockPRWStats) RecordPRWExport(datapointCount, timeseriesCount int) {
 }
 
 func (m *mockPRWStats) RecordPRWExportError() {}
+
+func (m *mockPRWStats) RecordPRWBytesReceived(bytes int) {
+	atomic.AddInt64(&m.receivedBytes, int64(bytes))
+}
+
+func (m *mockPRWStats) RecordPRWBytesReceivedCompressed(bytes int) {}
+
+func (m *mockPRWStats) RecordPRWBytesSent(bytes int) {
+	atomic.AddInt64(&m.sentBytes, int64(bytes))
+}
+
+func (m *mockPRWStats) RecordPRWBytesSentCompressed(bytes int) {}
+
+func (m *mockPRWStats) SetPRWBufferSize(size int) {}
 
 func newTestPRWBuffer(exp prw.PRWExporter, stats prw.PRWStatsCollector) *prw.Buffer {
 	cfg := prw.BufferConfig{

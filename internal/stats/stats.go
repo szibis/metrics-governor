@@ -44,6 +44,22 @@ type Collector struct {
 	prwTimeseriesSent     uint64
 	prwBatchesSent        uint64
 	prwExportErrors       uint64
+
+	// PRW byte counters
+	prwBytesReceivedUncompressed uint64 // Uncompressed bytes received (after decompression)
+	prwBytesReceivedCompressed   uint64 // Compressed bytes received (on wire)
+	prwBytesSentUncompressed     uint64 // Uncompressed bytes sent (before compression)
+	prwBytesSentCompressed       uint64 // Compressed bytes sent (on wire)
+
+	// OTLP byte counters
+	otlpBytesReceivedUncompressed uint64 // Uncompressed OTLP bytes received
+	otlpBytesReceivedCompressed   uint64 // Compressed OTLP bytes received (on wire)
+	otlpBytesSentUncompressed     uint64 // Uncompressed OTLP bytes sent
+	otlpBytesSentCompressed       uint64 // Compressed OTLP bytes sent (on wire)
+
+	// Buffer size tracking (updated externally)
+	prwBufferSize  int64 // Current PRW buffer size (timeseries count)
+	otlpBufferSize int64 // Current OTLP buffer size (resource metrics count)
 }
 
 // MetricStats holds stats for a single metric name.
@@ -128,7 +144,12 @@ func (c *Collector) countDatapoints(m *metricspb.Metric) int {
 
 // processDatapointsForCardinality extracts unique series identifiers.
 func (c *Collector) processDatapointsForCardinality(m *metricspb.Metric, resourceAttrs map[string]string, ms *MetricStats) {
-	var allAttrs []map[string]string
+	// Pre-allocate slice based on datapoint count
+	dpCount := c.countDatapoints(m)
+	if dpCount == 0 {
+		return
+	}
+	allAttrs := make([]map[string]string, 0, dpCount)
 
 	switch d := m.Data.(type) {
 	case *metricspb.Metric_Gauge:
@@ -167,7 +188,12 @@ func (c *Collector) updateLabelStats(metricName string, m *metricspb.Metric, res
 		return
 	}
 
-	var allAttrs []map[string]string
+	// Pre-allocate slice based on datapoint count
+	dpCount := c.countDatapoints(m)
+	if dpCount == 0 {
+		return
+	}
+	allAttrs := make([]map[string]string, 0, dpCount)
 
 	switch d := m.Data.(type) {
 	case *metricspb.Metric_Gauge:
@@ -279,6 +305,76 @@ func (c *Collector) RecordPRWExportError() {
 	c.prwExportErrors++
 }
 
+// RecordPRWBytesReceived records uncompressed bytes received.
+func (c *Collector) RecordPRWBytesReceived(bytes int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.prwBytesReceivedUncompressed += uint64(bytes)
+}
+
+// RecordPRWBytesReceivedCompressed records compressed bytes received (on wire).
+func (c *Collector) RecordPRWBytesReceivedCompressed(bytes int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.prwBytesReceivedCompressed += uint64(bytes)
+}
+
+// RecordPRWBytesSent records uncompressed bytes sent.
+func (c *Collector) RecordPRWBytesSent(bytes int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.prwBytesSentUncompressed += uint64(bytes)
+}
+
+// RecordPRWBytesSentCompressed records compressed bytes sent (on wire).
+func (c *Collector) RecordPRWBytesSentCompressed(bytes int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.prwBytesSentCompressed += uint64(bytes)
+}
+
+// RecordOTLPBytesReceived records uncompressed OTLP bytes received.
+func (c *Collector) RecordOTLPBytesReceived(bytes int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.otlpBytesReceivedUncompressed += uint64(bytes)
+}
+
+// RecordOTLPBytesReceivedCompressed records compressed OTLP bytes received (on wire).
+func (c *Collector) RecordOTLPBytesReceivedCompressed(bytes int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.otlpBytesReceivedCompressed += uint64(bytes)
+}
+
+// RecordOTLPBytesSent records uncompressed OTLP bytes sent.
+func (c *Collector) RecordOTLPBytesSent(bytes int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.otlpBytesSentUncompressed += uint64(bytes)
+}
+
+// RecordOTLPBytesSentCompressed records compressed OTLP bytes sent (on wire).
+func (c *Collector) RecordOTLPBytesSentCompressed(bytes int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.otlpBytesSentCompressed += uint64(bytes)
+}
+
+// SetPRWBufferSize sets the current PRW buffer size.
+func (c *Collector) SetPRWBufferSize(size int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.prwBufferSize = int64(size)
+}
+
+// SetOTLPBufferSize sets the current OTLP buffer size.
+func (c *Collector) SetOTLPBufferSize(size int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.otlpBufferSize = int64(size)
+}
+
 // StartPeriodicLogging starts logging global stats every interval.
 // It also resets cardinality tracking to prevent unbounded memory growth.
 func (c *Collector) StartPeriodicLogging(ctx context.Context, interval time.Duration) {
@@ -340,16 +436,20 @@ func (c *Collector) ResetCardinality() {
 
 // buildLabelKey builds a key from tracked labels.
 func (c *Collector) buildLabelKey(attrs map[string]string) string {
-	var parts []string
+	var sb strings.Builder
+	first := true
 	for _, label := range c.trackLabels {
 		if val, ok := attrs[label]; ok {
-			parts = append(parts, fmt.Sprintf("%s=%s", label, val))
+			if !first {
+				sb.WriteByte(',')
+			}
+			sb.WriteString(label)
+			sb.WriteByte('=')
+			sb.WriteString(val)
+			first = false
 		}
 	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return strings.Join(parts, ",")
+	return sb.String()
 }
 
 // parseLabelKey parses a label key back to map.
@@ -423,6 +523,28 @@ func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# TYPE metrics_governor_prw_export_errors_total counter\n")
 	fmt.Fprintf(w, "metrics_governor_prw_export_errors_total %d\n", c.prwExportErrors)
 
+	// PRW byte stats with compression labels
+	fmt.Fprintf(w, "# HELP metrics_governor_prw_bytes_total Total PRW bytes by direction and compression state\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_prw_bytes_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"} %d\n", c.prwBytesReceivedUncompressed)
+	fmt.Fprintf(w, "metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"} %d\n", c.prwBytesReceivedCompressed)
+	fmt.Fprintf(w, "metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"} %d\n", c.prwBytesSentUncompressed)
+	fmt.Fprintf(w, "metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"} %d\n", c.prwBytesSentCompressed)
+
+	// OTLP byte stats with compression labels
+	fmt.Fprintf(w, "# HELP metrics_governor_otlp_bytes_total Total OTLP bytes by direction and compression state\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_otlp_bytes_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"} %d\n", c.otlpBytesReceivedUncompressed)
+	fmt.Fprintf(w, "metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"} %d\n", c.otlpBytesReceivedCompressed)
+	fmt.Fprintf(w, "metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"} %d\n", c.otlpBytesSentUncompressed)
+	fmt.Fprintf(w, "metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"} %d\n", c.otlpBytesSentCompressed)
+
+	// Buffer size stats
+	fmt.Fprintf(w, "# HELP metrics_governor_buffer_size Current buffer size by protocol\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_buffer_size gauge\n")
+	fmt.Fprintf(w, "metrics_governor_buffer_size{protocol=\"prw\"} %d\n", c.prwBufferSize)
+	fmt.Fprintf(w, "metrics_governor_buffer_size{protocol=\"otlp\"} %d\n", c.otlpBufferSize)
+
 	// Per-metric stats
 	fmt.Fprintf(w, "# HELP metrics_governor_metric_datapoints_total Datapoints per metric name\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_metric_datapoints_total counter\n")
@@ -467,17 +589,25 @@ func formatLabels(labels map[string]string) string {
 	}
 	sort.Strings(keys)
 
-	var parts []string
-	for _, k := range keys {
-		parts = append(parts, fmt.Sprintf("%s=%q", k, labels[k]))
+	var sb strings.Builder
+	// Estimate capacity: key="value", ~25 chars per label
+	sb.Grow(len(keys) * 25)
+	for i, k := range keys {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteString(k)
+		sb.WriteString(`="`)
+		sb.WriteString(labels[k])
+		sb.WriteByte('"')
 	}
-	return strings.Join(parts, ",")
+	return sb.String()
 }
 
 // Helper functions
 
 func extractAttributes(attrs []*commonpb.KeyValue) map[string]string {
-	result := make(map[string]string)
+	result := make(map[string]string, len(attrs))
 	for _, kv := range attrs {
 		if kv.Value != nil {
 			if sv := kv.Value.GetStringValue(); sv != "" {
@@ -509,9 +639,16 @@ func buildSeriesKey(attrs map[string]string) string {
 	}
 	sort.Strings(keys)
 
-	var parts []string
-	for _, k := range keys {
-		parts = append(parts, fmt.Sprintf("%s=%s", k, attrs[k]))
+	var sb strings.Builder
+	// Estimate capacity: average key=value is ~20 chars + comma
+	sb.Grow(len(keys) * 21)
+	for i, k := range keys {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteString(k)
+		sb.WriteByte('=')
+		sb.WriteString(attrs[k])
 	}
-	return strings.Join(parts, ",")
+	return sb.String()
 }

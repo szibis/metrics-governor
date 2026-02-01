@@ -1,13 +1,24 @@
 apiVersion: 1
 
 providers:
-  - name: 'default'
+  - name: 'test'
     orgId: 1
-    folder: ''
-    folderUid: ''
+    folder: 'Test Dashboards'
+    folderUid: 'test-dashboards'
     type: file
     disableDeletion: false
     updateIntervalSeconds: 10
     allowUiUpdates: true
     options:
-      path: /var/lib/grafana/dashboards
+      path: /var/lib/grafana/dashboards/test
+
+  - name: 'operations'
+    orgId: 1
+    folder: 'Operations'
+    folderUid: 'ops-dashboards'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/operations

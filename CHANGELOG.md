@@ -186,7 +186,7 @@ This enables downstream systems to identify which metrics were affected by limit
 
 ### Changed
 
-Updated release script and /release skill for Claude Code
+Updated release script and /release skill
 
 **Test Coverage:**
 - Unit Tests: 333

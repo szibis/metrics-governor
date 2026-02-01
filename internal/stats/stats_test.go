@@ -631,3 +631,201 @@ func TestCountDatapoints(t *testing.T) {
 		})
 	}
 }
+
+func TestRecordPRWBytes(t *testing.T) {
+	c := NewCollector(nil)
+
+	// Test PRW bytes received (uncompressed)
+	c.RecordPRWBytesReceived(1000)
+	c.RecordPRWBytesReceived(500)
+
+	// Test PRW bytes received (compressed)
+	c.RecordPRWBytesReceivedCompressed(200)
+	c.RecordPRWBytesReceivedCompressed(100)
+
+	// Test PRW bytes sent (uncompressed)
+	c.RecordPRWBytesSent(800)
+	c.RecordPRWBytesSent(400)
+
+	// Test PRW bytes sent (compressed)
+	c.RecordPRWBytesSentCompressed(150)
+	c.RecordPRWBytesSentCompressed(75)
+
+	// Verify via metrics output
+	var buf bytes.Buffer
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rr := httptest.NewRecorder()
+	c.ServeHTTP(rr, req)
+	buf.Write(rr.Body.Bytes())
+	output := buf.String()
+
+	// Check PRW bytes metrics exist
+	if !strings.Contains(output, "metrics_governor_prw_bytes_total") {
+		t.Error("expected metrics_governor_prw_bytes_total in output")
+	}
+
+	// Check specific label combinations
+	if !strings.Contains(output, `direction="in",compression="uncompressed"`) {
+		t.Error("expected PRW bytes received uncompressed metric")
+	}
+	if !strings.Contains(output, `direction="in",compression="compressed"`) {
+		t.Error("expected PRW bytes received compressed metric")
+	}
+	if !strings.Contains(output, `direction="out",compression="uncompressed"`) {
+		t.Error("expected PRW bytes sent uncompressed metric")
+	}
+	if !strings.Contains(output, `direction="out",compression="compressed"`) {
+		t.Error("expected PRW bytes sent compressed metric")
+	}
+}
+
+func TestRecordOTLPBytes(t *testing.T) {
+	c := NewCollector(nil)
+
+	// Test OTLP bytes received
+	c.RecordOTLPBytesReceived(2000)
+	c.RecordOTLPBytesReceived(1000)
+
+	// Test OTLP bytes received compressed
+	c.RecordOTLPBytesReceivedCompressed(400)
+	c.RecordOTLPBytesReceivedCompressed(200)
+
+	// Test OTLP bytes sent
+	c.RecordOTLPBytesSent(1600)
+	c.RecordOTLPBytesSent(800)
+
+	// Test OTLP bytes sent compressed
+	c.RecordOTLPBytesSentCompressed(300)
+	c.RecordOTLPBytesSentCompressed(150)
+
+	// Verify via metrics output
+	var buf bytes.Buffer
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rr := httptest.NewRecorder()
+	c.ServeHTTP(rr, req)
+	buf.Write(rr.Body.Bytes())
+	output := buf.String()
+
+	// Check OTLP bytes metrics exist
+	if !strings.Contains(output, "metrics_governor_otlp_bytes_total") {
+		t.Error("expected metrics_governor_otlp_bytes_total in output")
+	}
+
+	// Check specific label combinations
+	if !strings.Contains(output, `direction="in",compression="uncompressed"`) {
+		t.Error("expected OTLP bytes received uncompressed metric")
+	}
+	if !strings.Contains(output, `direction="out",compression="uncompressed"`) {
+		t.Error("expected OTLP bytes sent uncompressed metric")
+	}
+}
+
+func TestSetBufferSize(t *testing.T) {
+	c := NewCollector(nil)
+
+	// Set PRW buffer size
+	c.SetPRWBufferSize(100)
+	c.SetPRWBufferSize(150) // Update to new value
+
+	// Set OTLP buffer size
+	c.SetOTLPBufferSize(200)
+	c.SetOTLPBufferSize(250) // Update to new value
+
+	// Verify via metrics output
+	var buf bytes.Buffer
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rr := httptest.NewRecorder()
+	c.ServeHTTP(rr, req)
+	buf.Write(rr.Body.Bytes())
+	output := buf.String()
+
+	// Check buffer size metrics exist
+	if !strings.Contains(output, "metrics_governor_buffer_size") {
+		t.Error("expected metrics_governor_buffer_size in output")
+	}
+
+	// Check protocol labels
+	if !strings.Contains(output, `protocol="prw"`) {
+		t.Error("expected PRW buffer size metric")
+	}
+	if !strings.Contains(output, `protocol="otlp"`) {
+		t.Error("expected OTLP buffer size metric")
+	}
+
+	// Check that values are the latest (gauge behavior)
+	if !strings.Contains(output, "metrics_governor_buffer_size{protocol=\"prw\"} 150") {
+		t.Error("expected PRW buffer size to be 150")
+	}
+	if !strings.Contains(output, "metrics_governor_buffer_size{protocol=\"otlp\"} 250") {
+		t.Error("expected OTLP buffer size to be 250")
+	}
+}
+
+func TestByteMetricsConcurrent(t *testing.T) {
+	c := NewCollector(nil)
+
+	const goroutines = 10
+	const iterations = 100
+
+	done := make(chan bool)
+
+	// Concurrent PRW byte recording
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			for j := 0; j < iterations; j++ {
+				c.RecordPRWBytesReceived(100)
+				c.RecordPRWBytesReceivedCompressed(50)
+				c.RecordPRWBytesSent(80)
+				c.RecordPRWBytesSentCompressed(40)
+			}
+			done <- true
+		}()
+	}
+
+	// Concurrent OTLP byte recording
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			for j := 0; j < iterations; j++ {
+				c.RecordOTLPBytesReceived(200)
+				c.RecordOTLPBytesReceivedCompressed(100)
+				c.RecordOTLPBytesSent(160)
+				c.RecordOTLPBytesSentCompressed(80)
+			}
+			done <- true
+		}()
+	}
+
+	// Concurrent buffer size updates
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			for j := 0; j < iterations; j++ {
+				c.SetPRWBufferSize(id*100 + j)
+				c.SetOTLPBufferSize(id*100 + j)
+			}
+			done <- true
+		}(i)
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < goroutines*3; i++ {
+		<-done
+	}
+
+	// Verify no panic and metrics are written
+	var buf bytes.Buffer
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rr := httptest.NewRecorder()
+	c.ServeHTTP(rr, req)
+	buf.Write(rr.Body.Bytes())
+	output := buf.String()
+
+	if !strings.Contains(output, "metrics_governor_prw_bytes_total") {
+		t.Error("expected PRW bytes metrics after concurrent access")
+	}
+	if !strings.Contains(output, "metrics_governor_otlp_bytes_total") {
+		t.Error("expected OTLP bytes metrics after concurrent access")
+	}
+	if !strings.Contains(output, "metrics_governor_buffer_size") {
+		t.Error("expected buffer size metrics after concurrent access")
+	}
+}

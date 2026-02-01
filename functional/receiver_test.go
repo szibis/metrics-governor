@@ -44,6 +44,9 @@ func (m *mockStatsCollector) Process(resourceMetrics []*metricspb.ResourceMetric
 func (m *mockStatsCollector) RecordReceived(count int)                             {}
 func (m *mockStatsCollector) RecordExport(datapointCount int)                      {}
 func (m *mockStatsCollector) RecordExportError()                                   {}
+func (m *mockStatsCollector) RecordOTLPBytesReceived(bytes int)                    {}
+func (m *mockStatsCollector) RecordOTLPBytesSent(bytes int)                        {}
+func (m *mockStatsCollector) SetOTLPBufferSize(size int)                           {}
 
 // mockLimitsEnforcer implements buffer.LimitsEnforcer for testing
 type mockLimitsEnforcer struct{}
