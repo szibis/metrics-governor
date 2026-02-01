@@ -92,6 +92,9 @@ type WAL struct {
 	syncTicker    *time.Ticker
 	syncDone      chan struct{}
 
+	// Track write position for buffered mode
+	writeOffset int64
+
 	// Adaptive limits
 	effectiveMaxSize  int
 	effectiveMaxBytes int64
@@ -167,6 +170,14 @@ func NewWAL(cfg WALConfig) (*WAL, error) {
 	w.walFile = walFile
 	w.walWriter = bufio.NewWriterSize(walFile, 64*1024) // 64KB buffer
 
+	// Initialize write offset to end of file
+	offset, err := walFile.Seek(0, io.SeekEnd)
+	if err != nil {
+		walFile.Close()
+		return nil, fmt.Errorf("failed to seek WAL file: %w", err)
+	}
+	w.writeOffset = offset
+
 	// Open or create index file
 	idxPath := filepath.Join(cfg.Path, indexFileName)
 	idxFile, err := os.OpenFile(idxPath, os.O_RDWR|os.O_CREATE, 0644)
@@ -212,6 +223,7 @@ func (w *WAL) syncLoop() {
 
 // doSync performs the actual sync (must hold lock).
 func (w *WAL) doSync() {
+	start := time.Now()
 	if err := w.walWriter.Flush(); err != nil {
 		return
 	}
@@ -223,6 +235,8 @@ func (w *WAL) doSync() {
 	}
 	w.pendingWrites.Store(0)
 	w.lastSync = time.Now()
+	IncrementSync()
+	RecordSyncLatency(time.Since(start).Seconds())
 }
 
 // Append adds data to the WAL.
@@ -243,7 +257,6 @@ func (w *WAL) Append(data []byte) error {
 	}
 
 	dataLen := uint32(len(writeData))
-	originalLen := uint32(len(data))
 
 	// Check limits (use effective limits for adaptive sizing)
 	if w.activeCount >= w.effectiveMaxSize {
@@ -253,11 +266,8 @@ func (w *WAL) Append(data []byte) error {
 		return ErrQueueFull
 	}
 
-	// Get current write position
-	offset, err := w.walFile.Seek(0, io.SeekEnd)
-	if err != nil {
-		return fmt.Errorf("failed to seek WAL: %w", err)
-	}
+	// Use tracked write offset for buffered mode
+	offset := w.writeOffset
 
 	// Calculate CRC on compressed data
 	crc := crc32.Checksum(writeData, crc32Table)
@@ -308,6 +318,7 @@ func (w *WAL) Append(data []byte) error {
 	case SyncBatched:
 		// Track pending writes, sync handled by background goroutine or batch size
 		w.pendingWrites.Add(1)
+		SetPendingSyncs(int(w.pendingWrites.Load()))
 		if int(w.pendingWrites.Load()) >= w.syncBatchSize {
 			w.doSync()
 		}
@@ -323,17 +334,23 @@ func (w *WAL) Append(data []byte) error {
 		}
 	}
 
-	// Create entry (store original length for decompression)
+	// Update write offset for next append
+	w.writeOffset += int64(headerSize) + int64(dataLen)
+
+	// Record compression metrics
+	RecordBytesWritten(len(data), int(dataLen))
+
+	// Create entry (store disk length for consistent read operations)
 	entry := &WALEntry{
 		Offset:    offset,
-		Length:    originalLen, // Store original uncompressed length for reference
+		Length:    dataLen, // Store disk length (compressed if compression enabled)
 		Timestamp: time.Now(),
 		Flags:     flags,
 		Retries:   0,
 	}
 
-	// Write index entry (uses writeData length for disk operations)
-	if err := w.writeIndexEntryWithLen(entry, dataLen); err != nil {
+	// Write index entry
+	if err := w.writeIndexEntry(entry); err != nil {
 		return err
 	}
 
@@ -352,11 +369,18 @@ func (w *WAL) Append(data []byte) error {
 
 // Peek returns the oldest active entry without removing it.
 func (w *WAL) Peek() (*WALEntry, error) {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
 	if w.closed {
 		return nil, ErrClosed
+	}
+
+	// Flush buffer before reading to ensure data is on disk
+	if w.walWriter != nil {
+		if err := w.walWriter.Flush(); err != nil {
+			return nil, err
+		}
 	}
 
 	for _, entry := range w.entries {
@@ -797,6 +821,11 @@ func (w *WAL) compact() {
 	w.walFile, _ = os.OpenFile(oldWALPath, os.O_RDWR|os.O_APPEND, 0644)
 	w.walWriter = bufio.NewWriterSize(w.walFile, 64*1024)
 	w.idxFile, _ = os.OpenFile(oldIdxPath, os.O_RDWR, 0644) // No O_APPEND for random access
+
+	// Update write offset to end of new file
+	if offset, err := w.walFile.Seek(0, io.SeekEnd); err == nil {
+		w.writeOffset = offset
+	}
 
 	w.entries = newEntries
 
