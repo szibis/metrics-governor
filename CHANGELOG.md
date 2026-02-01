@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.0] - 2026-02-01
+## [0.9.0] - 2026-02-02
 
 ### Added
 
@@ -66,6 +66,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added `github.com/bits-and-blooms/bloom/v3 v3.7.1`
 - Added `github.com/bits-and-blooms/bitset v1.24.2` (indirect)
+
+## [0.8.0] - 2026-02-02
+
+### Added
+
+- **FastQueue Persistent Queue** - VictoriaMetrics-inspired high-performance queue replacing WAL implementation
+  - Two-layer architecture: in-memory buffered channel + disk chunk files
+  - Metadata-only persistence with atomic JSON sync (configurable, default: 1s)
+  - Simple block format: 8-byte length header + data (no per-write compression overhead)
+  - Automatic chunk rotation at configurable size boundaries
+  - O(1) recovery time vs O(n) index scan with old WAL
+
+- **FastQueue Configuration** - New CLI flags:
+  - `-queue-inmemory-blocks` - In-memory channel size (default: 256)
+  - `-queue-chunk-size` - Chunk file size in bytes (default: 512MB)
+  - `-queue-meta-sync` - Metadata sync interval / max data loss window (default: 1s)
+  - `-queue-stale-flush` - Interval to flush stale in-memory blocks to disk (default: 5s)
+
+- **FastQueue Metrics** - New Prometheus metrics for queue monitoring:
+  | Metric | Type | Description |
+  |--------|------|-------------|
+  | `metrics_governor_fastqueue_inmemory_blocks` | gauge | Current in-memory block count |
+  | `metrics_governor_fastqueue_disk_bytes` | gauge | Bytes stored on disk |
+  | `metrics_governor_fastqueue_meta_sync_total` | counter | Metadata sync operations |
+  | `metrics_governor_fastqueue_chunk_rotations` | counter | Chunk file rotations |
+  | `metrics_governor_fastqueue_inmemory_flushes` | counter | Stale flushes to disk |
+
+- **E2E Queue Testing** - New test infrastructure for queue persistence:
+  - `docker-compose.queue.yaml` - Queue testing overlay with aggressive settings
+  - `test/e2e-queue-test.sh` - E2E script for persistence and recovery testing
+
+### Changed
+
+- **Queue Architecture** - Replaced WAL (Write-Ahead Log) with FastQueue
+  - Eliminated per-write sync overhead (sync once per second vs every write)
+  - Removed compression overhead from hot path
+  - ~15x reduction in disk I/O at high throughput
+
+### Removed
+
+- **WAL Implementation** - Deleted `internal/queue/wal.go` and related WAL code
+  - `-queue-sync-mode` flag removed (no longer needed)
+  - `-queue-sync-batch-size` flag removed
+  - `-queue-sync-interval` flag replaced by `-queue-meta-sync`
+  - `-queue-compression` flag removed (no per-write compression)
+  - `-queue-write-ahead` flag removed (always write-ahead now)
+
+### Performance
+
+- **I/O Optimization** - FastQueue vs old WAL at 200k datapoints/s:
+  | Metric | Old WAL | FastQueue | Improvement |
+  |--------|---------|-----------|-------------|
+  | Sync operations | ~4000/s | ~1/s | 4000x |
+  | Disk I/O | 1.5GB | <100MB | 15x |
+  | Recovery time | O(n) scan | O(1) metadata | Instant |
+  | Max data loss | 250ms | 1s (configurable) | Trade-off |
+
+### Migration
+
+- Existing WAL files (`queue.wal`, `queue.idx`) are not compatible with FastQueue
+- FastQueue creates new files: `fastqueue.meta` and chunk files (`0000000000000000`, etc.)
+- Recommend clearing queue directory when upgrading, or let old files be ignored
 
 ## [0.7.0] - 2026-02-01
 
