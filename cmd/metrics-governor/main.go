@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/szibis/metrics-governor/internal/buffer"
 	"github.com/szibis/metrics-governor/internal/cardinality"
 	"github.com/szibis/metrics-governor/internal/config"
@@ -208,6 +209,8 @@ func main() {
 		}
 		// Write runtime metrics (goroutines, memory, GC, PSI)
 		runtimeStats.ServeHTTP(w, r)
+		// Write Prometheus registry metrics (queue, sharding, etc.)
+		promhttp.Handler().ServeHTTP(w, r)
 	})
 
 	statsServer := &http.Server{
