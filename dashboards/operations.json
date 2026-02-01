@@ -1084,8 +1084,8 @@
           "legendFormat": "Push/s"
         },
         {
-          "expr": "sum(rate(metrics_governor_queue_pop_total[5m]))",
-          "legendFormat": "Pop/s"
+          "expr": "sum(rate(metrics_governor_queue_dropped_total[5m]))",
+          "legendFormat": "Dropped/s"
         },
         {
           "expr": "sum(rate(metrics_governor_queue_retry_total[5m]))",
