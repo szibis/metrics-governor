@@ -10,8 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/golang/snappy"
 )
 
 const (
@@ -22,8 +25,21 @@ const (
 	headerSize     = 16 // magic(4) + length(4) + crc(4) + flags(4)
 	indexEntrySize = 24 // offset(8) + length(4) + timestamp(8) + flags(4)
 
-	flagActive   = 0x01
-	flagConsumed = 0x02
+	flagActive     = 0x01
+	flagConsumed   = 0x02
+	flagCompressed = 0x04 // Data is snappy compressed
+)
+
+// SyncMode defines when to sync to disk.
+type SyncMode string
+
+const (
+	// SyncImmediate syncs after every write (most durable, slowest)
+	SyncImmediate SyncMode = "immediate"
+	// SyncBatched syncs after N writes or M milliseconds (balanced)
+	SyncBatched SyncMode = "batched"
+	// SyncAsync never syncs explicitly (fastest, least durable)
+	SyncAsync SyncMode = "async"
 )
 
 var (
@@ -64,6 +80,18 @@ type WAL struct {
 	compactThreshold  float64 // Compact when consumed > this ratio
 	adaptiveEnabled   bool
 
+	// I/O optimization settings
+	syncMode      SyncMode
+	syncBatchSize int
+	syncInterval  time.Duration
+	compression   bool
+
+	// Batched sync state
+	pendingWrites atomic.Int32
+	lastSync      time.Time
+	syncTicker    *time.Ticker
+	syncDone      chan struct{}
+
 	// Adaptive limits
 	effectiveMaxSize  int
 	effectiveMaxBytes int64
@@ -79,6 +107,11 @@ type WALConfig struct {
 	TargetUtilization float64 // Default 0.85 (85%)
 	CompactThreshold  float64 // Default 0.5 (50% consumed)
 	AdaptiveEnabled   bool    // Enable adaptive sizing
+	// I/O optimization options
+	SyncMode       SyncMode      // When to sync: immediate, batched, async
+	SyncBatchSize  int           // Number of writes before sync (batched mode)
+	SyncInterval   time.Duration // Max time between syncs (batched mode)
+	Compression    bool          // Enable snappy compression
 }
 
 // NewWAL creates a new write-ahead log.
@@ -88,6 +121,16 @@ func NewWAL(cfg WALConfig) (*WAL, error) {
 	}
 	if cfg.CompactThreshold <= 0 || cfg.CompactThreshold > 1 {
 		cfg.CompactThreshold = 0.5
+	}
+	// Default I/O optimization settings
+	if cfg.SyncMode == "" {
+		cfg.SyncMode = SyncBatched
+	}
+	if cfg.SyncBatchSize <= 0 {
+		cfg.SyncBatchSize = 100
+	}
+	if cfg.SyncInterval <= 0 {
+		cfg.SyncInterval = 100 * time.Millisecond
 	}
 
 	if err := os.MkdirAll(cfg.Path, 0755); err != nil {
@@ -101,6 +144,11 @@ func NewWAL(cfg WALConfig) (*WAL, error) {
 		targetUtilization: cfg.TargetUtilization,
 		compactThreshold:  cfg.CompactThreshold,
 		adaptiveEnabled:   cfg.AdaptiveEnabled,
+		syncMode:          cfg.SyncMode,
+		syncBatchSize:     cfg.SyncBatchSize,
+		syncInterval:      cfg.SyncInterval,
+		compression:       cfg.Compression,
+		lastSync:          time.Now(),
 		entries:           make([]*WALEntry, 0),
 	}
 
@@ -134,7 +182,47 @@ func NewWAL(cfg WALConfig) (*WAL, error) {
 		return nil, fmt.Errorf("failed to recover WAL: %w", err)
 	}
 
+	// Start background sync goroutine for batched mode
+	if w.syncMode == SyncBatched {
+		w.syncDone = make(chan struct{})
+		w.syncTicker = time.NewTicker(w.syncInterval)
+		go w.syncLoop()
+	}
+
 	return w, nil
+}
+
+// syncLoop periodically syncs in batched mode.
+func (w *WAL) syncLoop() {
+	for {
+		select {
+		case <-w.syncDone:
+			return
+		case <-w.syncTicker.C:
+			if w.pendingWrites.Load() > 0 {
+				w.mu.Lock()
+				if !w.closed {
+					w.doSync()
+				}
+				w.mu.Unlock()
+			}
+		}
+	}
+}
+
+// doSync performs the actual sync (must hold lock).
+func (w *WAL) doSync() {
+	if err := w.walWriter.Flush(); err != nil {
+		return
+	}
+	if err := w.walFile.Sync(); err != nil {
+		return
+	}
+	if err := w.idxFile.Sync(); err != nil {
+		return
+	}
+	w.pendingWrites.Store(0)
+	w.lastSync = time.Now()
 }
 
 // Append adds data to the WAL.
@@ -146,7 +234,16 @@ func (w *WAL) Append(data []byte) error {
 		return ErrClosed
 	}
 
-	dataLen := uint32(len(data))
+	// Compress data if enabled
+	writeData := data
+	flags := uint32(flagActive)
+	if w.compression {
+		writeData = snappy.Encode(nil, data)
+		flags |= flagCompressed
+	}
+
+	dataLen := uint32(len(writeData))
+	originalLen := uint32(len(data))
 
 	// Check limits (use effective limits for adaptive sizing)
 	if w.activeCount >= w.effectiveMaxSize {
@@ -162,15 +259,15 @@ func (w *WAL) Append(data []byte) error {
 		return fmt.Errorf("failed to seek WAL: %w", err)
 	}
 
-	// Calculate CRC
-	crc := crc32.Checksum(data, crc32Table)
+	// Calculate CRC on compressed data
+	crc := crc32.Checksum(writeData, crc32Table)
 
 	// Write header
 	header := make([]byte, headerSize)
 	binary.LittleEndian.PutUint32(header[0:4], walMagic)
 	binary.LittleEndian.PutUint32(header[4:8], dataLen)
 	binary.LittleEndian.PutUint32(header[8:12], crc)
-	binary.LittleEndian.PutUint32(header[12:16], flagActive)
+	binary.LittleEndian.PutUint32(header[12:16], flags)
 
 	// Write to buffered writer
 	if _, err := w.walWriter.Write(header); err != nil {
@@ -181,7 +278,7 @@ func (w *WAL) Append(data []byte) error {
 		return fmt.Errorf("failed to write header: %w", err)
 	}
 
-	if _, err := w.walWriter.Write(data); err != nil {
+	if _, err := w.walWriter.Write(writeData); err != nil {
 		if isDiskFullError(err) {
 			IncrementDiskFull()
 			return ErrDiskFull
@@ -189,35 +286,54 @@ func (w *WAL) Append(data []byte) error {
 		return fmt.Errorf("failed to write data: %w", err)
 	}
 
-	// Flush to ensure durability
-	if err := w.walWriter.Flush(); err != nil {
-		if isDiskFullError(err) {
-			IncrementDiskFull()
-			return ErrDiskFull
+	// Sync based on mode
+	switch w.syncMode {
+	case SyncImmediate:
+		// Sync immediately after every write
+		if err := w.walWriter.Flush(); err != nil {
+			if isDiskFullError(err) {
+				IncrementDiskFull()
+				return ErrDiskFull
+			}
+			return fmt.Errorf("failed to flush WAL: %w", err)
 		}
-		return fmt.Errorf("failed to flush WAL: %w", err)
+		if err := w.walFile.Sync(); err != nil {
+			if isDiskFullError(err) {
+				IncrementDiskFull()
+				return ErrDiskFull
+			}
+			return fmt.Errorf("failed to sync WAL: %w", err)
+		}
+
+	case SyncBatched:
+		// Track pending writes, sync handled by background goroutine or batch size
+		w.pendingWrites.Add(1)
+		if int(w.pendingWrites.Load()) >= w.syncBatchSize {
+			w.doSync()
+		}
+
+	case SyncAsync:
+		// Only flush buffer, no sync
+		if err := w.walWriter.Flush(); err != nil {
+			if isDiskFullError(err) {
+				IncrementDiskFull()
+				return ErrDiskFull
+			}
+			return fmt.Errorf("failed to flush WAL: %w", err)
+		}
 	}
 
-	// Sync to disk
-	if err := w.walFile.Sync(); err != nil {
-		if isDiskFullError(err) {
-			IncrementDiskFull()
-			return ErrDiskFull
-		}
-		return fmt.Errorf("failed to sync WAL: %w", err)
-	}
-
-	// Create entry
+	// Create entry (store original length for decompression)
 	entry := &WALEntry{
 		Offset:    offset,
-		Length:    dataLen,
+		Length:    originalLen, // Store original uncompressed length for reference
 		Timestamp: time.Now(),
-		Flags:     flagActive,
+		Flags:     flags,
 		Retries:   0,
 	}
 
-	// Write index entry
-	if err := w.writeIndexEntry(entry); err != nil {
+	// Write index entry (uses writeData length for disk operations)
+	if err := w.writeIndexEntryWithLen(entry, dataLen); err != nil {
 		return err
 	}
 
@@ -336,6 +452,14 @@ func (w *WAL) Close() error {
 		return nil
 	}
 	w.closed = true
+
+	// Stop sync goroutine for batched mode
+	if w.syncTicker != nil {
+		w.syncTicker.Stop()
+	}
+	if w.syncDone != nil {
+		close(w.syncDone)
+	}
 
 	var errs []error
 
@@ -464,14 +588,29 @@ func (w *WAL) readEntryData(entry *WALEntry) ([]byte, error) {
 	if _, err := w.walFile.ReadAt(data, entry.Offset+headerSize); err != nil {
 		return nil, err
 	}
+
+	// Decompress if needed
+	if entry.Flags&flagCompressed != 0 {
+		decompressed, err := snappy.Decode(nil, data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decompress: %w", err)
+		}
+		return decompressed, nil
+	}
+
 	return data, nil
 }
 
 // writeIndexEntry writes an entry to the index file.
 func (w *WAL) writeIndexEntry(entry *WALEntry) error {
+	return w.writeIndexEntryWithLen(entry, entry.Length)
+}
+
+// writeIndexEntryWithLen writes an entry to the index file with a specific disk length.
+func (w *WAL) writeIndexEntryWithLen(entry *WALEntry, diskLen uint32) error {
 	buf := make([]byte, indexEntrySize)
 	binary.LittleEndian.PutUint64(buf[0:8], uint64(entry.Offset))
-	binary.LittleEndian.PutUint32(buf[8:12], entry.Length)
+	binary.LittleEndian.PutUint32(buf[8:12], diskLen) // Use disk length (compressed)
 	binary.LittleEndian.PutUint64(buf[12:20], uint64(entry.Timestamp.UnixNano()))
 	binary.LittleEndian.PutUint32(buf[20:24], entry.Flags)
 
@@ -487,7 +626,11 @@ func (w *WAL) writeIndexEntry(entry *WALEntry) error {
 		return err
 	}
 
-	return w.idxFile.Sync()
+	// Only sync immediately in immediate mode
+	if w.syncMode == SyncImmediate {
+		return w.idxFile.Sync()
+	}
+	return nil
 }
 
 // updateIndexEntry updates an existing entry in the index file.
@@ -503,7 +646,11 @@ func (w *WAL) updateIndexEntry(idx int, entry *WALEntry) error {
 		return err
 	}
 
-	return w.idxFile.Sync()
+	// Only sync immediately in immediate mode
+	if w.syncMode == SyncImmediate {
+		return w.idxFile.Sync()
+	}
+	return nil
 }
 
 // maybeCompact checks if compaction is needed and performs it.
