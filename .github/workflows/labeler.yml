@@ -210,7 +210,8 @@ jobs:
             }
 
             // === Special labels using GitHub built-ins ===
-            if (title.includes('breaking') || body.includes('breaking change')) {
+            // Only detect breaking change from title (not body) to avoid false positives from documentation
+            if (title.includes('breaking') || title.includes('!:') || title.includes('!(')) {
               labels.add('breaking-change');
             }
             if (title.includes('wip') || title.includes('draft') || pr.draft) {
