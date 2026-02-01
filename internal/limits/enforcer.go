@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/szibis/metrics-governor/internal/cardinality"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
@@ -16,7 +17,7 @@ import (
 // groupStats tracks statistics for a specific label combination (group).
 type groupStats struct {
 	datapoints  int64               // Total datapoints in current window
-	cardinality map[string]struct{} // Unique series keys
+	cardinality cardinality.Tracker // Unique series keys (Bloom filter or exact)
 	windowEnd   time.Time           // When the current window expires
 }
 
@@ -250,7 +251,7 @@ func (e *Enforcer) updateAndCheckLimits(rule *Rule, groupKey string, m *metricsp
 	// Initialize group stats if needed
 	if _, ok := rs.groups[groupKey]; !ok {
 		rs.groups[groupKey] = &groupStats{
-			cardinality: make(map[string]struct{}),
+			cardinality: cardinality.NewTrackerFromGlobal(),
 			windowEnd:   rs.windowEnd,
 		}
 	}
@@ -262,7 +263,8 @@ func (e *Enforcer) updateAndCheckLimits(rule *Rule, groupKey string, m *metricsp
 	for _, attrs := range dpAttrs {
 		merged := mergeAttrs(resourceAttrs, attrs)
 		seriesKey := buildSeriesKey(merged)
-		if _, exists := gs.cardinality[seriesKey]; !exists {
+		// Test without adding - for limit checking
+		if !gs.cardinality.TestOnly([]byte(seriesKey)) {
 			newSeries++
 		}
 	}
@@ -280,8 +282,7 @@ func (e *Enforcer) updateAndCheckLimits(rule *Rule, groupKey string, m *metricsp
 		for _, attrs := range dpAttrs {
 			merged := mergeAttrs(resourceAttrs, attrs)
 			seriesKey := buildSeriesKey(merged)
-			if _, exists := gs.cardinality[seriesKey]; !exists {
-				gs.cardinality[seriesKey] = struct{}{}
+			if gs.cardinality.Add([]byte(seriesKey)) {
 				rs.totalCard++
 			}
 		}
@@ -349,7 +350,7 @@ func (e *Enforcer) handleAdaptive(rule *Rule, groupKey string, m *metricspb.Metr
 	type groupContrib struct {
 		key         string
 		datapoints  int64
-		cardinality int
+		cardinality int64
 	}
 
 	contribs := make([]groupContrib, 0, len(rs.groups))
@@ -357,7 +358,7 @@ func (e *Enforcer) handleAdaptive(rule *Rule, groupKey string, m *metricspb.Metr
 		contribs = append(contribs, groupContrib{
 			key:         k,
 			datapoints:  gs.datapoints,
-			cardinality: len(gs.cardinality),
+			cardinality: gs.cardinality.Count(),
 		})
 	}
 
@@ -403,7 +404,7 @@ func (e *Enforcer) handleAdaptive(rule *Rule, groupKey string, m *metricspb.Metr
 		droppedCount++
 
 		if reason == "cardinality" {
-			reduced += int64(contrib.cardinality)
+			reduced += contrib.cardinality
 		} else {
 			reduced += contrib.datapoints
 		}
@@ -586,7 +587,7 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# TYPE metrics_governor_rule_group_cardinality gauge\n")
 	for ruleName, rs := range e.ruleStats {
 		for groupKey, gs := range rs.groups {
-			fmt.Fprintf(w, "metrics_governor_rule_group_cardinality{rule=%q,group=%q} %d\n", ruleName, groupKey, len(gs.cardinality))
+			fmt.Fprintf(w, "metrics_governor_rule_group_cardinality{rule=%q,group=%q} %d\n", ruleName, groupKey, gs.cardinality.Count())
 		}
 	}
 

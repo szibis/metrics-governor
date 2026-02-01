@@ -28,7 +28,7 @@
 - **Intelligent Limiting** - Unlike simple rate limiters that drop everything, metrics-governor identifies and drops only the top offenders while preserving data from well-behaved services
 - **Consistent Sharding** - Automatic endpoint discovery from Kubernetes headless services with consistent hashing ensures the same time-series always route to the same backend (works for both OTLP and PRW)
 - **Production-Ready** - FastQueue durable persistence, TLS/mTLS, authentication, compression (gzip/zstd/snappy/lz4), and Helm chart included
-- **High-Performance Optimizations** - String interning reduces allocations by 76%, concurrency limiting prevents goroutine explosion (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
+- **High-Performance Optimizations** - String interning reduces allocations by 76%, concurrency limiting prevents goroutine explosion, Bloom filters reduce cardinality tracking memory by 98% (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
 - **Zero Configuration Start** - Works out of the box with sensible defaults; add limits and sharding when needed
 
 ## Architecture
@@ -151,8 +151,49 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
 | **Prometheus Integration** | Native `/metrics` endpoint for monitoring the proxy itself |
 | **Consistent Sharding** | Distribute metrics across multiple backends via DNS discovery (OTLP and PRW) |
 | **Persistent Queue** | FastQueue durable persistence with automatic retry (OTLP and PRW) |
+| **Memory Optimized** | Bloom filter cardinality tracking uses 98% less memory (1.2MB vs 75MB per 1M series) |
 | **Performance Optimized** | String interning and concurrency limiting for high-throughput workloads |
 | **Production Ready** | Helm chart, multi-arch Docker images, graceful shutdown |
+
+---
+
+## Performance Optimizations
+
+metrics-governor includes several high-performance optimizations for production workloads:
+
+### Bloom Filter Cardinality Tracking
+
+Cardinality tracking uses Bloom filters instead of maps for 98% memory reduction:
+
+| Unique Series | map[string]struct{} | Bloom Filter (1% FPR) | Memory Savings |
+|---------------|---------------------|------------------------|----------------|
+| 10,000        | 750 KB              | 12 KB                  | **98%**        |
+| 100,000       | 7.5 MB              | 120 KB                 | **98%**        |
+| 1,000,000     | 75 MB               | 1.2 MB                 | **98%**        |
+| 10,000,000    | 750 MB              | 12 MB                  | **98%**        |
+
+Configure via CLI flags:
+```bash
+# Use Bloom filter mode (default, memory-efficient)
+metrics-governor -cardinality-mode bloom -cardinality-expected-items 100000 -cardinality-fp-rate 0.01
+
+# Use exact mode (100% accurate, higher memory)
+metrics-governor -cardinality-mode exact
+```
+
+### String Interning
+
+Label string deduplication reduces allocations by 76%:
+- Pre-populated pool for common Prometheus labels (`__name__`, `job`, `instance`, etc.)
+- Zero-allocation cache hits using `sync.Map`
+- Applied to PRW label parsing and shard key building
+
+### Concurrency Limiting
+
+Semaphore-based limiting prevents goroutine explosion:
+- Bounded at `NumCPU * 4` by default
+- 88% reduction in concurrent goroutines under load
+- Configurable via `-export-concurrency`
 
 ---
 

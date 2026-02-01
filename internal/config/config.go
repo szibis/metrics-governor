@@ -170,6 +170,11 @@ type Config struct {
 	StringInterning      bool
 	InternMaxValueLength int
 
+	// Cardinality tracking settings
+	CardinalityMode          string  // "bloom" or "exact"
+	CardinalityExpectedItems uint    // Expected unique items per tracker
+	CardinalityFPRate        float64 // False positive rate for Bloom filter
+
 	// Flags
 	ShowHelp    bool
 	ShowVersion bool
@@ -332,6 +337,11 @@ func ParseFlags() *Config {
 	flag.IntVar(&cfg.ExportConcurrency, "export-concurrency", 0, "Concurrency limit for parallel exports (0 = NumCPU * 4)")
 	flag.BoolVar(&cfg.StringInterning, "string-interning", true, "Enable string interning for label deduplication")
 	flag.IntVar(&cfg.InternMaxValueLength, "intern-max-value-length", 64, "Max length for value interning (longer values not interned)")
+
+	// Cardinality tracking flags
+	flag.StringVar(&cfg.CardinalityMode, "cardinality-mode", "bloom", "Cardinality tracking mode: bloom (memory-efficient) or exact (100% accurate)")
+	flag.UintVar(&cfg.CardinalityExpectedItems, "cardinality-expected-items", 100000, "Expected unique items per tracker for Bloom filter sizing")
+	flag.Float64Var(&cfg.CardinalityFPRate, "cardinality-fp-rate", 0.01, "Bloom filter false positive rate (0.01 = 1%)")
 
 	// Help and version
 	flag.BoolVar(&cfg.ShowHelp, "help", false, "Show help message")
@@ -707,6 +717,20 @@ func applyFlagOverrides(cfg *Config) {
 					cfg.InternMaxValueLength = i
 				}
 			}
+		case "cardinality-mode":
+			cfg.CardinalityMode = f.Value.String()
+		case "cardinality-expected-items":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(uint); ok {
+					cfg.CardinalityExpectedItems = i
+				}
+			}
+		case "cardinality-fp-rate":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if fv, ok := v.Get().(float64); ok {
+					cfg.CardinalityFPRate = fv
+				}
+			}
 		case "help", "h":
 			cfg.ShowHelp = f.Value.String() == "true"
 		case "version", "v":
@@ -911,6 +935,25 @@ func (c *Config) PerformanceConfig() PerformanceConfig {
 	}
 }
 
+// CardinalityConfig holds cardinality tracking configuration.
+type CardinalityConfig struct {
+	// Mode is the tracking mode: "bloom" or "exact"
+	Mode string
+	// ExpectedItems is the expected unique items per tracker (for Bloom sizing)
+	ExpectedItems uint
+	// FPRate is the false positive rate for Bloom filters (e.g., 0.01 = 1%)
+	FPRate float64
+}
+
+// CardinalityConfig returns the cardinality tracking configuration.
+func (c *Config) CardinalityConfig() CardinalityConfig {
+	return CardinalityConfig{
+		Mode:          c.CardinalityMode,
+		ExpectedItems: c.CardinalityExpectedItems,
+		FPRate:        c.CardinalityFPRate,
+	}
+}
+
 // PRWReceiverConfig returns the PRW receiver configuration.
 func (c *Config) PRWReceiverConfig() receiver.PRWConfig {
 	version, _ := prw.ParseVersion(c.PRWReceiverVersion)
@@ -1089,6 +1132,11 @@ OPTIONS:
     Limits:
         -limits-config <path>            Path to limits configuration YAML file
         -limits-dry-run                  Dry run mode: log only, don't drop/sample (default: true)
+
+    Cardinality Tracking:
+        -cardinality-mode <mode>         Tracking mode: bloom (memory-efficient) or exact (100% accurate) (default: bloom)
+        -cardinality-expected-items <n>  Expected unique items per tracker for Bloom sizing (default: 100000)
+        -cardinality-fp-rate <rate>      Bloom filter false positive rate (default: 0.01 = 1%)
 
     Queue (FastQueue - High-Performance Persistent Retry):
         -queue-enabled                   Enable persistent queue for export retries (default: false)
@@ -1277,5 +1325,9 @@ func DefaultConfig() *Config {
 		ExportConcurrency:    0, // 0 = NumCPU * 4
 		StringInterning:      true,
 		InternMaxValueLength: 64,
+		// Cardinality tracking defaults (Bloom filter)
+		CardinalityMode:          "bloom",
+		CardinalityExpectedItems: 100000,
+		CardinalityFPRate:        0.01,
 	}
 }

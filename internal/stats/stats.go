@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/szibis/metrics-governor/internal/cardinality"
 	"github.com/szibis/metrics-governor/internal/logging"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
@@ -67,7 +68,7 @@ type MetricStats struct {
 	Name       string
 	Datapoints uint64
 	// Cardinality is tracked as unique series (metric + all attributes)
-	UniqueSeries map[string]struct{}
+	cardinality cardinality.Tracker
 }
 
 // LabelStats holds stats for a label combination across all metrics.
@@ -75,7 +76,7 @@ type LabelStats struct {
 	Labels     string
 	Datapoints uint64
 	// Cardinality: unique metric+series combinations for this label combo
-	UniqueSeries map[string]struct{}
+	cardinality cardinality.Tracker
 }
 
 // NewCollector creates a new stats collector.
@@ -107,8 +108,8 @@ func (c *Collector) Process(resourceMetrics []*metricspb.ResourceMetrics) {
 				ms, ok := c.metricStats[metricName]
 				if !ok {
 					ms = &MetricStats{
-						Name:         metricName,
-						UniqueSeries: make(map[string]struct{}),
+						Name:        metricName,
+						cardinality: cardinality.NewTrackerFromGlobal(),
 					}
 					c.metricStats[metricName] = ms
 					c.totalMetrics++
@@ -178,7 +179,7 @@ func (c *Collector) processDatapointsForCardinality(m *metricspb.Metric, resourc
 		// Merge resource and datapoint attributes
 		merged := mergeAttrs(resourceAttrs, attrs)
 		seriesKey := buildSeriesKey(merged)
-		ms.UniqueSeries[seriesKey] = struct{}{}
+		ms.cardinality.Add([]byte(seriesKey))
 	}
 }
 
@@ -230,8 +231,8 @@ func (c *Collector) updateLabelStats(metricName string, m *metricspb.Metric, res
 		ls, ok := c.labelStats[labelKey]
 		if !ok {
 			ls = &LabelStats{
-				Labels:       labelKey,
-				UniqueSeries: make(map[string]struct{}),
+				Labels:      labelKey,
+				cardinality: cardinality.NewTrackerFromGlobal(),
 			}
 			c.labelStats[labelKey] = ls
 		}
@@ -239,12 +240,12 @@ func (c *Collector) updateLabelStats(metricName string, m *metricspb.Metric, res
 
 		// Series key includes metric name + all attributes
 		seriesKey := metricName + "|" + buildSeriesKey(merged)
-		ls.UniqueSeries[seriesKey] = struct{}{}
+		ls.cardinality.Add([]byte(seriesKey))
 	}
 }
 
 // GetGlobalStats returns global statistics.
-func (c *Collector) GetGlobalStats() (datapoints uint64, uniqueMetrics uint64, totalCardinality int) {
+func (c *Collector) GetGlobalStats() (datapoints uint64, uniqueMetrics uint64, totalCardinality int64) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -252,7 +253,7 @@ func (c *Collector) GetGlobalStats() (datapoints uint64, uniqueMetrics uint64, t
 	uniqueMetrics = c.totalMetrics
 
 	for _, ms := range c.metricStats {
-		totalCardinality += len(ms.UniqueSeries)
+		totalCardinality += ms.cardinality.Count()
 	}
 	return
 }
@@ -402,7 +403,7 @@ func (c *Collector) StartPeriodicLogging(ctx context.Context, interval time.Dura
 	}
 }
 
-// ResetCardinality resets the cardinality tracking maps to prevent unbounded memory growth.
+// ResetCardinality resets the cardinality tracking to prevent unbounded memory growth.
 // This keeps counters intact but clears the per-metric and per-label cardinality tracking.
 func (c *Collector) ResetCardinality() {
 	c.mu.Lock()
@@ -419,7 +420,7 @@ func (c *Collector) ResetCardinality() {
 	} else {
 		// Reset per-metric cardinality (keep datapoint counts, clear series tracking)
 		for _, ms := range c.metricStats {
-			ms.UniqueSeries = make(map[string]struct{})
+			ms.cardinality.Reset()
 		}
 	}
 
@@ -429,7 +430,7 @@ func (c *Collector) ResetCardinality() {
 	} else {
 		// Reset per-label cardinality
 		for _, ls := range c.labelStats {
-			ls.UniqueSeries = make(map[string]struct{})
+			ls.cardinality.Reset()
 		}
 	}
 }
@@ -555,7 +556,7 @@ func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# HELP metrics_governor_metric_cardinality Cardinality (unique series) per metric name\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_metric_cardinality gauge\n")
 	for name, ms := range c.metricStats {
-		fmt.Fprintf(w, "metrics_governor_metric_cardinality{metric_name=%q} %d\n", name, len(ms.UniqueSeries))
+		fmt.Fprintf(w, "metrics_governor_metric_cardinality{metric_name=%q} %d\n", name, ms.cardinality.Count())
 	}
 
 	// Per-label-combination stats
@@ -573,7 +574,7 @@ func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for _, ls := range c.labelStats {
 			labels := parseLabelKey(ls.Labels)
 			labelStr := formatLabels(labels)
-			fmt.Fprintf(w, "metrics_governor_label_cardinality{%s} %d\n", labelStr, len(ls.UniqueSeries))
+			fmt.Fprintf(w, "metrics_governor_label_cardinality{%s} %d\n", labelStr, ls.cardinality.Count())
 		}
 	}
 }
