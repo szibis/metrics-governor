@@ -230,7 +230,7 @@ jobs:
   coverage-comment:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    needs: [test-unit, test-functional, test-e2e]
+    needs: [test-unit, test-functional, test-e2e, test-e2e-docker]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -291,6 +291,7 @@ jobs:
           E2E_TOTAL="${{ needs.test-e2e.outputs.total_tests }}"
           E2E_PASSED="${{ needs.test-e2e.outputs.passed_tests }}"
           E2E_SUCCESS="${{ needs.test-e2e.outputs.success }}"
+          E2E_DOCKER_SUCCESS="${{ needs.test-e2e-docker.outputs.success }}"
 
           echo "=== Coverage Report Debug ==="
           echo "Unit coverage: $UNIT_COVERAGE%"
@@ -298,13 +299,14 @@ jobs:
           echo "Unit tests: $UNIT_PASSED packages (success=$UNIT_SUCCESS)"
           echo "Functional tests: $FUNC_PASSED packages (success=$FUNC_SUCCESS)"
           echo "E2E tests: $E2E_PASSED packages (success=$E2E_SUCCESS)"
+          echo "Docker E2E: success=$E2E_DOCKER_SUCCESS"
           echo "=============================="
 
           TOTAL_TESTS=$((UNIT_TOTAL + FUNC_TOTAL + E2E_TOTAL))
           TOTAL_PASSED=$((UNIT_PASSED + FUNC_PASSED + E2E_PASSED))
 
           # Determine overall success
-          if [ "$UNIT_SUCCESS" = "true" ] && [ "$FUNC_SUCCESS" = "true" ] && [ "$E2E_SUCCESS" = "true" ]; then
+          if [ "$UNIT_SUCCESS" = "true" ] && [ "$FUNC_SUCCESS" = "true" ] && [ "$E2E_SUCCESS" = "true" ] && [ "$E2E_DOCKER_SUCCESS" = "true" ]; then
             ALL_SUCCESS="true"
           else
             ALL_SUCCESS="false"
@@ -359,6 +361,7 @@ jobs:
           | Unit Tests | ${UNIT_TOTAL} | $( [ "$UNIT_SUCCESS" = "true" ] && echo "✅ Passed" || echo "❌ Failed" ) |
           | Functional Tests | ${FUNC_TOTAL} | $( [ "$FUNC_SUCCESS" = "true" ] && echo "✅ Passed" || echo "❌ Failed" ) |
           | E2E Tests | ${E2E_TOTAL} | $( [ "$E2E_SUCCESS" = "true" ] && echo "✅ Passed" || echo "❌ Failed" ) |
+          | Docker E2E | - | $( [ "$E2E_DOCKER_SUCCESS" = "true" ] && echo "✅ Passed" || echo "❌ Failed" ) |
           | **Total** | **${TOTAL_TESTS}** | $( [ "$ALL_SUCCESS" = "true" ] && echo "✅ **All Passed**" || echo "❌ **Some Failed**" ) |
 
           <details>
@@ -417,9 +420,56 @@ jobs:
               });
             }
 
+  # Docker Compose E2E test - full stack verification
+  test-e2e-docker:
+    runs-on: ubuntu-latest
+    needs: [build]  # Only need build to pass first
+    outputs:
+      success: ${{ steps.result.outputs.success }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+
+      - name: Run Docker Compose E2E tests
+        id: e2e_docker
+        timeout-minutes: 15
+        run: |
+          chmod +x test/e2e-docker-compose.sh
+          ./test/e2e-docker-compose.sh 2>&1 | tee e2e-docker-output.txt
+
+      - name: Set result
+        id: result
+        if: always()
+        run: |
+          if [ "${{ steps.e2e_docker.outcome }}" = "success" ]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-docker-logs
+          path: |
+            e2e-docker-output.txt
+          retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v --remove-orphans 2>/dev/null || true
+
   build-binaries:
     runs-on: ubuntu-latest
-    needs: [build, test-unit, test-functional, test-e2e, lint, lint-dockerfile, lint-yaml, lint-helm]
+    needs: [build, test-unit, test-functional, test-e2e, test-e2e-docker, lint, lint-dockerfile, lint-yaml, lint-helm]
     steps:
       - uses: actions/checkout@v4
 
