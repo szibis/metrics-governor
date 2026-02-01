@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Original implementation using standard Go patterns (`sync.Map`, `unsafe.String`)
   - Reduces memory allocations by 76% for repeated label names/values
   - Pre-populated pool for common Prometheus labels (`__name__`, `job`, `instance`, etc.)
+  - Pre-populated pool for OTLP semantic convention attributes:
+    - Resource attributes (`service.name`, `k8s.pod.name`, `cloud.region`, etc.)
+    - Span/metric attributes (`http.method`, `db.system`, `rpc.service`, etc.)
+  - Applied to both PRW label parsing and OTLP attribute extraction
   - Zero-allocation cache hits using `sync.Map`
   - Configurable via `-string-interning` and `-intern-max-value-length` flags
 

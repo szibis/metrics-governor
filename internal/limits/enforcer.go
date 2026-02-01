@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/szibis/metrics-governor/internal/intern"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
@@ -650,12 +651,27 @@ func injectDatapointLabels(m *metricspb.Metric, action, ruleName string) *metric
 	return m
 }
 
+// attributeIntern is used for interning OTLP attribute keys and values
+var limitsAttributeIntern = intern.CommonLabels()
+
+// limitsInternMaxValueLength controls max value length for interning
+var limitsInternMaxValueLength = 64
+
 func extractAttributes(attrs []*commonpb.KeyValue) map[string]string {
 	result := make(map[string]string)
 	for _, kv := range attrs {
 		if kv.Value != nil {
 			if sv := kv.Value.GetStringValue(); sv != "" {
-				result[kv.Key] = sv
+				// Intern attribute keys (always, as they're from a fixed set)
+				key := limitsAttributeIntern.Intern(kv.Key)
+				// Intern short values (common values like env names, status codes)
+				var value string
+				if len(sv) <= limitsInternMaxValueLength {
+					value = limitsAttributeIntern.Intern(sv)
+				} else {
+					value = sv
+				}
+				result[key] = value
 			}
 		}
 	}

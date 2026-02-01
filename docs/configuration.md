@@ -287,10 +287,15 @@ metrics-governor includes performance optimizations for high-throughput environm
 
 When enabled (default), identical label names and values are deduplicated in memory:
 
-- **Label names** (e.g., `__name__`, `job`, `instance`) are always interned
-- **Label values** shorter than `intern-max-value-length` (default: 64) are interned
-- Reduces memory allocations by up to 76% for PRW label parsing
-- Achieves 99%+ cache hit rate for common labels
+- **Prometheus labels** (e.g., `__name__`, `job`, `instance`) are always interned
+- **OTLP semantic convention attributes** are pre-populated for both pipelines:
+  - Resource attributes: `service.name`, `k8s.pod.name`, `cloud.region`, `host.name`, etc.
+  - Span/metric attributes: `http.method`, `http.status_code`, `db.system`, `rpc.service`, etc.
+  - Full list based on [OpenTelemetry Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/)
+- **Label/attribute values** shorter than `intern-max-value-length` (default: 64) are interned
+- Applied to both PRW label parsing and OTLP attribute extraction
+- Reduces memory allocations by up to 76%
+- Achieves 99%+ cache hit rate for common labels/attributes
 
 ### Concurrency Limiting
 

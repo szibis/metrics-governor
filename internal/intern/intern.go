@@ -136,13 +136,13 @@ func unsafeString(b []byte) string {
 	return unsafe.String(unsafe.SliceData(b), len(b))
 }
 
-// Global pool for common label names that are known at compile time.
+// Global pool for common label/attribute names that are known at compile time.
 var commonLabels = NewPool()
 
-// init pre-populates common Prometheus/metrics label names.
+// init pre-populates common Prometheus and OTLP semantic convention attribute names.
 func init() {
 	// Pre-intern common Prometheus label names
-	commonNames := []string{
+	prometheusLabels := []string{
 		"__name__",
 		"job",
 		"instance",
@@ -173,13 +173,199 @@ func init() {
 		"app",
 		"application",
 	}
-	for _, name := range commonNames {
+
+	// OTLP Semantic Convention: Resource attributes
+	// https://opentelemetry.io/docs/specs/semconv/resource/
+	resourceAttributes := []string{
+		// Service
+		"service.name",
+		"service.namespace",
+		"service.instance.id",
+		"service.version",
+		// Deployment
+		"deployment.environment",
+		"deployment.environment.name",
+		// Telemetry SDK
+		"telemetry.sdk.name",
+		"telemetry.sdk.version",
+		"telemetry.sdk.language",
+		"telemetry.auto.version",
+		// Host
+		"host.name",
+		"host.id",
+		"host.type",
+		"host.arch",
+		"host.image.name",
+		"host.image.id",
+		"host.image.version",
+		// OS
+		"os.type",
+		"os.description",
+		"os.name",
+		"os.version",
+		// Process
+		"process.pid",
+		"process.parent_pid",
+		"process.executable.name",
+		"process.executable.path",
+		"process.command",
+		"process.command_line",
+		"process.command_args",
+		"process.owner",
+		"process.runtime.name",
+		"process.runtime.version",
+		"process.runtime.description",
+		// Container
+		"container.id",
+		"container.name",
+		"container.runtime",
+		"container.image.name",
+		"container.image.tag",
+		"container.image.id",
+		// Kubernetes
+		"k8s.cluster.name",
+		"k8s.cluster.uid",
+		"k8s.node.name",
+		"k8s.node.uid",
+		"k8s.namespace.name",
+		"k8s.pod.name",
+		"k8s.pod.uid",
+		"k8s.container.name",
+		"k8s.container.restart_count",
+		"k8s.replicaset.name",
+		"k8s.replicaset.uid",
+		"k8s.deployment.name",
+		"k8s.deployment.uid",
+		"k8s.statefulset.name",
+		"k8s.statefulset.uid",
+		"k8s.daemonset.name",
+		"k8s.daemonset.uid",
+		"k8s.job.name",
+		"k8s.job.uid",
+		"k8s.cronjob.name",
+		"k8s.cronjob.uid",
+		// Cloud
+		"cloud.provider",
+		"cloud.account.id",
+		"cloud.region",
+		"cloud.resource_id",
+		"cloud.availability_zone",
+		"cloud.platform",
+		// AWS
+		"aws.ecs.cluster.arn",
+		"aws.ecs.container.arn",
+		"aws.ecs.launchtype",
+		"aws.ecs.task.arn",
+		"aws.ecs.task.family",
+		"aws.ecs.task.revision",
+		"aws.eks.cluster.arn",
+		"aws.log.group.names",
+		"aws.log.group.arns",
+		"aws.log.stream.names",
+		"aws.log.stream.arns",
+		// GCP
+		"gcp.resource_type",
+		"gcp.gce.instance.name",
+		"gcp.gce.instance.hostname",
+	}
+
+	// OTLP Semantic Convention: Common span/metric attributes
+	// https://opentelemetry.io/docs/specs/semconv/
+	spanMetricAttributes := []string{
+		// HTTP
+		"http.method",
+		"http.request.method",
+		"http.status_code",
+		"http.response.status_code",
+		"http.route",
+		"http.scheme",
+		"http.host",
+		"http.target",
+		"http.url",
+		"http.flavor",
+		"http.user_agent",
+		"http.request_content_length",
+		"http.response_content_length",
+		"url.scheme",
+		"url.path",
+		"url.query",
+		"url.full",
+		"server.address",
+		"server.port",
+		"client.address",
+		"client.port",
+		// RPC
+		"rpc.system",
+		"rpc.service",
+		"rpc.method",
+		"rpc.grpc.status_code",
+		// Database
+		"db.system",
+		"db.name",
+		"db.operation",
+		"db.statement",
+		"db.user",
+		"db.connection_string",
+		// Messaging
+		"messaging.system",
+		"messaging.destination",
+		"messaging.destination.name",
+		"messaging.destination_kind",
+		"messaging.operation",
+		"messaging.message.id",
+		"messaging.conversation_id",
+		"messaging.message.payload_size_bytes",
+		// Network
+		"net.peer.name",
+		"net.peer.port",
+		"net.peer.ip",
+		"net.host.name",
+		"net.host.port",
+		"net.host.ip",
+		"net.transport",
+		"net.protocol.name",
+		"net.protocol.version",
+		"network.transport",
+		"network.type",
+		"network.protocol.name",
+		"network.protocol.version",
+		// Error
+		"error.type",
+		"exception.type",
+		"exception.message",
+		"exception.stacktrace",
+		// General
+		"otel.status_code",
+		"otel.status_description",
+		"otel.library.name",
+		"otel.library.version",
+		"otel.scope.name",
+		"otel.scope.version",
+		// Thread
+		"thread.id",
+		"thread.name",
+		// Code
+		"code.function",
+		"code.namespace",
+		"code.filepath",
+		"code.lineno",
+	}
+
+	// Intern all attribute names
+	for _, name := range prometheusLabels {
+		commonLabels.Intern(name)
+	}
+	for _, name := range resourceAttributes {
+		commonLabels.Intern(name)
+	}
+	for _, name := range spanMetricAttributes {
 		commonLabels.Intern(name)
 	}
 }
 
-// CommonLabels returns the global pool for common label names.
-// This pool is pre-populated with frequently used Prometheus label names.
+// CommonLabels returns the global pool for common label/attribute names.
+// This pool is pre-populated with frequently used Prometheus labels and
+// OTLP semantic convention attribute names.
 func CommonLabels() *Pool {
 	return commonLabels
 }
