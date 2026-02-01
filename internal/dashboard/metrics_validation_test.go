@@ -84,6 +84,83 @@ var knownMetrics = []string{
 	"metrics_governor_rule_group_cardinality",
 	"metrics_governor_limits_total_datapoints",
 	"metrics_governor_limits_total_cardinality",
+
+	// Runtime metrics (stats/runtime.go)
+	"metrics_governor_process_start_time_seconds",
+	"metrics_governor_process_uptime_seconds",
+	"metrics_governor_goroutines",
+	"metrics_governor_go_threads",
+	"metrics_governor_go_info",
+
+	// Memory metrics (stats/runtime.go)
+	"metrics_governor_memory_alloc_bytes",
+	"metrics_governor_memory_total_alloc_bytes",
+	"metrics_governor_memory_sys_bytes",
+	"metrics_governor_memory_heap_alloc_bytes",
+	"metrics_governor_memory_heap_sys_bytes",
+	"metrics_governor_memory_heap_idle_bytes",
+	"metrics_governor_memory_heap_inuse_bytes",
+	"metrics_governor_memory_heap_released_bytes",
+	"metrics_governor_memory_heap_objects",
+	"metrics_governor_memory_stack_inuse_bytes",
+	"metrics_governor_memory_stack_sys_bytes",
+	"metrics_governor_memory_mallocs_total",
+	"metrics_governor_memory_frees_total",
+
+	// GC metrics (stats/runtime.go)
+	"metrics_governor_gc_cycles_total",
+	"metrics_governor_gc_pause_total_seconds",
+	"metrics_governor_gc_last_pause_seconds",
+	"metrics_governor_gc_cpu_percent",
+
+	// PSI metrics (stats/runtime.go) - Linux only
+	"metrics_governor_psi_cpu_some_avg10",
+	"metrics_governor_psi_cpu_some_avg60",
+	"metrics_governor_psi_cpu_some_avg300",
+	"metrics_governor_psi_cpu_some_total_microseconds",
+	"metrics_governor_psi_memory_some_avg10",
+	"metrics_governor_psi_memory_some_avg60",
+	"metrics_governor_psi_memory_some_avg300",
+	"metrics_governor_psi_memory_some_total_microseconds",
+	"metrics_governor_psi_memory_full_avg10",
+	"metrics_governor_psi_memory_full_avg60",
+	"metrics_governor_psi_memory_full_avg300",
+	"metrics_governor_psi_memory_full_total_microseconds",
+	"metrics_governor_psi_io_some_avg10",
+	"metrics_governor_psi_io_some_avg60",
+	"metrics_governor_psi_io_some_avg300",
+	"metrics_governor_psi_io_some_total_microseconds",
+	"metrics_governor_psi_io_full_avg10",
+	"metrics_governor_psi_io_full_avg60",
+	"metrics_governor_psi_io_full_avg300",
+	"metrics_governor_psi_io_full_total_microseconds",
+
+	// Process CPU metrics (stats/runtime.go) - Linux only
+	"metrics_governor_process_cpu_user_seconds",
+	"metrics_governor_process_cpu_system_seconds",
+	"metrics_governor_process_cpu_total_seconds",
+	"metrics_governor_process_virtual_memory_bytes",
+	"metrics_governor_process_resident_memory_bytes",
+	"metrics_governor_process_open_fds",
+	"metrics_governor_process_max_fds",
+
+	// Disk I/O metrics (stats/runtime.go) - Linux only
+	"metrics_governor_process_io_read_chars_total",
+	"metrics_governor_process_io_write_chars_total",
+	"metrics_governor_process_io_read_syscalls_total",
+	"metrics_governor_process_io_write_syscalls_total",
+	"metrics_governor_process_io_read_bytes_total",
+	"metrics_governor_process_io_write_bytes_total",
+
+	// Network metrics (stats/runtime.go) - Linux only
+	"metrics_governor_network_receive_bytes_total",
+	"metrics_governor_network_transmit_bytes_total",
+	"metrics_governor_network_receive_packets_total",
+	"metrics_governor_network_transmit_packets_total",
+	"metrics_governor_network_receive_errors_total",
+	"metrics_governor_network_transmit_errors_total",
+	"metrics_governor_network_receive_dropped_total",
+	"metrics_governor_network_transmit_dropped_total",
 }
 
 // goRuntimeMetrics lists standard Go runtime metrics that are expected.
@@ -134,7 +211,8 @@ type Target struct {
 // extractMetricsFromExpr extracts metric names from a PromQL expression.
 func extractMetricsFromExpr(expr string) []string {
 	// Match metric names that start with metrics_governor_, go_, or process_
-	re := regexp.MustCompile(`(metrics_governor_[a-z_]+|go_[a-z_]+|process_[a-z_]+)`)
+	// Include digits in the pattern to capture names like _avg10, _avg60, etc.
+	re := regexp.MustCompile(`(metrics_governor_[a-z0-9_]+|go_[a-z0-9_]+|process_[a-z0-9_]+)`)
 	matches := re.FindAllString(expr, -1)
 
 	// Deduplicate
@@ -289,6 +367,14 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_limit",
 		"metrics_governor_rule",
 		"metrics_governor_limits",
+		// Runtime metrics prefixes
+		"metrics_governor_process",
+		"metrics_governor_goroutines",
+		"metrics_governor_go_",
+		"metrics_governor_memory",
+		"metrics_governor_gc_",
+		"metrics_governor_psi_",
+		"metrics_governor_network",
 	}
 
 	// Just verify list is valid - no sorting requirement
