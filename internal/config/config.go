@@ -104,9 +104,9 @@ type Config struct {
 	QueueAdaptiveEnabled   bool
 	QueueCompactThreshold  float64
 	// FastQueue settings
-	QueueInmemoryBlocks  int           // In-memory channel size (default: 256)
-	QueueChunkSize       int64         // Chunk file size (default: 512MB)
-	QueueMetaSyncInterval  time.Duration // Metadata sync interval (default: 1s)
+	QueueInmemoryBlocks     int           // In-memory channel size (default: 256)
+	QueueChunkSize          int64         // Chunk file size (default: 512MB)
+	QueueMetaSyncInterval   time.Duration // Metadata sync interval (default: 1s)
 	QueueStaleFlushInterval time.Duration // Stale flush interval (default: 5s)
 
 	// Sharding settings

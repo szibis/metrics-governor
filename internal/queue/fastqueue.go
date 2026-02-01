@@ -19,9 +19,9 @@ import (
 
 const (
 	// Default configuration values
-	defaultInmemoryBlocks   = 256
-	defaultChunkFileSize    = 512 * 1024 * 1024 // 512MB
-	defaultMetaSyncInterval = time.Second
+	defaultInmemoryBlocks     = 256
+	defaultChunkFileSize      = 512 * 1024 * 1024 // 512MB
+	defaultMetaSyncInterval   = time.Second
 	defaultStaleFlushInterval = 5 * time.Second
 
 	// File names
@@ -74,16 +74,16 @@ type FastQueue struct {
 	inmemoryBytes atomic.Int64
 
 	// Disk layer
-	writerChunk   *os.File
-	writerOffset  int64
-	readerChunk   *os.File
-	readerOffset  int64
-	pendingBytes  int64
+	writerChunk  *os.File
+	writerOffset int64
+	readerChunk  *os.File
+	readerOffset int64
+	pendingBytes int64
 
 	// Stats
-	activeCount  atomic.Int64
-	totalBytes   atomic.Int64
-	diskBytes    atomic.Int64
+	activeCount atomic.Int64
+	totalBytes  atomic.Int64
+	diskBytes   atomic.Int64
 
 	// Metadata sync
 	lastMetaSync   time.Time
@@ -785,14 +785,14 @@ func (fq *FastQueue) syncMetadataLocked() error {
 
 	// Write to temp file first
 	tmpPath := filepath.Join(fq.cfg.Path, metaFileName+".tmp")
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
 		return err
 	}
 
 	// Sync the temp file
 	tmpFile, err := os.Open(tmpPath)
 	if err == nil {
-		tmpFile.Sync()
+		_ = tmpFile.Sync()
 		tmpFile.Close()
 	}
 
@@ -805,7 +805,7 @@ func (fq *FastQueue) syncMetadataLocked() error {
 	// Sync directory
 	dir, err := os.Open(fq.cfg.Path)
 	if err == nil {
-		dir.Sync()
+		_ = dir.Sync()
 		dir.Close()
 	}
 
@@ -827,7 +827,7 @@ func (fq *FastQueue) metaSyncLoop() {
 		case <-ticker.C:
 			fq.mu.Lock()
 			if !fq.closed {
-				fq.syncMetadataLocked()
+				_ = fq.syncMetadataLocked()
 			}
 			fq.mu.Unlock()
 		}
@@ -849,7 +849,7 @@ func (fq *FastQueue) staleFlushLoop() {
 			if !fq.closed && len(fq.ch) > 0 {
 				// Check if oldest block is stale
 				if time.Since(fq.lastBlockWrite) >= fq.cfg.StaleFlushInterval {
-					fq.flushInmemoryBlocksLocked()
+					_ = fq.flushInmemoryBlocksLocked()
 				}
 			}
 			fq.mu.Unlock()

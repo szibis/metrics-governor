@@ -99,8 +99,8 @@ type SendQueue struct {
 	closed bool
 
 	// Retry tracking (in-memory, lost on restart)
-	retries     map[string]int
-	retriesMu   sync.RWMutex
+	retries   map[string]int
+	retriesMu sync.RWMutex
 
 	// For block behavior
 	spaceCond *sync.Cond
