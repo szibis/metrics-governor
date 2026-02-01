@@ -224,7 +224,7 @@ exporterHTTPClient:
   # -- HTTP/2 ping timeout
   http2PingTimeout: ""
 
-# -- Persistent queue configuration for export retries (WAL-based)
+# -- Persistent queue configuration for export retries (FastQueue-based)
 queue:
   # -- Enable persistent queue
   enabled: false
@@ -244,8 +244,14 @@ queue:
   targetUtilization: 0.85
   # -- Enable adaptive queue sizing based on disk space
   adaptiveEnabled: true
-  # -- Ratio of consumed entries before compaction (0.0-1.0)
-  compactThreshold: 0.5
+  # -- In-memory channel size (number of blocks)
+  inmemoryBlocks: 256
+  # -- Chunk file size for disk storage
+  chunkSize: "512MB"
+  # -- Metadata sync interval
+  metaSyncInterval: "1s"
+  # -- Stale flush interval (flush in-memory to disk)
+  staleFlushInterval: "5s"
 
 # -- Receiver HTTP server configuration
 receiverHTTPServer:

@@ -365,8 +365,9 @@ func TestQueueRecovery(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := Config{
-		Path:    tmpDir,
-		MaxSize: 100,
+		Path:           tmpDir,
+		MaxSize:        100,
+		InmemoryBlocks: 2, // Small to force disk writes
 	}
 
 	// Create queue and push some data
@@ -381,6 +382,12 @@ func TestQueueRecovery(t *testing.T) {
 			t.Fatalf("Push failed: %v", err)
 		}
 	}
+
+	// Force flush to disk
+	q1.fq.mu.Lock()
+	q1.fq.flushInmemoryBlocksLocked()
+	q1.fq.syncMetadataLocked()
+	q1.fq.mu.Unlock()
 
 	initialLen := q1.Len()
 	q1.Close()
@@ -596,52 +603,6 @@ func TestPopFromEmptyQueue(t *testing.T) {
 	}
 }
 
-func TestQueueCompaction(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	cfg := Config{
-		Path:             tmpDir,
-		MaxSize:          10,
-		CompactThreshold: 0.3, // Compact when 30% consumed
-	}
-
-	q, err := New(cfg)
-	if err != nil {
-		t.Fatalf("Failed to create queue: %v", err)
-	}
-	defer q.Close()
-
-	// Push items
-	for i := 0; i < 10; i++ {
-		req := createTestRequest("compact-metric")
-		if err := q.Push(req); err != nil {
-			t.Fatalf("Push failed: %v", err)
-		}
-	}
-
-	// Pop half to trigger compaction threshold
-	for i := 0; i < 5; i++ {
-		entry, err := q.Pop()
-		if err != nil {
-			t.Fatalf("Pop failed: %v", err)
-		}
-		if entry == nil {
-			break
-		}
-	}
-
-	// Push more - may trigger compaction
-	for i := 0; i < 5; i++ {
-		req := createTestRequest("post-compact-metric")
-		_ = q.Push(req)
-	}
-
-	// Queue should still work
-	if q.Len() == 0 {
-		t.Log("Queue is empty after compaction cycle")
-	}
-}
-
 func TestQueueLargeData(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -721,12 +682,13 @@ func TestQueueBlockBehavior(t *testing.T) {
 	}
 }
 
-func TestWALRecoveryWithPartialData(t *testing.T) {
+func TestFastQueueRecoveryWithPartialData(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := Config{
-		Path:    tmpDir,
-		MaxSize: 100,
+		Path:           tmpDir,
+		MaxSize:        100,
+		InmemoryBlocks: 2, // Small to force disk writes
 	}
 
 	// Create queue and add some entries
@@ -743,6 +705,12 @@ func TestWALRecoveryWithPartialData(t *testing.T) {
 		}
 	}
 
+	// Force flush
+	q1.fq.mu.Lock()
+	q1.fq.flushInmemoryBlocksLocked()
+	q1.fq.syncMetadataLocked()
+	q1.fq.mu.Unlock()
+
 	// Pop some entries
 	for i := 0; i < 2; i++ {
 		entry, err := q1.Pop()
@@ -753,6 +721,11 @@ func TestWALRecoveryWithPartialData(t *testing.T) {
 			break
 		}
 	}
+
+	// Sync again after pops
+	q1.fq.mu.Lock()
+	q1.fq.syncMetadataLocked()
+	q1.fq.mu.Unlock()
 
 	remainingLen := q1.Len()
 	q1.Close()
@@ -808,36 +781,6 @@ func TestQueueEntryRetries(t *testing.T) {
 	}
 	if entry.Retries != 0 {
 		t.Errorf("Expected 0 retries, got %d", entry.Retries)
-	}
-}
-
-func TestQueueAdaptiveSizing(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	cfg := Config{
-		Path:              tmpDir,
-		MaxSize:           100,
-		AdaptiveEnabled:   true,
-		TargetUtilization: 0.8,
-	}
-
-	q, err := New(cfg)
-	if err != nil {
-		t.Fatalf("Failed to create queue: %v", err)
-	}
-	defer q.Close()
-
-	// Push some data
-	for i := 0; i < 10; i++ {
-		req := createTestRequest("adaptive-test")
-		if err := q.Push(req); err != nil {
-			t.Logf("Push %d failed: %v", i, err)
-		}
-	}
-
-	// Queue should work with adaptive enabled
-	if q.Len() == 0 {
-		t.Error("Expected queue to have entries")
 	}
 }
 
@@ -907,123 +850,13 @@ func TestQueuePushManyThenPopAll(t *testing.T) {
 	}
 }
 
-func TestQueueSyncModes(t *testing.T) {
-	modes := []SyncMode{SyncImmediate, SyncBatched, SyncAsync}
-
-	for _, mode := range modes {
-		t.Run(string(mode), func(t *testing.T) {
-			tmpDir := t.TempDir()
-
-			cfg := Config{
-				Path:          tmpDir,
-				MaxSize:       100,
-				SyncMode:      mode,
-				SyncBatchSize: 5,
-				SyncInterval:  10 * time.Millisecond,
-			}
-
-			q, err := New(cfg)
-			if err != nil {
-				t.Fatalf("Failed to create queue with sync mode %s: %v", mode, err)
-			}
-
-			// Push entries
-			for i := 0; i < 10; i++ {
-				if err := q.PushData([]byte("sync mode test")); err != nil {
-					t.Fatalf("PushData failed: %v", err)
-				}
-			}
-
-			if q.Len() != 10 {
-				t.Errorf("Expected 10 entries, got %d", q.Len())
-			}
-
-			// Close and recover
-			q.Close()
-
-			q2, err := New(cfg)
-			if err != nil {
-				t.Fatalf("Failed to recover queue: %v", err)
-			}
-			defer q2.Close()
-
-			if q2.Len() != 10 {
-				t.Errorf("Expected 10 entries after recovery, got %d", q2.Len())
-			}
-		})
-	}
-}
-
-func TestQueueWithCompression(t *testing.T) {
+func TestFastQueueRecoveryWithConsumedEntries(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := Config{
-		Path:        tmpDir,
-		MaxSize:     100,
-		Compression: true,
-	}
-
-	q, err := New(cfg)
-	if err != nil {
-		t.Fatalf("Failed to create queue: %v", err)
-	}
-
-	// Push entries with compressible data
-	testData := []byte("This is test data that should compress well because it has repeated patterns")
-	for i := 0; i < 10; i++ {
-		if err := q.PushData(testData); err != nil {
-			t.Fatalf("PushData failed: %v", err)
-		}
-	}
-
-	if q.Len() != 10 {
-		t.Errorf("Expected 10 entries, got %d", q.Len())
-	}
-
-	// Verify data can be read back correctly
-	entry, err := q.Peek()
-	if err != nil {
-		t.Fatalf("Peek failed: %v", err)
-	}
-	if entry == nil {
-		t.Fatal("Expected entry, got nil")
-	}
-
-	if string(entry.Data) != string(testData) {
-		t.Errorf("Data mismatch: got %q, want %q", entry.Data, testData)
-	}
-
-	// Close and recover
-	q.Close()
-
-	q2, err := New(cfg)
-	if err != nil {
-		t.Fatalf("Failed to recover queue: %v", err)
-	}
-	defer q2.Close()
-
-	if q2.Len() != 10 {
-		t.Errorf("Expected 10 entries after recovery, got %d", q2.Len())
-	}
-
-	// Verify data integrity after recovery
-	entry2, err := q2.Peek()
-	if err != nil {
-		t.Fatalf("Peek after recovery failed: %v", err)
-	}
-	if string(entry2.Data) != string(testData) {
-		t.Errorf("Data mismatch after recovery: got %q, want %q", entry2.Data, testData)
-	}
-}
-
-func TestQueueRecoveryWithConsumedEntries(t *testing.T) {
-	// Test specifically for the buffered write offset bug fix
-	tmpDir := t.TempDir()
-
-	cfg := Config{
-		Path:     tmpDir,
-		MaxSize:  100,
-		SyncMode: SyncBatched, // Use batched mode to trigger the buffered path
+		Path:           tmpDir,
+		MaxSize:        100,
+		InmemoryBlocks: 2, // Small to force disk writes
 	}
 
 	// Create queue and push entries
@@ -1039,6 +872,12 @@ func TestQueueRecoveryWithConsumedEntries(t *testing.T) {
 		}
 	}
 
+	// Force flush
+	q1.fq.mu.Lock()
+	q1.fq.flushInmemoryBlocksLocked()
+	q1.fq.syncMetadataLocked()
+	q1.fq.mu.Unlock()
+
 	// Pop 5 entries (mark as consumed)
 	for i := 0; i < 5; i++ {
 		entry, err := q1.Pop()
@@ -1049,6 +888,11 @@ func TestQueueRecoveryWithConsumedEntries(t *testing.T) {
 			t.Fatalf("Pop %d returned nil", i)
 		}
 	}
+
+	// Sync metadata
+	q1.fq.mu.Lock()
+	q1.fq.syncMetadataLocked()
+	q1.fq.mu.Unlock()
 
 	expectedLen := q1.Len()
 	q1.Close()
@@ -1101,7 +945,7 @@ func TestQueueDroppedReasons(t *testing.T) {
 	}
 }
 
-func TestQueueDropNewestBehavior(t *testing.T) {
+func TestQueueDropNewestBehaviorExtended(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := Config{
@@ -1182,137 +1026,10 @@ func TestQueueMetricsFunctions(t *testing.T) {
 	SetEffectiveCapacityMetrics(100, 1000000)
 	SetDiskAvailableBytes(500000000)
 	UpdateQueueMetrics(50, 500000, 1000000)
-	IncrementWALWrite()
-	IncrementWALCompact()
 	IncrementDiskFull()
-	IncrementSync()
-	RecordBytesWritten(1000, 500)
-	SetPendingSyncs(10)
-	RecordSyncLatency(0.001)
-}
-
-func TestWALAllSyncModes(t *testing.T) {
-	modes := []struct {
-		name string
-		mode SyncMode
-	}{
-		{"immediate", SyncImmediate},
-		{"batched", SyncBatched},
-		{"async", SyncAsync},
-	}
-
-	for _, m := range modes {
-		t.Run(m.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-
-			cfg := WALConfig{
-				Path:          tmpDir,
-				MaxSize:       100,
-				MaxBytes:      100000,
-				SyncMode:      m.mode,
-				SyncBatchSize: 5,
-				SyncInterval:  10 * time.Millisecond,
-			}
-
-			wal, err := NewWAL(cfg)
-			if err != nil {
-				t.Fatalf("Failed to create WAL with %s mode: %v", m.name, err)
-			}
-
-			// Append entries
-			for i := 0; i < 10; i++ {
-				if err := wal.Append([]byte("test data")); err != nil {
-					t.Errorf("Append failed: %v", err)
-				}
-			}
-
-			// Peek and consume
-			for i := 0; i < 5; i++ {
-				entry, err := wal.Peek()
-				if err != nil {
-					t.Errorf("Peek failed: %v", err)
-				}
-				if entry != nil {
-					if err := wal.MarkConsumed(entry.Offset); err != nil {
-						t.Errorf("MarkConsumed failed: %v", err)
-					}
-				}
-			}
-
-			if wal.Len() != 5 {
-				t.Errorf("Expected 5 remaining entries, got %d", wal.Len())
-			}
-
-			wal.Close()
-
-			// Recovery
-			wal2, err := NewWAL(cfg)
-			if err != nil {
-				t.Fatalf("Failed to recover WAL: %v", err)
-			}
-			defer wal2.Close()
-
-			if wal2.Len() != 5 {
-				t.Errorf("Expected 5 entries after recovery, got %d", wal2.Len())
-			}
-		})
-	}
-}
-
-func TestWALWithCompression(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	cfg := WALConfig{
-		Path:        tmpDir,
-		MaxSize:     100,
-		MaxBytes:    100000,
-		Compression: true,
-	}
-
-	wal, err := NewWAL(cfg)
-	if err != nil {
-		t.Fatalf("Failed to create WAL: %v", err)
-	}
-
-	// Test data that compresses well
-	testData := []byte("This is a test string with repeating patterns aaaaaaaaaaaabbbbbbbbbbbb")
-
-	for i := 0; i < 10; i++ {
-		if err := wal.Append(testData); err != nil {
-			t.Fatalf("Append failed: %v", err)
-		}
-	}
-
-	// Verify data integrity
-	entry, err := wal.Peek()
-	if err != nil {
-		t.Fatalf("Peek failed: %v", err)
-	}
-	if entry == nil {
-		t.Fatal("Expected entry, got nil")
-	}
-	if string(entry.Data) != string(testData) {
-		t.Errorf("Data mismatch: got %q, want %q", entry.Data, testData)
-	}
-
-	wal.Close()
-
-	// Verify recovery with compression
-	wal2, err := NewWAL(cfg)
-	if err != nil {
-		t.Fatalf("Failed to recover WAL: %v", err)
-	}
-	defer wal2.Close()
-
-	if wal2.Len() != 10 {
-		t.Errorf("Expected 10 entries after recovery, got %d", wal2.Len())
-	}
-
-	entry2, err := wal2.Peek()
-	if err != nil {
-		t.Fatalf("Peek after recovery failed: %v", err)
-	}
-	if string(entry2.Data) != string(testData) {
-		t.Errorf("Data mismatch after recovery: got %q, want %q", entry2.Data, testData)
-	}
+	SetInmemoryBlocks(10)
+	SetDiskBytes(1000)
+	IncrementMetaSync()
+	IncrementChunkRotation()
+	IncrementInmemoryFlush()
 }

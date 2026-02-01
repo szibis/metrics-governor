@@ -45,30 +45,35 @@ type Config struct {
 	AdaptiveEnabled bool
 	// CompactThreshold is the ratio of consumed entries before compaction (default: 0.5).
 	CompactThreshold float64
-	// I/O optimization settings
-	// SyncMode controls when to sync: immediate, batched, async.
-	SyncMode SyncMode
-	// SyncBatchSize is the number of writes before sync in batched mode.
-	SyncBatchSize int
-	// SyncInterval is the max time between syncs in batched mode.
-	SyncInterval time.Duration
-	// Compression enables snappy compression for queue data.
-	Compression bool
+
+	// FastQueue settings
+	// InmemoryBlocks is the in-memory channel size (default: 256).
+	InmemoryBlocks int
+	// ChunkSize is the chunk file size (default: 512MB).
+	ChunkSize int64
+	// MetaSyncInterval is the metadata sync interval (default: 1s).
+	MetaSyncInterval time.Duration
+	// StaleFlushInterval is the stale flush interval (default: 5s).
+	StaleFlushInterval time.Duration
 }
 
 // DefaultConfig returns a default queue configuration.
 func DefaultConfig() Config {
 	return Config{
-		Path:              "./queue",
-		MaxSize:           10000,
-		MaxBytes:          1073741824, // 1GB
-		RetryInterval:     5 * time.Second,
-		MaxRetryDelay:     5 * time.Minute,
-		FullBehavior:      DropOldest,
-		BlockTimeout:      30 * time.Second,
-		TargetUtilization: 0.85,
-		AdaptiveEnabled:   true,
-		CompactThreshold:  0.5,
+		Path:               "./queue",
+		MaxSize:            10000,
+		MaxBytes:           1073741824, // 1GB
+		RetryInterval:      5 * time.Second,
+		MaxRetryDelay:      5 * time.Minute,
+		FullBehavior:       DropOldest,
+		BlockTimeout:       30 * time.Second,
+		TargetUtilization:  0.85,
+		AdaptiveEnabled:    true,
+		CompactThreshold:   0.5,
+		InmemoryBlocks:     256,
+		ChunkSize:          512 * 1024 * 1024, // 512MB
+		MetaSyncInterval:   time.Second,
+		StaleFlushInterval: 5 * time.Second,
 	}
 }
 
@@ -82,16 +87,20 @@ type QueueEntry struct {
 	Data []byte
 	// Retries is the number of retry attempts.
 	Retries int
-	// Offset is the WAL offset for this entry.
+	// Offset is the offset for this entry (for compatibility).
 	Offset int64
 }
 
-// SendQueue is a WAL-based persistent queue for export requests.
+// SendQueue is a FastQueue-based persistent queue for export requests.
 type SendQueue struct {
 	config Config
-	wal    *WAL
+	fq     *FastQueue
 	mu     sync.RWMutex
 	closed bool
+
+	// Retry tracking (in-memory, lost on restart)
+	retries     map[string]int
+	retriesMu   sync.RWMutex
 
 	// For block behavior
 	spaceCond *sync.Cond
@@ -124,29 +133,39 @@ func New(cfg Config) (*SendQueue, error) {
 	if cfg.CompactThreshold <= 0 || cfg.CompactThreshold > 1 {
 		cfg.CompactThreshold = 0.5
 	}
-
-	// Create WAL
-	walCfg := WALConfig{
-		Path:              cfg.Path,
-		MaxSize:           cfg.MaxSize,
-		MaxBytes:          cfg.MaxBytes,
-		TargetUtilization: cfg.TargetUtilization,
-		CompactThreshold:  cfg.CompactThreshold,
-		AdaptiveEnabled:   cfg.AdaptiveEnabled,
-		SyncMode:          cfg.SyncMode,
-		SyncBatchSize:     cfg.SyncBatchSize,
-		SyncInterval:      cfg.SyncInterval,
-		Compression:       cfg.Compression,
+	if cfg.InmemoryBlocks <= 0 {
+		cfg.InmemoryBlocks = 256
+	}
+	if cfg.ChunkSize <= 0 {
+		cfg.ChunkSize = 512 * 1024 * 1024
+	}
+	if cfg.MetaSyncInterval <= 0 {
+		cfg.MetaSyncInterval = time.Second
+	}
+	if cfg.StaleFlushInterval <= 0 {
+		cfg.StaleFlushInterval = 5 * time.Second
 	}
 
-	wal, err := NewWAL(walCfg)
+	// Create FastQueue
+	fqCfg := FastQueueConfig{
+		Path:               cfg.Path,
+		MaxInmemoryBlocks:  cfg.InmemoryBlocks,
+		ChunkFileSize:      cfg.ChunkSize,
+		MetaSyncInterval:   cfg.MetaSyncInterval,
+		StaleFlushInterval: cfg.StaleFlushInterval,
+		MaxSize:            cfg.MaxSize,
+		MaxBytes:           cfg.MaxBytes,
+	}
+
+	fq, err := NewFastQueue(fqCfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create WAL: %w", err)
+		return nil, fmt.Errorf("failed to create FastQueue: %w", err)
 	}
 
 	q := &SendQueue{
-		config: cfg,
-		wal:    wal,
+		config:  cfg,
+		fq:      fq,
+		retries: make(map[string]int),
 	}
 	q.spaceCond = sync.NewCond(&q.mu)
 
@@ -178,11 +197,10 @@ func (q *SendQueue) pushData(data []byte) error {
 		return fmt.Errorf("queue is closed")
 	}
 
-	// Try to append to WAL
+	// Try to push to FastQueue
 	for {
-		err := q.wal.Append(data)
+		err := q.fq.Push(data)
 		if err == nil {
-			queuePushTotal.Inc()
 			q.spaceCond.Broadcast()
 			return nil
 		}
@@ -192,20 +210,20 @@ func (q *SendQueue) pushData(data []byte) error {
 			// Disk is full - handle according to FullBehavior
 			switch q.config.FullBehavior {
 			case DropOldest:
-				// Try to make room by marking oldest as consumed
-				if dropErr := q.dropOldestLocked(); dropErr != nil {
+				// Try to make room by popping oldest
+				if _, dropErr := q.fq.Pop(); dropErr != nil {
 					queueDroppedTotal.WithLabelValues("disk_full_drop_failed").Inc()
 					return fmt.Errorf("disk full and failed to drop oldest: %w", err)
 				}
 				queueDroppedTotal.WithLabelValues("disk_full").Inc()
-				continue // Retry append
+				continue // Retry push
 
 			case DropNewest:
 				queueDroppedTotal.WithLabelValues("disk_full_newest").Inc()
 				return nil // Drop incoming entry
 
 			case Block:
-				// Wait with timeout using timer instead of goroutine
+				// Wait with timeout
 				var timedOut atomic.Bool
 				timer := time.AfterFunc(q.config.BlockTimeout, func() {
 					timedOut.Store(true)
@@ -218,10 +236,9 @@ func (q *SendQueue) pushData(data []byte) error {
 						timer.Stop()
 						return fmt.Errorf("queue is closed")
 					}
-					// Retry append
-					if retryErr := q.wal.Append(data); retryErr == nil {
+					// Retry push
+					if retryErr := q.fq.Push(data); retryErr == nil {
 						timer.Stop()
-						queuePushTotal.Inc()
 						return nil
 					}
 				}
@@ -235,19 +252,19 @@ func (q *SendQueue) pushData(data []byte) error {
 			// Queue is full (by count or bytes limit)
 			switch q.config.FullBehavior {
 			case DropOldest:
-				if dropErr := q.dropOldestLocked(); dropErr != nil {
+				if _, dropErr := q.fq.Pop(); dropErr != nil {
 					queueDroppedTotal.WithLabelValues("oldest_drop_failed").Inc()
 					return fmt.Errorf("queue full and failed to drop oldest: %w", err)
 				}
 				queueDroppedTotal.WithLabelValues("oldest").Inc()
-				continue // Retry append
+				continue // Retry push
 
 			case DropNewest:
 				queueDroppedTotal.WithLabelValues("newest").Inc()
 				return nil // Drop incoming entry
 
 			case Block:
-				// Wait with timeout using timer instead of goroutine
+				// Wait with timeout
 				var timedOut atomic.Bool
 				timer := time.AfterFunc(q.config.BlockTimeout, func() {
 					timedOut.Store(true)
@@ -260,10 +277,9 @@ func (q *SendQueue) pushData(data []byte) error {
 						timer.Stop()
 						return fmt.Errorf("queue is closed")
 					}
-					// Retry append
-					if retryErr := q.wal.Append(data); retryErr == nil {
+					// Retry push
+					if retryErr := q.fq.Push(data); retryErr == nil {
 						timer.Stop()
-						queuePushTotal.Inc()
 						return nil
 					}
 				}
@@ -275,7 +291,7 @@ func (q *SendQueue) pushData(data []byte) error {
 
 		// Other errors
 		queueDroppedTotal.WithLabelValues("error").Inc()
-		return fmt.Errorf("failed to append to queue: %w", err)
+		return fmt.Errorf("failed to push to queue: %w", err)
 	}
 }
 
@@ -284,28 +300,27 @@ func (q *SendQueue) Pop() (*QueueEntry, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	entry, err := q.wal.Peek()
+	if q.closed {
+		return nil, ErrQueueClosed
+	}
+
+	data, err := q.fq.Pop()
 	if err != nil {
 		return nil, err
 	}
-	if entry == nil {
+	if data == nil {
 		return nil, nil
-	}
-
-	// Mark as consumed
-	if err := q.wal.MarkConsumed(entry.Offset); err != nil {
-		return nil, err
 	}
 
 	// Signal waiting goroutines
 	q.spaceCond.Broadcast()
 
+	id := uuid.New().String()
 	return &QueueEntry{
-		ID:        uuid.New().String(),
-		Timestamp: entry.Timestamp,
-		Data:      entry.Data,
-		Retries:   entry.Retries,
-		Offset:    entry.Offset,
+		ID:        id,
+		Timestamp: time.Now(),
+		Data:      data,
+		Retries:   q.getRetries(id),
 	}, nil
 }
 
@@ -314,72 +329,80 @@ func (q *SendQueue) Peek() (*QueueEntry, error) {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
 
-	entry, err := q.wal.Peek()
+	if q.closed {
+		return nil, ErrQueueClosed
+	}
+
+	data, err := q.fq.Peek()
 	if err != nil {
 		return nil, err
 	}
-	if entry == nil {
+	if data == nil {
 		return nil, nil
 	}
 
+	id := uuid.New().String()
 	return &QueueEntry{
-		ID:        fmt.Sprintf("%d", entry.Offset), // Use offset as ID
-		Timestamp: entry.Timestamp,
-		Data:      entry.Data,
-		Retries:   entry.Retries,
-		Offset:    entry.Offset,
+		ID:        id,
+		Timestamp: time.Now(),
+		Data:      data,
+		Retries:   q.getRetries(id),
 	}, nil
 }
 
-// Remove removes an entry by ID (offset).
+// Remove removes an entry by ID.
+// Note: In FastQueue, entries are removed by Pop(), so this is a no-op.
 func (q *SendQueue) Remove(id string) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	// Parse offset from ID
-	var offset int64
-	if _, err := fmt.Sscanf(id, "%d", &offset); err != nil {
-		return fmt.Errorf("invalid entry ID: %s", id)
-	}
-
-	if err := q.wal.MarkConsumed(offset); err != nil {
-		return err
+	if q.closed {
+		return ErrQueueClosed
 	}
 
 	// Signal waiting goroutines
 	q.spaceCond.Broadcast()
+
+	// Clean up retry tracking
+	q.retriesMu.Lock()
+	delete(q.retries, id)
+	q.retriesMu.Unlock()
 
 	return nil
 }
 
 // UpdateRetries updates the retry count for an entry.
 func (q *SendQueue) UpdateRetries(id string, retries int) {
-	var offset int64
-	if _, err := fmt.Sscanf(id, "%d", &offset); err != nil {
-		return
-	}
+	q.retriesMu.Lock()
+	q.retries[id] = retries
+	q.retriesMu.Unlock()
+}
 
-	q.wal.UpdateRetries(offset, retries)
+// getRetries returns the retry count for an entry.
+func (q *SendQueue) getRetries(id string) int {
+	q.retriesMu.RLock()
+	defer q.retriesMu.RUnlock()
+	return q.retries[id]
 }
 
 // Len returns the number of entries in the queue.
 func (q *SendQueue) Len() int {
-	return q.wal.Len()
+	return q.fq.Len()
 }
 
 // Size returns the total bytes in the queue.
 func (q *SendQueue) Size() int64 {
-	return q.wal.Size()
+	return q.fq.Size()
 }
 
-// EffectiveMaxSize returns the current effective max size (adaptive).
+// EffectiveMaxSize returns the current effective max size.
 func (q *SendQueue) EffectiveMaxSize() int {
-	return q.wal.EffectiveMaxSize()
+	return q.config.MaxSize
 }
 
-// EffectiveMaxBytes returns the current effective max bytes (adaptive).
+// EffectiveMaxBytes returns the current effective max bytes.
 func (q *SendQueue) EffectiveMaxBytes() int64 {
-	return q.wal.EffectiveMaxBytes()
+	return q.config.MaxBytes
 }
 
 // Close closes the queue.
@@ -390,20 +413,7 @@ func (q *SendQueue) Close() error {
 	q.closed = true
 	q.spaceCond.Broadcast()
 
-	return q.wal.Close()
-}
-
-// dropOldestLocked drops the oldest entry (must hold lock).
-func (q *SendQueue) dropOldestLocked() error {
-	entry, err := q.wal.Peek()
-	if err != nil {
-		return err
-	}
-	if entry == nil {
-		return fmt.Errorf("no entries to drop")
-	}
-
-	return q.wal.MarkConsumed(entry.Offset)
+	return q.fq.Close()
 }
 
 // GetRequest deserializes the data to an ExportMetricsServiceRequest.

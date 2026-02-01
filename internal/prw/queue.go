@@ -38,7 +38,7 @@ func DefaultQueueConfig() QueueConfig {
 	}
 }
 
-// Queue is a WAL-based persistent queue for PRW WriteRequests.
+// Queue is a FastQueue-based persistent queue for PRW WriteRequests.
 type Queue struct {
 	sendQueue *queue.SendQueue
 	exporter  PRWExporter

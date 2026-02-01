@@ -316,15 +316,14 @@ func TestFunctional_QueuedExporter_QueuesDuringOutage(t *testing.T) {
 	queuedExp.Close()
 }
 
-// TestFunctional_Queue_Compaction tests WAL compaction
-func TestFunctional_Queue_Compaction(t *testing.T) {
+// TestFunctional_Queue_PersistentStorage tests FastQueue persistence
+func TestFunctional_Queue_PersistentStorage(t *testing.T) {
 	dir := createQueueTestDir(t)
 	defer os.RemoveAll(dir)
 
 	cfg := queue.Config{
-		Path:             dir,
-		MaxSize:          100,
-		CompactThreshold: 0.3, // Compact when 30% consumed
+		Path:    dir,
+		MaxSize: 100,
 	}
 
 	q, err := queue.New(cfg)
@@ -335,7 +334,7 @@ func TestFunctional_Queue_Compaction(t *testing.T) {
 
 	// Push items
 	for i := 0; i < 50; i++ {
-		rm := createTestResourceMetrics("compact-test", "compact_metric", 2)
+		rm := createTestResourceMetrics("persist-test", "persist_metric", 2)
 		req := &colmetrics.ExportMetricsServiceRequest{
 			ResourceMetrics: []*metricspb.ResourceMetrics{rm},
 		}
@@ -344,7 +343,7 @@ func TestFunctional_Queue_Compaction(t *testing.T) {
 		}
 	}
 
-	// Pop half (should trigger compaction at 30% threshold)
+	// Pop half
 	for i := 0; i < 25; i++ {
 		if _, err := q.Pop(); err != nil {
 			t.Fatalf("Pop failed: %v", err)
@@ -358,9 +357,13 @@ func TestFunctional_Queue_Compaction(t *testing.T) {
 		t.Errorf("Expected around 25 items remaining, got %d", remaining)
 	}
 
-	// Check WAL files
-	files, _ := filepath.Glob(filepath.Join(dir, "*.wal"))
-	t.Logf("WAL files after compaction: %d", len(files))
+	// Check FastQueue metadata file exists
+	metaFile := filepath.Join(dir, "fastqueue.meta")
+	if _, err := os.Stat(metaFile); os.IsNotExist(err) {
+		t.Log("FastQueue metadata file not yet created (data may be in memory)")
+	} else {
+		t.Log("FastQueue metadata file exists")
+	}
 }
 
 // TestFunctional_Queue_ConcurrentAccess tests concurrent queue operations

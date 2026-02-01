@@ -67,7 +67,7 @@ metrics-governor/
 │   ├── limits/              # Limits enforcement (adaptive, drop, log)
 │   ├── logging/             # JSON structured logging
 │   ├── prw/                 # Prometheus Remote Write support (buffer, queue, types)
-│   ├── queue/               # WAL-based persistent queue for OTLP retries
+│   ├── queue/               # FastQueue persistent queue for OTLP retries
 │   ├── receiver/            # OTLP (gRPC/HTTP) and PRW receivers
 │   ├── sharding/            # Consistent hashing and DNS discovery
 │   ├── stats/               # Statistics collection (OTLP and PRW metrics)

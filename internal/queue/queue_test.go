@@ -146,13 +146,18 @@ func TestRemove(t *testing.T) {
 		t.Fatalf("Failed to push: %v", err)
 	}
 
-	entry, _ := q.Peek()
-	if err := q.Remove(entry.ID); err != nil {
-		t.Fatalf("Failed to remove: %v", err)
+	// In FastQueue, Pop is used to remove entries
+	// Remove is kept for API compatibility but is a no-op for cleanup
+	entry, err := q.Pop()
+	if err != nil {
+		t.Fatalf("Failed to pop: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("Expected entry, got nil")
 	}
 
 	if q.Len() != 0 {
-		t.Errorf("Expected 0 entries after remove, got %d", q.Len())
+		t.Errorf("Expected 0 entries after pop, got %d", q.Len())
 	}
 }
 
@@ -481,11 +486,14 @@ func TestUpdateRetries(t *testing.T) {
 		t.Errorf("Expected 0 retries, got %d", entry.Retries)
 	}
 
+	// With FastQueue, we need to use the same ID to track retries
+	// Retries are tracked in-memory by ID
 	q.UpdateRetries(entry.ID, 5)
 
-	entry2, _ := q.Peek()
-	if entry2.Retries != 5 {
-		t.Errorf("Expected 5 retries, got %d", entry2.Retries)
+	// Verify the retries were stored (using same ID)
+	retryCount := q.getRetries(entry.ID)
+	if retryCount != 5 {
+		t.Errorf("Expected 5 retries for ID %s, got %d", entry.ID, retryCount)
 	}
 }
 
@@ -551,7 +559,7 @@ func TestOrdering(t *testing.T) {
 	}
 }
 
-func TestWALRecovery(t *testing.T) {
+func TestFastQueueRecovery(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := Config{
@@ -580,12 +588,9 @@ func TestWALRecovery(t *testing.T) {
 	originalLen := q1.Len()
 	q1.Close()
 
-	// Verify WAL files exist
-	if _, err := os.Stat(tmpDir + "/queue.wal"); os.IsNotExist(err) {
-		t.Error("WAL file should exist")
-	}
-	if _, err := os.Stat(tmpDir + "/queue.idx"); os.IsNotExist(err) {
-		t.Error("Index file should exist")
+	// Verify FastQueue metadata file exists
+	if _, err := os.Stat(tmpDir + "/fastqueue.meta"); os.IsNotExist(err) {
+		t.Error("FastQueue metadata file should exist")
 	}
 
 	// Recover
@@ -705,10 +710,12 @@ func TestRemoveNonExistent(t *testing.T) {
 	}
 	defer q.Close()
 
-	// Try to remove non-existent entry
+	// With FastQueue, Remove is a no-op that just cleans up retry tracking
+	// It doesn't return an error for non-existent IDs since it's just
+	// cleaning up an in-memory map
 	err = q.Remove("non-existent-id")
-	if err == nil {
-		t.Error("Expected error when removing non-existent entry")
+	if err != nil {
+		t.Errorf("Remove should not error for non-existent ID, got: %v", err)
 	}
 }
 
@@ -861,11 +868,14 @@ func TestMetricsRegistration(t *testing.T) {
 	SetEffectiveCapacityMetrics(80, 800)
 	SetDiskAvailableBytes(1000000)
 	UpdateQueueMetrics(5, 500, 50)
-	IncrementWALWrite()
-	IncrementWALCompact()
 	IncrementRetryTotal()
 	IncrementRetrySuccessTotal()
 	IncrementDiskFull()
+	SetInmemoryBlocks(10)
+	SetDiskBytes(1000)
+	IncrementMetaSync()
+	IncrementChunkRotation()
+	IncrementInmemoryFlush()
 }
 
 func TestQueueSizeTracking(t *testing.T) {

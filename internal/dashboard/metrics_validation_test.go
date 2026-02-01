@@ -54,9 +54,12 @@ var knownMetrics = []string{
 	"metrics_governor_queue_dropped_total",
 	"metrics_governor_queue_retry_total",
 	"metrics_governor_queue_retry_success_total",
-	"metrics_governor_queue_wal_write_total",
-	"metrics_governor_queue_wal_compact_total",
 	"metrics_governor_queue_disk_full_total",
+	"metrics_governor_fastqueue_inmemory_blocks",
+	"metrics_governor_fastqueue_disk_bytes",
+	"metrics_governor_fastqueue_meta_sync_total",
+	"metrics_governor_fastqueue_chunk_rotations",
+	"metrics_governor_fastqueue_inmemory_flushes",
 
 	// Sharding metrics (sharding/metrics.go)
 	"metrics_governor_sharding_endpoints_total",
@@ -363,6 +366,7 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_metric_",
 		"metrics_governor_label_",
 		"metrics_governor_queue",
+		"metrics_governor_fastqueue",
 		"metrics_governor_sharding",
 		"metrics_governor_limit",
 		"metrics_governor_rule",

@@ -1,0 +1,89 @@
+# Queue persistence testing configuration
+# Usage: docker compose -f docker-compose.yaml -f docker-compose.queue.yaml up -d
+#
+# This override enables queue persistence testing:
+# - FastQueue with aggressive settings for testing
+# - Smaller intervals for faster testing
+# - Volume mount for persistent queue data
+#
+# Test scenarios:
+# 1. Normal flow with queue enabled
+# 2. Container restart recovers queue data
+# 3. Queue metrics exposed correctly
+
+services:
+  metrics-governor:
+    command:
+      - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
+      - "-exporter-protocol=http"
+      - "-exporter-insecure=true"
+      - "-exporter-compression=gzip"
+      - "-exporter-timeout=5s"
+      - "-stats-labels=service,env"
+      - "-flush-interval=500ms"
+      - "-batch-size=100"
+      - "-buffer-size=5000"
+      # Performance tuning
+      - "-string-interning=true"
+      - "-intern-max-value-length=64"
+      # FastQueue configuration for testing
+      - "-queue-enabled=true"
+      - "-queue-path=/data/queue"
+      - "-queue-max-size=1000"
+      - "-queue-max-bytes=104857600"
+      - "-queue-retry-interval=2s"
+      - "-queue-max-retry-delay=30s"
+      - "-queue-full-behavior=drop_oldest"
+      - "-queue-adaptive-enabled=true"
+      # FastQueue-specific settings (aggressive for testing)
+      - "-queue-inmemory-blocks=32"
+      - "-queue-chunk-size=10485760"
+      - "-queue-meta-sync=500ms"
+      - "-queue-stale-flush=2s"
+    volumes:
+      - mg-queue-test-data:/data/queue
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/metrics"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  metrics-generator:
+    environment:
+      - OTLP_ENDPOINT=otel-collector:4317
+      - METRICS_INTERVAL=500ms
+      - SERVICES=queue-test-service
+      - ENVIRONMENTS=test
+      - ENABLE_EDGE_CASES=false
+      - ENABLE_HIGH_CARDINALITY=false
+      - ENABLE_BURST_TRAFFIC=false
+      - ENABLE_DIVERSE_METRICS=true
+      - HIGH_CARDINALITY_COUNT=10
+      - DIVERSE_METRIC_COUNT=20
+      - BURST_SIZE=100
+      - BURST_INTERVAL_SEC=30
+      - STATS_INTERVAL_SEC=10
+      - TARGET_METRICS_PER_SEC=500
+      - TARGET_DATAPOINTS_PER_SEC=1000
+      - METRICS_PORT=9091
+
+  victoriametrics:
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    command:
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=1d"
+      - "--search.latencyOffset=0s"
+      - "--promscrape.config=/etc/victoriametrics/scrape.yaml"
+      - "--maxInsertRequestSize=32MB"
+      - "--opentelemetry.maxRequestSize=32MB"
+      - "--opentelemetry.convertMetricNamesToPrometheus"
+      - "--memory.allowedPercent=70"
+
+volumes:
+  mg-queue-test-data:
+    driver: local
