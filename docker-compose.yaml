@@ -127,6 +127,6 @@ services:
     volumes:
       - ./test/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./test/grafana/dashboards:/var/lib/grafana/dashboards/test:ro
-      - ./dashboards:/var/lib/grafana/dashboards/main:ro
+      - ./dashboards:/var/lib/grafana/dashboards/operations:ro
     depends_on:
       - victoriametrics
