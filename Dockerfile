@@ -15,7 +15,7 @@ COPY . .
 
 # Build
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/config.version=${VERSION}" \
+RUN CGO_ENABLED=0 go build -ldflags "-s -w -X github.com/szibis/metrics-governor/internal/config.version=${VERSION}" \
     -o metrics-governor ./cmd/metrics-governor
 
 # Runtime stage

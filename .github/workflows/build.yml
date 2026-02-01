@@ -13,8 +13,14 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      next_release: ${{ steps.next_release.outputs.version }}
+      release_bump: ${{ steps.next_release.outputs.bump }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -22,8 +28,126 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Determine current version
+        id: version
+        run: |
+          # Get version from git describe or Chart.yaml
+          if git describe --tags --exact-match 2>/dev/null; then
+            VERSION=$(git describe --tags --exact-match)
+          else
+            # For PRs/branches, use Chart.yaml version + short SHA
+            CHART_VERSION=$(grep '^version:' helm/metrics-governor/Chart.yaml | awk '{print $2}')
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            VERSION="${CHART_VERSION}-${SHORT_SHA}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "📦 Building version: ${VERSION}"
+
+      - name: Calculate next release version
+        id: next_release
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const title = pr.title.toLowerCase();
+            const labels = pr.labels.map(l => l.name);
+
+            console.log('PR Title:', pr.title);
+            console.log('Labels:', labels);
+
+            // Get latest version tag
+            const { execSync } = require('child_process');
+            let latestTag = 'v0.0.0';
+            try {
+              latestTag = execSync("git tag -l 'v*' --sort=-v:refname | head -n1", { encoding: 'utf8' }).trim();
+              if (!latestTag) latestTag = 'v0.0.0';
+            } catch (e) {
+              console.log('No tags found, using v0.0.0');
+            }
+
+            console.log('Latest tag:', latestTag);
+
+            // Parse version
+            const versionMatch = latestTag.match(/v(\d+)\.(\d+)\.(\d+)/);
+            let major = 0, minor = 0, patch = 0;
+            if (versionMatch) {
+              major = parseInt(versionMatch[1]);
+              minor = parseInt(versionMatch[2]);
+              patch = parseInt(versionMatch[3]);
+            }
+
+            // Determine bump type
+            let bump = 'none';
+
+            // Check for skip label
+            if (labels.includes('release:skip')) {
+              bump = 'skip';
+            }
+            // Check for explicit version labels (highest priority)
+            else if (labels.includes('release:major')) {
+              bump = 'major';
+            } else if (labels.includes('release:minor')) {
+              bump = 'minor';
+            } else if (labels.includes('release:patch')) {
+              bump = 'patch';
+            }
+            // Check for breaking change
+            else if (labels.includes('breaking-change') || title.includes('!:') || title.includes('breaking')) {
+              bump = 'major';
+            }
+            // Determine from conventional commit type
+            else {
+              const conventionalTypes = {
+                'feat': 'minor',
+                'fix': 'patch',
+                'perf': 'patch',
+                'security': 'patch',
+                'deps': 'patch',
+              };
+
+              for (const [type, bumpType] of Object.entries(conventionalTypes)) {
+                if (title.startsWith(`${type}:`) || title.startsWith(`${type}(`)) {
+                  bump = bumpType;
+                  break;
+                }
+              }
+            }
+
+            // Calculate new version
+            let newVersion = 'no release';
+            if (bump === 'major') {
+              newVersion = `v${major + 1}.0.0`;
+            } else if (bump === 'minor') {
+              newVersion = `v${major}.${minor + 1}.0`;
+            } else if (bump === 'patch') {
+              newVersion = `v${major}.${minor}.${patch + 1}`;
+            } else if (bump === 'skip') {
+              newVersion = 'skipped';
+            }
+
+            console.log(`Bump: ${bump}, New version: ${newVersion}`);
+
+            core.setOutput('version', newVersion);
+            core.setOutput('bump', bump);
+            core.setOutput('current', latestTag);
+
       - name: Build
-        run: go build -v ./...
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          go build -ldflags "-X github.com/szibis/metrics-governor/internal/config.version=${VERSION}" -v ./...
+
+      - name: Version summary
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "## 📦 Version Info" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| | |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Version** | \`${{ steps.version.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Next Release** | \`${{ steps.next_release.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Bump Type** | ${{ steps.next_release.outputs.bump }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Current Tag** | ${{ steps.next_release.outputs.current }} |" >> $GITHUB_STEP_SUMMARY
 
   test-unit:
     runs-on: ubuntu-latest
@@ -230,7 +354,7 @@ jobs:
   coverage-comment:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    needs: [test-unit, test-functional, test-e2e]
+    needs: [build, test-unit, test-functional, test-e2e, test-e2e-docker]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -291,6 +415,7 @@ jobs:
           E2E_TOTAL="${{ needs.test-e2e.outputs.total_tests }}"
           E2E_PASSED="${{ needs.test-e2e.outputs.passed_tests }}"
           E2E_SUCCESS="${{ needs.test-e2e.outputs.success }}"
+          E2E_DOCKER_SUCCESS="${{ needs.test-e2e-docker.outputs.success }}"
 
           echo "=== Coverage Report Debug ==="
           echo "Unit coverage: $UNIT_COVERAGE%"
@@ -298,13 +423,14 @@ jobs:
           echo "Unit tests: $UNIT_PASSED packages (success=$UNIT_SUCCESS)"
           echo "Functional tests: $FUNC_PASSED packages (success=$FUNC_SUCCESS)"
           echo "E2E tests: $E2E_PASSED packages (success=$E2E_SUCCESS)"
+          echo "Docker E2E: success=$E2E_DOCKER_SUCCESS"
           echo "=============================="
 
           TOTAL_TESTS=$((UNIT_TOTAL + FUNC_TOTAL + E2E_TOTAL))
           TOTAL_PASSED=$((UNIT_PASSED + FUNC_PASSED + E2E_PASSED))
 
           # Determine overall success
-          if [ "$UNIT_SUCCESS" = "true" ] && [ "$FUNC_SUCCESS" = "true" ] && [ "$E2E_SUCCESS" = "true" ]; then
+          if [ "$UNIT_SUCCESS" = "true" ] && [ "$FUNC_SUCCESS" = "true" ] && [ "$E2E_SUCCESS" = "true" ] && [ "$E2E_DOCKER_SUCCESS" = "true" ]; then
             ALL_SUCCESS="true"
           else
             ALL_SUCCESS="false"
@@ -341,9 +467,27 @@ jobs:
             THRESHOLD_STATUS="❌ Below ${THRESHOLD}%"
           fi
 
+          # Get version from build job
+          BUILD_VERSION="${{ needs.build.outputs.version }}"
+          NEXT_RELEASE="${{ needs.build.outputs.next_release }}"
+          RELEASE_BUMP="${{ needs.build.outputs.release_bump }}"
+
+          # Determine release badge
+          case "$RELEASE_BUMP" in
+            major) RELEASE_BADGE="🔴 Major" ;;
+            minor) RELEASE_BADGE="🟡 Minor" ;;
+            patch) RELEASE_BADGE="🟢 Patch" ;;
+            skip)  RELEASE_BADGE="⏭️ Skip" ;;
+            *)     RELEASE_BADGE="⚪ None" ;;
+          esac
+
           # Create comment
           cat > coverage-comment.md << EOF
           ## 📊 Test Coverage Report
+
+          | Build | Release |
+          |-------|---------|
+          | \`${BUILD_VERSION}\` | **${NEXT_RELEASE}** (${RELEASE_BADGE}) |
 
           | Metric | Value | Status |
           |--------|-------|--------|
@@ -359,6 +503,7 @@ jobs:
           | Unit Tests | ${UNIT_TOTAL} | $( [ "$UNIT_SUCCESS" = "true" ] && echo "✅ Passed" || echo "❌ Failed" ) |
           | Functional Tests | ${FUNC_TOTAL} | $( [ "$FUNC_SUCCESS" = "true" ] && echo "✅ Passed" || echo "❌ Failed" ) |
           | E2E Tests | ${E2E_TOTAL} | $( [ "$E2E_SUCCESS" = "true" ] && echo "✅ Passed" || echo "❌ Failed" ) |
+          | Docker E2E | - | $( [ "$E2E_DOCKER_SUCCESS" = "true" ] && echo "✅ Passed" || echo "❌ Failed" ) |
           | **Total** | **${TOTAL_TESTS}** | $( [ "$ALL_SUCCESS" = "true" ] && echo "✅ **All Passed**" || echo "❌ **Some Failed**" ) |
 
           <details>
@@ -417,11 +562,63 @@ jobs:
               });
             }
 
-  build-binaries:
+  # Docker Compose E2E test - full stack verification
+  test-e2e-docker:
     runs-on: ubuntu-latest
-    needs: [build, test-unit, test-functional, test-e2e, lint, lint-dockerfile, lint-yaml, lint-helm]
+    needs: [build]  # Only need build to pass first
+    outputs:
+      success: ${{ steps.result.outputs.success }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+
+      - name: Run Docker Compose E2E tests
+        id: e2e_docker
+        timeout-minutes: 15
+        env:
+          BUILD_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          echo "📦 Testing version: ${BUILD_VERSION}"
+          chmod +x test/e2e-docker-compose.sh
+          ./test/e2e-docker-compose.sh 2>&1 | tee e2e-docker-output.txt
+
+      - name: Set result
+        id: result
+        if: always()
+        run: |
+          if [ "${{ steps.e2e_docker.outcome }}" = "success" ]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-docker-logs
+          path: |
+            e2e-docker-output.txt
+          retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v --remove-orphans 2>/dev/null || true
+
+  build-binaries:
+    runs-on: ubuntu-latest
+    needs: [build, test-unit, test-functional, test-e2e, test-e2e-docker, lint, lint-dockerfile, lint-yaml, lint-helm]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -429,14 +626,32 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Get version
+        id: version
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "📦 Building binaries for version: ${VERSION}"
+
       - name: Build darwin-arm64
-        run: GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w" -o bin/metrics-governor-darwin-arm64 ./cmd/metrics-governor
+        run: |
+          LDFLAGS="-s -w -X github.com/szibis/metrics-governor/internal/config.version=${{ steps.version.outputs.version }}"
+          GOOS=darwin GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-darwin-arm64 ./cmd/metrics-governor
 
       - name: Build linux-arm64
-        run: GOOS=linux GOARCH=arm64 go build -ldflags "-s -w" -o bin/metrics-governor-linux-arm64 ./cmd/metrics-governor
+        run: |
+          LDFLAGS="-s -w -X github.com/szibis/metrics-governor/internal/config.version=${{ steps.version.outputs.version }}"
+          GOOS=linux GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-linux-arm64 ./cmd/metrics-governor
 
       - name: Build linux-amd64
-        run: GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o bin/metrics-governor-linux-amd64 ./cmd/metrics-governor
+        run: |
+          LDFLAGS="-s -w -X github.com/szibis/metrics-governor/internal/config.version=${{ steps.version.outputs.version }}"
+          GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-linux-amd64 ./cmd/metrics-governor
+
+      - name: Verify version
+        run: |
+          echo "Verifying embedded version..."
+          ./bin/metrics-governor-linux-amd64 -version
 
       - name: Upload binaries
         uses: actions/upload-artifact@v4
