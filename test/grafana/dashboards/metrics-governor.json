@@ -512,10 +512,10 @@
       "title": "OTLP Bytes Rate",
       "type": "timeseries",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[1m]))", "legendFormat": "Received (uncompressed)" },
-        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[1m]))", "legendFormat": "Received (compressed)" },
-        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[1m]))", "legendFormat": "Exported (uncompressed)" },
-        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"compressed\"}[1m]))", "legendFormat": "Exported (compressed)" }
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"}[1m]))", "legendFormat": "Received (uncompressed)" },
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"}[1m]))", "legendFormat": "Received (compressed)" },
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m]))", "legendFormat": "Sent (uncompressed)" },
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[1m]))", "legendFormat": "Sent (compressed)" }
       ]
     },
     {

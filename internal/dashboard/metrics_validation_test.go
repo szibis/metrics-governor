@@ -32,11 +32,6 @@ var knownMetrics = []string{
 	// OTLP stats (stats.go)
 	"metrics_governor_otlp_bytes_total",
 
-	// OTLP exporter metrics (exporter/metrics.go)
-	"metrics_governor_otlp_export_bytes_total",
-	"metrics_governor_otlp_export_requests_total",
-	"metrics_governor_otlp_export_errors_total",
-
 	// gRPC receiver metrics (receiver/grpc.go)
 	"metrics_governor_grpc_received_bytes_total",
 
@@ -68,14 +63,6 @@ var knownMetrics = []string{
 	"metrics_governor_fastqueue_meta_sync_total",
 	"metrics_governor_fastqueue_chunk_rotations",
 	"metrics_governor_fastqueue_inmemory_flushes",
-
-	// Queue I/O optimization metrics (queue/metrics.go)
-	"metrics_governor_queue_sync_total",
-	"metrics_governor_queue_bytes_written_total",
-	"metrics_governor_queue_bytes_compressed_total",
-	"metrics_governor_queue_compression_ratio",
-	"metrics_governor_queue_pending_syncs",
-	"metrics_governor_queue_sync_latency_seconds",
 
 	// Sharding metrics (sharding/metrics.go)
 	"metrics_governor_sharding_endpoints_total",

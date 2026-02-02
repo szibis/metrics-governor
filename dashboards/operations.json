@@ -569,20 +569,20 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[1m]))",
+          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"}[1m]))",
           "legendFormat": "Received (uncompressed)"
         },
         {
-          "expr": "sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[1m]))",
+          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"}[1m]))",
           "legendFormat": "Received (compressed)"
         },
         {
-          "expr": "sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[1m]))",
-          "legendFormat": "Exported (uncompressed)"
+          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m]))",
+          "legendFormat": "Sent (uncompressed)"
         },
         {
-          "expr": "sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"compressed\"}[1m]))",
-          "legendFormat": "Exported (compressed)"
+          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[1m]))",
+          "legendFormat": "Sent (compressed)"
         }
       ]
     },
@@ -639,8 +639,8 @@
           "legendFormat": "OTLP Receive"
         },
         {
-          "expr": "sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[5m]))",
-          "legendFormat": "OTLP Export"
+          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m]))",
+          "legendFormat": "OTLP Send"
         }
       ]
     },
@@ -1693,7 +1693,7 @@
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 104 },
       "id": 200,
       "panels": [],
-      "title": "Queue I/O Optimization",
+      "title": "FastQueue I/O",
       "type": "row"
     },
     {
@@ -1723,26 +1723,22 @@
           },
           "mappings": [],
           "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "s"
+          "unit": "short"
         }
       },
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 105 },
       "id": 201,
       "options": {
-        "legend": { "calcs": ["mean", "p99", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
-      "title": "Sync Latency",
-      "description": "WAL fsync latency distribution (batched sync mode)",
+      "title": "FastQueue In-Memory Blocks",
+      "description": "Current number of blocks in the in-memory channel (spills to disk when full)",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(metrics_governor_queue_sync_latency_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p50"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(metrics_governor_queue_sync_latency_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p99"
+          "expr": "metrics_governor_fastqueue_inmemory_blocks",
+          "legendFormat": "In-Memory Blocks"
         }
       ]
     },
@@ -1773,7 +1769,7 @@
           },
           "mappings": [],
           "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "percentunit"
+          "unit": "bytes"
         }
       },
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 105 },
@@ -1782,13 +1778,13 @@
         "legend": { "calcs": ["mean", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
-      "title": "Compression Ratio",
-      "description": "Snappy compression ratio (lower is better, 1.0 = no compression)",
+      "title": "FastQueue Disk Bytes",
+      "description": "Current bytes stored on disk by FastQueue (spilled from in-memory channel)",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "metrics_governor_queue_compression_ratio",
-          "legendFormat": "Ratio"
+          "expr": "metrics_governor_fastqueue_disk_bytes",
+          "legendFormat": "Disk Bytes"
         }
       ]
     },
@@ -1828,17 +1824,21 @@
         "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
-      "title": "Sync Operations",
-      "description": "WAL sync operations and pending writes",
+      "title": "FastQueue Operations",
+      "description": "FastQueue metadata syncs, chunk rotations, and memory flushes",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(rate(metrics_governor_queue_sync_total[5m]))",
-          "legendFormat": "Syncs/s"
+          "expr": "sum(rate(metrics_governor_fastqueue_meta_sync_total[5m]))",
+          "legendFormat": "Meta Syncs/s"
         },
         {
-          "expr": "metrics_governor_queue_pending_syncs",
-          "legendFormat": "Pending"
+          "expr": "sum(rate(metrics_governor_fastqueue_chunk_rotations[5m]))",
+          "legendFormat": "Chunk Rotations/s"
+        },
+        {
+          "expr": "sum(rate(metrics_governor_fastqueue_inmemory_flushes[5m]))",
+          "legendFormat": "Memory Flushes/s"
         }
       ]
     },
@@ -1869,7 +1869,7 @@
           },
           "mappings": [],
           "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "Bps"
+          "unit": "ops"
         }
       },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 113 },
@@ -1878,17 +1878,21 @@
         "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
-      "title": "Write Throughput",
-      "description": "Original vs compressed bytes written per second",
+      "title": "Queue Throughput",
+      "description": "Queue push, drop, and retry rates per second",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(rate(metrics_governor_queue_bytes_written_total[5m]))",
-          "legendFormat": "Original"
+          "expr": "sum(rate(metrics_governor_queue_push_total[5m]))",
+          "legendFormat": "Push/s"
         },
         {
-          "expr": "sum(rate(metrics_governor_queue_bytes_compressed_total[5m]))",
-          "legendFormat": "Compressed"
+          "expr": "sum(rate(metrics_governor_queue_retry_total[5m]))",
+          "legendFormat": "Retry/s"
+        },
+        {
+          "expr": "sum(rate(metrics_governor_queue_retry_success_total[5m]))",
+          "legendFormat": "Retry Success/s"
         }
       ]
     },
@@ -1902,11 +1906,11 @@
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.5 },
-              { "color": "red", "value": 0.9 }
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 100 }
             ]
           },
-          "unit": "percentunit"
+          "unit": "short"
         }
       },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 113 },
@@ -1919,13 +1923,13 @@
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "textMode": "auto"
       },
-      "title": "Space Savings",
-      "description": "Disk space saved by compression (1 - ratio)",
+      "title": "Queue Drops by Reason",
+      "description": "Queue drops by reason (full, disk_full, etc.)",
       "type": "stat",
       "targets": [
         {
-          "expr": "1 - metrics_governor_queue_compression_ratio",
-          "legendFormat": "Savings"
+          "expr": "sum by (reason) (increase(metrics_governor_queue_dropped_total[5m]))",
+          "legendFormat": "{{reason}}"
         }
       ]
     },
