@@ -235,9 +235,156 @@
       ]
     },
     {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 1000 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 5 },
+      "id": 8,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Dropped/s",
+      "description": "Datapoints per second being dropped due to limits enforcement",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(metrics_governor_limit_datapoints_dropped_total[1m]))",
+          "legendFormat": "Dropped/s"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "orange", "value": 5 },
+              { "color": "red", "value": 10 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 5 },
+      "id": 9,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Drop Rate %",
+      "description": "Percentage of datapoints being dropped (dropped / (dropped + passed))",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "100 * sum(rate(metrics_governor_limit_datapoints_dropped_total[5m])) / (sum(rate(metrics_governor_limit_datapoints_dropped_total[5m])) + sum(rate(metrics_governor_limit_datapoints_passed_total[5m])))",
+          "legendFormat": "Drop %"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 5 },
       "id": 10,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Exported/s",
+      "description": "Datapoints per second successfully exported to backend",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(metrics_governor_otlp_export_datapoints_total[1m]))",
+          "legendFormat": "Exported/s"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 10 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 5 },
+      "id": 10001,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Groups Dropped",
+      "description": "Number of label groups currently being dropped by adaptive limiting",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(metrics_governor_rule_dropped_groups_total)",
+          "legendFormat": "Groups"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "id": 10002,
       "panels": [],
       "title": "OTLP Throughput",
       "type": "row"
@@ -1077,10 +1224,110 @@
           },
           "mappings": [],
           "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "short"
+          "unit": "percent"
         }
       },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 49 },
+      "id": 10003,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Drop Rate % Over Time",
+      "description": "Percentage of datapoints dropped over time - effective savings from limits",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "100 * sum(rate(metrics_governor_limit_datapoints_dropped_total[5m])) / (sum(rate(metrics_governor_limit_datapoints_dropped_total[5m])) + sum(rate(metrics_governor_limit_datapoints_passed_total[5m])))",
+          "legendFormat": "Total Drop Rate %"
+        },
+        {
+          "expr": "100 * sum by (rule) (rate(metrics_governor_limit_datapoints_dropped_total[5m])) / (sum by (rule) (rate(metrics_governor_limit_datapoints_dropped_total[5m])) + sum by (rule) (rate(metrics_governor_limit_datapoints_passed_total[5m])))",
+          "legendFormat": "{{rule}} Drop Rate %"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 49 },
+      "id": 10004,
+      "options": {
+        "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Total Dropped Datapoints",
+      "description": "Cumulative datapoints dropped by rule - shows total savings",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(metrics_governor_limit_datapoints_dropped_total)",
+          "legendFormat": "Total Dropped"
+        },
+        {
+          "expr": "sum by (rule) (metrics_governor_limit_datapoints_dropped_total)",
+          "legendFormat": "{{rule}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 57 },
       "id": 23,
       "options": {
         "legend": { "calcs": ["last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
