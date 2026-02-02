@@ -29,6 +29,15 @@ var knownMetrics = []string{
 	"metrics_governor_prw_export_errors_total",
 	"metrics_governor_prw_bytes_total",
 
+	// PRW export metrics (exporter/prw_exporter.go)
+	"metrics_governor_prw_export_requests_total",
+	"metrics_governor_prw_export_timeseries_total",
+	"metrics_governor_prw_export_samples_total",
+	"metrics_governor_prw_export_bytes_total",
+	"metrics_governor_prw_retry_failure_total",
+	"metrics_governor_prw_retry_total",
+	"metrics_governor_prw_retry_success_total",
+
 	// OTLP stats (stats.go)
 	"metrics_governor_otlp_bytes_total",
 

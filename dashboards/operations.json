@@ -441,7 +441,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "PRW Timeseries & Batches",
-      "description": "PRW unique timeseries, batch throughput and export errors",
+      "description": "PRW unique timeseries, batch throughput and export errors. Shows the flow of timeseries through the PRW pipeline. Compare received vs sent to identify drops. Export errors indicate backend connectivity issues.",
       "type": "timeseries",
       "targets": [
         {
@@ -463,8 +463,256 @@
       ]
     },
     {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "network" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "timeout" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "server_error" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "auth" }, "properties": [{ "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "rate_limit" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "id": 115,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "sum"], "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "PRW Export Errors by Type",
+      "description": "Breakdown of PRW export errors by error type (stacked). Error types help identify root cause:\n\n- **network**: Connection refused, DNS failures, connection reset - check network connectivity and backend availability\n- **timeout**: Request timeouts - increase exporter timeout or check backend latency\n- **server_error**: 5xx HTTP status - backend is overloaded or failing\n- **auth**: 401/403 status - check credentials and permissions\n- **rate_limit**: 429 status - backend is rate limiting, reduce send rate\n- **client_error**: 4xx status (except auth/rate_limit) - check request format\n- **unknown**: Unclassified errors - check logs for details",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (error_type) (rate(metrics_governor_prw_export_errors_total[5m]))",
+          "legendFormat": "{{error_type}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "network" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "timeout" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "server_error" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "id": 116,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "sum"], "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "PRW Retry Failures by Type",
+      "description": "Breakdown of PRW queue retry failures by error type (stacked). These are errors that occurred during retry attempts from the PRW queue.\n\nHigh values indicate the backend is consistently failing. Combined with circuit breaker state, this helps understand:\n- If retries are being attempted (circuit closed/half-open)\n- What types of errors are causing failures\n- Whether the backend is recovering or still unhealthy",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (error_type) (rate(metrics_governor_prw_retry_failure_total[5m]))",
+          "legendFormat": "{{error_type}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 31 },
+      "id": 117,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "PRW Samples Exported/s",
+      "description": "Rate of PRW samples/datapoints successfully exported to the backend. This metric tracks actual samples (not timeseries) that were accepted by the backend without errors.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(metrics_governor_prw_export_samples_total[1m]))",
+          "legendFormat": "Samples/s"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 10 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 31 },
+      "id": 118,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "PRW Export Errors/s",
+      "description": "Total PRW export error rate across all error types. High values indicate export failures. Check 'PRW Export Errors by Type' panel for breakdown of error causes.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(metrics_governor_prw_export_errors_total[1m]))",
+          "legendFormat": "Errors/s"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "green", "value": 90 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 31 },
+      "id": 119,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "PRW Retry Success Rate",
+      "description": "Percentage of PRW queue retries that succeed. Formula: retries_success / (retries_success + retries_failure) * 100.\n\nValues:\n- Green (>90%): Backend is healthy, occasional failures are expected\n- Yellow (50-90%): Backend is struggling, check for issues\n- Red (<50%): Backend is unhealthy, most retries fail",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "100 * sum(rate(metrics_governor_prw_retry_success_total[5m])) / clamp_min(sum(rate(metrics_governor_prw_retry_success_total[5m])) + sum(rate(metrics_governor_prw_retry_failure_total[5m])), 1)",
+          "legendFormat": "Success Rate"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 31 },
+      "id": 120,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "PRW Timeseries Exported/s",
+      "description": "Rate of PRW timeseries successfully exported. This counts unique timeseries per export request, not individual samples.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(metrics_governor_prw_export_timeseries_total[1m]))",
+          "legendFormat": "Timeseries/s"
+        }
+      ]
+    },
+    {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
       "id": 110,
       "panels": [],
       "title": "Bytes & Throughput",

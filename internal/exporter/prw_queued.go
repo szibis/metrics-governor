@@ -225,6 +225,8 @@ func (qe *PRWQueuedExporter) processQueue() bool {
 	entry := qe.queue[0]
 	qe.mu.Unlock()
 
+	prwRetryTotal.Inc()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -233,6 +235,10 @@ func (qe *PRWQueuedExporter) processQueue() bool {
 		if qe.circuitBreaker != nil {
 			qe.circuitBreaker.RecordFailure()
 		}
+
+		// Classify error for metrics
+		errType := classifyPRWError(err)
+		prwRetryFailureTotal.WithLabelValues(string(errType)).Inc()
 
 		if !IsPRWRetryableError(err) {
 			// Non-retryable error, remove from queue
@@ -243,6 +249,7 @@ func (qe *PRWQueuedExporter) processQueue() bool {
 			qe.mu.Unlock()
 			logging.Error("PRW retry failed with non-retryable error, removing from queue", logging.F(
 				"error", err.Error(),
+				"error_type", string(errType),
 				"timeseries", len(entry.req.Timeseries),
 			))
 			return false
@@ -258,6 +265,7 @@ func (qe *PRWQueuedExporter) processQueue() bool {
 
 		logging.Info("PRW retry failed", logging.F(
 			"error", err.Error(),
+			"error_type", string(errType),
 			"timeseries", len(entry.req.Timeseries),
 			"queue_size", queueSize,
 			"circuit_state", qe.getCircuitState(),
@@ -265,10 +273,11 @@ func (qe *PRWQueuedExporter) processQueue() bool {
 		return false
 	}
 
-	// Success - record with circuit breaker
+	// Success - record with circuit breaker and metrics
 	if qe.circuitBreaker != nil {
 		qe.circuitBreaker.RecordSuccess()
 	}
+	prwRetrySuccessTotal.Inc()
 
 	// Remove from queue
 	qe.mu.Lock()
@@ -282,6 +291,44 @@ func (qe *PRWQueuedExporter) processQueue() bool {
 		"retries", entry.retries,
 	))
 	return true
+}
+
+// classifyPRWError categorizes a PRW error for metrics.
+func classifyPRWError(err error) ErrorType {
+	if err == nil {
+		return ErrorTypeUnknown
+	}
+
+	// Check for PRW-specific error types
+	if clientErr, ok := err.(*PRWClientError); ok {
+		return classifyHTTPStatusCode(clientErr.StatusCode)
+	}
+	if serverErr, ok := err.(*PRWServerError); ok {
+		return classifyHTTPStatusCode(serverErr.StatusCode)
+	}
+
+	// Fall back to generic error classification
+	errStr := err.Error()
+
+	// Check for timeout patterns
+	if containsStr(errStr, "timeout") ||
+		containsStr(errStr, "deadline exceeded") ||
+		containsStr(errStr, "context deadline") {
+		return ErrorTypeTimeout
+	}
+
+	// Check for network patterns
+	if containsStr(errStr, "connection refused") ||
+		containsStr(errStr, "no such host") ||
+		containsStr(errStr, "network is unreachable") ||
+		containsStr(errStr, "connection reset") ||
+		containsStr(errStr, "broken pipe") ||
+		containsStr(errStr, "EOF") ||
+		containsStr(errStr, "i/o timeout") {
+		return ErrorTypeNetwork
+	}
+
+	return ErrorTypeUnknown
 }
 
 // getCircuitState returns the current circuit breaker state as a string.

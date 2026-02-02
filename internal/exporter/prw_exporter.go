@@ -10,12 +10,74 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/szibis/metrics-governor/internal/auth"
 	"github.com/szibis/metrics-governor/internal/compression"
 	"github.com/szibis/metrics-governor/internal/prw"
 	tlspkg "github.com/szibis/metrics-governor/internal/tls"
 	"golang.org/x/net/http2"
 )
+
+var (
+	// prwExportRequestsTotal tracks the number of PRW export requests
+	prwExportRequestsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_prw_export_requests_total",
+		Help: "Total number of PRW export requests",
+	})
+
+	// prwExportErrorsTotal tracks the number of PRW export errors by type
+	prwExportErrorsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "metrics_governor_prw_export_errors_total",
+		Help: "Total number of PRW export errors by error type",
+	}, []string{"error_type"})
+
+	// prwExportTimeseriesTotal tracks the number of timeseries exported
+	prwExportTimeseriesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_prw_export_timeseries_total",
+		Help: "Total number of timeseries exported via PRW",
+	})
+
+	// prwExportSamplesTotal tracks the number of samples/datapoints exported
+	prwExportSamplesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_prw_export_samples_total",
+		Help: "Total number of samples/datapoints exported via PRW",
+	})
+
+	// prwExportBytesTotal tracks bytes sent to PRW backend
+	prwExportBytesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "metrics_governor_prw_export_bytes_total",
+		Help: "Total bytes exported to PRW backend",
+	}, []string{"compression"})
+
+	// prwRetryFailureTotal tracks PRW queue retry failures by error type
+	prwRetryFailureTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "metrics_governor_prw_retry_failure_total",
+		Help: "Total number of PRW retry failures by error type",
+	}, []string{"error_type"})
+
+	// prwRetryTotal tracks total PRW retry attempts
+	prwRetryTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_prw_retry_total",
+		Help: "Total number of PRW retry attempts",
+	})
+
+	// prwRetrySuccessTotal tracks successful PRW retries
+	prwRetrySuccessTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_prw_retry_success_total",
+		Help: "Total number of successful PRW retries",
+	})
+)
+
+func init() {
+	prometheus.MustRegister(prwExportRequestsTotal)
+	prometheus.MustRegister(prwExportErrorsTotal)
+	prometheus.MustRegister(prwExportTimeseriesTotal)
+	prometheus.MustRegister(prwExportSamplesTotal)
+	prometheus.MustRegister(prwExportBytesTotal)
+	prometheus.MustRegister(prwRetryFailureTotal)
+	prometheus.MustRegister(prwRetryTotal)
+	prometheus.MustRegister(prwRetrySuccessTotal)
+}
 
 // PRWExporterConfig holds PRW exporter configuration.
 type PRWExporterConfig struct {
@@ -192,6 +254,10 @@ func (e *PRWExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 		return nil
 	}
 
+	// Count timeseries and samples for metrics
+	timeseriesCount := len(req.Timeseries)
+	samplesCount := countPRWSamples(req)
+
 	// Apply extra labels if configured
 	if len(e.extraLabels) > 0 {
 		req = e.applyExtraLabels(req)
@@ -229,9 +295,13 @@ func (e *PRWExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 		httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "2.0.0")
 	}
 
+	prwExportRequestsTotal.Inc()
+
 	// Send request
 	resp, err := e.httpClient.Do(httpReq)
 	if err != nil {
+		errType := classifyError(err)
+		prwExportErrorsTotal.WithLabelValues(string(errType)).Inc()
 		return fmt.Errorf("failed to send PRW request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -241,6 +311,9 @@ func (e *PRWExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 
 	// Check response status
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		errType := classifyHTTPStatusCode(resp.StatusCode)
+		prwExportErrorsTotal.WithLabelValues(string(errType)).Inc()
+
 		// 4xx errors should not be retried
 		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
 			return &PRWClientError{
@@ -255,7 +328,22 @@ func (e *PRWExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 		}
 	}
 
+	// Track successful export metrics
+	prwExportTimeseriesTotal.Add(float64(timeseriesCount))
+	prwExportSamplesTotal.Add(float64(samplesCount))
+	prwExportBytesTotal.WithLabelValues(string(e.compression)).Add(float64(len(compressedBody)))
+
 	return nil
+}
+
+// countPRWSamples counts the total number of samples in a PRW WriteRequest.
+func countPRWSamples(req *prw.WriteRequest) int64 {
+	var count int64
+	for _, ts := range req.Timeseries {
+		count += int64(len(ts.Samples))
+		count += int64(len(ts.Histograms))
+	}
+	return count
 }
 
 // effectiveVersion returns the effective PRW version for a request.
