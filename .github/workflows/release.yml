@@ -78,6 +78,7 @@ jobs:
           echo "Building version: ${VERSION_NUM}"
 
           GOOS=darwin GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-darwin-arm64 ./cmd/metrics-governor
+          GOOS=darwin GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-darwin-amd64 ./cmd/metrics-governor
           GOOS=linux GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-linux-arm64 ./cmd/metrics-governor
           GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-linux-amd64 ./cmd/metrics-governor
 
@@ -87,6 +88,7 @@ jobs:
 
           cd bin
           tar -czvf metrics-governor-${VERSION}-darwin-arm64.tar.gz metrics-governor-darwin-arm64
+          tar -czvf metrics-governor-${VERSION}-darwin-amd64.tar.gz metrics-governor-darwin-amd64
           tar -czvf metrics-governor-${VERSION}-linux-arm64.tar.gz metrics-governor-linux-arm64
           tar -czvf metrics-governor-${VERSION}-linux-amd64.tar.gz metrics-governor-linux-amd64
           sha256sum metrics-governor-*.tar.gz > checksums.txt

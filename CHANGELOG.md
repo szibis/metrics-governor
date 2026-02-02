@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-02-02
+
+### Changed
+
+- Move performance optimization documentation from README to dedicated `docs/performance.md` (#22)
+
+### CI
+
+- Fix auto-release workflow to create PR for version bumps (works with branch protection)
+- Add darwin-amd64 (Intel Mac) binary to release artifacts
+
 ## [0.9.0] - 2026-02-02
 
 ### Added
