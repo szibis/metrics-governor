@@ -63,6 +63,10 @@ func DefaultConfig() Config {
 // This is set by main.go based on CLI flags.
 var GlobalConfig = DefaultConfig()
 
+// GlobalTrackerStore is the application-wide persistent tracker store.
+// This is set by main.go if persistence is enabled.
+var GlobalTrackerStore *TrackerStore
+
 // NewTracker creates a tracker based on the provided config.
 func NewTracker(cfg Config) Tracker {
 	if cfg.Mode == ModeExact {
@@ -72,6 +76,17 @@ func NewTracker(cfg Config) Tracker {
 }
 
 // NewTrackerFromGlobal creates a tracker based on global config.
+// If persistence is enabled, returns a persistent tracker.
 func NewTrackerFromGlobal() Tracker {
 	return NewTracker(GlobalConfig)
+}
+
+// NewPersistentTrackerFromGlobal creates a persistent tracker if persistence is enabled,
+// otherwise falls back to a regular tracker.
+func NewPersistentTrackerFromGlobal(key string) Tracker {
+	if GlobalTrackerStore != nil {
+		return GlobalTrackerStore.GetOrCreate(key)
+	}
+	// Fallback to non-persistent tracker
+	return NewTrackerFromGlobal()
 }
