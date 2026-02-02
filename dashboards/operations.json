@@ -813,16 +813,16 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "OTLP Bytes Rate",
-      "description": "OTLP bytes per second by direction and compression state",
+      "description": "OTLP bytes per second by direction and compression state (includes gRPC wire-level compression)",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"}[1m]))",
-          "legendFormat": "Received (uncompressed)"
+          "expr": "sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[1m]))",
+          "legendFormat": "gRPC Received (decompressed)"
         },
         {
-          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"}[1m]))",
-          "legendFormat": "Received (compressed)"
+          "expr": "sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[1m]))",
+          "legendFormat": "gRPC Received (wire/compressed)"
         },
         {
           "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m]))",
@@ -883,8 +883,8 @@
           "legendFormat": "PRW Send"
         },
         {
-          "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m]))",
-          "legendFormat": "OTLP Receive"
+          "expr": "sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[5m]))",
+          "legendFormat": "OTLP/gRPC Receive"
         },
         {
           "expr": "sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m]))",
