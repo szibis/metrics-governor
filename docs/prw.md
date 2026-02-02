@@ -6,9 +6,21 @@ metrics-governor supports Prometheus Remote Write (PRW) protocol as a **separate
 
 ## Architecture
 
-```
-OTLP Sources → [OTLP Receiver] → [Buffer/Limits] → [OTLP Exporter] → OTLP Backends
-PRW Sources  → [PRW Receiver]  → [Buffer/Limits] → [PRW Exporter]  → PRW Backends
+```mermaid
+flowchart LR
+    subgraph "OTLP Pipeline"
+        OS[OTLP Sources] --> OR[OTLP Receiver]
+        OR --> OB[Buffer/Limits]
+        OB --> OE[OTLP Exporter]
+        OE --> OBE[OTLP Backends]
+    end
+
+    subgraph "PRW Pipeline"
+        PS[PRW Sources] --> PR[PRW Receiver]
+        PR --> PB[Buffer/Limits]
+        PB --> PE[PRW Exporter]
+        PE --> PBE[PRW Backends]
+    end
 ```
 
 **Important: No Cross-Protocol Conversion**
