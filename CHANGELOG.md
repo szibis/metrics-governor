@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2026-02-02
+
+### Fixed
+
+- Fix floating point comparison in e2e memory stability test (#25)
+
+### CI
+
+- Fix PAT authentication for version bump push (#24)
+
 ## [0.9.2] - 2026-02-02
 
 ### Changed
