@@ -271,6 +271,8 @@ jobs:
           head -20 CHANGELOG.md
 
       - name: Commit and push version updates
+        env:
+          PAT_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
           VERSION="${{ needs.auto-release.outputs.version }}"
 
@@ -285,6 +287,9 @@ jobs:
 
           git add helm/metrics-governor/Chart.yaml CHANGELOG.md
           git commit -m "chore: bump version to $VERSION [skip ci]"
+
+          # Push using PAT to bypass branch protection
+          git remote set-url origin "https://x-access-token:${PAT_TOKEN}@github.com/${{ github.repository }}.git"
           git push origin main
 
           echo "Version files updated and pushed to main"
