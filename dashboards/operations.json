@@ -1202,7 +1202,7 @@
               },
               {
                 "color": "red",
-                "value": 1
+                "value": 0.001
               }
             ]
           },
@@ -1259,12 +1259,8 @@
                 "value": null
               },
               {
-                "color": "yellow",
-                "value": 100
-              },
-              {
                 "color": "red",
-                "value": 1000
+                "value": 0.001
               }
             ]
           },
@@ -1321,16 +1317,8 @@
                 "value": null
               },
               {
-                "color": "yellow",
-                "value": 1
-              },
-              {
-                "color": "orange",
-                "value": 5
-              },
-              {
                 "color": "red",
-                "value": 10
+                "value": 0.001
               }
             ]
           },
@@ -1441,12 +1429,8 @@
                 "value": null
               },
               {
-                "color": "yellow",
-                "value": 1
-              },
-              {
                 "color": "red",
-                "value": 10
+                "value": 0.001
               }
             ]
           },
