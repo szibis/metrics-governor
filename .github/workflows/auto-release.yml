@@ -233,6 +233,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
 
       - name: Update version files
         env:
@@ -276,25 +277,18 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # Check if there are changes to commit
+          if git diff --quiet helm/metrics-governor/Chart.yaml CHANGELOG.md; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
           git add helm/metrics-governor/Chart.yaml CHANGELOG.md
           git commit -m "chore: bump version to $VERSION [skip ci]"
           git push origin main
 
           echo "Version files updated and pushed to main"
 
-  # Trigger the release workflow to build binaries and Docker images
-  trigger-release-build:
-    needs: [auto-release, update-version-files]
-    if: needs.auto-release.outputs.released == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger release workflow
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "Waiting for tag to propagate..."
-          sleep 5
-
-          VERSION="${{ needs.auto-release.outputs.version }}"
-          echo "Release workflow will be triggered by the tag push for $VERSION"
-          echo "The release.yml workflow triggers on v* tags automatically."
+  # Note: release.yml workflow is triggered automatically by the tag push
+  # It builds binaries (darwin-arm64, darwin-amd64, linux-arm64, linux-amd64),
+  # packages Helm chart, and uploads all artifacts to the GitHub release
