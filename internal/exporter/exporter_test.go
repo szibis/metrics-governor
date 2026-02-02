@@ -377,6 +377,130 @@ func TestUnsupportedProtocol(t *testing.T) {
 	}
 }
 
+func TestHTTPExporterCustomDefaultPath(t *testing.T) {
+	var receivedPath string
+	// Create mock HTTP server that accepts requests at custom path
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+
+		resp := &colmetricspb.ExportMetricsServiceResponse{}
+		respBytes, _ := proto.Marshal(resp)
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.Write(respBytes)
+	}))
+	defer server.Close()
+
+	// Extract host:port from server URL (without scheme)
+	serverURL := server.URL
+	// httptest.NewServer returns http://127.0.0.1:PORT format
+
+	cfg := Config{
+		Endpoint:    serverURL, // Has scheme but no path
+		Protocol:    ProtocolHTTP,
+		Insecure:    true,
+		Timeout:     5 * time.Second,
+		DefaultPath: "/opentelemetry/v1/metrics", // VictoriaMetrics path
+	}
+
+	exp, err := New(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("failed to create exporter: %v", err)
+	}
+	defer exp.Close()
+
+	// Verify endpoint was built with custom path
+	if exp.httpEndpoint != serverURL+"/opentelemetry/v1/metrics" {
+		t.Errorf("expected endpoint '%s/opentelemetry/v1/metrics', got '%s'", serverURL, exp.httpEndpoint)
+	}
+
+	// Export and verify the path received
+	req := &colmetricspb.ExportMetricsServiceRequest{
+		ResourceMetrics: []*metricspb.ResourceMetrics{
+			{
+				ScopeMetrics: []*metricspb.ScopeMetrics{
+					{
+						Metrics: []*metricspb.Metric{
+							{Name: "test.metric"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err = exp.Export(context.Background(), req)
+	if err != nil {
+		t.Fatalf("export failed: %v", err)
+	}
+
+	if receivedPath != "/opentelemetry/v1/metrics" {
+		t.Errorf("expected request path '/opentelemetry/v1/metrics', got '%s'", receivedPath)
+	}
+}
+
+func TestHTTPExporterDefaultPathNotAppliedWhenEndpointHasPath(t *testing.T) {
+	var receivedPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+
+		resp := &colmetricspb.ExportMetricsServiceResponse{}
+		respBytes, _ := proto.Marshal(resp)
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.Write(respBytes)
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		Endpoint:    server.URL + "/already/has/path", // Has explicit path
+		Protocol:    ProtocolHTTP,
+		Insecure:    true,
+		Timeout:     5 * time.Second,
+		DefaultPath: "/should/not/be/used", // Should be ignored
+	}
+
+	exp, err := New(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("failed to create exporter: %v", err)
+	}
+	defer exp.Close()
+
+	// Verify endpoint kept original path
+	if exp.httpEndpoint != server.URL+"/already/has/path" {
+		t.Errorf("expected endpoint '%s/already/has/path', got '%s'", server.URL, exp.httpEndpoint)
+	}
+
+	req := &colmetricspb.ExportMetricsServiceRequest{}
+	err = exp.Export(context.Background(), req)
+	if err != nil {
+		t.Fatalf("export failed: %v", err)
+	}
+
+	if receivedPath != "/already/has/path" {
+		t.Errorf("expected request path '/already/has/path', got '%s'", receivedPath)
+	}
+}
+
+func TestHTTPExporterEmptyDefaultPathUsesStandard(t *testing.T) {
+	cfg := Config{
+		Endpoint:    "localhost:4318", // No path
+		Protocol:    ProtocolHTTP,
+		Insecure:    true,
+		Timeout:     5 * time.Second,
+		DefaultPath: "", // Empty - should use /v1/metrics
+	}
+
+	exp, err := New(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("failed to create exporter: %v", err)
+	}
+	defer exp.Close()
+
+	// Verify endpoint uses standard path
+	if exp.httpEndpoint != "http://localhost:4318/v1/metrics" {
+		t.Errorf("expected endpoint 'http://localhost:4318/v1/metrics', got '%s'", exp.httpEndpoint)
+	}
+}
+
 // readAll reads all data from r and returns it.
 func readAll(r interface{ Read([]byte) (int, error) }) ([]byte, error) {
 	var result []byte

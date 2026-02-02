@@ -442,6 +442,93 @@ func TestPRWReceiver_InvalidDecompression(t *testing.T) {
 	}
 }
 
+func TestPRWReceiver_CustomPath(t *testing.T) {
+	buf := &mockPRWBuffer{}
+	cfg := PRWConfig{
+		Addr: ":0",
+		Path: "/custom/prw/endpoint",
+	}
+	receiver := NewPRWWithConfig(cfg, buf)
+
+	req := &prw.WriteRequest{
+		Timeseries: []prw.TimeSeries{
+			{
+				Labels:  []prw.Label{{Name: "__name__", Value: "test"}},
+				Samples: []prw.Sample{{Value: 1.0, Timestamp: 1000}},
+			},
+		},
+	}
+
+	body, _ := req.Marshal()
+	compressed, _ := compression.Compress(body, compression.Config{Type: compression.TypeSnappy})
+
+	// Should work on custom path
+	httpReq := httptest.NewRequest(http.MethodPost, "/custom/prw/endpoint", bytes.NewReader(compressed))
+	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	httpReq.Header.Set("Content-Encoding", "snappy")
+
+	w := httptest.NewRecorder()
+	receiver.server.Handler.ServeHTTP(w, httpReq)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("Custom path: status code = %d, want %d", w.Code, http.StatusNoContent)
+	}
+
+	// Should NOT work on default paths when custom path is set
+	httpReq2 := httptest.NewRequest(http.MethodPost, "/api/v1/write", bytes.NewReader(compressed))
+	httpReq2.Header.Set("Content-Type", "application/x-protobuf")
+	httpReq2.Header.Set("Content-Encoding", "snappy")
+
+	w2 := httptest.NewRecorder()
+	receiver.server.Handler.ServeHTTP(w2, httpReq2)
+
+	if w2.Code != http.StatusNotFound {
+		t.Errorf("Default path with custom config: status code = %d, want %d", w2.Code, http.StatusNotFound)
+	}
+}
+
+func TestPRWReceiver_DefaultPathsBothRegistered(t *testing.T) {
+	buf := &mockPRWBuffer{}
+	// When Path is empty, both /api/v1/write and /write should be registered
+	receiver := NewPRW(":0", buf)
+
+	req := &prw.WriteRequest{
+		Timeseries: []prw.TimeSeries{
+			{
+				Labels:  []prw.Label{{Name: "__name__", Value: "test"}},
+				Samples: []prw.Sample{{Value: 1.0, Timestamp: 1000}},
+			},
+		},
+	}
+
+	body, _ := req.Marshal()
+	compressed, _ := compression.Compress(body, compression.Config{Type: compression.TypeSnappy})
+
+	// Test /api/v1/write
+	httpReq1 := httptest.NewRequest(http.MethodPost, "/api/v1/write", bytes.NewReader(compressed))
+	httpReq1.Header.Set("Content-Type", "application/x-protobuf")
+	httpReq1.Header.Set("Content-Encoding", "snappy")
+
+	w1 := httptest.NewRecorder()
+	receiver.server.Handler.ServeHTTP(w1, httpReq1)
+
+	if w1.Code != http.StatusNoContent {
+		t.Errorf("/api/v1/write: status code = %d, want %d", w1.Code, http.StatusNoContent)
+	}
+
+	// Test /write (VictoriaMetrics shorthand)
+	httpReq2 := httptest.NewRequest(http.MethodPost, "/write", bytes.NewReader(compressed))
+	httpReq2.Header.Set("Content-Type", "application/x-protobuf")
+	httpReq2.Header.Set("Content-Encoding", "snappy")
+
+	w2 := httptest.NewRecorder()
+	receiver.server.Handler.ServeHTTP(w2, httpReq2)
+
+	if w2.Code != http.StatusNoContent {
+		t.Errorf("/write: status code = %d, want %d", w2.Code, http.StatusNoContent)
+	}
+}
+
 func TestItoa(t *testing.T) {
 	tests := []struct {
 		n    int

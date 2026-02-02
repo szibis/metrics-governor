@@ -22,6 +22,7 @@ receiver:
     address: ":4317"
   http:
     address: ":4318"
+    path: "/v1/metrics"  # Custom path for OTLP HTTP receiver
     server:
       max_request_body_size: 10485760  # 10MB
       read_header_timeout: 30s
@@ -34,6 +35,7 @@ receiver:
 exporter:
   endpoint: "otel-collector:4317"
   protocol: "grpc"
+  default_path: "/v1/metrics"  # Default path for HTTP exporter (when endpoint has no path)
   insecure: false
   timeout: 60s
   tls:
@@ -61,8 +63,10 @@ limits:
 prw:
   receiver:
     address: ":9090"
+    path: "/api/v1/write"  # Custom PRW receiver path (empty = register both /api/v1/write and /write)
   exporter:
     endpoint: "http://victoriametrics:8428"
+    default_path: "/api/v1/write"  # Default PRW exporter path (when endpoint has no path)
 ```
 
 See [examples/config.yaml](../examples/config.yaml) for a complete example with all options documented.
@@ -91,6 +95,7 @@ All settings can also be configured via CLI flags.
 |------|---------|-------------|
 | `-grpc-listen` | `:4317` | gRPC receiver listen address |
 | `-http-listen` | `:4318` | HTTP receiver listen address |
+| `-http-receiver-path` | `/v1/metrics` | URL path for HTTP receiver |
 | `-receiver-tls-enabled` | `false` | Enable TLS for receivers |
 | `-receiver-tls-cert` | | Path to server certificate file |
 | `-receiver-tls-key` | | Path to server private key file |
@@ -107,6 +112,7 @@ All settings can also be configured via CLI flags.
 |------|---------|-------------|
 | `-exporter-endpoint` | `localhost:4317` | OTLP exporter endpoint |
 | `-exporter-protocol` | `grpc` | Exporter protocol: `grpc` or `http` |
+| `-exporter-default-path` | `/v1/metrics` | Default URL path for HTTP exporter (when endpoint has no path) |
 | `-exporter-insecure` | `true` | Use insecure connection for exporter |
 | `-exporter-timeout` | `30s` | Exporter request timeout |
 | `-exporter-tls-enabled` | `false` | Enable custom TLS config for exporter |
@@ -172,6 +178,7 @@ The queue uses a high-performance FastQueue implementation inspired by VictoriaM
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-prw-listen` | | PRW receiver address (empty = disabled) |
+| `-prw-receiver-path` | `/api/v1/write` | URL path for PRW receiver (empty = register both `/api/v1/write` and `/write`) |
 | `-prw-receiver-version` | `auto` | Protocol version: `1.0`, `2.0`, or `auto` |
 | `-prw-receiver-tls-enabled` | `false` | Enable TLS for PRW receiver |
 | `-prw-receiver-tls-cert` | | Certificate file path |
@@ -184,6 +191,7 @@ The queue uses a high-performance FastQueue implementation inspired by VictoriaM
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-prw-exporter-endpoint` | | PRW backend URL (empty = disabled) |
+| `-prw-exporter-default-path` | `/api/v1/write` | Default URL path for PRW exporter (when endpoint has no path) |
 | `-prw-exporter-version` | `auto` | Protocol version: `1.0`, `2.0`, or `auto` |
 | `-prw-exporter-timeout` | `30s` | Request timeout |
 | `-prw-exporter-tls-enabled` | `false` | Enable TLS |
@@ -333,6 +341,10 @@ metrics-governor -limits-config /etc/metrics-governor/limits.yaml -limits-dry-ru
 
 # Enable Prometheus Remote Write pipeline
 metrics-governor -prw-listen :9090 -prw-exporter-endpoint http://victoriametrics:8428
+
+# Export OTLP to VictoriaMetrics with custom path
+metrics-governor -exporter-endpoint http://victoriametrics:8428 -exporter-protocol http \
+  -exporter-default-path /opentelemetry/v1/metrics
 
 # Run both OTLP and PRW pipelines
 metrics-governor \

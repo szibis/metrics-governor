@@ -399,3 +399,114 @@ func TestGRPCExportMultipleMetrics(t *testing.T) {
 		t.Error("expected non-nil response")
 	}
 }
+
+func TestHTTPReceiverCustomPath(t *testing.T) {
+	buf := newTestBuffer()
+
+	cfg := HTTPConfig{
+		Addr: ":4318",
+		Path: "/custom/otlp/metrics",
+	}
+
+	r := NewHTTPWithConfig(cfg, buf)
+
+	// Create a test request
+	exportReq := &colmetricspb.ExportMetricsServiceRequest{
+		ResourceMetrics: []*metricspb.ResourceMetrics{
+			{
+				ScopeMetrics: []*metricspb.ScopeMetrics{
+					{
+						Metrics: []*metricspb.Metric{
+							{Name: "custom.path.test.metric"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	body, err := proto.Marshal(exportReq)
+	if err != nil {
+		t.Fatalf("failed to marshal request: %v", err)
+	}
+
+	// Request to custom path should work
+	req := httptest.NewRequest(http.MethodPost, "/custom/otlp/metrics", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-protobuf")
+
+	rec := httptest.NewRecorder()
+	r.server.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("custom path: expected status 200, got %d", rec.Code)
+	}
+
+	// Request to default path should 404 when custom path is set
+	req2 := httptest.NewRequest(http.MethodPost, "/v1/metrics", bytes.NewReader(body))
+	req2.Header.Set("Content-Type", "application/x-protobuf")
+
+	rec2 := httptest.NewRecorder()
+	r.server.Handler.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusNotFound {
+		t.Errorf("default path with custom config: expected status 404, got %d", rec2.Code)
+	}
+}
+
+func TestHTTPReceiverDefaultPath(t *testing.T) {
+	buf := newTestBuffer()
+
+	// When Path is empty, default /v1/metrics should be used
+	r := NewHTTP(":4318", buf)
+
+	exportReq := &colmetricspb.ExportMetricsServiceRequest{}
+	body, _ := proto.Marshal(exportReq)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/metrics", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-protobuf")
+
+	rec := httptest.NewRecorder()
+	r.server.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("default path: expected status 200, got %d", rec.Code)
+	}
+}
+
+func TestHTTPReceiverVictoriaMetricsPath(t *testing.T) {
+	buf := newTestBuffer()
+
+	cfg := HTTPConfig{
+		Addr: ":4318",
+		Path: "/opentelemetry/v1/metrics",
+	}
+
+	r := NewHTTPWithConfig(cfg, buf)
+
+	exportReq := &colmetricspb.ExportMetricsServiceRequest{
+		ResourceMetrics: []*metricspb.ResourceMetrics{
+			{
+				ScopeMetrics: []*metricspb.ScopeMetrics{
+					{
+						Metrics: []*metricspb.Metric{
+							{Name: "vm.path.test"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	body, _ := proto.Marshal(exportReq)
+
+	// VictoriaMetrics OTLP path
+	req := httptest.NewRequest(http.MethodPost, "/opentelemetry/v1/metrics", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-protobuf")
+
+	rec := httptest.NewRecorder()
+	r.server.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("VictoriaMetrics OTLP path: expected status 200, got %d", rec.Code)
+	}
+}

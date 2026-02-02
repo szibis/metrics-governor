@@ -1273,6 +1273,185 @@ func TestE2E_RapidBackendFlapping(t *testing.T) {
 	}
 }
 
+// TestE2E_HTTPReceiver_CustomPath tests HTTP receiver with custom path
+func TestE2E_HTTPReceiver_CustomPath(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Start mock backend
+	backend, backendAddr := startMockGRPCBackend(t)
+	defer backend.Stop()
+
+	// Create exporter
+	exp, err := exporter.New(ctx, exporter.Config{
+		Endpoint: backendAddr,
+		Insecure: true,
+		Protocol: "grpc",
+		Timeout:  5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create exporter: %v", err)
+	}
+	defer exp.Close()
+
+	// Create components
+	statsCollector := stats.NewCollector(nil)
+	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true)
+
+	// Create buffer
+	buf := buffer.New(1000, 10, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)
+	go buf.Start(ctx)
+
+	// Create HTTP receiver with custom path
+	httpAddr := getFreeAddr(t)
+	httpConfig := receiver.HTTPConfig{
+		Addr: httpAddr,
+		Path: "/custom/metrics/endpoint",
+	}
+	httpReceiver := receiver.NewHTTPWithConfig(httpConfig, buf)
+	go httpReceiver.Start()
+	defer httpReceiver.Stop(ctx)
+
+	// Wait for receiver to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Send metrics to custom path
+	req := createTestExportRequest("custom-path-service", "custom-path-metric", 3)
+	data, err := proto.Marshal(req)
+	if err != nil {
+		t.Fatalf("Failed to marshal request: %v", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("http://%s/custom/metrics/endpoint", httpAddr), bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("Failed to create HTTP request: %v", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+
+	httpResp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		t.Fatalf("Failed to send HTTP request: %v", err)
+	}
+	defer httpResp.Body.Close()
+
+	if httpResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(httpResp.Body)
+		t.Fatalf("Expected status 200, got %d: %s", httpResp.StatusCode, string(body))
+	}
+
+	// Verify that default path returns 404
+	httpReq2, _ := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("http://%s/v1/metrics", httpAddr), bytes.NewReader(data))
+	httpReq2.Header.Set("Content-Type", "application/x-protobuf")
+
+	httpResp2, err := http.DefaultClient.Do(httpReq2)
+	if err != nil {
+		t.Fatalf("Failed to send HTTP request to default path: %v", err)
+	}
+	defer httpResp2.Body.Close()
+
+	if httpResp2.StatusCode != http.StatusNotFound {
+		t.Errorf("Expected status 404 for default path when custom path is set, got %d", httpResp2.StatusCode)
+	}
+
+	// Wait for buffer to flush
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify backend received the metrics
+	received := backend.GetReceivedMetrics()
+	if len(received) == 0 {
+		t.Fatal("Backend did not receive any metrics from custom path")
+	}
+
+	t.Log("E2E HTTP custom path test passed")
+}
+
+// TestE2E_HTTPExporter_CustomDefaultPath tests HTTP exporter with custom default path
+func TestE2E_HTTPExporter_CustomDefaultPath(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Start mock HTTP backend that expects custom path
+	var receivedPath string
+	var receivedBody []byte
+	mockServer := http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			receivedPath = r.URL.Path
+			receivedBody, _ = io.ReadAll(r.Body)
+			resp := &colmetrics.ExportMetricsServiceResponse{}
+			respBytes, _ := proto.Marshal(resp)
+			w.Header().Set("Content-Type", "application/x-protobuf")
+			w.Write(respBytes)
+		}),
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to listen: %v", err)
+	}
+	go mockServer.Serve(listener)
+	defer mockServer.Close()
+
+	serverAddr := listener.Addr().String()
+
+	// Create exporter with custom default path
+	exp, err := exporter.New(ctx, exporter.Config{
+		Endpoint:    serverAddr, // No path in endpoint
+		Protocol:    "http",
+		Insecure:    true,
+		Timeout:     5 * time.Second,
+		DefaultPath: "/opentelemetry/v1/metrics", // VictoriaMetrics path
+	})
+	if err != nil {
+		t.Fatalf("Failed to create exporter: %v", err)
+	}
+	defer exp.Close()
+
+	// Create components
+	statsCollector := stats.NewCollector(nil)
+	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true)
+
+	// Create buffer
+	buf := buffer.New(1000, 10, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)
+	go buf.Start(ctx)
+
+	// Create gRPC receiver
+	grpcAddr := getFreeAddr(t)
+	grpcReceiver := receiver.NewGRPC(grpcAddr, buf)
+	go grpcReceiver.Start()
+	defer grpcReceiver.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Send metrics via gRPC
+	conn, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("Failed to connect to receiver: %v", err)
+	}
+	defer conn.Close()
+
+	client := colmetrics.NewMetricsServiceClient(conn)
+	req := createTestExportRequest("custom-exporter-path-service", "test-metric", 5)
+
+	_, err = client.Export(ctx, req)
+	if err != nil {
+		t.Fatalf("Failed to export metrics: %v", err)
+	}
+
+	// Wait for buffer to flush
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify the request was sent to the custom path
+	if receivedPath != "/opentelemetry/v1/metrics" {
+		t.Errorf("Expected request path '/opentelemetry/v1/metrics', got '%s'", receivedPath)
+	}
+
+	if len(receivedBody) == 0 {
+		t.Error("Backend did not receive any data")
+	}
+
+	t.Log("E2E HTTP exporter custom default path test passed")
+}
+
 // Helper to start backend on specific address
 func startMockGRPCBackendOnAddr(t *testing.T, addr string) (*MockGRPCBackend, string) {
 	l, err := net.Listen("tcp", addr)

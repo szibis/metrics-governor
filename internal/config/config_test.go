@@ -440,6 +440,90 @@ func TestExporterConfig(t *testing.T) {
 	}
 }
 
+func TestHTTPReceiverConfigPath(t *testing.T) {
+	cfg := &Config{
+		HTTPListenAddr:   ":4318",
+		HTTPReceiverPath: "/custom/otlp/path",
+	}
+
+	httpCfg := cfg.HTTPReceiverConfig()
+
+	if httpCfg.Path != "/custom/otlp/path" {
+		t.Errorf("expected Path '/custom/otlp/path', got '%s'", httpCfg.Path)
+	}
+}
+
+func TestHTTPReceiverConfigDefaultPath(t *testing.T) {
+	cfg := &Config{
+		HTTPListenAddr: ":4318",
+		// HTTPReceiverPath is empty
+	}
+
+	httpCfg := cfg.HTTPReceiverConfig()
+
+	if httpCfg.Path != "" {
+		t.Errorf("expected empty Path (for default handling), got '%s'", httpCfg.Path)
+	}
+}
+
+func TestExporterConfigDefaultPath(t *testing.T) {
+	cfg := &Config{
+		ExporterEndpoint:    "victoriametrics:8428",
+		ExporterProtocol:    "http",
+		ExporterDefaultPath: "/opentelemetry/v1/metrics",
+	}
+
+	expCfg := cfg.ExporterConfig()
+
+	if expCfg.DefaultPath != "/opentelemetry/v1/metrics" {
+		t.Errorf("expected DefaultPath '/opentelemetry/v1/metrics', got '%s'", expCfg.DefaultPath)
+	}
+}
+
+func TestPRWReceiverConfigPath(t *testing.T) {
+	cfg := &Config{
+		PRWListenAddr:   ":9090",
+		PRWReceiverPath: "/custom/prw/write",
+	}
+
+	prwCfg := cfg.PRWReceiverConfig()
+
+	if prwCfg.Path != "/custom/prw/write" {
+		t.Errorf("expected Path '/custom/prw/write', got '%s'", prwCfg.Path)
+	}
+}
+
+func TestPRWExporterConfigDefaultPath(t *testing.T) {
+	cfg := &Config{
+		PRWExporterEndpoint:    "victoriametrics:8428",
+		PRWExporterDefaultPath: "/api/v1/write",
+	}
+
+	prwExpCfg := cfg.PRWExporterConfig()
+
+	if prwExpCfg.DefaultPath != "/api/v1/write" {
+		t.Errorf("expected DefaultPath '/api/v1/write', got '%s'", prwExpCfg.DefaultPath)
+	}
+}
+
+func TestDefaultConfigPaths(t *testing.T) {
+	cfg := DefaultConfig()
+
+	// Check default paths are set correctly
+	if cfg.HTTPReceiverPath != "/v1/metrics" {
+		t.Errorf("expected HTTPReceiverPath '/v1/metrics' by default, got '%s'", cfg.HTTPReceiverPath)
+	}
+	if cfg.ExporterDefaultPath != "/v1/metrics" {
+		t.Errorf("expected ExporterDefaultPath '/v1/metrics' by default, got '%s'", cfg.ExporterDefaultPath)
+	}
+	if cfg.PRWReceiverPath != "/api/v1/write" {
+		t.Errorf("expected PRWReceiverPath '/api/v1/write' by default, got '%s'", cfg.PRWReceiverPath)
+	}
+	if cfg.PRWExporterDefaultPath != "/api/v1/write" {
+		t.Errorf("expected PRWExporterDefaultPath '/api/v1/write' by default, got '%s'", cfg.PRWExporterDefaultPath)
+	}
+}
+
 func TestQueueConfig(t *testing.T) {
 	cfg := &Config{
 		QueueEnabled:           true,

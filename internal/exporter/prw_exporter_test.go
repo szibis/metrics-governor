@@ -744,6 +744,105 @@ func TestPRWServerError_Error(t *testing.T) {
 	}
 }
 
+func TestPRWExporter_CustomDefaultPath(t *testing.T) {
+	var receivedPath string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	exp, err := NewPRW(context.Background(), PRWExporterConfig{
+		Endpoint:    server.URL, // Has scheme but no path
+		DefaultPath: "/custom/prw/write",
+	})
+	if err != nil {
+		t.Fatalf("NewPRW() error = %v", err)
+	}
+	defer exp.Close()
+
+	// Verify endpoint was built with custom path
+	if exp.endpoint != server.URL+"/custom/prw/write" {
+		t.Errorf("endpoint = %s, want %s/custom/prw/write", exp.endpoint, server.URL)
+	}
+
+	req := &prw.WriteRequest{
+		Timeseries: []prw.TimeSeries{
+			{
+				Labels:  []prw.Label{{Name: "__name__", Value: "test_metric"}},
+				Samples: []prw.Sample{{Value: 1.0, Timestamp: 1000}},
+			},
+		},
+	}
+
+	err = exp.Export(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Export() error = %v", err)
+	}
+
+	if receivedPath != "/custom/prw/write" {
+		t.Errorf("received path = %s, want /custom/prw/write", receivedPath)
+	}
+}
+
+func TestPRWExporter_DefaultPathNotAppliedWhenEndpointHasPath(t *testing.T) {
+	var receivedPath string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	exp, err := NewPRW(context.Background(), PRWExporterConfig{
+		Endpoint:    server.URL + "/explicit/path", // Has explicit path
+		DefaultPath: "/should/not/be/used",
+	})
+	if err != nil {
+		t.Fatalf("NewPRW() error = %v", err)
+	}
+	defer exp.Close()
+
+	// Verify endpoint kept original path
+	if exp.endpoint != server.URL+"/explicit/path" {
+		t.Errorf("endpoint = %s, want %s/explicit/path", exp.endpoint, server.URL)
+	}
+
+	req := &prw.WriteRequest{
+		Timeseries: []prw.TimeSeries{
+			{
+				Labels:  []prw.Label{{Name: "__name__", Value: "test_metric"}},
+				Samples: []prw.Sample{{Value: 1.0, Timestamp: 1000}},
+			},
+		},
+	}
+
+	err = exp.Export(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Export() error = %v", err)
+	}
+
+	if receivedPath != "/explicit/path" {
+		t.Errorf("received path = %s, want /explicit/path", receivedPath)
+	}
+}
+
+func TestPRWExporter_EmptyDefaultPathUsesStandard(t *testing.T) {
+	exp, err := NewPRW(context.Background(), PRWExporterConfig{
+		Endpoint:    "localhost:9090", // No scheme, no path
+		DefaultPath: "",               // Empty - should use /api/v1/write
+	})
+	if err != nil {
+		t.Fatalf("NewPRW() error = %v", err)
+	}
+	defer exp.Close()
+
+	if exp.endpoint != "http://localhost:9090/api/v1/write" {
+		t.Errorf("endpoint = %s, want http://localhost:9090/api/v1/write", exp.endpoint)
+	}
+}
+
 // Benchmarks
 
 func BenchmarkPRWExporter_Export_Snappy(b *testing.B) {
