@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [0.9.5] - 2026-02-02
+
+### Added
+
+- feat(cardinality): add bloom filter state persistence (#34)
+- feat(queue): add resilience features and comprehensive documentation (#30)
+
+### Fixed
+
+- fix(ci): use GitHub API for PR file detection in auto-release (#33)
+- fix(ci): improve release workflow with independent chart versioning (#29)
+
+### Other
+
+- docs: add mermaid diagrams to performance docs and improve README (#32)
+
 ## [0.9.3] - 2026-02-02
 
 ### Fixed
