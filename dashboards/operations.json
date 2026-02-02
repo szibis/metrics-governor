@@ -110,12 +110,8 @@
                 "value": null
               },
               {
-                "color": "#FF9830",
-                "value": 1
-              },
-              {
                 "color": "#F2495C",
-                "value": 10
+                "value": 0.001
               }
             ]
           },
@@ -309,12 +305,8 @@
                 "value": null
               },
               {
-                "color": "#FF9830",
-                "value": 100
-              },
-              {
                 "color": "#F2495C",
-                "value": 1000
+                "value": 0.001
               }
             ]
           },
@@ -370,12 +362,8 @@
                 "value": null
               },
               {
-                "color": "#FADE2A",
-                "value": 5
-              },
-              {
                 "color": "#F2495C",
-                "value": 20
+                "value": 0.001
               }
             ]
           },
@@ -585,12 +573,8 @@
                 "value": null
               },
               {
-                "color": "#FADE2A",
-                "value": 10
-              },
-              {
                 "color": "#F2495C",
-                "value": 100
+                "value": 0.001
               }
             ]
           },
@@ -646,12 +630,8 @@
                 "value": null
               },
               {
-                "color": "#FF9830",
-                "value": 1
-              },
-              {
                 "color": "#F2495C",
-                "value": 10
+                "value": 0.001
               }
             ]
           },
@@ -851,12 +831,8 @@
                 "value": null
               },
               {
-                "color": "#FF9830",
-                "value": 1
-              },
-              {
                 "color": "#F2495C",
-                "value": 10
+                "value": 0.001
               }
             ]
           },
