@@ -420,14 +420,17 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           helm package helm/metrics-governor -d bin/
 
-      - name: Upload to Release
+      - name: Create Release and Upload Assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
 
-          echo "Uploading assets to release $VERSION..."
-          gh release upload "$VERSION" bin/metrics-governor-*.tar.gz bin/checksums.txt bin/metrics-governor-*.tgz --clobber
+          echo "Creating release $VERSION..."
+          gh release create "$VERSION" \
+            --title "Release $VERSION" \
+            --notes "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details." \
+            bin/metrics-governor-*.tar.gz bin/checksums.txt bin/metrics-governor-*.tgz
 
   # Build and push Docker images
   docker:
