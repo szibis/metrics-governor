@@ -726,16 +726,19 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#FF9830"
+            "mode": "thresholds"
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "#FF9830",
+                "color": "#F2495C",
                 "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 1
               }
             ]
           },
@@ -750,7 +753,7 @@
       },
       "id": 531,
       "options": {
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "center",
         "orientation": "auto",
@@ -780,16 +783,19 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#FF9830"
+            "mode": "thresholds"
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "#FF9830",
+                "color": "#F2495C",
                 "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 1
               }
             ]
           },
@@ -804,7 +810,7 @@
       },
       "id": 532,
       "options": {
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "center",
         "orientation": "auto",
@@ -1395,8 +1401,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
               }
             ]
           },
@@ -1411,7 +1421,7 @@
       },
       "id": 10,
       "options": {
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
@@ -5843,7 +5853,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(metrics_governor_circuit_breaker_state{state=\"closed\"} * 0 + metrics_governor_circuit_breaker_state{state=\"open\"} * 1 + metrics_governor_circuit_breaker_state{state=\"half_open\"} * 2)",
+          "expr": "sum(metrics_governor_circuit_breaker_state{state=\"open\"}) or vector(0) + 2 * (sum(metrics_governor_circuit_breaker_state{state=\"half_open\"}) or vector(0))",
           "legendFormat": "State"
         }
       ]

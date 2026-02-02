@@ -132,6 +132,8 @@ func NewHTTPWithConfig(cfg HTTPConfig, buf *buffer.MetricsBuffer) *HTTPReceiver 
 
 // handleMetrics handles incoming OTLP HTTP metrics requests.
 func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
+	IncrementReceiverRequests("http")
+
 	if req.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -145,6 +147,7 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 
 	body, err := io.ReadAll(bodyReader)
 	if err != nil {
+		IncrementReceiverError("read")
 		http.Error(w, "Failed to read body", http.StatusBadRequest)
 		return
 	}
@@ -157,6 +160,7 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 		if compressionType != compression.TypeNone {
 			body, err = compression.Decompress(body, compressionType)
 			if err != nil {
+				IncrementReceiverError("decompress")
 				logging.Error("failed to decompress request body", logging.F("encoding", contentEncoding, "error", err.Error()))
 				http.Error(w, "Failed to decompress body", http.StatusBadRequest)
 				return
@@ -170,11 +174,13 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 	switch contentType {
 	case "application/x-protobuf":
 		if err := proto.Unmarshal(body, &exportReq); err != nil {
+			IncrementReceiverError("decode")
 			http.Error(w, "Failed to unmarshal protobuf", http.StatusBadRequest)
 			return
 		}
 	default:
 		// TODO: add JSON support
+		IncrementReceiverError("decode")
 		http.Error(w, "Unsupported content type", http.StatusUnsupportedMediaType)
 		return
 	}
