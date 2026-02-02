@@ -4,6 +4,72 @@ metrics-governor supports TLS for both receivers (server-side) and exporters (cl
 
 > **Dual Pipeline Support**: TLS works identically for both OTLP and PRW pipelines. The only difference is that they are completely separate - use `-receiver-tls-*` / `-exporter-tls-*` flags for OTLP and `-prw-receiver-tls-*` / `-prw-exporter-tls-*` flags for PRW.
 
+## TLS Architecture
+
+```mermaid
+flowchart TB
+    subgraph Clients["Metrics Clients"]
+        C1[Client 1]
+        C2[Client 2]
+    end
+
+    subgraph MG["metrics-governor"]
+        subgraph Receiver["Receiver (Server TLS)"]
+            ServerCert[Server Certificate]
+            ClientCA[Client CA<br/>for mTLS]
+        end
+
+        Process[Process<br/>Metrics]
+
+        subgraph Exporter["Exporter (Client TLS)"]
+            ClientCert[Client Certificate<br/>for mTLS]
+            ServerCA[Server CA<br/>Verification]
+        end
+    end
+
+    subgraph Backend["Backend"]
+        BE[VictoriaMetrics<br/>OTLP Collector]
+    end
+
+    C1 -->|"TLS + optional mTLS"| ServerCert
+    C2 -->|"TLS + optional mTLS"| ServerCert
+    ClientCA -.->|"Verify"| C1
+    ClientCA -.->|"Verify"| C2
+
+    ServerCert --> Process
+    Process --> ClientCert
+    ClientCert -->|"TLS + optional mTLS"| BE
+    ServerCA -.->|"Verify"| BE
+```
+
+## mTLS Handshake
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant MG as metrics-governor
+    participant Backend
+
+    Note over Client,MG: Receiver mTLS (if enabled)
+    Client->>MG: ClientHello
+    MG->>Client: ServerHello + ServerCert
+    MG->>Client: CertificateRequest
+    Client->>MG: ClientCert
+    MG->>MG: Verify ClientCert against CA
+    Client->>MG: Finished
+    MG->>Client: Finished
+    Client->>MG: Encrypted Metrics
+
+    Note over MG,Backend: Exporter mTLS (if enabled)
+    MG->>Backend: ClientHello
+    Backend->>MG: ServerHello + ServerCert
+    MG->>MG: Verify ServerCert against CA
+    Backend->>MG: CertificateRequest
+    MG->>Backend: ClientCert
+    Backend->>Backend: Verify ClientCert
+    MG->>Backend: Encrypted Metrics
+```
+
 ## Receiver TLS (Server-side)
 
 Enable TLS for incoming connections on both gRPC and HTTP receivers:

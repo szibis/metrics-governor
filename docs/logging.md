@@ -2,6 +2,62 @@
 
 All logs are output in JSON format for easy parsing and integration with log aggregation systems.
 
+## Log Pipeline
+
+```mermaid
+flowchart LR
+    subgraph MG["metrics-governor"]
+        Events[Application<br/>Events]
+        Logger[JSON Logger]
+    end
+
+    subgraph Output["Log Output"]
+        Stdout[stdout/stderr]
+    end
+
+    subgraph Aggregation["Log Aggregation"]
+        Fluent[Fluentd<br/>Fluent Bit]
+        Promtail[Promtail]
+        Logstash[Logstash]
+    end
+
+    subgraph Storage["Log Storage"]
+        Loki[Grafana Loki]
+        ES[Elasticsearch]
+        S3[S3/Object Storage]
+    end
+
+    Events --> Logger
+    Logger --> Stdout
+    Stdout --> Fluent
+    Stdout --> Promtail
+    Stdout --> Logstash
+
+    Fluent --> ES
+    Fluent --> S3
+    Promtail --> Loki
+    Logstash --> ES
+```
+
+## Log Levels
+
+```mermaid
+flowchart TB
+    subgraph Levels["Log Level Hierarchy"]
+        Fatal[FATAL<br/>Application exits]
+        Error[ERROR<br/>Error conditions]
+        Warn[WARN<br/>Warning conditions]
+        Info[INFO<br/>Normal operations]
+    end
+
+    Fatal --> Error --> Warn --> Info
+
+    style Fatal fill:#f66,stroke:#333
+    style Error fill:#f96,stroke:#333
+    style Warn fill:#fc6,stroke:#333
+    style Info fill:#9f9,stroke:#333
+```
+
 ## Log Format
 
 ```json

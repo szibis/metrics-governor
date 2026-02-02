@@ -4,6 +4,41 @@ metrics-governor supports bearer token and basic authentication for both receive
 
 > **Dual Pipeline Support**: Authentication works identically for both OTLP and PRW pipelines. The only difference is that they are completely separate - use `-receiver-*` flags for OTLP and `-prw-receiver-*` flags for PRW.
 
+## Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Receiver as metrics-governor<br/>Receiver
+    participant Auth as Auth<br/>Middleware
+    participant Buffer as Processing<br/>Pipeline
+    participant Exporter as Exporter
+    participant Backend
+
+    Client->>Receiver: Metrics Request
+    Note over Client,Receiver: Authorization: Bearer <token><br/>or Authorization: Basic <base64>
+
+    Receiver->>Auth: Validate Credentials
+
+    alt Invalid Credentials
+        Auth-->>Client: 401 Unauthorized
+    else Valid Credentials
+        Auth->>Buffer: Process Metrics
+        Buffer->>Exporter: Export Batch
+
+        Note over Exporter,Backend: Add auth headers<br/>Bearer token / Basic auth
+        Exporter->>Backend: Forward with Auth
+
+        alt Backend Auth Fails
+            Backend-->>Exporter: 401/403 Error
+            Exporter-->>Buffer: Queue for Retry
+        else Success
+            Backend-->>Exporter: 200 OK
+            Exporter-->>Client: Success
+        end
+    end
+```
+
 ## Receiver Authentication
 
 Require authentication for incoming connections:
