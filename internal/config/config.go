@@ -189,6 +189,17 @@ type Config struct {
 	CardinalityExpectedItems uint    // Expected unique items per tracker
 	CardinalityFPRate        float64 // False positive rate for Bloom filter
 
+	// Bloom persistence settings
+	BloomPersistenceEnabled          bool
+	BloomPersistencePath             string
+	BloomPersistenceSaveInterval     time.Duration
+	BloomPersistenceStateTTL         time.Duration
+	BloomPersistenceCleanupInterval  time.Duration
+	BloomPersistenceMaxSize          int64 // Max disk space for bloom state
+	BloomPersistenceMaxMemory        int64 // Max memory for in-memory bloom filters
+	BloomPersistenceCompression      bool
+	BloomPersistenceCompressionLevel int
+
 	// Flags
 	ShowHelp    bool
 	ShowVersion bool
@@ -370,6 +381,17 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.CardinalityMode, "cardinality-mode", "bloom", "Cardinality tracking mode: bloom (memory-efficient) or exact (100% accurate)")
 	flag.UintVar(&cfg.CardinalityExpectedItems, "cardinality-expected-items", 100000, "Expected unique items per tracker for Bloom filter sizing")
 	flag.Float64Var(&cfg.CardinalityFPRate, "cardinality-fp-rate", 0.01, "Bloom filter false positive rate (0.01 = 1%)")
+
+	// Bloom persistence flags
+	flag.BoolVar(&cfg.BloomPersistenceEnabled, "bloom-persistence-enabled", false, "Enable bloom filter state persistence")
+	flag.StringVar(&cfg.BloomPersistencePath, "bloom-persistence-path", "./bloom-state", "Directory for bloom filter state persistence")
+	flag.DurationVar(&cfg.BloomPersistenceSaveInterval, "bloom-persistence-save-interval", 30*time.Second, "Interval between periodic saves")
+	flag.DurationVar(&cfg.BloomPersistenceStateTTL, "bloom-persistence-state-ttl", time.Hour, "Time after which unused trackers are cleaned up")
+	flag.DurationVar(&cfg.BloomPersistenceCleanupInterval, "bloom-persistence-cleanup-interval", 5*time.Minute, "Interval between cleanup runs")
+	flag.Int64Var(&cfg.BloomPersistenceMaxSize, "bloom-persistence-max-size", 524288000, "Max disk space for bloom state in bytes (500MB)")
+	flag.Int64Var(&cfg.BloomPersistenceMaxMemory, "bloom-persistence-max-memory", 268435456, "Max memory for in-memory bloom filters in bytes (256MB)")
+	flag.BoolVar(&cfg.BloomPersistenceCompression, "bloom-persistence-compression", true, "Enable gzip compression for bloom state files")
+	flag.IntVar(&cfg.BloomPersistenceCompressionLevel, "bloom-persistence-compression-level", 1, "Gzip compression level (1=fast, 9=best)")
 
 	// Help and version
 	flag.BoolVar(&cfg.ShowHelp, "help", false, "Show help message")
@@ -785,6 +807,42 @@ func applyFlagOverrides(cfg *Config) {
 					cfg.CardinalityFPRate = fv
 				}
 			}
+		case "bloom-persistence-enabled":
+			cfg.BloomPersistenceEnabled = f.Value.String() == "true"
+		case "bloom-persistence-path":
+			cfg.BloomPersistencePath = f.Value.String()
+		case "bloom-persistence-save-interval":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.BloomPersistenceSaveInterval = d
+			}
+		case "bloom-persistence-state-ttl":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.BloomPersistenceStateTTL = d
+			}
+		case "bloom-persistence-cleanup-interval":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.BloomPersistenceCleanupInterval = d
+			}
+		case "bloom-persistence-max-size":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int64); ok {
+					cfg.BloomPersistenceMaxSize = i
+				}
+			}
+		case "bloom-persistence-max-memory":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int64); ok {
+					cfg.BloomPersistenceMaxMemory = i
+				}
+			}
+		case "bloom-persistence-compression":
+			cfg.BloomPersistenceCompression = f.Value.String() == "true"
+		case "bloom-persistence-compression-level":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.BloomPersistenceCompressionLevel = i
+				}
+			}
 		case "help", "h":
 			cfg.ShowHelp = f.Value.String() == "true"
 		case "version", "v":
@@ -1010,6 +1068,43 @@ func (c *Config) CardinalityConfig() CardinalityConfig {
 	}
 }
 
+// BloomPersistenceConfig holds bloom filter persistence configuration.
+type BloomPersistenceConfig struct {
+	// Enabled enables persistence.
+	Enabled bool
+	// Path is the directory for persistence files.
+	Path string
+	// SaveInterval is the interval between periodic saves.
+	SaveInterval time.Duration
+	// StateTTL is the time after which unused trackers are cleaned up.
+	StateTTL time.Duration
+	// CleanupInterval is the interval between cleanup runs.
+	CleanupInterval time.Duration
+	// MaxSize is the maximum disk space for bloom state (bytes).
+	MaxSize int64
+	// MaxMemory is the maximum memory for in-memory bloom filters (bytes).
+	MaxMemory int64
+	// Compression enables gzip compression.
+	Compression bool
+	// CompressionLevel is the gzip compression level (1-9).
+	CompressionLevel int
+}
+
+// BloomPersistenceConfig returns the bloom persistence configuration.
+func (c *Config) BloomPersistenceConfig() BloomPersistenceConfig {
+	return BloomPersistenceConfig{
+		Enabled:          c.BloomPersistenceEnabled,
+		Path:             c.BloomPersistencePath,
+		SaveInterval:     c.BloomPersistenceSaveInterval,
+		StateTTL:         c.BloomPersistenceStateTTL,
+		CleanupInterval:  c.BloomPersistenceCleanupInterval,
+		MaxSize:          c.BloomPersistenceMaxSize,
+		MaxMemory:        c.BloomPersistenceMaxMemory,
+		Compression:      c.BloomPersistenceCompression,
+		CompressionLevel: c.BloomPersistenceCompressionLevel,
+	}
+}
+
 // PRWReceiverConfig returns the PRW receiver configuration.
 func (c *Config) PRWReceiverConfig() receiver.PRWConfig {
 	version, _ := prw.ParseVersion(c.PRWReceiverVersion)
@@ -1195,6 +1290,17 @@ OPTIONS:
         -cardinality-mode <mode>         Tracking mode: bloom (memory-efficient) or exact (100%% accurate) (default: bloom)
         -cardinality-expected-items <n>  Expected unique items per tracker for Bloom sizing (default: 100000)
         -cardinality-fp-rate <rate>      Bloom filter false positive rate (default: 0.01 = 1%%)
+
+    Bloom Persistence:
+        -bloom-persistence-enabled                Enable bloom filter state persistence (default: false)
+        -bloom-persistence-path <path>            Directory for bloom state files (default: ./bloom-state)
+        -bloom-persistence-save-interval <dur>    Interval between periodic saves (default: 30s)
+        -bloom-persistence-state-ttl <dur>        Time after which unused trackers are cleaned up (default: 1h)
+        -bloom-persistence-cleanup-interval <dur> Interval between cleanup runs (default: 5m)
+        -bloom-persistence-max-size <n>           Max disk space for bloom state in bytes (default: 500MB)
+        -bloom-persistence-max-memory <n>         Max memory for in-memory bloom filters (default: 256MB)
+        -bloom-persistence-compression            Enable gzip compression (default: true)
+        -bloom-persistence-compression-level <n>  Gzip compression level 1-9 (default: 1)
 
     Queue (FastQueue - High-Performance Persistent Retry):
         -queue-enabled                   Enable persistent queue for export retries (default: false)
@@ -1408,5 +1514,15 @@ func DefaultConfig() *Config {
 		CardinalityMode:          "bloom",
 		CardinalityExpectedItems: 100000,
 		CardinalityFPRate:        0.01,
+		// Bloom persistence defaults
+		BloomPersistenceEnabled:          false,
+		BloomPersistencePath:             "./bloom-state",
+		BloomPersistenceSaveInterval:     30 * time.Second,
+		BloomPersistenceStateTTL:         time.Hour,
+		BloomPersistenceCleanupInterval:  5 * time.Minute,
+		BloomPersistenceMaxSize:          524288000,  // 500MB
+		BloomPersistenceMaxMemory:        268435456,  // 256MB
+		BloomPersistenceCompression:      true,
+		BloomPersistenceCompressionLevel: 1,
 	}
 }
