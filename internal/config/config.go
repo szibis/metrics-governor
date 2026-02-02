@@ -220,12 +220,12 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.ReceiverAuthBasicUsername, "receiver-auth-basic-username", "", "Basic auth username for receivers")
 	flag.StringVar(&cfg.ReceiverAuthBasicPassword, "receiver-auth-basic-password", "", "Basic auth password for receivers")
 
-	// Exporter flags
-	flag.StringVar(&cfg.ExporterEndpoint, "exporter-endpoint", "localhost:4317", "OTLP exporter endpoint")
-	flag.StringVar(&cfg.ExporterProtocol, "exporter-protocol", "grpc", "Exporter protocol: grpc or http")
-	flag.BoolVar(&cfg.ExporterInsecure, "exporter-insecure", true, "Use insecure connection for exporter")
+	// Exporter flags (supports OTLP gRPC/HTTP to any backend: otel-collector, Prometheus, Mimir, VictoriaMetrics, etc.)
+	flag.StringVar(&cfg.ExporterEndpoint, "exporter-endpoint", "localhost:4317", "OTLP exporter endpoint (host:port or URL)")
+	flag.StringVar(&cfg.ExporterProtocol, "exporter-protocol", "grpc", "Exporter protocol: grpc (default, most backends) or http (OTLP/HTTP)")
+	flag.BoolVar(&cfg.ExporterInsecure, "exporter-insecure", true, "Use insecure connection (no TLS) for exporter")
 	flag.DurationVar(&cfg.ExporterTimeout, "exporter-timeout", 30*time.Second, "Exporter request timeout")
-	flag.StringVar(&cfg.ExporterDefaultPath, "exporter-default-path", "/v1/metrics", "Default path for HTTP exporter when endpoint has no path")
+	flag.StringVar(&cfg.ExporterDefaultPath, "exporter-default-path", "/v1/metrics", "Default HTTP path when endpoint has no path (e.g., /v1/metrics for standard OTLP, /opentelemetry/v1/metrics for VictoriaMetrics)")
 
 	// Exporter TLS flags
 	flag.BoolVar(&cfg.ExporterTLSEnabled, "exporter-tls-enabled", false, "Enable custom TLS config for exporter")
@@ -241,8 +241,8 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.ExporterAuthBasicPassword, "exporter-auth-basic-password", "", "Basic auth password for exporter")
 	flag.StringVar(&cfg.ExporterAuthHeaders, "exporter-auth-headers", "", "Custom headers for exporter (format: key1=value1,key2=value2)")
 
-	// Exporter Compression flags
-	flag.StringVar(&cfg.ExporterCompression, "exporter-compression", "none", "Compression type for HTTP exporter: none, gzip, zstd, snappy, zlib, deflate, lz4")
+	// Exporter Compression flags (gRPC uses built-in compression, HTTP uses Content-Encoding)
+	flag.StringVar(&cfg.ExporterCompression, "exporter-compression", "none", "Compression: none, gzip (widely supported), zstd (high perf), snappy, zlib, deflate, lz4")
 	flag.IntVar(&cfg.ExporterCompressionLevel, "exporter-compression-level", 0, "Compression level (algorithm-specific, 0 for default)")
 
 	// Exporter HTTP client flags
@@ -327,10 +327,10 @@ func ParseFlags() *Config {
 	flag.DurationVar(&cfg.PRWReceiverReadTimeout, "prw-receiver-read-timeout", 1*time.Minute, "PRW receiver read timeout")
 	flag.DurationVar(&cfg.PRWReceiverWriteTimeout, "prw-receiver-write-timeout", 30*time.Second, "PRW receiver write timeout")
 
-	// PRW Exporter flags
-	flag.StringVar(&cfg.PRWExporterEndpoint, "prw-exporter-endpoint", "", "PRW exporter endpoint (empty = disabled)")
-	flag.StringVar(&cfg.PRWExporterDefaultPath, "prw-exporter-default-path", "/api/v1/write", "Default path for PRW exporter when endpoint has no path")
-	flag.StringVar(&cfg.PRWExporterVersion, "prw-exporter-version", "auto", "PRW protocol version: 1.0, 2.0, or auto")
+	// PRW Exporter flags (supports Prometheus Remote Write to any backend: Prometheus, Mimir, Cortex, Thanos, VictoriaMetrics, etc.)
+	flag.StringVar(&cfg.PRWExporterEndpoint, "prw-exporter-endpoint", "", "PRW exporter endpoint URL (empty = disabled)")
+	flag.StringVar(&cfg.PRWExporterDefaultPath, "prw-exporter-default-path", "/api/v1/write", "Default PRW path when endpoint has no path (/api/v1/write standard, /write for VM short)")
+	flag.StringVar(&cfg.PRWExporterVersion, "prw-exporter-version", "auto", "PRW protocol version: 1.0 (standard), 2.0 (native histograms), or auto")
 	flag.DurationVar(&cfg.PRWExporterTimeout, "prw-exporter-timeout", 30*time.Second, "PRW exporter request timeout")
 	flag.BoolVar(&cfg.PRWExporterTLSEnabled, "prw-exporter-tls-enabled", false, "Enable TLS for PRW exporter")
 	flag.StringVar(&cfg.PRWExporterTLSCertFile, "prw-exporter-tls-cert", "", "Path to PRW client certificate (mTLS)")
@@ -338,10 +338,10 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.PRWExporterTLSCAFile, "prw-exporter-tls-ca", "", "Path to CA certificate for PRW server verification")
 	flag.BoolVar(&cfg.PRWExporterTLSSkipVerify, "prw-exporter-tls-skip-verify", false, "Skip TLS certificate verification for PRW")
 	flag.StringVar(&cfg.PRWExporterAuthBearerToken, "prw-exporter-auth-bearer-token", "", "Bearer token for PRW exporter authentication")
-	flag.BoolVar(&cfg.PRWExporterVMMode, "prw-exporter-vm-mode", false, "Enable VictoriaMetrics mode for PRW exporter")
-	flag.StringVar(&cfg.PRWExporterVMCompression, "prw-exporter-vm-compression", "snappy", "PRW compression: snappy or zstd")
-	flag.BoolVar(&cfg.PRWExporterVMShortEndpoint, "prw-exporter-vm-short-endpoint", false, "Use /write instead of /api/v1/write")
-	flag.StringVar(&cfg.PRWExporterVMExtraLabels, "prw-exporter-vm-extra-labels", "", "Extra labels for VM (format: key1=val1,key2=val2)")
+	flag.BoolVar(&cfg.PRWExporterVMMode, "prw-exporter-vm-mode", false, "Enable VictoriaMetrics-specific optimizations (zstd, extra labels)")
+	flag.StringVar(&cfg.PRWExporterVMCompression, "prw-exporter-vm-compression", "snappy", "PRW compression: snappy (standard) or zstd (VM optimized)")
+	flag.BoolVar(&cfg.PRWExporterVMShortEndpoint, "prw-exporter-vm-short-endpoint", false, "Use /write shorthand instead of /api/v1/write")
+	flag.StringVar(&cfg.PRWExporterVMExtraLabels, "prw-exporter-vm-extra-labels", "", "Extra labels to add to all metrics (format: key1=val1,key2=val2)")
 
 	// PRW Buffer flags
 	flag.IntVar(&cfg.PRWBufferSize, "prw-buffer-size", 10000, "Maximum PRW requests to buffer")

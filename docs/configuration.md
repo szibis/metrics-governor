@@ -6,6 +6,36 @@ metrics-governor supports two configuration methods:
 
 > **Dual Pipeline Support**: All components (receivers, buffers, exporters, limits, sharding, queues) work identically for both OTLP and PRW pipelines. They are completely separate - OTLP options use standard flags, PRW options use `-prw-*` prefixed flags.
 
+## Supported Backends
+
+metrics-governor can export metrics to any OTLP or Prometheus Remote Write compatible backend:
+
+### OTLP Protocol (gRPC or HTTP)
+
+| Backend | Protocol | Default Path | Notes |
+|---------|----------|--------------|-------|
+| **OpenTelemetry Collector** | gRPC (4317) or HTTP (4318) | `/v1/metrics` | Most common setup |
+| **Prometheus** (with OTLP receiver) | gRPC (4317) | `/v1/metrics` | Requires `--enable-feature=otlp-write-receiver` |
+| **Grafana Mimir** | gRPC or HTTP | `/otlp/v1/metrics` | Native OTLP support |
+| **Cortex** | gRPC or HTTP | `/api/v1/push` | Via OTLP receiver |
+| **Thanos** | gRPC | `/v1/metrics` | Via sidecar or receive |
+| **VictoriaMetrics** | HTTP only | `/opentelemetry/v1/metrics` | Native OTLP support |
+| **ClickHouse** | gRPC or HTTP | `/v1/metrics` | Via OTLP receiver |
+| **Grafana Cloud** | gRPC or HTTP | `/otlp/v1/metrics` | Cloud hosted |
+
+### Prometheus Remote Write (PRW)
+
+| Backend | Default Path | Notes |
+|---------|--------------|-------|
+| **Prometheus** | `/api/v1/write` | Native PRW support |
+| **VictoriaMetrics** | `/api/v1/write` or `/write` | Use `-prw-exporter-vm-mode` for optimizations |
+| **Grafana Mimir** | `/api/v1/push` | PRW compatible |
+| **Cortex** | `/api/v1/push` | PRW compatible |
+| **Thanos Receive** | `/api/v1/receive` | PRW compatible |
+| **Grafana Cloud** | `/api/prom/push` | Cloud hosted |
+| **Amazon Managed Prometheus** | `/api/v1/remote_write` | AWS hosted |
+| **Google Cloud Managed Prometheus** | Custom | GCP hosted |
+
 ## YAML Configuration File
 
 Use the `-config` flag to specify a YAML configuration file:
@@ -108,12 +138,14 @@ All settings can also be configured via CLI flags.
 
 ### Exporter Options
 
+The OTLP exporter supports any OTLP-compatible backend via gRPC or HTTP protocols: OpenTelemetry Collector, Prometheus, Grafana Mimir, Cortex, Thanos, VictoriaMetrics, and others.
+
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-exporter-endpoint` | `localhost:4317` | OTLP exporter endpoint |
-| `-exporter-protocol` | `grpc` | Exporter protocol: `grpc` or `http` |
-| `-exporter-default-path` | `/v1/metrics` | Default URL path for HTTP exporter (when endpoint has no path) |
-| `-exporter-insecure` | `true` | Use insecure connection for exporter |
+| `-exporter-endpoint` | `localhost:4317` | OTLP exporter endpoint (host:port for gRPC, URL for HTTP) |
+| `-exporter-protocol` | `grpc` | Exporter protocol: `grpc` (recommended, most backends) or `http` |
+| `-exporter-default-path` | `/v1/metrics` | Default HTTP path when endpoint has no path. Standard: `/v1/metrics`. VictoriaMetrics: `/opentelemetry/v1/metrics` |
+| `-exporter-insecure` | `true` | Use insecure connection (no TLS) for exporter |
 | `-exporter-timeout` | `30s` | Exporter request timeout |
 | `-exporter-tls-enabled` | `false` | Enable custom TLS config for exporter |
 | `-exporter-tls-cert` | | Path to client certificate file (mTLS) |
@@ -188,11 +220,13 @@ The queue uses a high-performance FastQueue implementation inspired by VictoriaM
 
 ### PRW Exporter Options
 
+The Prometheus Remote Write exporter supports any PRW-compatible backend: Prometheus, Grafana Mimir, Cortex, Thanos, VictoriaMetrics, and others.
+
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-prw-exporter-endpoint` | | PRW backend URL (empty = disabled) |
-| `-prw-exporter-default-path` | `/api/v1/write` | Default URL path for PRW exporter (when endpoint has no path) |
-| `-prw-exporter-version` | `auto` | Protocol version: `1.0`, `2.0`, or `auto` |
+| `-prw-exporter-default-path` | `/api/v1/write` | Default PRW path when endpoint has no path. Standard: `/api/v1/write`. Mimir/Cortex: `/api/v1/push`. Thanos: `/api/v1/receive` |
+| `-prw-exporter-version` | `auto` | Protocol version: `1.0` (standard), `2.0` (native histograms), or `auto` |
 | `-prw-exporter-timeout` | `30s` | Request timeout |
 | `-prw-exporter-tls-enabled` | `false` | Enable TLS |
 | `-prw-exporter-tls-cert` | | Client certificate (mTLS) |
@@ -308,8 +342,10 @@ metrics-governor -config config.yaml -exporter-endpoint otel:4317
 
 ## Usage Examples
 
+### Basic Usage
+
 ```bash
-# Start with default settings
+# Start with default settings (gRPC to localhost:4317)
 metrics-governor
 
 # Use YAML configuration file
@@ -320,44 +356,115 @@ metrics-governor -config config.yaml -exporter-endpoint otel:4317
 
 # Custom receiver ports
 metrics-governor -grpc-listen :5317 -http-listen :5318
+```
 
-# Forward to remote gRPC endpoint
+### OTLP Exporter - Backend Examples
+
+metrics-governor supports exporting OTLP metrics to any OTLP-compatible backend via gRPC or HTTP:
+
+```bash
+# OpenTelemetry Collector (gRPC - default, most common)
 metrics-governor -exporter-endpoint otel-collector:4317
 
-# Forward to remote HTTP endpoint
+# OpenTelemetry Collector (HTTP)
 metrics-governor -exporter-endpoint otel-collector:4318 -exporter-protocol http
 
-# Adjust buffering
-metrics-governor -buffer-size 50000 -flush-interval 10s -batch-size 2000
+# OpenTelemetry Collector with gzip compression
+metrics-governor -exporter-endpoint otel-collector:4317 -exporter-compression gzip
 
-# Enable stats tracking by service, environment and cluster
-metrics-governor -stats-labels service,env,cluster
+# Grafana Mimir (gRPC)
+metrics-governor -exporter-endpoint mimir:4317
 
-# Enable limits enforcement (dry-run by default)
-metrics-governor -limits-config /etc/metrics-governor/limits.yaml
+# Grafana Mimir (HTTP with custom path)
+metrics-governor -exporter-endpoint http://mimir:8080 -exporter-protocol http \
+  -exporter-default-path /otlp/v1/metrics
 
-# Enable limits enforcement with actual drop/sample
-metrics-governor -limits-config /etc/metrics-governor/limits.yaml -limits-dry-run=false
+# VictoriaMetrics (OTLP/HTTP with VM-specific path)
+metrics-governor -exporter-endpoint http://victoriametrics:8428 -exporter-protocol http \
+  -exporter-default-path /opentelemetry/v1/metrics -exporter-compression zstd
 
-# Enable Prometheus Remote Write pipeline
+# Prometheus (with OTLP receiver enabled)
+metrics-governor -exporter-endpoint prometheus:4317
+
+# Cortex (gRPC)
+metrics-governor -exporter-endpoint cortex:4317
+
+# Thanos Receive (gRPC)
+metrics-governor -exporter-endpoint thanos-receive:4317
+
+# Secure endpoint with TLS
+metrics-governor -exporter-endpoint secure-backend:4317 \
+  -exporter-insecure=false -exporter-tls-ca /etc/certs/ca.crt
+
+# Endpoint with bearer token auth
+metrics-governor -exporter-endpoint backend:4317 \
+  -exporter-auth-bearer-token "your-token-here"
+```
+
+### Prometheus Remote Write - Backend Examples
+
+For Prometheus Remote Write protocol (PRW) support:
+
+```bash
+# VictoriaMetrics (standard PRW path)
 metrics-governor -prw-listen :9090 -prw-exporter-endpoint http://victoriametrics:8428
 
-# Export OTLP to VictoriaMetrics with custom path
-metrics-governor -exporter-endpoint http://victoriametrics:8428 -exporter-protocol http \
-  -exporter-default-path /opentelemetry/v1/metrics
+# VictoriaMetrics with VM mode optimizations (zstd compression, extra labels)
+metrics-governor -prw-listen :9090 -prw-exporter-endpoint http://victoriametrics:8428 \
+  -prw-exporter-vm-mode=true -prw-exporter-vm-compression zstd
 
-# Run both OTLP and PRW pipelines
+# Prometheus (PRW 1.0)
+metrics-governor -prw-listen :9090 -prw-exporter-endpoint http://prometheus:9090 \
+  -prw-exporter-version 1.0
+
+# Grafana Mimir
+metrics-governor -prw-listen :9090 -prw-exporter-endpoint http://mimir:8080 \
+  -prw-exporter-default-path /api/v1/push
+
+# Cortex
+metrics-governor -prw-listen :9090 -prw-exporter-endpoint http://cortex:9009 \
+  -prw-exporter-default-path /api/v1/push
+
+# Thanos Receive
+metrics-governor -prw-listen :9090 -prw-exporter-endpoint http://thanos-receive:19291 \
+  -prw-exporter-default-path /api/v1/receive
+```
+
+### Dual Pipeline (OTLP + PRW)
+
+```bash
+# Run both OTLP and PRW pipelines simultaneously
 metrics-governor \
   -grpc-listen :4317 \
   -exporter-endpoint otel-collector:4317 \
   -prw-listen :9090 \
   -prw-exporter-endpoint http://victoriametrics:8428
+```
 
-# Performance tuning: limit concurrent exports and disable interning
-metrics-governor -export-concurrency 32 -string-interning=false
+### Buffering and Performance
 
-# High-load environment: increase concurrency limit
-metrics-governor -export-concurrency 64
+```bash
+# Adjust buffering for high throughput
+metrics-governor -buffer-size 50000 -flush-interval 10s -batch-size 2000
+
+# Enable stats tracking by service, environment and cluster
+metrics-governor -stats-labels service,env,cluster
+
+# Performance tuning: limit concurrent exports
+metrics-governor -export-concurrency 32
+
+# High-load environment
+metrics-governor -export-concurrency 64 -buffer-size 100000 -batch-size 5000
+```
+
+### Limits Enforcement
+
+```bash
+# Enable limits enforcement (dry-run by default)
+metrics-governor -limits-config /etc/metrics-governor/limits.yaml
+
+# Enable limits enforcement with actual drop/sample
+metrics-governor -limits-config /etc/metrics-governor/limits.yaml -limits-dry-run=false
 ```
 
 ## Performance Tuning
