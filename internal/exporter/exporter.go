@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/szibis/metrics-governor/internal/auth"
 	"github.com/szibis/metrics-governor/internal/compression"
 	tlspkg "github.com/szibis/metrics-governor/internal/tls"
@@ -20,6 +21,32 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
 )
+
+var (
+	// otlpExportBytesTotal tracks actual bytes sent to the OTLP backend
+	otlpExportBytesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "metrics_governor_otlp_export_bytes_total",
+		Help: "Total bytes exported to OTLP backend",
+	}, []string{"compression"})
+
+	// otlpExportRequestsTotal tracks the number of export requests
+	otlpExportRequestsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_otlp_export_requests_total",
+		Help: "Total number of OTLP export requests",
+	})
+
+	// otlpExportErrorsTotal tracks the number of export errors
+	otlpExportErrorsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_otlp_export_errors_total",
+		Help: "Total number of OTLP export errors",
+	})
+)
+
+func init() {
+	prometheus.MustRegister(otlpExportBytesTotal)
+	prometheus.MustRegister(otlpExportRequestsTotal)
+	prometheus.MustRegister(otlpExportErrorsTotal)
+}
 
 // Protocol represents the export protocol.
 type Protocol string
@@ -264,13 +291,31 @@ func (e *OTLPExporter) Export(ctx context.Context, req *colmetricspb.ExportMetri
 
 	switch e.protocol {
 	case ProtocolGRPC:
-		_, err := e.grpcClient.Export(ctx, req)
-		return err
+		return e.exportGRPC(ctx, req)
 	case ProtocolHTTP:
 		return e.exportHTTP(ctx, req)
 	default:
 		return fmt.Errorf("unsupported protocol: %s", e.protocol)
 	}
+}
+
+// exportGRPC exports metrics via gRPC.
+func (e *OTLPExporter) exportGRPC(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error {
+	// Estimate size for metrics tracking (gRPC handles compression internally)
+	size := proto.Size(req)
+
+	otlpExportRequestsTotal.Inc()
+
+	_, err := e.grpcClient.Export(ctx, req)
+	if err != nil {
+		otlpExportErrorsTotal.Inc()
+		return err
+	}
+
+	// Track as uncompressed since gRPC compression is handled at transport level
+	otlpExportBytesTotal.WithLabelValues("grpc").Add(float64(size))
+
+	return nil
 }
 
 // exportHTTP exports metrics via HTTP.
@@ -280,12 +325,17 @@ func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportM
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	// Track uncompressed size
+	uncompressedSize := len(body)
+	compressionLabel := "none"
+
 	// Apply compression if configured
 	if e.compression.Type != compression.TypeNone && e.compression.Type != "" {
 		body, err = compression.Compress(body, e.compression)
 		if err != nil {
 			return fmt.Errorf("failed to compress request: %w", err)
 		}
+		compressionLabel = string(e.compression.Type)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.httpEndpoint, bytes.NewReader(body))
@@ -300,8 +350,11 @@ func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportM
 		httpReq.Header.Set("Content-Encoding", encoding)
 	}
 
+	otlpExportRequestsTotal.Inc()
+
 	resp, err := e.httpClient.Do(httpReq)
 	if err != nil {
+		otlpExportErrorsTotal.Inc()
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -310,7 +363,15 @@ func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportM
 	_, _ = io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
+		otlpExportErrorsTotal.Inc()
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	// Track exported bytes
+	otlpExportBytesTotal.WithLabelValues(compressionLabel).Add(float64(len(body)))
+	if compressionLabel != "none" {
+		// Also track uncompressed for comparison
+		otlpExportBytesTotal.WithLabelValues("uncompressed").Add(float64(uncompressedSize))
 	}
 
 	return nil
