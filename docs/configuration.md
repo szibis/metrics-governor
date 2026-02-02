@@ -69,6 +69,8 @@ See [examples/config.yaml](../examples/config.yaml) for a complete example with 
 
 For Prometheus Remote Write configuration, see [prw.md](./prw.md).
 
+For queue resilience features (circuit breaker, exponential backoff, memory limits), see [resilience.md](./resilience.md).
+
 Additional example configs:
 - [examples/config-minimal.yaml](../examples/config-minimal.yaml) - Minimal configuration
 - [examples/config-production.yaml](../examples/config-production.yaml) - Production-ready settings
@@ -142,7 +144,7 @@ All settings can also be configured via CLI flags.
 
 ### Queue Options (FastQueue)
 
-The queue uses a high-performance FastQueue implementation inspired by VictoriaMetrics' persistentqueue. It provides metadata-only persistence with in-memory buffering for high throughput.
+The queue uses a high-performance FastQueue implementation inspired by VictoriaMetrics' persistentqueue. It provides metadata-only persistence with in-memory buffering for high throughput. See [resilience.md](./resilience.md) for circuit breaker and backoff documentation.
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -153,10 +155,17 @@ The queue uses a high-performance FastQueue implementation inspired by VictoriaM
 | `-queue-retry-interval` | `5s` | Initial retry interval |
 | `-queue-max-retry-delay` | `5m` | Maximum retry backoff delay |
 | `-queue-full-behavior` | `drop_oldest` | Queue full behavior: `drop_oldest`, `drop_newest`, or `block` |
+| `-queue-adaptive-enabled` | `true` | Enable adaptive queue sizing |
+| `-queue-target-utilization` | `0.85` | Target disk utilization (0.0-1.0) |
 | `-queue-inmemory-blocks` | `256` | In-memory channel size for fast path |
 | `-queue-chunk-size` | `536870912` | Chunk file size in bytes (512MB) |
 | `-queue-meta-sync` | `1s` | Metadata sync interval (max data loss window) |
 | `-queue-stale-flush` | `5s` | Interval to flush stale in-memory blocks to disk |
+| `-queue-backoff-enabled` | `true` | Enable exponential backoff for retries |
+| `-queue-backoff-multiplier` | `2.0` | Backoff delay multiplier on each failure |
+| `-queue-circuit-breaker-enabled` | `true` | Enable circuit breaker pattern |
+| `-queue-circuit-breaker-threshold` | `10` | Consecutive failures to trip circuit |
+| `-queue-circuit-breaker-reset-timeout` | `30s` | Time before half-open state |
 
 ### PRW Receiver Options
 
@@ -214,29 +223,39 @@ The queue uses a high-performance FastQueue implementation inspired by VictoriaM
 
 ### OTLP Queue Options
 
+The queue provides durability for export failures with a high-performance FastQueue implementation. See [resilience.md](./resilience.md) for detailed information on circuit breaker and backoff behavior.
+
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-queue-enabled` | `false` | Enable persistent retry queue |
 | `-queue-path` | `./queue` | Queue directory path |
 | `-queue-max-size` | `10000` | Max queue entries |
-| `-queue-max-bytes` | `536870912` | Max queue size in bytes (512MB) |
+| `-queue-max-bytes` | `1073741824` | Max queue size in bytes (1GB) |
 | `-queue-retry-interval` | `5s` | Initial retry interval |
+| `-queue-max-retry-delay` | `5m` | Maximum retry backoff delay |
 | `-queue-full-behavior` | `drop_oldest` | Behavior when full: `drop_oldest`, `drop_newest`, `block` |
 | `-queue-adaptive-enabled` | `true` | Enable adaptive queue sizing |
-| `-queue-sync-mode` | `batched` | Sync mode: `immediate`, `batched`, `async` |
-| `-queue-sync-batch-size` | `100` | Number of entries before sync (batched mode) |
-| `-queue-sync-interval` | `100ms` | Time interval for sync (batched mode) |
-| `-queue-compression` | `false` | Enable snappy compression for WAL entries |
-| `-queue-write-ahead` | `true` | Enable write-ahead logging for crash safety |
+| `-queue-target-utilization` | `0.85` | Target disk utilization (0.0-1.0) |
+| `-queue-inmemory-blocks` | `256` | In-memory channel size for fast path |
+| `-queue-chunk-size` | `536870912` | Chunk file size in bytes (512MB) |
+| `-queue-meta-sync` | `1s` | Metadata sync interval (max data loss window) |
+| `-queue-stale-flush` | `5s` | Flush stale in-memory blocks to disk |
 
-> **Warning: WAL Compression CPU Impact**
->
-> Enabling `-queue-compression=true` can significantly increase CPU usage at high throughput.
-> At 200k datapoints/s, compression can add 60-100% CPU overhead due to snappy compression
-> on every WAL write. For high-throughput environments, we recommend:
-> - `-queue-compression=false` (default)
-> - `-queue-sync-batch-size=1000` (batch more entries per sync)
-> - `-queue-sync-interval=250ms` (less frequent syncs with bigger batches)
+### Queue Resilience Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-queue-backoff-enabled` | `true` | Enable exponential backoff for retries |
+| `-queue-backoff-multiplier` | `2.0` | Multiply delay by this on each failure |
+| `-queue-circuit-breaker-enabled` | `true` | Enable circuit breaker pattern |
+| `-queue-circuit-breaker-threshold` | `10` | Consecutive failures before opening circuit |
+| `-queue-circuit-breaker-reset-timeout` | `30s` | Time before half-open state |
+
+### Memory Limit Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-memory-limit-ratio` | `0.9` | Ratio of container memory for GOMEMLIMIT (0.0-1.0, 0=disabled) |
 
 ### Sharding Options
 
