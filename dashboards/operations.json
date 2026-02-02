@@ -24,18 +24,14 @@
     },
     {
       "gridPos": {
-        "h": 3,
-        "w": 24,
+        "h": 2,
+        "w": 5,
         "x": 0,
         "y": 1
       },
       "id": 501,
       "options": {
-        "code": {
-          "language": "plaintext",
-          "showLineNumbers": false
-        },
-        "content": "<div style=\"display:flex;align-items:center;justify-content:space-around;height:100%;padding:0 10px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;\">\n  <div style=\"background:linear-gradient(135deg,#73BF69 0%,#4a9c3f 100%);color:#fff;padding:10px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(115,191,105,0.4);text-align:center;min-width:120px;\">\n    <div style=\"font-size:14px;font-weight:600;\">RECEIVER</div>\n    <div style=\"font-size:10px;opacity:0.9;margin-top:2px;\">gRPC \u00b7 HTTP \u00b7 PRW</div>\n  </div>\n  <div style=\"font-size:28px;color:#73BF69;font-weight:bold;\">\u2192</div>\n  <div style=\"background:linear-gradient(135deg,#FADE2A 0%,#c9b41e 100%);color:#1a1a1a;padding:10px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(250,222,42,0.4);text-align:center;min-width:120px;\">\n    <div style=\"font-size:14px;font-weight:600;\">LIMITS</div>\n    <div style=\"font-size:10px;opacity:0.8;margin-top:2px;\">Cardinality \u00b7 Rate</div>\n  </div>\n  <div style=\"font-size:28px;color:#FADE2A;font-weight:bold;\">\u2192</div>\n  <div style=\"background:linear-gradient(135deg,#5794F2 0%,#3670c9 100%);color:#fff;padding:10px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(87,148,242,0.4);text-align:center;min-width:120px;\">\n    <div style=\"font-size:14px;font-weight:600;\">QUEUE</div>\n    <div style=\"font-size:10px;opacity:0.9;margin-top:2px;\">FastQueue \u00b7 Retry</div>\n  </div>\n  <div style=\"font-size:28px;color:#5794F2;font-weight:bold;\">\u2192</div>\n  <div style=\"background:linear-gradient(135deg,#FF9830 0%,#d97a1f 100%);color:#fff;padding:10px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(255,152,48,0.4);text-align:center;min-width:120px;\">\n    <div style=\"font-size:14px;font-weight:600;\">EXPORTER</div>\n    <div style=\"font-size:10px;opacity:0.9;margin-top:2px;\">OTLP \u00b7 PRW</div>\n  </div>\n  <div style=\"font-size:28px;color:#FF9830;font-weight:bold;\">\u2192</div>\n  <div style=\"background:linear-gradient(135deg,#B877D9 0%,#9455b8 100%);color:#fff;padding:10px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(184,119,217,0.4);text-align:center;min-width:120px;\">\n    <div style=\"font-size:14px;font-weight:600;\">BACKEND</div>\n    <div style=\"font-size:10px;opacity:0.9;margin-top:2px;\">Prometheus \u00b7 VM</div>\n  </div>\n</div>",
+        "content": "<div style='background:#73BF69;color:#fff;padding:12px 8px;border-radius:4px 4px 0 0;text-align:center;font-weight:bold;font-size:16px;'>RECEIVER</div>",
         "mode": "html"
       },
       "transparent": true,
@@ -62,22 +58,21 @@
               }
             ]
           },
-          "unit": "short",
-          "decimals": 0
+          "unit": "short"
         }
       },
       "gridPos": {
-        "h": 4,
-        "w": 5,
+        "h": 2,
+        "w": 2,
         "x": 0,
-        "y": 4
+        "y": 3
       },
-      "id": 510,
+      "id": 502,
       "options": {
         "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -88,12 +83,126 @@
         "textMode": "value_and_name"
       },
       "title": "",
-      "description": "Total datapoints received per second (OTLP + PRW)",
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_datapoints_received_total[1m])) + sum(rate(metrics_governor_prw_datapoints_received_total[1m]))) or vector(0)",
-          "legendFormat": "Received/s"
+          "expr": "(sum(rate(metrics_governor_datapoints_received_total[1m])) + sum(rate(metrics_governor_prw_datapoints_received_total[1m])))",
+          "legendFormat": "In/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              },
+              {
+                "color": "#FF9830",
+                "value": 1
+              },
+              {
+                "color": "#F2495C",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 2,
+        "x": 2,
+        "y": 3
+      },
+      "id": 503,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_receiver_errors_total[1m])))",
+          "legendFormat": "Err/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#73BF69"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 1,
+        "x": 4,
+        "y": 3
+      },
+      "id": 504,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(metrics_governor_metrics_total)",
+          "legendFormat": "Metrics"
         }
       ]
     },
@@ -102,11 +211,233 @@
         "h": 4,
         "w": 1,
         "x": 5,
-        "y": 4
+        "y": 1
+      },
+      "id": 505,
+      "options": {
+        "content": "<div style='display:flex;align-items:center;justify-content:center;height:100%;font-size:24px;color:#73BF69;'>\u2192</div>",
+        "mode": "html"
+      },
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "gridPos": {
+        "h": 2,
+        "w": 5,
+        "x": 6,
+        "y": 1
+      },
+      "id": 510,
+      "options": {
+        "content": "<div style='background:#FADE2A;color:#333;padding:12px 8px;border-radius:4px 4px 0 0;text-align:center;font-weight:bold;font-size:16px;'>LIMITS</div>",
+        "mode": "html"
+      },
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#73BF69"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 2,
+        "x": 6,
+        "y": 3
       },
       "id": 511,
       "options": {
-        "content": "",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_limit_datapoints_passed_total[1m])))",
+          "legendFormat": "Pass/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              },
+              {
+                "color": "#FF9830",
+                "value": 100
+              },
+              {
+                "color": "#F2495C",
+                "value": 1000
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 2,
+        "x": 8,
+        "y": 3
+      },
+      "id": 512,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_limit_datapoints_dropped_total[1m])))",
+          "legendFormat": "Drop/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 5
+              },
+              {
+                "color": "#F2495C",
+                "value": 20
+              }
+            ]
+          },
+          "unit": "percent",
+          "max": 100
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 1,
+        "x": 10,
+        "y": 3
+      },
+      "id": 513,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(100 * sum(rate(metrics_governor_limit_datapoints_dropped_total[1m])) / clamp_min(sum(rate(metrics_governor_limit_datapoints_dropped_total[1m])) + sum(rate(metrics_governor_limit_datapoints_passed_total[1m])), 1))",
+          "legendFormat": "%"
+        }
+      ]
+    },
+    {
+      "gridPos": {
+        "h": 4,
+        "w": 1,
+        "x": 11,
+        "y": 1
+      },
+      "id": 514,
+      "options": {
+        "content": "<div style='display:flex;align-items:center;justify-content:center;height:100%;font-size:24px;color:#FADE2A;'>\u2192</div>",
+        "mode": "html"
+      },
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "gridPos": {
+        "h": 2,
+        "w": 5,
+        "x": 12,
+        "y": 1
+      },
+      "id": 520,
+      "options": {
+        "content": "<div style='background:#5794F2;color:#fff;padding:12px 8px;border-radius:4px 4px 0 0;text-align:center;font-weight:bold;font-size:16px;'>QUEUE</div>",
         "mode": "html"
       },
       "transparent": true,
@@ -132,36 +463,29 @@
               },
               {
                 "color": "#FADE2A",
-                "value": 1
-              },
-              {
-                "color": "#FF9830",
-                "value": 10
+                "value": 100
               },
               {
                 "color": "#F2495C",
-                "value": 25
+                "value": 1000
               }
             ]
           },
-          "unit": "percent",
-          "decimals": 1,
-          "min": 0,
-          "max": 100
+          "unit": "short"
         }
       },
       "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 6,
-        "y": 4
+        "h": 2,
+        "w": 1,
+        "x": 12,
+        "y": 3
       },
-      "id": 520,
+      "id": 521,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -172,29 +496,13 @@
         "textMode": "value_and_name"
       },
       "title": "",
-      "description": "Percentage of datapoints dropped by limits. Green=healthy, Yellow=warning, Red=critical",
       "type": "stat",
       "targets": [
         {
-          "expr": "(100 * sum(rate(metrics_governor_limit_datapoints_dropped_total[1m])) / clamp_min(sum(rate(metrics_governor_limit_datapoints_dropped_total[1m])) + sum(rate(metrics_governor_limit_datapoints_passed_total[1m])), 1)) or vector(0)",
-          "legendFormat": "Drop Rate"
+          "expr": "(sum(metrics_governor_queue_size))",
+          "legendFormat": "Size"
         }
       ]
-    },
-    {
-      "gridPos": {
-        "h": 4,
-        "w": 1,
-        "x": 11,
-        "y": 4
-      },
-      "id": 521,
-      "options": {
-        "content": "",
-        "mode": "html"
-      },
-      "transparent": true,
-      "type": "text"
     },
     {
       "datasource": {
@@ -219,33 +527,27 @@
                 "value": 50
               },
               {
-                "color": "#FF9830",
-                "value": 75
-              },
-              {
                 "color": "#F2495C",
-                "value": 90
+                "value": 80
               }
             ]
           },
           "unit": "percent",
-          "decimals": 0,
-          "min": 0,
           "max": 100
         }
       },
       "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 12,
-        "y": 4
+        "h": 2,
+        "w": 1,
+        "x": 13,
+        "y": 3
       },
-      "id": 530,
+      "id": 522,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -256,12 +558,133 @@
         "textMode": "value_and_name"
       },
       "title": "",
-      "description": "Queue utilization percentage. Green=healthy, Yellow=filling up, Red=nearly full",
       "type": "stat",
       "targets": [
         {
-          "expr": "(100 * clamp_max(metrics_governor_queue_utilization_ratio, 1)) or vector(0)",
-          "legendFormat": "Queue Used"
+          "expr": "(100 * metrics_governor_queue_utilization_ratio)",
+          "legendFormat": "%"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 10
+              },
+              {
+                "color": "#F2495C",
+                "value": 100
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 2,
+        "x": 14,
+        "y": 3
+      },
+      "id": 523,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_queue_retry_total[1m])))",
+          "legendFormat": "Retry/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              },
+              {
+                "color": "#FF9830",
+                "value": 1
+              },
+              {
+                "color": "#F2495C",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 1,
+        "x": 16,
+        "y": 3
+      },
+      "id": 524,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_queue_dropped_total[1m])))",
+          "legendFormat": "Err/s"
         }
       ]
     },
@@ -270,11 +693,26 @@
         "h": 4,
         "w": 1,
         "x": 17,
-        "y": 4
+        "y": 1
       },
-      "id": 531,
+      "id": 525,
       "options": {
-        "content": "",
+        "content": "<div style='display:flex;align-items:center;justify-content:center;height:100%;font-size:24px;color:#5794F2;'>\u2192</div>",
+        "mode": "html"
+      },
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "gridPos": {
+        "h": 2,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "id": 530,
+      "options": {
+        "content": "<div style='background:#FF9830;color:#fff;padding:12px 8px;border-radius:4px 4px 0 0;text-align:center;font-weight:bold;font-size:16px;'>EXPORTER \u2192 BACKEND</div>",
         "mode": "html"
       },
       "transparent": true,
@@ -301,22 +739,21 @@
               }
             ]
           },
-          "unit": "short",
-          "decimals": 0
+          "unit": "short"
         }
       },
       "gridPos": {
-        "h": 4,
-        "w": 5,
+        "h": 2,
+        "w": 2,
         "x": 18,
-        "y": 4
+        "y": 3
       },
-      "id": 540,
+      "id": 531,
       "options": {
         "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -327,29 +764,128 @@
         "textMode": "value_and_name"
       },
       "title": "",
-      "description": "Total datapoints sent to backend per second (OTLP + PRW)",
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_datapoints_sent_total[1m])) + sum(rate(metrics_governor_prw_datapoints_sent_total[1m]))) or vector(0)",
-          "legendFormat": "Sent/s"
+          "expr": "(sum(rate(metrics_governor_datapoints_sent_total[1m])) + sum(rate(metrics_governor_prw_datapoints_sent_total[1m])))",
+          "legendFormat": "Out/s"
         }
       ]
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#FF9830"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#FF9830",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
       "gridPos": {
-        "h": 4,
-        "w": 1,
-        "x": 23,
-        "y": 4
+        "h": 2,
+        "w": 2,
+        "x": 20,
+        "y": 3
       },
-      "id": 541,
+      "id": 532,
       "options": {
-        "content": "",
-        "mode": "html"
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
       },
-      "transparent": true,
-      "type": "text"
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_batches_sent_total[1m])) + sum(rate(metrics_governor_prw_batches_sent_total[1m])))",
+          "legendFormat": "Batch/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              },
+              {
+                "color": "#FF9830",
+                "value": 1
+              },
+              {
+                "color": "#F2495C",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 2,
+        "x": 22,
+        "y": 3
+      },
+      "id": 533,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_export_errors_total[1m])) + sum(rate(metrics_governor_prw_export_errors_total[1m])))",
+          "legendFormat": "Err/s"
+        }
+      ]
     },
     {
       "collapsed": false,
@@ -357,7 +893,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 4
       },
       "id": 1,
       "panels": [],
@@ -399,7 +935,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 6
+        "y": 5
       },
       "id": 2,
       "options": {
@@ -421,7 +957,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(100 * (sum(rate(metrics_governor_datapoints_sent_total[5m])) / clamp_min(sum(rate(metrics_governor_datapoints_received_total[5m])), 1))) or vector(0)",
+          "expr": "(100 * (sum(rate(metrics_governor_datapoints_sent_total[5m])) / clamp_min(sum(rate(metrics_governor_datapoints_received_total[5m])), 1)))",
           "legendFormat": "Pass Rate"
         }
       ]
@@ -453,7 +989,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 6
+        "y": 5
       },
       "id": 3,
       "options": {
@@ -475,7 +1011,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_datapoints_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_datapoints_total[1m])))",
           "legendFormat": "Datapoints/s"
         }
       ]
@@ -507,7 +1043,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 6
+        "y": 5
       },
       "id": 4,
       "options": {
@@ -529,7 +1065,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(metrics_governor_metrics_total) or vector(0)",
+          "expr": "(metrics_governor_metrics_total)",
           "legendFormat": "Metrics"
         }
       ]
@@ -569,7 +1105,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 6
+        "y": 5
       },
       "id": 5,
       "options": {
@@ -591,7 +1127,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(metrics_governor_metric_cardinality)) or vector(0)",
+          "expr": "(sum(metrics_governor_metric_cardinality))",
           "legendFormat": "Cardinality"
         }
       ]
@@ -631,7 +1167,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 6
+        "y": 5
       },
       "id": 6,
       "options": {
@@ -653,7 +1189,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(metrics_governor_queue_size)) or vector(0)",
+          "expr": "(sum(metrics_governor_queue_size))",
           "legendFormat": "Queue"
         }
       ]
@@ -689,7 +1225,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 6
+        "y": 5
       },
       "id": 7,
       "options": {
@@ -711,7 +1247,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_export_errors_total[5m])) * 300) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_export_errors_total[5m])) * 300)",
           "legendFormat": "Errors/5m"
         }
       ]
@@ -751,7 +1287,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 10
+        "y": 9
       },
       "id": 8,
       "options": {
@@ -773,7 +1309,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_limit_datapoints_dropped_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_limit_datapoints_dropped_total[1m])))",
           "legendFormat": "Dropped/s"
         }
       ]
@@ -817,7 +1353,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 10
+        "y": 9
       },
       "id": 9,
       "options": {
@@ -839,7 +1375,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(100 * sum(rate(metrics_governor_limit_datapoints_dropped_total[5m])) / (sum(rate(metrics_governor_limit_datapoints_dropped_total[5m])) + sum(rate(metrics_governor_limit_datapoints_passed_total[5m])))) or vector(0)",
+          "expr": "(100 * sum(rate(metrics_governor_limit_datapoints_dropped_total[5m])) / (sum(rate(metrics_governor_limit_datapoints_dropped_total[5m])) + sum(rate(metrics_governor_limit_datapoints_passed_total[5m]))))",
           "legendFormat": "Drop %"
         }
       ]
@@ -871,7 +1407,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 10
+        "y": 9
       },
       "id": 10,
       "options": {
@@ -893,7 +1429,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_otlp_export_datapoints_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_otlp_export_datapoints_total[1m])))",
           "legendFormat": "Exported/s"
         }
       ]
@@ -933,7 +1469,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 10
+        "y": 9
       },
       "id": 10001,
       "options": {
@@ -955,7 +1491,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(metrics_governor_rule_dropped_groups_total)) or vector(0)",
+          "expr": "(sum(metrics_governor_rule_dropped_groups_total))",
           "legendFormat": "Groups"
         }
       ]
@@ -966,7 +1502,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 13
       },
       "id": 10002,
       "panels": [],
@@ -1031,7 +1567,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 11
+        "y": 10
       },
       "id": 11,
       "options": {
@@ -1055,15 +1591,15 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_datapoints_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_datapoints_total[1m])))",
           "legendFormat": "Received"
         },
         {
-          "expr": "(sum(rate(metrics_governor_datapoints_sent_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_datapoints_sent_total[1m])))",
           "legendFormat": "Sent"
         },
         {
-          "expr": "(sum(rate(metrics_governor_limit_datapoints_dropped_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_limit_datapoints_dropped_total[1m])))",
           "legendFormat": "Dropped"
         }
       ]
@@ -1126,7 +1662,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 11
+        "y": 10
       },
       "id": 12,
       "options": {
@@ -1150,11 +1686,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_batches_sent_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_batches_sent_total[1m])))",
           "legendFormat": "Batches/s"
         },
         {
-          "expr": "(sum(rate(metrics_governor_export_errors_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_export_errors_total[1m])))",
           "legendFormat": "Export Errors/s"
         }
       ]
@@ -1165,7 +1701,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 18
       },
       "id": 100,
       "panels": [],
@@ -1230,7 +1766,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 20
+        "y": 19
       },
       "id": 101,
       "options": {
@@ -1254,11 +1790,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_prw_datapoints_received_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_datapoints_received_total[1m])))",
           "legendFormat": "Received"
         },
         {
-          "expr": "(sum(rate(metrics_governor_prw_datapoints_sent_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_datapoints_sent_total[1m])))",
           "legendFormat": "Sent"
         }
       ]
@@ -1321,7 +1857,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 20
+        "y": 19
       },
       "id": 102,
       "options": {
@@ -1345,19 +1881,19 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_prw_timeseries_received_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_timeseries_received_total[1m])))",
           "legendFormat": "Timeseries Received"
         },
         {
-          "expr": "(sum(rate(metrics_governor_prw_timeseries_sent_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_timeseries_sent_total[1m])))",
           "legendFormat": "Timeseries Sent"
         },
         {
-          "expr": "(sum(rate(metrics_governor_prw_batches_sent_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_batches_sent_total[1m])))",
           "legendFormat": "Batches/s"
         },
         {
-          "expr": "(sum(rate(metrics_governor_prw_export_errors_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_export_errors_total[1m])))",
           "legendFormat": "Export Errors/s"
         }
       ]
@@ -1497,7 +2033,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 28
+        "y": 27
       },
       "id": 115,
       "options": {
@@ -1521,7 +2057,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum by (error_type) (rate(metrics_governor_prw_export_errors_total[5m]))) or vector(0)",
+          "expr": "(sum by (error_type) (rate(metrics_governor_prw_export_errors_total[5m])))",
           "legendFormat": "{{error_type}}"
         }
       ]
@@ -1631,7 +2167,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 28
+        "y": 27
       },
       "id": 116,
       "options": {
@@ -1655,7 +2191,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum by (error_type) (rate(metrics_governor_prw_retry_failure_total[5m]))) or vector(0)",
+          "expr": "(sum by (error_type) (rate(metrics_governor_prw_retry_failure_total[5m])))",
           "legendFormat": "{{error_type}}"
         }
       ]
@@ -1687,7 +2223,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 36
+        "y": 35
       },
       "id": 117,
       "options": {
@@ -1709,7 +2245,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_prw_export_samples_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_export_samples_total[1m])))",
           "legendFormat": "Samples/s"
         }
       ]
@@ -1749,7 +2285,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 36
+        "y": 35
       },
       "id": 118,
       "options": {
@@ -1771,7 +2307,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_prw_export_errors_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_export_errors_total[1m])))",
           "legendFormat": "Errors/s"
         }
       ]
@@ -1811,7 +2347,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 36
+        "y": 35
       },
       "id": 119,
       "options": {
@@ -1833,7 +2369,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(100 * sum(rate(metrics_governor_prw_retry_success_total[5m])) / clamp_min(sum(rate(metrics_governor_prw_retry_success_total[5m])) + sum(rate(metrics_governor_prw_retry_failure_total[5m])), 1)) or vector(0)",
+          "expr": "(100 * sum(rate(metrics_governor_prw_retry_success_total[5m])) / clamp_min(sum(rate(metrics_governor_prw_retry_success_total[5m])) + sum(rate(metrics_governor_prw_retry_failure_total[5m])), 1))",
           "legendFormat": "Success Rate"
         }
       ]
@@ -1865,7 +2401,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 36
+        "y": 35
       },
       "id": 120,
       "options": {
@@ -1887,7 +2423,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_prw_export_timeseries_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_export_timeseries_total[1m])))",
           "legendFormat": "Timeseries/s"
         }
       ]
@@ -1898,7 +2434,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 39
       },
       "id": 110,
       "panels": [],
@@ -1963,7 +2499,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 29
+        "y": 28
       },
       "id": 111,
       "options": {
@@ -1987,19 +2523,19 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[1m])))",
           "legendFormat": "Received (uncompressed)"
         },
         {
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[1m])))",
           "legendFormat": "Received (compressed)"
         },
         {
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m])))",
           "legendFormat": "Sent (uncompressed)"
         },
         {
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[1m])))",
           "legendFormat": "Sent (compressed)"
         }
       ]
@@ -2062,7 +2598,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 29
+        "y": 28
       },
       "id": 112,
       "options": {
@@ -2086,19 +2622,19 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[1m])))",
           "legendFormat": "gRPC Received (decompressed)"
         },
         {
-          "expr": "(sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[1m])))",
           "legendFormat": "gRPC Received (wire/compressed)"
         },
         {
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m])))",
           "legendFormat": "Sent (uncompressed)"
         },
         {
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[1m])))",
           "legendFormat": "Sent (compressed)"
         }
       ]
@@ -2161,7 +2697,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 37
+        "y": 36
       },
       "id": 113,
       "options": {
@@ -2184,19 +2720,19 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m])))",
           "legendFormat": "PRW Receive"
         },
         {
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m])))",
           "legendFormat": "PRW Send"
         },
         {
-          "expr": "(sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[5m])))",
           "legendFormat": "OTLP/gRPC Receive"
         },
         {
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m])))",
           "legendFormat": "OTLP Send"
         }
       ]
@@ -2259,7 +2795,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 37
+        "y": 36
       },
       "id": 114,
       "options": {
@@ -2283,11 +2819,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_buffer_size{protocol=\"prw\"}) or vector(0)",
+          "expr": "(metrics_governor_buffer_size{protocol=\"prw\"})",
           "legendFormat": "PRW Buffer"
         },
         {
-          "expr": "(metrics_governor_buffer_size{protocol=\"otlp\"}) or vector(0)",
+          "expr": "(metrics_governor_buffer_size{protocol=\"otlp\"})",
           "legendFormat": "OTLP Buffer"
         }
       ]
@@ -2298,7 +2834,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 45
+        "y": 44
       },
       "id": 20,
       "panels": [],
@@ -2363,7 +2899,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 46
+        "y": 45
       },
       "id": 21,
       "options": {
@@ -2386,11 +2922,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum by (rule) (rate(metrics_governor_limit_cardinality_exceeded_total[5m]))) or vector(0)",
+          "expr": "(sum by (rule) (rate(metrics_governor_limit_cardinality_exceeded_total[5m])))",
           "legendFormat": "{{rule}} (cardinality)"
         },
         {
-          "expr": "(sum by (rule) (rate(metrics_governor_limit_datapoints_exceeded_total[5m]))) or vector(0)",
+          "expr": "(sum by (rule) (rate(metrics_governor_limit_datapoints_exceeded_total[5m])))",
           "legendFormat": "{{rule}} (datapoints)"
         }
       ]
@@ -2453,7 +2989,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 46
+        "y": 45
       },
       "id": 22,
       "options": {
@@ -2476,11 +3012,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum by (rule) (rate(metrics_governor_limit_datapoints_passed_total[5m]))) or vector(0)",
+          "expr": "(sum by (rule) (rate(metrics_governor_limit_datapoints_passed_total[5m])))",
           "legendFormat": "{{rule}} passed"
         },
         {
-          "expr": "(sum by (rule) (rate(metrics_governor_limit_datapoints_dropped_total[5m]))) or vector(0)",
+          "expr": "(sum by (rule) (rate(metrics_governor_limit_datapoints_dropped_total[5m])))",
           "legendFormat": "{{rule}} dropped"
         }
       ]
@@ -2543,7 +3079,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 54
+        "y": 53
       },
       "id": 10003,
       "options": {
@@ -2567,11 +3103,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(100 * sum(rate(metrics_governor_limit_datapoints_dropped_total[5m])) / (sum(rate(metrics_governor_limit_datapoints_dropped_total[5m])) + sum(rate(metrics_governor_limit_datapoints_passed_total[5m])))) or vector(0)",
+          "expr": "(100 * sum(rate(metrics_governor_limit_datapoints_dropped_total[5m])) / (sum(rate(metrics_governor_limit_datapoints_dropped_total[5m])) + sum(rate(metrics_governor_limit_datapoints_passed_total[5m]))))",
           "legendFormat": "Total Drop Rate %"
         },
         {
-          "expr": "(100 * sum by (rule) (rate(metrics_governor_limit_datapoints_dropped_total[5m])) / (sum by (rule) (rate(metrics_governor_limit_datapoints_dropped_total[5m])) + sum by (rule) (rate(metrics_governor_limit_datapoints_passed_total[5m])))) or vector(0)",
+          "expr": "(100 * sum by (rule) (rate(metrics_governor_limit_datapoints_dropped_total[5m])) / (sum by (rule) (rate(metrics_governor_limit_datapoints_dropped_total[5m])) + sum by (rule) (rate(metrics_governor_limit_datapoints_passed_total[5m]))))",
           "legendFormat": "{{rule}} Drop Rate %"
         }
       ]
@@ -2634,7 +3170,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 54
+        "y": 53
       },
       "id": 10004,
       "options": {
@@ -2657,11 +3193,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(metrics_governor_limit_datapoints_dropped_total)) or vector(0)",
+          "expr": "(sum(metrics_governor_limit_datapoints_dropped_total))",
           "legendFormat": "Total Dropped"
         },
         {
-          "expr": "(sum by (rule) (metrics_governor_limit_datapoints_dropped_total)) or vector(0)",
+          "expr": "(sum by (rule) (metrics_governor_limit_datapoints_dropped_total))",
           "legendFormat": "{{rule}}"
         }
       ]
@@ -2724,7 +3260,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 62
+        "y": 61
       },
       "id": 23,
       "options": {
@@ -2746,7 +3282,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_rule_current_cardinality) or vector(0)",
+          "expr": "(metrics_governor_rule_current_cardinality)",
           "legendFormat": "{{rule}}"
         }
       ]
@@ -2809,7 +3345,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 54
+        "y": 53
       },
       "id": 24,
       "options": {
@@ -2831,11 +3367,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_rule_dropped_groups_total) or vector(0)",
+          "expr": "(metrics_governor_rule_dropped_groups_total)",
           "legendFormat": "{{rule}}"
         },
         {
-          "expr": "(sum by (rule) (rate(metrics_governor_limit_groups_dropped_total[5m]))) or vector(0)",
+          "expr": "(sum by (rule) (rate(metrics_governor_limit_groups_dropped_total[5m])))",
           "legendFormat": "{{rule}} (rate)"
         }
       ]
@@ -2846,7 +3382,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 62
+        "y": 61
       },
       "id": 30,
       "panels": [],
@@ -2911,7 +3447,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 63
+        "y": 62
       },
       "id": 31,
       "options": {
@@ -2933,7 +3469,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(topk(10, metrics_governor_metric_cardinality)) or vector(0)",
+          "expr": "(topk(10, metrics_governor_metric_cardinality))",
           "legendFormat": "{{metric_name}}"
         }
       ]
@@ -2996,7 +3532,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 63
+        "y": 62
       },
       "id": 32,
       "options": {
@@ -3018,7 +3554,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(topk(10, rate(metrics_governor_metric_datapoints_total[5m]))) or vector(0)",
+          "expr": "(topk(10, rate(metrics_governor_metric_datapoints_total[5m])))",
           "legendFormat": "{{metric_name}}"
         }
       ]
@@ -3029,7 +3565,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 71
+        "y": 70
       },
       "id": 80,
       "panels": [],
@@ -3086,7 +3622,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 72
+        "y": 71
       },
       "id": 81,
       "options": {
@@ -3108,7 +3644,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(metrics_governor_cardinality_mode{mode=\"bloom\"}) or vector(0)",
+          "expr": "(metrics_governor_cardinality_mode{mode=\"bloom\"})",
           "legendFormat": "Mode"
         }
       ]
@@ -3148,7 +3684,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 72
+        "y": 71
       },
       "id": 82,
       "options": {
@@ -3170,7 +3706,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(metrics_governor_cardinality_memory_bytes + metrics_governor_limits_cardinality_memory_bytes) or vector(0)",
+          "expr": "(metrics_governor_cardinality_memory_bytes + metrics_governor_limits_cardinality_memory_bytes)",
           "legendFormat": "Total Memory"
         }
       ]
@@ -3212,7 +3748,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 72
+        "y": 71
       },
       "id": 83,
       "options": {
@@ -3234,7 +3770,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(100 * (1 - ((metrics_governor_cardinality_memory_bytes + metrics_governor_limits_cardinality_memory_bytes) / ((sum(metrics_governor_metric_cardinality) + sum(metrics_governor_rule_group_cardinality)) * 75)))) or vector(0)",
+          "expr": "(100 * (1 - ((metrics_governor_cardinality_memory_bytes + metrics_governor_limits_cardinality_memory_bytes) / ((sum(metrics_governor_metric_cardinality) + sum(metrics_governor_rule_group_cardinality)) * 75))))",
           "legendFormat": "Savings %"
         }
       ]
@@ -3266,7 +3802,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 72
+        "y": 71
       },
       "id": 84,
       "options": {
@@ -3288,7 +3824,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(metrics_governor_cardinality_trackers_total + metrics_governor_limits_cardinality_trackers_total) or vector(0)",
+          "expr": "(metrics_governor_cardinality_trackers_total + metrics_governor_limits_cardinality_trackers_total)",
           "legendFormat": "Trackers"
         }
       ]
@@ -3351,7 +3887,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 76
+        "y": 75
       },
       "id": 85,
       "options": {
@@ -3375,7 +3911,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(topk(10, metrics_governor_rule_cardinality_memory_bytes)) or vector(0)",
+          "expr": "(topk(10, metrics_governor_rule_cardinality_memory_bytes))",
           "legendFormat": "{{rule}}"
         }
       ]
@@ -3438,7 +3974,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 76
+        "y": 75
       },
       "id": 86,
       "options": {
@@ -3460,11 +3996,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_cardinality_config_expected_items) or vector(0)",
+          "expr": "(metrics_governor_cardinality_config_expected_items)",
           "legendFormat": "Expected Items"
         },
         {
-          "expr": "(metrics_governor_cardinality_config_fp_rate * 100) or vector(0)",
+          "expr": "(metrics_governor_cardinality_config_fp_rate * 100)",
           "legendFormat": "FP Rate %"
         }
       ]
@@ -3475,7 +4011,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 84
+        "y": 83
       },
       "id": 40,
       "panels": [],
@@ -3540,7 +4076,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 85
+        "y": 84
       },
       "id": 41,
       "options": {
@@ -3564,11 +4100,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_queue_size) or vector(0)",
+          "expr": "(metrics_governor_queue_size)",
           "legendFormat": "Queue Size"
         },
         {
-          "expr": "(metrics_governor_queue_max_size) or vector(0)",
+          "expr": "(metrics_governor_queue_max_size)",
           "legendFormat": "Max Size"
         }
       ]
@@ -3631,7 +4167,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 85
+        "y": 84
       },
       "id": 42,
       "options": {
@@ -3654,15 +4190,15 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_queue_push_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_queue_push_total[5m])))",
           "legendFormat": "Push/s"
         },
         {
-          "expr": "(sum(rate(metrics_governor_queue_dropped_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_queue_dropped_total[5m])))",
           "legendFormat": "Dropped/s"
         },
         {
-          "expr": "(sum(rate(metrics_governor_queue_retry_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_queue_retry_total[5m])))",
           "legendFormat": "Retry/s"
         }
       ]
@@ -3725,7 +4261,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 93
+        "y": 92
       },
       "id": 43,
       "options": {
@@ -3749,19 +4285,19 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_queue_bytes) or vector(0)",
+          "expr": "(metrics_governor_queue_bytes)",
           "legendFormat": "Queue Bytes"
         },
         {
-          "expr": "(metrics_governor_queue_max_bytes) or vector(0)",
+          "expr": "(metrics_governor_queue_max_bytes)",
           "legendFormat": "Max Bytes"
         },
         {
-          "expr": "(metrics_governor_queue_effective_max_bytes) or vector(0)",
+          "expr": "(metrics_governor_queue_effective_max_bytes)",
           "legendFormat": "Effective Max"
         },
         {
-          "expr": "(metrics_governor_queue_disk_available_bytes) or vector(0)",
+          "expr": "(metrics_governor_queue_disk_available_bytes)",
           "legendFormat": "Disk Available"
         }
       ]
@@ -3824,7 +4360,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 93
+        "y": 92
       },
       "id": 44,
       "options": {
@@ -3847,23 +4383,23 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_fastqueue_meta_sync_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_fastqueue_meta_sync_total[5m])))",
           "legendFormat": "Meta Syncs/s"
         },
         {
-          "expr": "(sum(rate(metrics_governor_fastqueue_chunk_rotations[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_fastqueue_chunk_rotations[5m])))",
           "legendFormat": "Chunk Rotations/s"
         },
         {
-          "expr": "(sum(rate(metrics_governor_fastqueue_inmemory_flushes[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_fastqueue_inmemory_flushes[5m])))",
           "legendFormat": "Memory Flushes/s"
         },
         {
-          "expr": "(sum(rate(metrics_governor_queue_retry_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_queue_retry_total[5m])))",
           "legendFormat": "Retries/s"
         },
         {
-          "expr": "(sum(rate(metrics_governor_queue_retry_success_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_queue_retry_success_total[5m])))",
           "legendFormat": "Retry Success/s"
         }
       ]
@@ -3926,7 +4462,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 101
+        "y": 100
       },
       "id": 45,
       "options": {
@@ -3950,7 +4486,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_queue_utilization_ratio) or vector(0)",
+          "expr": "(metrics_governor_queue_utilization_ratio)",
           "legendFormat": "Utilization"
         }
       ]
@@ -4013,7 +4549,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 101
+        "y": 100
       },
       "id": 46,
       "options": {
@@ -4036,11 +4572,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum by (reason) (rate(metrics_governor_queue_dropped_total[5m])) or on() vector(0)) or vector(0)",
+          "expr": "(sum by (reason) (rate(metrics_governor_queue_dropped_total[5m])) or on() vector(0))",
           "legendFormat": "{{reason}}"
         },
         {
-          "expr": "sum(rate(metrics_governor_queue_disk_full_total[5m])) or vector(0)",
+          "expr": "sum(rate(metrics_governor_queue_disk_full_total[5m]))",
           "legendFormat": "Disk Full Events"
         }
       ]
@@ -4103,7 +4639,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 93
+        "y": 92
       },
       "id": 60,
       "options": {
@@ -4127,15 +4663,15 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_fastqueue_inmemory_blocks * 1024) or vector(0)",
+          "expr": "(metrics_governor_fastqueue_inmemory_blocks * 1024)",
           "legendFormat": "In-Memory (est. bytes)"
         },
         {
-          "expr": "(metrics_governor_fastqueue_disk_bytes) or vector(0)",
+          "expr": "(metrics_governor_fastqueue_disk_bytes)",
           "legendFormat": "Disk Bytes"
         },
         {
-          "expr": "(metrics_governor_queue_disk_available_bytes) or vector(0)",
+          "expr": "(metrics_governor_queue_disk_available_bytes)",
           "legendFormat": "Disk Available"
         }
       ]
@@ -4198,7 +4734,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 101
+        "y": 100
       },
       "id": 47,
       "options": {
@@ -4222,15 +4758,15 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_batches_sent_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_batches_sent_total[5m])))",
           "legendFormat": "Batches Sent/s"
         },
         {
-          "expr": "(sum(rate(metrics_governor_otlp_export_errors_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_otlp_export_errors_total[5m])))",
           "legendFormat": "OTLP Export Errors/s"
         },
         {
-          "expr": "(sum(rate(metrics_governor_sharding_export_errors_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_sharding_export_errors_total[5m])))",
           "legendFormat": "Sharding Errors/s"
         }
       ]
@@ -4370,7 +4906,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 109
+        "y": 108
       },
       "id": 48,
       "options": {
@@ -4394,7 +4930,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum by (error_type) (rate(metrics_governor_otlp_export_errors_total[5m]))) or vector(0)",
+          "expr": "(sum by (error_type) (rate(metrics_governor_otlp_export_errors_total[5m])))",
           "legendFormat": "{{error_type}}"
         }
       ]
@@ -4504,7 +5040,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 109
+        "y": 108
       },
       "id": 49,
       "options": {
@@ -4528,7 +5064,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum by (error_type) (rate(metrics_governor_queue_retry_failure_total[5m]))) or vector(0)",
+          "expr": "(sum by (error_type) (rate(metrics_governor_queue_retry_failure_total[5m])))",
           "legendFormat": "{{error_type}}"
         }
       ]
@@ -4560,7 +5096,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 117
+        "y": 116
       },
       "id": 50,
       "options": {
@@ -4582,7 +5118,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_otlp_export_datapoints_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_otlp_export_datapoints_total[1m])))",
           "legendFormat": "Datapoints/s"
         }
       ]
@@ -4622,7 +5158,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 117
+        "y": 116
       },
       "id": 51,
       "options": {
@@ -4644,7 +5180,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_otlp_export_errors_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_otlp_export_errors_total[1m])))",
           "legendFormat": "Errors/s"
         }
       ]
@@ -4684,7 +5220,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 117
+        "y": 116
       },
       "id": 52,
       "options": {
@@ -4706,7 +5242,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_queue_retry_failure_total[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_queue_retry_failure_total[1m])))",
           "legendFormat": "Failures/s"
         }
       ]
@@ -4746,7 +5282,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 117
+        "y": 116
       },
       "id": 53,
       "options": {
@@ -4768,7 +5304,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(100 * sum(rate(metrics_governor_queue_retry_success_total[5m])) / clamp_min(sum(rate(metrics_governor_queue_retry_success_total[5m])) + sum(rate(metrics_governor_queue_retry_failure_total[5m])), 1)) or vector(0)",
+          "expr": "(100 * sum(rate(metrics_governor_queue_retry_success_total[5m])) / clamp_min(sum(rate(metrics_governor_queue_retry_success_total[5m])) + sum(rate(metrics_governor_queue_retry_failure_total[5m])), 1))",
           "legendFormat": "Success Rate"
         }
       ]
@@ -4779,7 +5315,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 121
+        "y": 120
       },
       "id": 200,
       "panels": [],
@@ -4844,7 +5380,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 110
+        "y": 109
       },
       "id": 201,
       "options": {
@@ -4868,7 +5404,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_fastqueue_inmemory_blocks) or vector(0)",
+          "expr": "(metrics_governor_fastqueue_inmemory_blocks)",
           "legendFormat": "In-Memory Blocks"
         }
       ]
@@ -4931,7 +5467,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 110
+        "y": 109
       },
       "id": 202,
       "options": {
@@ -4954,7 +5490,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_fastqueue_disk_bytes) or vector(0)",
+          "expr": "(metrics_governor_fastqueue_disk_bytes)",
           "legendFormat": "Disk Bytes"
         }
       ]
@@ -5017,7 +5553,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 110
+        "y": 109
       },
       "id": 203,
       "options": {
@@ -5040,15 +5576,15 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_fastqueue_meta_sync_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_fastqueue_meta_sync_total[5m])))",
           "legendFormat": "Meta Syncs/s"
         },
         {
-          "expr": "(sum(rate(metrics_governor_fastqueue_chunk_rotations[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_fastqueue_chunk_rotations[5m])))",
           "legendFormat": "Chunk Rotations/s"
         },
         {
-          "expr": "(sum(rate(metrics_governor_fastqueue_inmemory_flushes[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_fastqueue_inmemory_flushes[5m])))",
           "legendFormat": "Memory Flushes/s"
         }
       ]
@@ -5111,7 +5647,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 118
+        "y": 117
       },
       "id": 204,
       "options": {
@@ -5134,15 +5670,15 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_queue_push_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_queue_push_total[5m])))",
           "legendFormat": "Push/s"
         },
         {
-          "expr": "(sum(rate(metrics_governor_queue_retry_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_queue_retry_total[5m])))",
           "legendFormat": "Retry/s"
         },
         {
-          "expr": "(sum(rate(metrics_governor_queue_retry_success_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_queue_retry_success_total[5m])))",
           "legendFormat": "Retry Success/s"
         }
       ]
@@ -5182,7 +5718,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 118
+        "y": 117
       },
       "id": 205,
       "options": {
@@ -5204,7 +5740,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(increase(metrics_governor_queue_dropped_total[5m])) or vector(0)",
+          "expr": "sum(increase(metrics_governor_queue_dropped_total[5m]))",
           "legendFormat": "Drops"
         }
       ]
@@ -5215,7 +5751,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 126
+        "y": 125
       },
       "id": 300,
       "panels": [],
@@ -5285,7 +5821,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 127
+        "y": 126
       },
       "id": 301,
       "options": {
@@ -5307,7 +5843,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(metrics_governor_circuit_breaker_state{state=\"closed\"} * 0 + metrics_governor_circuit_breaker_state{state=\"open\"} * 1 + metrics_governor_circuit_breaker_state{state=\"half_open\"} * 2) or vector(0)",
+          "expr": "(metrics_governor_circuit_breaker_state{state=\"closed\"} * 0 + metrics_governor_circuit_breaker_state{state=\"open\"} * 1 + metrics_governor_circuit_breaker_state{state=\"half_open\"} * 2)",
           "legendFormat": "State"
         }
       ]
@@ -5347,7 +5883,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 127
+        "y": 126
       },
       "id": 302,
       "options": {
@@ -5369,7 +5905,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "(metrics_governor_queue_backoff_seconds) or vector(0)",
+          "expr": "(metrics_governor_queue_backoff_seconds)",
           "legendFormat": "Backoff"
         }
       ]
@@ -5409,7 +5945,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 127
+        "y": 126
       },
       "id": 303,
       "options": {
@@ -5431,7 +5967,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(increase(metrics_governor_circuit_breaker_open_total[1h])) or vector(0)",
+          "expr": "sum(increase(metrics_governor_circuit_breaker_open_total[1h]))",
           "legendFormat": "Opens"
         }
       ]
@@ -5471,7 +6007,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 127
+        "y": 126
       },
       "id": 304,
       "options": {
@@ -5493,7 +6029,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(increase(metrics_governor_circuit_breaker_rejected_total[1h])) or vector(0)",
+          "expr": "sum(increase(metrics_governor_circuit_breaker_rejected_total[1h]))",
           "legendFormat": "Rejected"
         }
       ]
@@ -5556,7 +6092,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 127
+        "y": 126
       },
       "id": 305,
       "options": {
@@ -5578,7 +6114,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_circuit_breaker_state) or vector(0)",
+          "expr": "(metrics_governor_circuit_breaker_state)",
           "legendFormat": "{{state}}"
         }
       ]
@@ -5641,7 +6177,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 131
+        "y": 130
       },
       "id": 306,
       "options": {
@@ -5664,7 +6200,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_queue_backoff_seconds) or vector(0)",
+          "expr": "(metrics_governor_queue_backoff_seconds)",
           "legendFormat": "Backoff Delay"
         }
       ]
@@ -5727,7 +6263,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 131
+        "y": 130
       },
       "id": 307,
       "options": {
@@ -5750,11 +6286,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(rate(metrics_governor_circuit_breaker_open_total[5m])) or vector(0)",
+          "expr": "(rate(metrics_governor_circuit_breaker_open_total[5m]))",
           "legendFormat": "Opens/s"
         },
         {
-          "expr": "(rate(metrics_governor_circuit_breaker_rejected_total[5m])) or vector(0)",
+          "expr": "(rate(metrics_governor_circuit_breaker_rejected_total[5m]))",
           "legendFormat": "Rejected/s"
         }
       ]
@@ -5817,7 +6353,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 131
+        "y": 130
       },
       "id": 308,
       "options": {
@@ -5840,11 +6376,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(rate(metrics_governor_queue_retry_total[5m])) or vector(0)",
+          "expr": "(rate(metrics_governor_queue_retry_total[5m]))",
           "legendFormat": "Retry Attempts/s"
         },
         {
-          "expr": "(rate(metrics_governor_queue_retry_success_total[5m])) or vector(0)",
+          "expr": "(rate(metrics_governor_queue_retry_success_total[5m]))",
           "legendFormat": "Retry Success/s"
         }
       ]
@@ -5855,7 +6391,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 139
+        "y": 138
       },
       "id": 50,
       "panels": [],
@@ -5920,7 +6456,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 140
+        "y": 139
       },
       "id": 51,
       "options": {
@@ -5942,7 +6478,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_sharding_endpoints_total) or vector(0)",
+          "expr": "(metrics_governor_sharding_endpoints_total)",
           "legendFormat": "Endpoints"
         }
       ]
@@ -6005,7 +6541,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 140
+        "y": 139
       },
       "id": 52,
       "options": {
@@ -6028,7 +6564,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum by (endpoint) (rate(metrics_governor_sharding_datapoints_total[5m]))) or vector(0)",
+          "expr": "(sum by (endpoint) (rate(metrics_governor_sharding_datapoints_total[5m])))",
           "legendFormat": "{{endpoint}}"
         }
       ]
@@ -6091,7 +6627,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 140
+        "y": 139
       },
       "id": 53,
       "options": {
@@ -6114,15 +6650,15 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_sharding_dns_refresh_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_sharding_dns_refresh_total[5m])))",
           "legendFormat": "DNS Refresh"
         },
         {
-          "expr": "(sum(rate(metrics_governor_sharding_rehash_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_sharding_rehash_total[5m])))",
           "legendFormat": "Rehash"
         },
         {
-          "expr": "(sum(rate(metrics_governor_sharding_dns_errors_total[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_sharding_dns_errors_total[5m])))",
           "legendFormat": "DNS Errors"
         }
       ]
@@ -6185,7 +6721,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 148
+        "y": 147
       },
       "id": 54,
       "options": {
@@ -6209,15 +6745,15 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(histogram_quantile(0.50, rate(metrics_governor_sharding_dns_latency_seconds_bucket[5m]))) or vector(0)",
+          "expr": "(histogram_quantile(0.50, rate(metrics_governor_sharding_dns_latency_seconds_bucket[5m])))",
           "legendFormat": "p50"
         },
         {
-          "expr": "(histogram_quantile(0.95, rate(metrics_governor_sharding_dns_latency_seconds_bucket[5m]))) or vector(0)",
+          "expr": "(histogram_quantile(0.95, rate(metrics_governor_sharding_dns_latency_seconds_bucket[5m])))",
           "legendFormat": "p95"
         },
         {
-          "expr": "(histogram_quantile(0.99, rate(metrics_governor_sharding_dns_latency_seconds_bucket[5m]))) or vector(0)",
+          "expr": "(histogram_quantile(0.99, rate(metrics_governor_sharding_dns_latency_seconds_bucket[5m])))",
           "legendFormat": "p99"
         }
       ]
@@ -6280,7 +6816,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 148
+        "y": 147
       },
       "id": 55,
       "options": {
@@ -6304,11 +6840,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(histogram_quantile(0.50, sum by (endpoint, le) (rate(metrics_governor_sharding_export_latency_seconds_bucket[5m])))) or vector(0)",
+          "expr": "(histogram_quantile(0.50, sum by (endpoint, le) (rate(metrics_governor_sharding_export_latency_seconds_bucket[5m]))))",
           "legendFormat": "{{endpoint}} p50"
         },
         {
-          "expr": "(histogram_quantile(0.95, sum by (endpoint, le) (rate(metrics_governor_sharding_export_latency_seconds_bucket[5m])))) or vector(0)",
+          "expr": "(histogram_quantile(0.95, sum by (endpoint, le) (rate(metrics_governor_sharding_export_latency_seconds_bucket[5m]))))",
           "legendFormat": "{{endpoint}} p95"
         }
       ]
@@ -6371,7 +6907,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 148
+        "y": 147
       },
       "id": 56,
       "options": {
@@ -6394,7 +6930,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum by (endpoint) (rate(metrics_governor_sharding_export_errors_total[5m]))) or vector(0)",
+          "expr": "(sum by (endpoint) (rate(metrics_governor_sharding_export_errors_total[5m])))",
           "legendFormat": "{{endpoint}}"
         }
       ]
@@ -6405,7 +6941,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 156
+        "y": 155
       },
       "id": 70,
       "panels": [],
@@ -6470,7 +7006,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 160
+        "y": 159
       },
       "id": 71,
       "options": {
@@ -6494,15 +7030,15 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_psi_cpu_some_avg10{job=~\".*metrics-governor.*\"}) or vector(0)",
+          "expr": "(metrics_governor_psi_cpu_some_avg10{job=~\".*metrics-governor.*\"})",
           "legendFormat": "CPU"
         },
         {
-          "expr": "(metrics_governor_psi_memory_some_avg10{job=~\".*metrics-governor.*\"}) or vector(0)",
+          "expr": "(metrics_governor_psi_memory_some_avg10{job=~\".*metrics-governor.*\"})",
           "legendFormat": "Memory"
         },
         {
-          "expr": "(metrics_governor_psi_io_some_avg10{job=~\".*metrics-governor.*\"}) or vector(0)",
+          "expr": "(metrics_governor_psi_io_some_avg10{job=~\".*metrics-governor.*\"})",
           "legendFormat": "I/O"
         }
       ]
@@ -6565,7 +7101,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 160
+        "y": 159
       },
       "id": 72,
       "options": {
@@ -6589,11 +7125,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_psi_memory_full_avg10{job=~\".*metrics-governor.*\"}) or vector(0)",
+          "expr": "(metrics_governor_psi_memory_full_avg10{job=~\".*metrics-governor.*\"})",
           "legendFormat": "Memory"
         },
         {
-          "expr": "(metrics_governor_psi_io_full_avg10{job=~\".*metrics-governor.*\"}) or vector(0)",
+          "expr": "(metrics_governor_psi_io_full_avg10{job=~\".*metrics-governor.*\"})",
           "legendFormat": "I/O"
         }
       ]
@@ -6604,7 +7140,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 168
+        "y": 167
       },
       "id": 73,
       "panels": [],
@@ -6669,7 +7205,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 169
+        "y": 168
       },
       "id": 74,
       "options": {
@@ -6693,11 +7229,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(rate(metrics_governor_process_io_read_bytes_total{job=~\".*metrics-governor.*\"}[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_process_io_read_bytes_total{job=~\".*metrics-governor.*\"}[1m]))",
           "legendFormat": "Read"
         },
         {
-          "expr": "(rate(metrics_governor_process_io_write_bytes_total{job=~\".*metrics-governor.*\"}[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_process_io_write_bytes_total{job=~\".*metrics-governor.*\"}[1m]))",
           "legendFormat": "Write"
         }
       ]
@@ -6760,7 +7296,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 169
+        "y": 168
       },
       "id": 75,
       "options": {
@@ -6784,11 +7320,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(rate(metrics_governor_process_io_read_syscalls_total{job=~\".*metrics-governor.*\"}[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_process_io_read_syscalls_total{job=~\".*metrics-governor.*\"}[1m]))",
           "legendFormat": "Read Syscalls/s"
         },
         {
-          "expr": "(rate(metrics_governor_process_io_write_syscalls_total{job=~\".*metrics-governor.*\"}[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_process_io_write_syscalls_total{job=~\".*metrics-governor.*\"}[1m]))",
           "legendFormat": "Write Syscalls/s"
         }
       ]
@@ -6799,7 +7335,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 177
+        "y": 176
       },
       "id": 76,
       "panels": [],
@@ -6864,7 +7400,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 178
+        "y": 177
       },
       "id": 77,
       "options": {
@@ -6888,11 +7424,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(rate(metrics_governor_network_receive_bytes_total{job=~\".*metrics-governor.*\"}[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_network_receive_bytes_total{job=~\".*metrics-governor.*\"}[1m]))",
           "legendFormat": "Receive"
         },
         {
-          "expr": "(rate(metrics_governor_network_transmit_bytes_total{job=~\".*metrics-governor.*\"}[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_network_transmit_bytes_total{job=~\".*metrics-governor.*\"}[1m]))",
           "legendFormat": "Transmit"
         }
       ]
@@ -6955,7 +7491,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 178
+        "y": 177
       },
       "id": 78,
       "options": {
@@ -6979,11 +7515,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(rate(metrics_governor_network_receive_packets_total{job=~\".*metrics-governor.*\"}[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_network_receive_packets_total{job=~\".*metrics-governor.*\"}[1m]))",
           "legendFormat": "Receive"
         },
         {
-          "expr": "(rate(metrics_governor_network_transmit_packets_total{job=~\".*metrics-governor.*\"}[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_network_transmit_packets_total{job=~\".*metrics-governor.*\"}[1m]))",
           "legendFormat": "Transmit"
         }
       ]
@@ -7046,7 +7582,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 186
+        "y": 185
       },
       "id": 79,
       "options": {
@@ -7070,19 +7606,19 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(rate(metrics_governor_network_receive_errors_total{job=~\".*metrics-governor.*\"}[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_network_receive_errors_total{job=~\".*metrics-governor.*\"}[1m]))",
           "legendFormat": "Rx Errors/s"
         },
         {
-          "expr": "(rate(metrics_governor_network_transmit_errors_total{job=~\".*metrics-governor.*\"}[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_network_transmit_errors_total{job=~\".*metrics-governor.*\"}[1m]))",
           "legendFormat": "Tx Errors/s"
         },
         {
-          "expr": "(rate(metrics_governor_network_receive_dropped_total{job=~\".*metrics-governor.*\"}[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_network_receive_dropped_total{job=~\".*metrics-governor.*\"}[1m]))",
           "legendFormat": "Rx Dropped/s"
         },
         {
-          "expr": "(rate(metrics_governor_network_transmit_dropped_total{job=~\".*metrics-governor.*\"}[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_network_transmit_dropped_total{job=~\".*metrics-governor.*\"}[1m]))",
           "legendFormat": "Tx Dropped/s"
         }
       ]
@@ -7145,7 +7681,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 195
+        "y": 194
       },
       "id": 81,
       "options": {
@@ -7169,15 +7705,15 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(rate(metrics_governor_process_cpu_user_seconds{job=~\".*metrics-governor.*\"}[1m]) * 100) or vector(0)",
+          "expr": "(rate(metrics_governor_process_cpu_user_seconds{job=~\".*metrics-governor.*\"}[1m]) * 100)",
           "legendFormat": "User %"
         },
         {
-          "expr": "(rate(metrics_governor_process_cpu_system_seconds{job=~\".*metrics-governor.*\"}[1m]) * 100) or vector(0)",
+          "expr": "(rate(metrics_governor_process_cpu_system_seconds{job=~\".*metrics-governor.*\"}[1m]) * 100)",
           "legendFormat": "System %"
         },
         {
-          "expr": "(rate(metrics_governor_process_cpu_total_seconds{job=~\".*metrics-governor.*\"}[1m]) * 100) or vector(0)",
+          "expr": "(rate(metrics_governor_process_cpu_total_seconds{job=~\".*metrics-governor.*\"}[1m]) * 100)",
           "legendFormat": "Total %"
         }
       ]
@@ -7240,7 +7776,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 195
+        "y": 194
       },
       "id": 82,
       "options": {
@@ -7264,19 +7800,19 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_memory_heap_alloc_bytes{job=~\".*metrics-governor.*\"}) or vector(0)",
+          "expr": "(metrics_governor_memory_heap_alloc_bytes{job=~\".*metrics-governor.*\"})",
           "legendFormat": "Heap Alloc"
         },
         {
-          "expr": "(metrics_governor_memory_heap_inuse_bytes{job=~\".*metrics-governor.*\"}) or vector(0)",
+          "expr": "(metrics_governor_memory_heap_inuse_bytes{job=~\".*metrics-governor.*\"})",
           "legendFormat": "Heap In Use"
         },
         {
-          "expr": "(metrics_governor_memory_stack_inuse_bytes{job=~\".*metrics-governor.*\"}) or vector(0)",
+          "expr": "(metrics_governor_memory_stack_inuse_bytes{job=~\".*metrics-governor.*\"})",
           "legendFormat": "Stack In Use"
         },
         {
-          "expr": "(metrics_governor_memory_sys_bytes{job=~\".*metrics-governor.*\"}) or vector(0)",
+          "expr": "(metrics_governor_memory_sys_bytes{job=~\".*metrics-governor.*\"})",
           "legendFormat": "Sys Total"
         }
       ]
@@ -7339,7 +7875,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 203
+        "y": 202
       },
       "id": 83,
       "options": {
@@ -7363,7 +7899,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_gc_cpu_percent{job=~\".*metrics-governor.*\"}) or vector(0)",
+          "expr": "(metrics_governor_gc_cpu_percent{job=~\".*metrics-governor.*\"})",
           "legendFormat": "GC CPU %"
         }
       ]
@@ -7426,7 +7962,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 203
+        "y": 202
       },
       "id": 84,
       "options": {
@@ -7450,11 +7986,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_goroutines{job=~\".*metrics-governor.*\"}) or vector(0)",
+          "expr": "(metrics_governor_goroutines{job=~\".*metrics-governor.*\"})",
           "legendFormat": "Goroutines"
         },
         {
-          "expr": "(metrics_governor_process_open_fds{job=~\".*metrics-governor.*\"}) or vector(0)",
+          "expr": "(metrics_governor_process_open_fds{job=~\".*metrics-governor.*\"})",
           "legendFormat": "Open FDs"
         }
       ]

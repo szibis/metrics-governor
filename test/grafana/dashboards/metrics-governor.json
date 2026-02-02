@@ -24,18 +24,14 @@
     },
     {
       "gridPos": {
-        "h": 3,
-        "w": 24,
+        "h": 2,
+        "w": 5,
         "x": 0,
         "y": 1
       },
       "id": 501,
       "options": {
-        "code": {
-          "language": "plaintext",
-          "showLineNumbers": false
-        },
-        "content": "<div style=\"display:flex;align-items:center;justify-content:space-around;height:100%;padding:0 10px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;\">\n  <div style=\"background:linear-gradient(135deg,#73BF69 0%,#4a9c3f 100%);color:#fff;padding:10px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(115,191,105,0.4);text-align:center;min-width:120px;\">\n    <div style=\"font-size:14px;font-weight:600;\">RECEIVER</div>\n    <div style=\"font-size:10px;opacity:0.9;margin-top:2px;\">gRPC \u00b7 HTTP \u00b7 PRW</div>\n  </div>\n  <div style=\"font-size:28px;color:#73BF69;font-weight:bold;\">\u2192</div>\n  <div style=\"background:linear-gradient(135deg,#FADE2A 0%,#c9b41e 100%);color:#1a1a1a;padding:10px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(250,222,42,0.4);text-align:center;min-width:120px;\">\n    <div style=\"font-size:14px;font-weight:600;\">LIMITS</div>\n    <div style=\"font-size:10px;opacity:0.8;margin-top:2px;\">Cardinality \u00b7 Rate</div>\n  </div>\n  <div style=\"font-size:28px;color:#FADE2A;font-weight:bold;\">\u2192</div>\n  <div style=\"background:linear-gradient(135deg,#5794F2 0%,#3670c9 100%);color:#fff;padding:10px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(87,148,242,0.4);text-align:center;min-width:120px;\">\n    <div style=\"font-size:14px;font-weight:600;\">QUEUE</div>\n    <div style=\"font-size:10px;opacity:0.9;margin-top:2px;\">FastQueue \u00b7 Retry</div>\n  </div>\n  <div style=\"font-size:28px;color:#5794F2;font-weight:bold;\">\u2192</div>\n  <div style=\"background:linear-gradient(135deg,#FF9830 0%,#d97a1f 100%);color:#fff;padding:10px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(255,152,48,0.4);text-align:center;min-width:120px;\">\n    <div style=\"font-size:14px;font-weight:600;\">EXPORTER</div>\n    <div style=\"font-size:10px;opacity:0.9;margin-top:2px;\">OTLP \u00b7 PRW</div>\n  </div>\n  <div style=\"font-size:28px;color:#FF9830;font-weight:bold;\">\u2192</div>\n  <div style=\"background:linear-gradient(135deg,#B877D9 0%,#9455b8 100%);color:#fff;padding:10px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(184,119,217,0.4);text-align:center;min-width:120px;\">\n    <div style=\"font-size:14px;font-weight:600;\">BACKEND</div>\n    <div style=\"font-size:10px;opacity:0.9;margin-top:2px;\">Prometheus \u00b7 VM</div>\n  </div>\n</div>",
+        "content": "<div style='background:#73BF69;color:#fff;padding:12px 8px;border-radius:4px 4px 0 0;text-align:center;font-weight:bold;font-size:16px;'>RECEIVER</div>",
         "mode": "html"
       },
       "transparent": true,
@@ -62,22 +58,21 @@
               }
             ]
           },
-          "unit": "short",
-          "decimals": 0
+          "unit": "short"
         }
       },
       "gridPos": {
-        "h": 4,
-        "w": 5,
+        "h": 2,
+        "w": 2,
         "x": 0,
-        "y": 4
+        "y": 3
       },
-      "id": 510,
+      "id": 502,
       "options": {
         "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -88,12 +83,126 @@
         "textMode": "value_and_name"
       },
       "title": "",
-      "description": "Total datapoints received per second (OTLP + PRW)",
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_datapoints_received_total[1m])) + sum(rate(metrics_governor_prw_datapoints_received_total[1m]))) or vector(0)",
-          "legendFormat": "Received/s"
+          "expr": "(sum(rate(metrics_governor_datapoints_received_total[1m])) + sum(rate(metrics_governor_prw_datapoints_received_total[1m])))",
+          "legendFormat": "In/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              },
+              {
+                "color": "#FF9830",
+                "value": 1
+              },
+              {
+                "color": "#F2495C",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 2,
+        "x": 2,
+        "y": 3
+      },
+      "id": 503,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_receiver_errors_total[1m])))",
+          "legendFormat": "Err/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#73BF69"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 1,
+        "x": 4,
+        "y": 3
+      },
+      "id": 504,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(metrics_governor_metrics_total)",
+          "legendFormat": "Metrics"
         }
       ]
     },
@@ -102,11 +211,233 @@
         "h": 4,
         "w": 1,
         "x": 5,
-        "y": 4
+        "y": 1
+      },
+      "id": 505,
+      "options": {
+        "content": "<div style='display:flex;align-items:center;justify-content:center;height:100%;font-size:24px;color:#73BF69;'>\u2192</div>",
+        "mode": "html"
+      },
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "gridPos": {
+        "h": 2,
+        "w": 5,
+        "x": 6,
+        "y": 1
+      },
+      "id": 510,
+      "options": {
+        "content": "<div style='background:#FADE2A;color:#333;padding:12px 8px;border-radius:4px 4px 0 0;text-align:center;font-weight:bold;font-size:16px;'>LIMITS</div>",
+        "mode": "html"
+      },
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#73BF69"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 2,
+        "x": 6,
+        "y": 3
       },
       "id": 511,
       "options": {
-        "content": "",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_limit_datapoints_passed_total[1m])))",
+          "legendFormat": "Pass/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              },
+              {
+                "color": "#FF9830",
+                "value": 100
+              },
+              {
+                "color": "#F2495C",
+                "value": 1000
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 2,
+        "x": 8,
+        "y": 3
+      },
+      "id": 512,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_limit_datapoints_dropped_total[1m])))",
+          "legendFormat": "Drop/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 5
+              },
+              {
+                "color": "#F2495C",
+                "value": 20
+              }
+            ]
+          },
+          "unit": "percent",
+          "max": 100
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 1,
+        "x": 10,
+        "y": 3
+      },
+      "id": 513,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(100 * sum(rate(metrics_governor_limit_datapoints_dropped_total[1m])) / clamp_min(sum(rate(metrics_governor_limit_datapoints_dropped_total[1m])) + sum(rate(metrics_governor_limit_datapoints_passed_total[1m])), 1))",
+          "legendFormat": "%"
+        }
+      ]
+    },
+    {
+      "gridPos": {
+        "h": 4,
+        "w": 1,
+        "x": 11,
+        "y": 1
+      },
+      "id": 514,
+      "options": {
+        "content": "<div style='display:flex;align-items:center;justify-content:center;height:100%;font-size:24px;color:#FADE2A;'>\u2192</div>",
+        "mode": "html"
+      },
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "gridPos": {
+        "h": 2,
+        "w": 5,
+        "x": 12,
+        "y": 1
+      },
+      "id": 520,
+      "options": {
+        "content": "<div style='background:#5794F2;color:#fff;padding:12px 8px;border-radius:4px 4px 0 0;text-align:center;font-weight:bold;font-size:16px;'>QUEUE</div>",
         "mode": "html"
       },
       "transparent": true,
@@ -132,36 +463,29 @@
               },
               {
                 "color": "#FADE2A",
-                "value": 1
-              },
-              {
-                "color": "#FF9830",
-                "value": 10
+                "value": 100
               },
               {
                 "color": "#F2495C",
-                "value": 25
+                "value": 1000
               }
             ]
           },
-          "unit": "percent",
-          "decimals": 1,
-          "min": 0,
-          "max": 100
+          "unit": "short"
         }
       },
       "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 6,
-        "y": 4
+        "h": 2,
+        "w": 1,
+        "x": 12,
+        "y": 3
       },
-      "id": 520,
+      "id": 521,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -172,29 +496,13 @@
         "textMode": "value_and_name"
       },
       "title": "",
-      "description": "Percentage of datapoints dropped by limits. Green=healthy, Yellow=warning, Red=critical",
       "type": "stat",
       "targets": [
         {
-          "expr": "(100 * sum(rate(metrics_governor_limit_datapoints_dropped_total[1m])) / clamp_min(sum(rate(metrics_governor_limit_datapoints_dropped_total[1m])) + sum(rate(metrics_governor_limit_datapoints_passed_total[1m])), 1)) or vector(0)",
-          "legendFormat": "Drop Rate"
+          "expr": "(sum(metrics_governor_queue_size))",
+          "legendFormat": "Size"
         }
       ]
-    },
-    {
-      "gridPos": {
-        "h": 4,
-        "w": 1,
-        "x": 11,
-        "y": 4
-      },
-      "id": 521,
-      "options": {
-        "content": "",
-        "mode": "html"
-      },
-      "transparent": true,
-      "type": "text"
     },
     {
       "datasource": {
@@ -219,33 +527,27 @@
                 "value": 50
               },
               {
-                "color": "#FF9830",
-                "value": 75
-              },
-              {
                 "color": "#F2495C",
-                "value": 90
+                "value": 80
               }
             ]
           },
           "unit": "percent",
-          "decimals": 0,
-          "min": 0,
           "max": 100
         }
       },
       "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 12,
-        "y": 4
+        "h": 2,
+        "w": 1,
+        "x": 13,
+        "y": 3
       },
-      "id": 530,
+      "id": 522,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -256,12 +558,133 @@
         "textMode": "value_and_name"
       },
       "title": "",
-      "description": "Queue utilization percentage. Green=healthy, Yellow=filling up, Red=nearly full",
       "type": "stat",
       "targets": [
         {
-          "expr": "(100 * clamp_max(metrics_governor_queue_utilization_ratio, 1)) or vector(0)",
-          "legendFormat": "Queue Used"
+          "expr": "(100 * metrics_governor_queue_utilization_ratio)",
+          "legendFormat": "%"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 10
+              },
+              {
+                "color": "#F2495C",
+                "value": 100
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 2,
+        "x": 14,
+        "y": 3
+      },
+      "id": 523,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_queue_retry_total[1m])))",
+          "legendFormat": "Retry/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              },
+              {
+                "color": "#FF9830",
+                "value": 1
+              },
+              {
+                "color": "#F2495C",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 1,
+        "x": 16,
+        "y": 3
+      },
+      "id": 524,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_queue_dropped_total[1m])))",
+          "legendFormat": "Err/s"
         }
       ]
     },
@@ -270,11 +693,26 @@
         "h": 4,
         "w": 1,
         "x": 17,
-        "y": 4
+        "y": 1
       },
-      "id": 531,
+      "id": 525,
       "options": {
-        "content": "",
+        "content": "<div style='display:flex;align-items:center;justify-content:center;height:100%;font-size:24px;color:#5794F2;'>\u2192</div>",
+        "mode": "html"
+      },
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "gridPos": {
+        "h": 2,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "id": 530,
+      "options": {
+        "content": "<div style='background:#FF9830;color:#fff;padding:12px 8px;border-radius:4px 4px 0 0;text-align:center;font-weight:bold;font-size:16px;'>EXPORTER \u2192 BACKEND</div>",
         "mode": "html"
       },
       "transparent": true,
@@ -301,22 +739,21 @@
               }
             ]
           },
-          "unit": "short",
-          "decimals": 0
+          "unit": "short"
         }
       },
       "gridPos": {
-        "h": 4,
-        "w": 5,
+        "h": 2,
+        "w": 2,
         "x": 18,
-        "y": 4
+        "y": 3
       },
-      "id": 540,
+      "id": 531,
       "options": {
         "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -327,29 +764,128 @@
         "textMode": "value_and_name"
       },
       "title": "",
-      "description": "Total datapoints sent to backend per second (OTLP + PRW)",
       "type": "stat",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_datapoints_sent_total[1m])) + sum(rate(metrics_governor_prw_datapoints_sent_total[1m]))) or vector(0)",
-          "legendFormat": "Sent/s"
+          "expr": "(sum(rate(metrics_governor_datapoints_sent_total[1m])) + sum(rate(metrics_governor_prw_datapoints_sent_total[1m])))",
+          "legendFormat": "Out/s"
         }
       ]
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#FF9830"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#FF9830",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
       "gridPos": {
-        "h": 4,
-        "w": 1,
-        "x": 23,
-        "y": 4
+        "h": 2,
+        "w": 2,
+        "x": 20,
+        "y": 3
       },
-      "id": 541,
+      "id": 532,
       "options": {
-        "content": "",
-        "mode": "html"
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
       },
-      "transparent": true,
-      "type": "text"
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_batches_sent_total[1m])) + sum(rate(metrics_governor_prw_batches_sent_total[1m])))",
+          "legendFormat": "Batch/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              },
+              {
+                "color": "#FF9830",
+                "value": 1
+              },
+              {
+                "color": "#F2495C",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 2,
+        "x": 22,
+        "y": 3
+      },
+      "id": 533,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "title": "",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_export_errors_total[1m])) + sum(rate(metrics_governor_prw_export_errors_total[1m])))",
+          "legendFormat": "Err/s"
+        }
+      ]
     },
     {
       "collapsed": false,
@@ -357,7 +893,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 4
       },
       "id": 100,
       "panels": [],
@@ -423,7 +959,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 6
+        "y": 5
       },
       "id": 1,
       "options": {
@@ -446,7 +982,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_datapoints_received_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_datapoints_received_total[1m]))",
           "legendFormat": "Received",
           "refId": "A"
         },
@@ -455,7 +991,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_datapoints_sent_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_datapoints_sent_total[1m]))",
           "legendFormat": "Sent",
           "refId": "B"
         }
@@ -522,7 +1058,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 6
+        "y": 5
       },
       "id": 2,
       "options": {
@@ -545,7 +1081,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_batches_sent_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_batches_sent_total[1m]))",
           "legendFormat": "Batches/sec",
           "refId": "A"
         },
@@ -554,7 +1090,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_export_errors_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_export_errors_total[1m]))",
           "legendFormat": "Errors/sec",
           "refId": "B"
         }
@@ -590,7 +1126,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 14
+        "y": 13
       },
       "id": 3,
       "options": {
@@ -613,7 +1149,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_datapoints_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_datapoints_total[1m]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -649,7 +1185,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 14
+        "y": 13
       },
       "id": 4,
       "options": {
@@ -672,7 +1208,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_metrics_total) or vector(0)",
+          "expr": "(metrics_governor_metrics_total)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -716,7 +1252,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 14
+        "y": 13
       },
       "id": 5,
       "options": {
@@ -739,7 +1275,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_export_errors_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_export_errors_total[1m]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -775,7 +1311,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 14
+        "y": 13
       },
       "id": 6,
       "options": {
@@ -798,7 +1334,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_batches_sent_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_batches_sent_total[1m]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -812,7 +1348,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 17
       },
       "id": 200,
       "panels": [],
@@ -862,7 +1398,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 19
+        "y": 18
       },
       "id": 201,
       "options": {
@@ -889,7 +1425,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[1m])))",
           "legendFormat": "Received (uncompressed)"
         },
         {
@@ -897,7 +1433,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[1m])))",
           "legendFormat": "Received (compressed)"
         },
         {
@@ -905,7 +1441,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m])))",
           "legendFormat": "Sent (uncompressed)"
         },
         {
@@ -913,7 +1449,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[1m])))",
           "legendFormat": "Sent (compressed)"
         }
       ]
@@ -961,7 +1497,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 19
+        "y": 18
       },
       "id": 202,
       "options": {
@@ -988,7 +1524,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"}[1m])))",
           "legendFormat": "Received (uncompressed)"
         },
         {
@@ -996,7 +1532,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"}[1m])))",
           "legendFormat": "Received (compressed)"
         },
         {
@@ -1004,7 +1540,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m])))",
           "legendFormat": "Sent (uncompressed)"
         },
         {
@@ -1012,7 +1548,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[1m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[1m])))",
           "legendFormat": "Sent (compressed)"
         }
       ]
@@ -1060,7 +1596,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 27
+        "y": 26
       },
       "id": 203,
       "options": {
@@ -1087,7 +1623,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_buffer_size{protocol=\"prw\"}) or vector(0)",
+          "expr": "(metrics_governor_buffer_size{protocol=\"prw\"})",
           "legendFormat": "PRW Buffer"
         },
         {
@@ -1095,7 +1631,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_buffer_size{protocol=\"otlp\"}) or vector(0)",
+          "expr": "(metrics_governor_buffer_size{protocol=\"otlp\"})",
           "legendFormat": "OTLP Buffer"
         }
       ]
@@ -1143,7 +1679,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 27
+        "y": 26
       },
       "id": 204,
       "options": {
@@ -1169,7 +1705,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m])))",
           "legendFormat": "PRW Receive"
         },
         {
@@ -1177,7 +1713,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m])))",
           "legendFormat": "PRW Send"
         },
         {
@@ -1185,7 +1721,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m])))",
           "legendFormat": "OTLP Receive"
         },
         {
@@ -1193,7 +1729,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m]))) or vector(0)",
+          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m])))",
           "legendFormat": "OTLP Send"
         }
       ]
@@ -1204,7 +1740,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 34
       },
       "id": 103,
       "panels": [],
@@ -1270,7 +1806,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 19
+        "y": 18
       },
       "id": 30,
       "options": {
@@ -1293,7 +1829,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_limit_cardinality_exceeded_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_limit_cardinality_exceeded_total[1m]))",
           "legendFormat": "{{rule}} - cardinality",
           "refId": "A"
         },
@@ -1302,7 +1838,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_limit_datapoints_exceeded_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_limit_datapoints_exceeded_total[1m]))",
           "legendFormat": "{{rule}} - datapoints",
           "refId": "B"
         }
@@ -1385,7 +1921,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 19
+        "y": 18
       },
       "id": 31,
       "options": {
@@ -1408,7 +1944,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_limit_datapoints_passed_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_limit_datapoints_passed_total[1m]))",
           "legendFormat": "{{rule}} - passed",
           "refId": "A"
         },
@@ -1417,7 +1953,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_limit_datapoints_dropped_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_limit_datapoints_dropped_total[1m]))",
           "legendFormat": "{{rule}} - dropped",
           "refId": "B"
         }
@@ -1510,7 +2046,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 27
+        "y": 26
       },
       "id": 32,
       "options": {
@@ -1533,7 +2069,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_rule_current_cardinality) or vector(0)",
+          "expr": "(metrics_governor_rule_current_cardinality)",
           "legendFormat": "{{rule}} - current",
           "refId": "A"
         },
@@ -1542,7 +2078,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_rule_max_cardinality) or vector(0)",
+          "expr": "(metrics_governor_rule_max_cardinality)",
           "legendFormat": "{{rule}} - limit",
           "refId": "B"
         }
@@ -1635,7 +2171,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 27
+        "y": 26
       },
       "id": 33,
       "options": {
@@ -1658,7 +2194,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_rule_current_datapoints) or vector(0)",
+          "expr": "(metrics_governor_rule_current_datapoints)",
           "legendFormat": "{{rule}} - current",
           "refId": "A"
         },
@@ -1667,7 +2203,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_rule_max_datapoints_rate) or vector(0)",
+          "expr": "(metrics_governor_rule_max_datapoints_rate)",
           "legendFormat": "{{rule}} - limit",
           "refId": "B"
         }
@@ -1711,7 +2247,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 35
+        "y": 34
       },
       "id": 34,
       "options": {
@@ -1734,7 +2270,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(metrics_governor_limit_cardinality_exceeded_total)) or vector(0)",
+          "expr": "(sum(metrics_governor_limit_cardinality_exceeded_total))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1778,7 +2314,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 35
+        "y": 34
       },
       "id": 35,
       "options": {
@@ -1801,7 +2337,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(metrics_governor_limit_datapoints_exceeded_total)) or vector(0)",
+          "expr": "(sum(metrics_governor_limit_datapoints_exceeded_total))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1845,7 +2381,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 35
+        "y": 34
       },
       "id": 36,
       "options": {
@@ -1868,7 +2404,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(metrics_governor_limit_datapoints_dropped_total)) or vector(0)",
+          "expr": "(sum(metrics_governor_limit_datapoints_dropped_total))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1912,7 +2448,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 35
+        "y": 34
       },
       "id": 37,
       "options": {
@@ -1935,7 +2471,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(metrics_governor_limit_groups_dropped_total)) or vector(0)",
+          "expr": "(sum(metrics_governor_limit_groups_dropped_total))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -2002,7 +2538,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 39
+        "y": 38
       },
       "id": 38,
       "options": {
@@ -2025,7 +2561,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(topk(10, metrics_governor_rule_group_datapoints)) or vector(0)",
+          "expr": "(topk(10, metrics_governor_rule_group_datapoints))",
           "legendFormat": "{{rule}}: {{group}}",
           "refId": "A"
         }
@@ -2092,7 +2628,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 39
+        "y": 38
       },
       "id": 39,
       "options": {
@@ -2115,7 +2651,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(topk(10, metrics_governor_rule_group_cardinality)) or vector(0)",
+          "expr": "(topk(10, metrics_governor_rule_group_cardinality))",
           "legendFormat": "{{rule}}: {{group}}",
           "refId": "A"
         }
@@ -2129,7 +2665,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 47
+        "y": 46
       },
       "id": 104,
       "panels": [],
@@ -2195,7 +2731,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 48
+        "y": 47
       },
       "id": 40,
       "options": {
@@ -2218,7 +2754,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_label_datapoints_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_label_datapoints_total[1m]))",
           "legendFormat": "{{service}} / {{env}}",
           "refId": "A"
         }
@@ -2285,7 +2821,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 48
+        "y": 47
       },
       "id": 41,
       "options": {
@@ -2308,7 +2844,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_label_cardinality) or vector(0)",
+          "expr": "(metrics_governor_label_cardinality)",
           "legendFormat": "{{service}} / {{env}}",
           "refId": "A"
         }
@@ -2375,7 +2911,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 56
+        "y": 55
       },
       "id": 42,
       "options": {
@@ -2398,7 +2934,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(topk(10, rate(metrics_governor_metric_datapoints_total[1m]))) or vector(0)",
+          "expr": "(topk(10, rate(metrics_governor_metric_datapoints_total[1m])))",
           "legendFormat": "{{metric_name}}",
           "refId": "A"
         }
@@ -2465,7 +3001,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 56
+        "y": 55
       },
       "id": 43,
       "options": {
@@ -2488,7 +3024,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(topk(10, metrics_governor_metric_cardinality)) or vector(0)",
+          "expr": "(topk(10, metrics_governor_metric_cardinality))",
           "legendFormat": "{{metric_name}}",
           "refId": "A"
         }
@@ -2502,7 +3038,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 64
+        "y": 63
       },
       "id": 105,
       "panels": [],
@@ -2568,7 +3104,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 65
+        "y": 64
       },
       "id": 50,
       "options": {
@@ -2591,7 +3127,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_memory_heap_inuse_bytes) or vector(0)",
+          "expr": "(metrics_governor_memory_heap_inuse_bytes)",
           "legendFormat": "Heap In Use",
           "refId": "A"
         },
@@ -2600,7 +3136,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_memory_heap_alloc_bytes) or vector(0)",
+          "expr": "(metrics_governor_memory_heap_alloc_bytes)",
           "legendFormat": "Heap Allocated",
           "refId": "B"
         },
@@ -2609,7 +3145,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_memory_sys_bytes) or vector(0)",
+          "expr": "(metrics_governor_memory_sys_bytes)",
           "legendFormat": "System Memory",
           "refId": "C"
         },
@@ -2618,7 +3154,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_memory_stack_inuse_bytes) or vector(0)",
+          "expr": "(metrics_governor_memory_stack_inuse_bytes)",
           "legendFormat": "Stack In Use",
           "refId": "D"
         }
@@ -2685,7 +3221,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 65
+        "y": 64
       },
       "id": 51,
       "options": {
@@ -2708,7 +3244,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_goroutines) or vector(0)",
+          "expr": "(metrics_governor_goroutines)",
           "legendFormat": "Goroutines",
           "refId": "A"
         },
@@ -2717,7 +3253,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_memory_heap_objects) or vector(0)",
+          "expr": "(metrics_governor_memory_heap_objects)",
           "legendFormat": "Heap Objects",
           "refId": "B"
         }
@@ -2784,7 +3320,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 73
+        "y": 72
       },
       "id": 52,
       "options": {
@@ -2807,7 +3343,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_gc_pause_total_seconds[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_gc_pause_total_seconds[1m]))",
           "legendFormat": "GC Pause Rate",
           "refId": "A"
         },
@@ -2816,7 +3352,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_gc_last_pause_seconds) or vector(0)",
+          "expr": "(metrics_governor_gc_last_pause_seconds)",
           "legendFormat": "Last GC Pause",
           "refId": "B"
         }
@@ -2883,7 +3419,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 73
+        "y": 72
       },
       "id": 53,
       "options": {
@@ -2906,7 +3442,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_gc_cycles_total[1m]) * 60) or vector(0)",
+          "expr": "(rate(metrics_governor_gc_cycles_total[1m]) * 60)",
           "legendFormat": "GC Cycles/min",
           "refId": "A"
         },
@@ -2915,7 +3451,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_gc_cpu_percent) or vector(0)",
+          "expr": "(metrics_governor_gc_cpu_percent)",
           "legendFormat": "GC CPU %",
           "refId": "B"
         }
@@ -2951,7 +3487,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 81
+        "y": 80
       },
       "id": 54,
       "options": {
@@ -2974,7 +3510,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_memory_alloc_bytes) or vector(0)",
+          "expr": "(metrics_governor_memory_alloc_bytes)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -3010,7 +3546,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 81
+        "y": 80
       },
       "id": 55,
       "options": {
@@ -3033,7 +3569,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_goroutines) or vector(0)",
+          "expr": "(metrics_governor_goroutines)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -3069,7 +3605,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 81
+        "y": 80
       },
       "id": 56,
       "options": {
@@ -3092,7 +3628,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_process_uptime_seconds) or vector(0)",
+          "expr": "(metrics_governor_process_uptime_seconds)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -3128,7 +3664,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 81
+        "y": 80
       },
       "id": 57,
       "options": {
@@ -3151,7 +3687,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_gc_cycles_total) or vector(0)",
+          "expr": "(metrics_governor_gc_cycles_total)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -3218,7 +3754,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 85
+        "y": 84
       },
       "id": 58,
       "options": {
@@ -3241,7 +3777,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_network_receive_bytes_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_network_receive_bytes_total[1m]))",
           "legendFormat": "Receive",
           "refId": "A"
         },
@@ -3250,7 +3786,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_network_transmit_bytes_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_network_transmit_bytes_total[1m]))",
           "legendFormat": "Transmit",
           "refId": "B"
         }
@@ -3317,7 +3853,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 85
+        "y": 84
       },
       "id": 59,
       "options": {
@@ -3340,7 +3876,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_process_io_read_bytes_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_process_io_read_bytes_total[1m]))",
           "legendFormat": "Disk Read",
           "refId": "A"
         },
@@ -3349,7 +3885,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_process_io_write_bytes_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_process_io_write_bytes_total[1m]))",
           "legendFormat": "Disk Write",
           "refId": "B"
         }
@@ -3416,7 +3952,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 93
+        "y": 92
       },
       "id": 60,
       "options": {
@@ -3439,7 +3975,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_network_receive_packets_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_network_receive_packets_total[1m]))",
           "legendFormat": "Receive Packets",
           "refId": "A"
         },
@@ -3448,7 +3984,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_network_transmit_packets_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_network_transmit_packets_total[1m]))",
           "legendFormat": "Transmit Packets",
           "refId": "B"
         }
@@ -3515,7 +4051,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 93
+        "y": 92
       },
       "id": 61,
       "options": {
@@ -3538,7 +4074,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_process_io_read_syscalls_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_process_io_read_syscalls_total[1m]))",
           "legendFormat": "Read Syscalls",
           "refId": "A"
         },
@@ -3547,7 +4083,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_process_io_write_syscalls_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_process_io_write_syscalls_total[1m]))",
           "legendFormat": "Write Syscalls",
           "refId": "B"
         }
@@ -3583,7 +4119,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 101
+        "y": 100
       },
       "id": 62,
       "options": {
@@ -3606,7 +4142,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_network_receive_bytes_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_network_receive_bytes_total[1m]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -3642,7 +4178,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 101
+        "y": 100
       },
       "id": 63,
       "options": {
@@ -3665,7 +4201,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_network_transmit_bytes_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_network_transmit_bytes_total[1m]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -3701,7 +4237,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 101
+        "y": 100
       },
       "id": 64,
       "options": {
@@ -3724,7 +4260,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_process_io_read_bytes_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_process_io_read_bytes_total[1m]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -3760,7 +4296,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 101
+        "y": 100
       },
       "id": 65,
       "options": {
@@ -3783,7 +4319,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_process_io_write_bytes_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_process_io_write_bytes_total[1m]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -3858,7 +4394,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 105
+        "y": 104
       },
       "id": 66,
       "options": {
@@ -3881,7 +4417,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_psi_cpu_some_avg10) or vector(0)",
+          "expr": "(metrics_governor_psi_cpu_some_avg10)",
           "legendFormat": "CPU Some",
           "refId": "A"
         },
@@ -3890,7 +4426,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_psi_memory_some_avg10) or vector(0)",
+          "expr": "(metrics_governor_psi_memory_some_avg10)",
           "legendFormat": "Memory Some",
           "refId": "B"
         },
@@ -3899,7 +4435,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_psi_io_some_avg10) or vector(0)",
+          "expr": "(metrics_governor_psi_io_some_avg10)",
           "legendFormat": "IO Some",
           "refId": "C"
         }
@@ -3974,7 +4510,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 105
+        "y": 104
       },
       "id": 67,
       "options": {
@@ -3997,7 +4533,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_psi_memory_full_avg10) or vector(0)",
+          "expr": "(metrics_governor_psi_memory_full_avg10)",
           "legendFormat": "Memory Full",
           "refId": "A"
         },
@@ -4006,7 +4542,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_psi_io_full_avg10) or vector(0)",
+          "expr": "(metrics_governor_psi_io_full_avg10)",
           "legendFormat": "IO Full",
           "refId": "B"
         }
@@ -4020,7 +4556,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 113
+        "y": 112
       },
       "id": 106,
       "panels": [],
@@ -4059,7 +4595,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 114
+        "y": 113
       },
       "id": 107,
       "options": {
@@ -4082,7 +4618,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_sharding_endpoints_total) or vector(0)",
+          "expr": "(metrics_governor_sharding_endpoints_total)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -4118,7 +4654,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 114
+        "y": 113
       },
       "id": 108,
       "options": {
@@ -4141,7 +4677,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(increase(metrics_governor_sharding_rehash_total[1h])) or vector(0)",
+          "expr": "(increase(metrics_governor_sharding_rehash_total[1h]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -4185,7 +4721,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 114
+        "y": 113
       },
       "id": 109,
       "options": {
@@ -4208,7 +4744,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(increase(metrics_governor_sharding_dns_errors_total[1h])) or vector(0)",
+          "expr": "(increase(metrics_governor_sharding_dns_errors_total[1h]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -4244,7 +4780,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 114
+        "y": 113
       },
       "id": 110,
       "options": {
@@ -4267,7 +4803,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_sharding_dns_refresh_total[5m]) * 60) or vector(0)",
+          "expr": "(rate(metrics_governor_sharding_dns_refresh_total[5m]) * 60)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -4334,7 +4870,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 118
+        "y": 117
       },
       "id": 111,
       "options": {
@@ -4358,7 +4894,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_sharding_datapoints_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_sharding_datapoints_total[1m]))",
           "legendFormat": "{{endpoint}}",
           "refId": "A"
         }
@@ -4429,7 +4965,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 118
+        "y": 117
       },
       "id": 112,
       "options": {
@@ -4453,7 +4989,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_sharding_export_errors_total[1m])) or vector(0)",
+          "expr": "(rate(metrics_governor_sharding_export_errors_total[1m]))",
           "legendFormat": "{{endpoint}}",
           "refId": "A"
         }
@@ -4520,7 +5056,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 126
+        "y": 125
       },
       "id": 113,
       "options": {
@@ -4544,7 +5080,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(histogram_quantile(0.99, sum(rate(metrics_governor_sharding_export_latency_seconds_bucket[5m])) by (le, endpoint))) or vector(0)",
+          "expr": "(histogram_quantile(0.99, sum(rate(metrics_governor_sharding_export_latency_seconds_bucket[5m])) by (le, endpoint)))",
           "legendFormat": "p99 {{endpoint}}",
           "refId": "A"
         },
@@ -4553,7 +5089,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(histogram_quantile(0.50, sum(rate(metrics_governor_sharding_export_latency_seconds_bucket[5m])) by (le, endpoint))) or vector(0)",
+          "expr": "(histogram_quantile(0.50, sum(rate(metrics_governor_sharding_export_latency_seconds_bucket[5m])) by (le, endpoint)))",
           "legendFormat": "p50 {{endpoint}}",
           "refId": "B"
         }
@@ -4620,7 +5156,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 126
+        "y": 125
       },
       "id": 114,
       "options": {
@@ -4644,7 +5180,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(histogram_quantile(0.99, sum(rate(metrics_governor_sharding_dns_latency_seconds_bucket[5m])) by (le))) or vector(0)",
+          "expr": "(histogram_quantile(0.99, sum(rate(metrics_governor_sharding_dns_latency_seconds_bucket[5m])) by (le)))",
           "legendFormat": "p99",
           "refId": "A"
         },
@@ -4653,7 +5189,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(histogram_quantile(0.50, sum(rate(metrics_governor_sharding_dns_latency_seconds_bucket[5m])) by (le))) or vector(0)",
+          "expr": "(histogram_quantile(0.50, sum(rate(metrics_governor_sharding_dns_latency_seconds_bucket[5m])) by (le)))",
           "legendFormat": "p50",
           "refId": "B"
         }
@@ -4687,7 +5223,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 134
+        "y": 133
       },
       "id": 115,
       "options": {
@@ -4723,7 +5259,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(metrics_governor_sharding_datapoints_total) or vector(0)",
+          "expr": "(metrics_governor_sharding_datapoints_total)",
           "legendFormat": "{{endpoint}}",
           "refId": "A"
         }
@@ -4737,7 +5273,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 142
+        "y": 141
       },
       "id": 101,
       "panels": [],
@@ -4803,7 +5339,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 143
+        "y": 142
       },
       "id": 10,
       "options": {
@@ -4826,7 +5362,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(generator_metrics_per_second) or vector(0)",
+          "expr": "(generator_metrics_per_second)",
           "legendFormat": "Metrics/sec",
           "refId": "A"
         },
@@ -4835,7 +5371,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(generator_datapoints_per_second) or vector(0)",
+          "expr": "(generator_datapoints_per_second)",
           "legendFormat": "Datapoints/sec",
           "refId": "B"
         }
@@ -4902,7 +5438,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 143
+        "y": 142
       },
       "id": 11,
       "options": {
@@ -4925,7 +5461,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(generator_batch_latency_avg_seconds) or vector(0)",
+          "expr": "(generator_batch_latency_avg_seconds)",
           "legendFormat": "Avg",
           "refId": "A"
         },
@@ -4934,7 +5470,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(generator_batch_latency_min_seconds) or vector(0)",
+          "expr": "(generator_batch_latency_min_seconds)",
           "legendFormat": "Min",
           "refId": "B"
         },
@@ -4943,7 +5479,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(generator_batch_latency_max_seconds) or vector(0)",
+          "expr": "(generator_batch_latency_max_seconds)",
           "legendFormat": "Max",
           "refId": "C"
         }
@@ -4979,7 +5515,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 151
+        "y": 150
       },
       "id": 12,
       "options": {
@@ -5002,7 +5538,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(generator_datapoints_sent_total) or vector(0)",
+          "expr": "(generator_datapoints_sent_total)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -5038,7 +5574,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 151
+        "y": 150
       },
       "id": 13,
       "options": {
@@ -5061,7 +5597,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(generator_batches_sent_total) or vector(0)",
+          "expr": "(generator_batches_sent_total)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -5097,7 +5633,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 151
+        "y": 150
       },
       "id": 14,
       "options": {
@@ -5120,7 +5656,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(generator_bursts_sent_total) or vector(0)",
+          "expr": "(generator_bursts_sent_total)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -5164,7 +5700,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 151
+        "y": 150
       },
       "id": 15,
       "options": {
@@ -5187,7 +5723,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(generator_errors_total) or vector(0)",
+          "expr": "(generator_errors_total)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -5201,7 +5737,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 155
+        "y": 154
       },
       "id": 102,
       "panels": [],
@@ -5267,7 +5803,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 156
+        "y": 155
       },
       "id": 20,
       "options": {
@@ -5290,7 +5826,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(verifier_pass_rate_percent) or vector(0)",
+          "expr": "(verifier_pass_rate_percent)",
           "legendFormat": "Pass Rate",
           "refId": "A"
         },
@@ -5299,7 +5835,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(verifier_last_ingestion_rate_percent) or vector(0)",
+          "expr": "(verifier_last_ingestion_rate_percent)",
           "legendFormat": "Ingestion Rate",
           "refId": "B"
         }
@@ -5366,7 +5902,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 156
+        "y": 155
       },
       "id": 21,
       "options": {
@@ -5389,7 +5925,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(verifier_vm_time_series) or vector(0)",
+          "expr": "(verifier_vm_time_series)",
           "legendFormat": "Time Series",
           "refId": "A"
         },
@@ -5398,7 +5934,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(verifier_vm_unique_metrics) or vector(0)",
+          "expr": "(verifier_vm_unique_metrics)",
           "legendFormat": "Unique Metrics",
           "refId": "B"
         }
@@ -5434,7 +5970,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 164
+        "y": 163
       },
       "id": 22,
       "options": {
@@ -5457,7 +5993,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(verifier_checks_total) or vector(0)",
+          "expr": "(verifier_checks_total)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -5493,7 +6029,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 164
+        "y": 163
       },
       "id": 23,
       "options": {
@@ -5516,7 +6052,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(verifier_checks_passed_total) or vector(0)",
+          "expr": "(verifier_checks_passed_total)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -5560,7 +6096,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 164
+        "y": 163
       },
       "id": 24,
       "options": {
@@ -5583,7 +6119,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(verifier_checks_failed_total) or vector(0)",
+          "expr": "(verifier_checks_failed_total)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -5639,7 +6175,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 164
+        "y": 163
       },
       "id": 25,
       "options": {
@@ -5662,7 +6198,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(verifier_last_check_status) or vector(0)",
+          "expr": "(verifier_last_check_status)",
           "legendFormat": "",
           "refId": "A"
         }

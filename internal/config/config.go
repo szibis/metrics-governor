@@ -146,10 +146,10 @@ type Config struct {
 	PRWReceiverWriteTimeout       time.Duration
 
 	// PRW Exporter settings
-	PRWExporterEndpoint    string
-	PRWExporterDefaultPath string // Default path for PRW exporter when not in endpoint (default: /api/v1/write)
-	PRWExporterVersion     string
-	PRWExporterTimeout     time.Duration
+	PRWExporterEndpoint        string
+	PRWExporterDefaultPath     string // Default path for PRW exporter when not in endpoint (default: /api/v1/write)
+	PRWExporterVersion         string
+	PRWExporterTimeout         time.Duration
 	PRWExporterTLSEnabled      bool
 	PRWExporterTLSCertFile     string
 	PRWExporterTLSKeyFile      string
@@ -1324,48 +1324,48 @@ func PrintVersion() {
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
-		GRPCListenAddr:              ":4317",
-		HTTPListenAddr:              ":4318",
-		HTTPReceiverPath:            "/v1/metrics",
-		ExporterEndpoint:            "localhost:4317",
-		ExporterProtocol:            "grpc",
-		ExporterInsecure:            true,
-		ExporterTimeout:             30 * time.Second,
-		ExporterDefaultPath:         "/v1/metrics",
-		ExporterCompression:         "none",
-		ExporterCompressionLevel:    0,
-		ExporterMaxIdleConns:        100,
-		ExporterMaxIdleConnsPerHost: 100,
-		ExporterMaxConnsPerHost:     0,
-		ExporterIdleConnTimeout:     90 * time.Second,
-		ExporterDisableKeepAlives:   false,
-		ExporterForceHTTP2:          false,
-		ReceiverMaxRequestBodySize:  0,
-		ReceiverReadTimeout:         0,
-		ReceiverReadHeaderTimeout:   1 * time.Minute,
-		ReceiverWriteTimeout:        30 * time.Second,
-		ReceiverIdleTimeout:         1 * time.Minute,
-		ReceiverKeepAlivesEnabled:   true,
-		BufferSize:                  10000,
-		FlushInterval:               5 * time.Second,
-		MaxBatchSize:                1000,
-		StatsAddr:                   ":9090",
-		StatsLabels:                 "",
-		LimitsConfig:                "",
-		LimitsDryRun:                true,
-		QueueEnabled:                false,
-		QueuePath:                   "./queue",
-		QueueMaxSize:                10000,
-		QueueMaxBytes:               1073741824, // 1GB
-		QueueRetryInterval:          5 * time.Second,
-		QueueMaxRetryDelay:          5 * time.Minute,
-		QueueFullBehavior:           "drop_oldest",
-		QueueTargetUtilization:      0.85,
-		QueueAdaptiveEnabled:        true,
-		QueueCompactThreshold:       0.5,
-		QueueInmemoryBlocks:         256,
-		QueueChunkSize:              536870912, // 512MB
-		QueueMetaSyncInterval:       1 * time.Second,
+		GRPCListenAddr:                  ":4317",
+		HTTPListenAddr:                  ":4318",
+		HTTPReceiverPath:                "/v1/metrics",
+		ExporterEndpoint:                "localhost:4317",
+		ExporterProtocol:                "grpc",
+		ExporterInsecure:                true,
+		ExporterTimeout:                 30 * time.Second,
+		ExporterDefaultPath:             "/v1/metrics",
+		ExporterCompression:             "none",
+		ExporterCompressionLevel:        0,
+		ExporterMaxIdleConns:            100,
+		ExporterMaxIdleConnsPerHost:     100,
+		ExporterMaxConnsPerHost:         0,
+		ExporterIdleConnTimeout:         90 * time.Second,
+		ExporterDisableKeepAlives:       false,
+		ExporterForceHTTP2:              false,
+		ReceiverMaxRequestBodySize:      0,
+		ReceiverReadTimeout:             0,
+		ReceiverReadHeaderTimeout:       1 * time.Minute,
+		ReceiverWriteTimeout:            30 * time.Second,
+		ReceiverIdleTimeout:             1 * time.Minute,
+		ReceiverKeepAlivesEnabled:       true,
+		BufferSize:                      10000,
+		FlushInterval:                   5 * time.Second,
+		MaxBatchSize:                    1000,
+		StatsAddr:                       ":9090",
+		StatsLabels:                     "",
+		LimitsConfig:                    "",
+		LimitsDryRun:                    true,
+		QueueEnabled:                    false,
+		QueuePath:                       "./queue",
+		QueueMaxSize:                    10000,
+		QueueMaxBytes:                   1073741824, // 1GB
+		QueueRetryInterval:              5 * time.Second,
+		QueueMaxRetryDelay:              5 * time.Minute,
+		QueueFullBehavior:               "drop_oldest",
+		QueueTargetUtilization:          0.85,
+		QueueAdaptiveEnabled:            true,
+		QueueCompactThreshold:           0.5,
+		QueueInmemoryBlocks:             256,
+		QueueChunkSize:                  536870912, // 512MB
+		QueueMetaSyncInterval:           1 * time.Second,
 		QueueStaleFlushInterval:         5 * time.Second,
 		QueueBackoffEnabled:             true,
 		QueueBackoffMultiplier:          2.0,
@@ -1374,10 +1374,10 @@ func DefaultConfig() *Config {
 		QueueCircuitBreakerResetTimeout: 30 * time.Second,
 		MemoryLimitRatio:                0.9,
 		ShardingEnabled:                 false,
-		ShardingDNSRefreshInterval:  30 * time.Second,
-		ShardingDNSTimeout:          5 * time.Second,
-		ShardingVirtualNodes:        150,
-		ShardingFallbackOnEmpty:     true,
+		ShardingDNSRefreshInterval:      30 * time.Second,
+		ShardingDNSTimeout:              5 * time.Second,
+		ShardingVirtualNodes:            150,
+		ShardingFallbackOnEmpty:         true,
 		// PRW defaults
 		PRWListenAddr:            "", // Disabled by default
 		PRWReceiverPath:          "/api/v1/write",

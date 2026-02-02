@@ -1228,7 +1228,7 @@ func TestE2E_RapidBackendFlapping(t *testing.T) {
 	client := colmetrics.NewMetricsServiceClient(conn)
 
 	// Run flapping test - toggle backend every 500ms while sending metrics
-	var currentBackend *MockGRPCBackend = backend
+	currentBackend := backend
 	var totalReceived int
 
 	for cycle := 0; cycle < 5; cycle++ {

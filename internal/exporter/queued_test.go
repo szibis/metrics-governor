@@ -524,7 +524,7 @@ func TestQueuedExporter_BackoffEnabled(t *testing.T) {
 
 	queueCfg := queue.Config{
 		Path:              tmpDir,
-		MaxSize:          100,
+		MaxSize:           100,
 		RetryInterval:     10 * time.Millisecond,
 		MaxRetryDelay:     500 * time.Millisecond,
 		BackoffEnabled:    true,
