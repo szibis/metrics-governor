@@ -14,6 +14,32 @@ metrics-governor includes several high-performance optimizations for production 
 | Queue I/O Optimization | Yes | Yes | -40-60% disk (compression) | 10x throughput |
 | Memory Limit Auto-Detection | Yes | Yes | Prevents OOM kills | More predictable GC |
 
+### Architecture Overview
+
+```mermaid
+graph TB
+    subgraph "Performance Optimizations"
+        BF[Bloom Filters]
+        SI[String Interning]
+        CL[Concurrency Limiting]
+        QIO[Queue I/O]
+        ML[Memory Limits]
+    end
+
+    subgraph "Pipeline"
+        RX[Receiver] --> LIM[Limits]
+        LIM --> BUF[Buffer]
+        BUF --> EXP[Exporter]
+    end
+
+    BF -.->|Cardinality| LIM
+    SI -.->|Labels| RX
+    SI -.->|Labels| EXP
+    CL -.->|Parallelism| EXP
+    QIO -.->|Persistence| BUF
+    ML -.->|GC Control| ALL[All Components]
+```
+
 ---
 
 ## Bloom Filter Cardinality Tracking
@@ -28,6 +54,25 @@ Cardinality tracking uses Bloom filters instead of maps for 98% memory reduction
 | 10,000,000    | 750 MB              | 12 MB                  | **98%**        |
 
 **Applies to:** OTLP limits enforcer, OTLP stats collector, PRW limits enforcer, PRW stats collector
+
+### How It Works
+
+```mermaid
+graph LR
+    subgraph "Memory Comparison"
+        direction TB
+        EXACT["Exact Mode<br/>map[string]struct{}<br/>75MB @ 1M series"]
+        BLOOM["Bloom Mode<br/>Bit Array<br/>1.2MB @ 1M series"]
+    end
+
+    subgraph "Bloom Filter Operation"
+        KEY[Series Key] --> HASH[Hash Functions<br/>k=7]
+        HASH --> BITS[Set/Check Bits]
+        BITS --> RESULT{Result}
+        RESULT -->|All bits set| MAYBE[Probably Exists]
+        RESULT -->|Any bit unset| NO[Definitely New]
+    end
+```
 
 ### Configuration
 
@@ -118,6 +163,28 @@ Label string deduplication reduces allocations by 76%:
 
 **Applies to:** OTLP shard key building, PRW label parsing, PRW shard key building
 
+### How It Works
+
+```mermaid
+flowchart TB
+    subgraph "String Interning Flow"
+        IN[Input String] --> CHECK{In Pool?}
+        CHECK -->|Hit| RET[Return Pooled Ref<br/>Zero Allocation]
+        CHECK -->|Miss| LEN{len ≤ 64?}
+        LEN -->|Yes| ADD[Add to Pool]
+        LEN -->|No| COPY[Copy String]
+        ADD --> RET
+    end
+
+    subgraph "Pre-populated Labels"
+        L1["__name__"]
+        L2["job"]
+        L3["instance"]
+        L4["namespace"]
+        L5["pod"]
+    end
+```
+
 ### Configuration
 
 ```bash
@@ -136,6 +203,40 @@ Semaphore-based limiting prevents goroutine explosion:
 - Prevents memory exhaustion during traffic spikes
 
 **Applies to:** OTLP sharded exporter, PRW sharded exporter
+
+### How It Works
+
+```mermaid
+flowchart LR
+    subgraph "Incoming Requests"
+        R1[Batch 1]
+        R2[Batch 2]
+        R3[Batch 3]
+        R4[Batch N]
+    end
+
+    subgraph "Semaphore"
+        SEM["Slots: NumCPU × 4"]
+    end
+
+    subgraph "Export Workers"
+        W1[Worker]
+        W2[Worker]
+        W3[Worker]
+    end
+
+    subgraph "Backend"
+        BE[Metrics Backend]
+    end
+
+    R1 --> SEM
+    R2 --> SEM
+    R3 --> SEM
+    R4 -.->|Wait| SEM
+    SEM --> W1 --> BE
+    SEM --> W2 --> BE
+    SEM --> W3 --> BE
+```
 
 ### Configuration
 
@@ -156,6 +257,59 @@ FastQueue persistent queue with VictoriaMetrics-inspired design:
 - **Adaptive sizing** - Automatically adjusts queue limits based on available disk space
 
 **Applies to:** OTLP persistent queue, PRW persistent queue
+
+### FastQueue Architecture
+
+```mermaid
+flowchart TB
+    subgraph "FastQueue Architecture"
+        subgraph "Layer 1: In-Memory"
+            CH[Buffered Channel<br/>256 blocks default]
+        end
+
+        subgraph "Layer 2: Disk"
+            C1[Chunk 0<br/>512MB]
+            C2[Chunk 1<br/>512MB]
+            CN[Chunk N]
+        end
+
+        META[metadata.json<br/>Synced every 1s]
+    end
+
+    PUSH[Push] --> CH
+    CH -->|Full| FLUSH[Flush to Disk]
+    FLUSH --> C1
+    POP[Pop] --> CH
+    CH -->|Empty| READ[Read from Disk]
+    C1 --> READ
+    META -.->|Atomic Rename| DURABLE[Durability]
+```
+
+### Write Path
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant Channel
+    participant Disk
+    participant Meta
+
+    App->>Channel: Push(batch)
+    alt Channel has space
+        Channel-->>App: OK (fast path)
+    else Channel full
+        Channel->>Disk: Flush all blocks
+        Disk-->>Channel: Written
+        Channel->>Channel: Push(batch)
+        Channel-->>App: OK
+    end
+
+    loop Every 1s
+        Meta->>Disk: Write temp file
+        Meta->>Disk: Atomic rename
+        Meta-->>Meta: Synced
+    end
+```
 
 ### Configuration
 
@@ -203,12 +357,28 @@ Automatically detects container memory limits and sets GOMEMLIMIT for optimal GC
 
 ### How It Works
 
+```mermaid
+sequenceDiagram
+    participant MG as metrics-governor
+    participant CG as cgroups
+    participant GO as Go Runtime
+
+    MG->>CG: Read memory limit
+    alt Container limit found
+        CG-->>MG: e.g., 4GB
+        MG->>MG: Calculate GOMEMLIMIT<br/>(4GB × 0.9 = 3.6GB)
+        MG->>GO: Set GOMEMLIMIT=3.6GB
+        GO->>GO: Aggressive GC near limit
+    else No container limit
+        CG-->>MG: No limit detected
+        Note over MG,GO: Skip GOMEMLIMIT, use defaults
+    end
 ```
-Container Memory: 4GB
-├── GOMEMLIMIT: 3.6GB (90%)  ← Go GC target
-│   ├── Heap: variable
-│   └── Stacks: variable
-└── Headroom: 400MB (10%)    ← OS buffers, cgo, page cache
+
+```mermaid
+pie title Container Memory (4GB Example)
+    "GOMEMLIMIT - Heap Target" : 3600
+    "Headroom - Stacks, cgo, OS" : 400
 ```
 
 When heap approaches GOMEMLIMIT, Go's GC runs more frequently to avoid exceeding the limit.

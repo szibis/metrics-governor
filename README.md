@@ -35,64 +35,50 @@
 
 ```mermaid
 flowchart LR
-    subgraph Clients["Metrics Sources"]
-        App1["App 1<br/>(OTel SDK)"]
-        App2["App 2<br/>(OTel SDK)"]
-        Prom["Prometheus<br/>(remote_write)"]
+    subgraph Sources["📡 Metrics Sources"]
+        OTEL["OpenTelemetry<br/>Apps"]
+        PROM["Prometheus<br/>Servers"]
     end
 
-    subgraph MG["metrics-governor"]
-        subgraph Receivers["Receivers<br/>(configurable paths)"]
-            GRPC["gRPC :4317"]
-            HTTP["HTTP :4318"]
-            PRW["PRW :9091"]
+    subgraph MG["⚡ metrics-governor"]
+        direction TB
+
+        subgraph OTLP["OTLP Pipeline"]
+            direction LR
+            O_RX["Receiver<br/>gRPC :4317<br/>HTTP :4318"]
+            O_PROC["Stats → Limits"]
+            O_EXP["Exporter"]
+            O_Q["FastQueue"]
+            O_RX --> O_PROC --> O_EXP
+            O_EXP -.->|retry| O_Q -.-> O_EXP
         end
 
-        subgraph Pipelines["Independent Pipelines"]
-            subgraph OTLP_Pipeline["OTLP Pipeline"]
-                OBuf["Buffer"]
-                OStats["Stats"]
-                OLimits["Limits"]
-                OExp["Exporter"]
-            end
-            subgraph PRW_Pipeline["PRW Pipeline"]
-                PBuf["Buffer"]
-                PStats["Stats"]
-                PLimits["Limits"]
-                PExp["Exporter"]
-            end
-        end
-
-        subgraph Resilience["Queue & Resilience"]
-            OQueue["OTLP FastQueue"]
-            PQueue["PRW FastQueue"]
-            CB["Circuit Breaker"]
-            BO["Exp. Backoff"]
+        subgraph PRW["PRW Pipeline"]
+            direction LR
+            P_RX["Receiver<br/>HTTP :9091"]
+            P_PROC["Stats → Limits"]
+            P_EXP["Exporter"]
+            P_Q["FastQueue"]
+            P_RX --> P_PROC --> P_EXP
+            P_EXP -.->|retry| P_Q -.-> P_EXP
         end
     end
 
-    subgraph Backends["Any Compatible Backend"]
-        OTLP_BE["OTLP (gRPC/HTTP)<br/>OTel Collector • Mimir<br/>VictoriaMetrics • etc."]
-        PRW_BE["PRW (HTTP)<br/>Prometheus • Thanos<br/>VictoriaMetrics • etc."]
+    subgraph Backends["🎯 Backends"]
+        OTLP_BE["OTLP Backends<br/>Collector • Mimir • VM"]
+        PRW_BE["PRW Backends<br/>Prometheus • Thanos • VM"]
     end
 
-    App1 -->|"OTLP/gRPC"| GRPC
-    App2 -->|"OTLP/HTTP"| HTTP
-    Prom -->|"PRW"| PRW
-
-    GRPC --> OBuf --> OStats --> OLimits --> OExp
-    HTTP --> OBuf
-    PRW --> PBuf --> PStats --> PLimits --> PExp
-
-    OExp -->|"Success"| OTLP_BE
-    OExp -.->|"Failure"| CB
-    CB -.-> OQueue
-    OQueue -.-> BO -.->|"Retry"| OExp
-
-    PExp -->|"Success"| PRW_BE
-    PExp -.->|"Failure"| CB
-    PQueue -.-> BO -.->|"Retry"| PExp
+    OTEL -->|OTLP| O_RX
+    PROM -->|PRW| P_RX
+    O_EXP --> OTLP_BE
+    P_EXP --> PRW_BE
 ```
+
+**Pipeline Features:**
+- **Stats** - Real-time cardinality and datapoint tracking per metric/service
+- **Limits** - Adaptive limiting that drops only top offenders, preserving well-behaved services
+- **FastQueue** - Durable persistence with circuit breaker and exponential backoff
 
 ## Quick Start
 
