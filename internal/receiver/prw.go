@@ -39,6 +39,9 @@ type PRWServerConfig struct {
 type PRWConfig struct {
 	// Addr is the listen address.
 	Addr string
+	// Path is the URL path for receiving PRW data (default: /api/v1/write).
+	// If empty, both /api/v1/write and /write are registered.
+	Path string
 	// TLS configuration for secure connections.
 	TLS tlspkg.ServerConfig
 	// Auth configuration for authentication.
@@ -89,10 +92,14 @@ func NewPRWWithConfig(cfg PRWConfig, buf PRWBuffer) *PRWReceiver {
 	}
 
 	mux := http.NewServeMux()
-	// Standard PRW endpoint
-	mux.HandleFunc("/api/v1/write", r.handleWrite)
-	// VictoriaMetrics shorthand endpoint
-	mux.HandleFunc("/write", r.handleWrite)
+	if cfg.Path != "" {
+		// Use custom path if specified
+		mux.HandleFunc(cfg.Path, r.handleWrite)
+	} else {
+		// Default: register both standard and VM shorthand endpoints
+		mux.HandleFunc("/api/v1/write", r.handleWrite)
+		mux.HandleFunc("/write", r.handleWrite)
+	}
 
 	// Wrap with auth middleware if enabled
 	var handler http.Handler = mux

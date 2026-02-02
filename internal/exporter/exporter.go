@@ -127,6 +127,8 @@ type Config struct {
 	Insecure bool
 	// Timeout is the request timeout.
 	Timeout time.Duration
+	// DefaultPath is the path to append when endpoint has no path (default: /v1/metrics).
+	DefaultPath string
 	// TLS configuration for secure connections.
 	TLS tlspkg.ClientConfig
 	// Auth configuration for authentication.
@@ -302,7 +304,11 @@ func newHTTPExporter(_ context.Context, cfg Config) (*OTLPExporter, error) {
 
 	// Add path if missing
 	if !hasPath(endpoint) {
-		endpoint = endpoint + "/v1/metrics"
+		defaultPath := cfg.DefaultPath
+		if defaultPath == "" {
+			defaultPath = "/v1/metrics"
+		}
+		endpoint = endpoint + defaultPath
 	}
 
 	return &OTLPExporter{

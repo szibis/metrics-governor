@@ -21,8 +21,9 @@ var version = "dev"
 // Config holds the application configuration.
 type Config struct {
 	// Receiver settings
-	GRPCListenAddr string
-	HTTPListenAddr string
+	GRPCListenAddr   string
+	HTTPListenAddr   string
+	HTTPReceiverPath string // Custom path for OTLP HTTP receiver (default: /v1/metrics)
 
 	// Receiver TLS settings
 	ReceiverTLSEnabled    bool
@@ -38,10 +39,11 @@ type Config struct {
 	ReceiverAuthBasicPassword string
 
 	// Exporter settings
-	ExporterEndpoint string
-	ExporterProtocol string
-	ExporterInsecure bool
-	ExporterTimeout  time.Duration
+	ExporterEndpoint    string
+	ExporterProtocol    string
+	ExporterInsecure    bool
+	ExporterTimeout     time.Duration
+	ExporterDefaultPath string // Default path for OTLP HTTP exporter when not in endpoint (default: /v1/metrics)
 
 	// Exporter TLS settings
 	ExporterTLSEnabled            bool
@@ -130,6 +132,7 @@ type Config struct {
 
 	// PRW Receiver settings
 	PRWListenAddr                 string
+	PRWReceiverPath               string // Custom path for PRW receiver (default: /api/v1/write)
 	PRWReceiverVersion            string
 	PRWReceiverTLSEnabled         bool
 	PRWReceiverTLSCertFile        string
@@ -143,9 +146,10 @@ type Config struct {
 	PRWReceiverWriteTimeout       time.Duration
 
 	// PRW Exporter settings
-	PRWExporterEndpoint        string
-	PRWExporterVersion         string
-	PRWExporterTimeout         time.Duration
+	PRWExporterEndpoint    string
+	PRWExporterDefaultPath string // Default path for PRW exporter when not in endpoint (default: /api/v1/write)
+	PRWExporterVersion     string
+	PRWExporterTimeout     time.Duration
 	PRWExporterTLSEnabled      bool
 	PRWExporterTLSCertFile     string
 	PRWExporterTLSKeyFile      string
@@ -201,6 +205,7 @@ func ParseFlags() *Config {
 	// Receiver flags
 	flag.StringVar(&cfg.GRPCListenAddr, "grpc-listen", ":4317", "gRPC receiver listen address")
 	flag.StringVar(&cfg.HTTPListenAddr, "http-listen", ":4318", "HTTP receiver listen address")
+	flag.StringVar(&cfg.HTTPReceiverPath, "http-receiver-path", "/v1/metrics", "HTTP receiver path for OTLP metrics")
 
 	// Receiver TLS flags
 	flag.BoolVar(&cfg.ReceiverTLSEnabled, "receiver-tls-enabled", false, "Enable TLS for receivers")
@@ -220,6 +225,7 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.ExporterProtocol, "exporter-protocol", "grpc", "Exporter protocol: grpc or http")
 	flag.BoolVar(&cfg.ExporterInsecure, "exporter-insecure", true, "Use insecure connection for exporter")
 	flag.DurationVar(&cfg.ExporterTimeout, "exporter-timeout", 30*time.Second, "Exporter request timeout")
+	flag.StringVar(&cfg.ExporterDefaultPath, "exporter-default-path", "/v1/metrics", "Default path for HTTP exporter when endpoint has no path")
 
 	// Exporter TLS flags
 	flag.BoolVar(&cfg.ExporterTLSEnabled, "exporter-tls-enabled", false, "Enable custom TLS config for exporter")
@@ -308,6 +314,7 @@ func ParseFlags() *Config {
 
 	// PRW Receiver flags
 	flag.StringVar(&cfg.PRWListenAddr, "prw-listen", "", "PRW receiver listen address (empty = disabled)")
+	flag.StringVar(&cfg.PRWReceiverPath, "prw-receiver-path", "/api/v1/write", "PRW receiver path")
 	flag.StringVar(&cfg.PRWReceiverVersion, "prw-receiver-version", "auto", "PRW protocol version: 1.0, 2.0, or auto")
 	flag.BoolVar(&cfg.PRWReceiverTLSEnabled, "prw-receiver-tls-enabled", false, "Enable TLS for PRW receiver")
 	flag.StringVar(&cfg.PRWReceiverTLSCertFile, "prw-receiver-tls-cert", "", "Path to PRW receiver TLS certificate file")
@@ -322,6 +329,7 @@ func ParseFlags() *Config {
 
 	// PRW Exporter flags
 	flag.StringVar(&cfg.PRWExporterEndpoint, "prw-exporter-endpoint", "", "PRW exporter endpoint (empty = disabled)")
+	flag.StringVar(&cfg.PRWExporterDefaultPath, "prw-exporter-default-path", "/api/v1/write", "Default path for PRW exporter when endpoint has no path")
 	flag.StringVar(&cfg.PRWExporterVersion, "prw-exporter-version", "auto", "PRW protocol version: 1.0, 2.0, or auto")
 	flag.DurationVar(&cfg.PRWExporterTimeout, "prw-exporter-timeout", 30*time.Second, "PRW exporter request timeout")
 	flag.BoolVar(&cfg.PRWExporterTLSEnabled, "prw-exporter-tls-enabled", false, "Enable TLS for PRW exporter")
@@ -819,6 +827,7 @@ func (c *Config) GRPCReceiverConfig() receiver.GRPCConfig {
 func (c *Config) HTTPReceiverConfig() receiver.HTTPConfig {
 	return receiver.HTTPConfig{
 		Addr: c.HTTPListenAddr,
+		Path: c.HTTPReceiverPath,
 		TLS:  c.ReceiverTLSConfig(),
 		Auth: c.ReceiverAuthConfig(),
 		Server: receiver.HTTPServerConfig{
@@ -895,6 +904,7 @@ func (c *Config) ExporterConfig() exporter.Config {
 		Protocol:    exporter.Protocol(c.ExporterProtocol),
 		Insecure:    c.ExporterInsecure,
 		Timeout:     c.ExporterTimeout,
+		DefaultPath: c.ExporterDefaultPath,
 		TLS:         c.ExporterTLSConfig(),
 		Auth:        c.ExporterAuthConfig(),
 		Compression: c.ExporterCompressionConfig(),
@@ -1005,6 +1015,7 @@ func (c *Config) PRWReceiverConfig() receiver.PRWConfig {
 	version, _ := prw.ParseVersion(c.PRWReceiverVersion)
 	return receiver.PRWConfig{
 		Addr:    c.PRWListenAddr,
+		Path:    c.PRWReceiverPath,
 		Version: version,
 		TLS: tlspkg.ServerConfig{
 			Enabled:    c.PRWReceiverTLSEnabled,
@@ -1045,9 +1056,10 @@ func (c *Config) PRWExporterConfig() exporter.PRWExporterConfig {
 	}
 
 	return exporter.PRWExporterConfig{
-		Endpoint: c.PRWExporterEndpoint,
-		Version:  version,
-		Timeout:  c.PRWExporterTimeout,
+		Endpoint:    c.PRWExporterEndpoint,
+		DefaultPath: c.PRWExporterDefaultPath,
+		Version:     version,
+		Timeout:     c.PRWExporterTimeout,
 		TLS: tlspkg.ClientConfig{
 			Enabled:            c.PRWExporterTLSEnabled,
 			CertFile:           c.PRWExporterTLSCertFile,
@@ -1314,10 +1326,12 @@ func DefaultConfig() *Config {
 	return &Config{
 		GRPCListenAddr:              ":4317",
 		HTTPListenAddr:              ":4318",
+		HTTPReceiverPath:            "/v1/metrics",
 		ExporterEndpoint:            "localhost:4317",
 		ExporterProtocol:            "grpc",
 		ExporterInsecure:            true,
 		ExporterTimeout:             30 * time.Second,
+		ExporterDefaultPath:         "/v1/metrics",
 		ExporterCompression:         "none",
 		ExporterCompressionLevel:    0,
 		ExporterMaxIdleConns:        100,
@@ -1366,10 +1380,12 @@ func DefaultConfig() *Config {
 		ShardingFallbackOnEmpty:     true,
 		// PRW defaults
 		PRWListenAddr:            "", // Disabled by default
+		PRWReceiverPath:          "/api/v1/write",
 		PRWReceiverVersion:       "auto",
 		PRWReceiverReadTimeout:   1 * time.Minute,
 		PRWReceiverWriteTimeout:  30 * time.Second,
 		PRWExporterEndpoint:      "", // Disabled by default
+		PRWExporterDefaultPath:   "/api/v1/write",
 		PRWExporterVersion:       "auto",
 		PRWExporterTimeout:       30 * time.Second,
 		PRWExporterVMCompression: "snappy",

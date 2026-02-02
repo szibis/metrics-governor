@@ -41,6 +41,8 @@ type HTTPServerConfig struct {
 type HTTPConfig struct {
 	// Addr is the listen address.
 	Addr string
+	// Path is the URL path for receiving metrics (default: /v1/metrics).
+	Path string
 	// TLS configuration for secure connections.
 	TLS tlspkg.ServerConfig
 	// Auth configuration for authentication.
@@ -81,8 +83,14 @@ func NewHTTPWithConfig(cfg HTTPConfig, buf *buffer.MetricsBuffer) *HTTPReceiver 
 		}
 	}
 
+	// Use default path if not specified
+	path := cfg.Path
+	if path == "" {
+		path = "/v1/metrics"
+	}
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/metrics", r.handleMetrics)
+	mux.HandleFunc(path, r.handleMetrics)
 
 	// Wrap with auth middleware if enabled
 	var handler http.Handler = mux

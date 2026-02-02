@@ -83,6 +83,8 @@ func init() {
 type PRWExporterConfig struct {
 	// Endpoint is the target PRW endpoint URL.
 	Endpoint string
+	// DefaultPath is the path to append when endpoint has no path (default: /api/v1/write).
+	DefaultPath string
 	// Timeout is the request timeout.
 	Timeout time.Duration
 	// TLS configuration for secure connections.
@@ -204,11 +206,15 @@ func NewPRW(ctx context.Context, cfg PRWExporterConfig) (*PRWExporter, error) {
 
 	// Add path if missing
 	if !hasPath(endpoint) {
-		if cfg.VMMode && cfg.VMOptions.UseShortEndpoint {
-			endpoint = endpoint + "/write"
+		var path string
+		if cfg.DefaultPath != "" {
+			path = cfg.DefaultPath
+		} else if cfg.VMMode && cfg.VMOptions.UseShortEndpoint {
+			path = "/write"
 		} else {
-			endpoint = endpoint + "/api/v1/write"
+			path = "/api/v1/write"
 		}
+		endpoint = endpoint + path
 	}
 
 	// Determine compression type
