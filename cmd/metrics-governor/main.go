@@ -75,6 +75,34 @@ func main() {
 		"fp_rate", cardinalityCfg.FPRate,
 	))
 
+	// Initialize bloom filter persistence if enabled
+	bloomPersistenceCfg := cfg.BloomPersistenceConfig()
+	if bloomPersistenceCfg.Enabled {
+		persistCfg := cardinality.PersistenceConfig{
+			Enabled:          bloomPersistenceCfg.Enabled,
+			Path:             bloomPersistenceCfg.Path,
+			SaveInterval:     bloomPersistenceCfg.SaveInterval,
+			StateTTL:         bloomPersistenceCfg.StateTTL,
+			CleanupInterval:  bloomPersistenceCfg.CleanupInterval,
+			MaxSize:          bloomPersistenceCfg.MaxSize,
+			MaxMemory:        bloomPersistenceCfg.MaxMemory,
+			Compression:      bloomPersistenceCfg.Compression,
+			CompressionLevel: bloomPersistenceCfg.CompressionLevel,
+		}
+		store, err := cardinality.NewTrackerStore(persistCfg, cardinality.GlobalConfig)
+		if err != nil {
+			logging.Warn("bloom persistence disabled due to initialization error", logging.F("error", err.Error()))
+		} else {
+			// Load existing state from disk
+			if err := store.LoadAll(); err != nil {
+				logging.Warn("failed to load bloom state from disk", logging.F("error", err.Error()))
+			}
+			// Start background save/cleanup loops
+			store.Start()
+			cardinality.GlobalTrackerStore = store
+		}
+	}
+
 	// Create exporter (either sharded or single endpoint)
 	var finalExporter exporter.Exporter
 
@@ -381,6 +409,13 @@ func main() {
 	bufferLogAggregator.Stop()
 	if limitsEnforcer != nil {
 		limitsEnforcer.Stop()
+	}
+
+	// Close bloom persistence (final save and cleanup)
+	if cardinality.GlobalTrackerStore != nil {
+		if err := cardinality.GlobalTrackerStore.Close(); err != nil {
+			logging.Warn("error closing bloom persistence", logging.F("error", err.Error()))
+		}
 	}
 
 	logging.Info("shutdown complete")

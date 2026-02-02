@@ -1,0 +1,88 @@
+# Bloom filter persistence testing configuration
+# Usage: docker compose -f docker-compose.yaml -f docker-compose.persistence.yaml up -d
+#
+# This override enables bloom filter state persistence testing:
+# - Bloom persistence with aggressive settings for testing
+# - Smaller intervals for faster testing
+# - Volume mount for persistent bloom state
+#
+# Test scenarios:
+# 1. Normal flow with bloom persistence enabled
+# 2. Container restart recovers cardinality counts
+# 3. Persistence metrics exposed correctly
+# 4. Cleanup of stale trackers
+
+services:
+  metrics-governor:
+    command:
+      - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
+      - "-exporter-protocol=http"
+      - "-exporter-insecure=true"
+      - "-exporter-compression=gzip"
+      - "-exporter-timeout=5s"
+      - "-stats-labels=service,env"
+      - "-flush-interval=500ms"
+      - "-batch-size=100"
+      - "-buffer-size=5000"
+      # Performance tuning
+      - "-string-interning=true"
+      - "-intern-max-value-length=64"
+      # Bloom persistence configuration (aggressive for testing)
+      - "-bloom-persistence-enabled=true"
+      - "-bloom-persistence-path=/data/bloom-state"
+      - "-bloom-persistence-save-interval=10s"
+      - "-bloom-persistence-state-ttl=30m"
+      - "-bloom-persistence-cleanup-interval=1m"
+      - "-bloom-persistence-max-size=104857600"
+      - "-bloom-persistence-max-memory=67108864"
+      - "-bloom-persistence-compression=true"
+      - "-bloom-persistence-compression-level=1"
+      # Memory limit
+      - "-memory-limit-ratio=0.9"
+    volumes:
+      - mg-bloom-test-data:/data/bloom-state
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/metrics"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  metrics-generator:
+    environment:
+      - OTLP_ENDPOINT=otel-collector:4317
+      - METRICS_INTERVAL=500ms
+      - SERVICES=persistence-test-service
+      - ENVIRONMENTS=test
+      - ENABLE_EDGE_CASES=false
+      - ENABLE_HIGH_CARDINALITY=true
+      - ENABLE_BURST_TRAFFIC=false
+      - ENABLE_DIVERSE_METRICS=true
+      - HIGH_CARDINALITY_COUNT=100
+      - DIVERSE_METRIC_COUNT=20
+      - BURST_SIZE=100
+      - BURST_INTERVAL_SEC=30
+      - STATS_INTERVAL_SEC=10
+      - TARGET_METRICS_PER_SEC=500
+      - TARGET_DATAPOINTS_PER_SEC=1000
+      - METRICS_PORT=9091
+
+  victoriametrics:
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    command:
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=1d"
+      - "--search.latencyOffset=0s"
+      - "--promscrape.config=/etc/victoriametrics/scrape.yaml"
+      - "--maxInsertRequestSize=32MB"
+      - "--opentelemetry.maxRequestSize=32MB"
+      - "--opentelemetry.convertMetricNamesToPrometheus"
+      - "--memory.allowedPercent=70"
+
+volumes:
+  mg-bloom-test-data:
+    driver: local
