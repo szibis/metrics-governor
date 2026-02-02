@@ -1,4 +1,7 @@
-name: Release
+name: Release (Tag Push)
+
+# This workflow is triggered by tag pushes from auto-release.yml
+# It handles building binaries, helm chart, and docker images
 
 on:
   push:
@@ -10,46 +13,40 @@ permissions:
   packages: write
 
 jobs:
-  # Pre-release verification - ensures the release is stable
-  verify:
+  # Check if release already has assets (from auto-release)
+  check-assets:
     runs-on: ubuntu-latest
+    outputs:
+      has_assets: ${{ steps.check.outputs.has_assets }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Run unit tests
-        run: go test -race -v ./internal/...
-
-      - name: Run functional tests
-        run: go test -race -v ./functional/...
-
-      - name: Run e2e tests
-        run: go test -race -v ./e2e/...
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: Run Docker Compose E2E tests
-        timeout-minutes: 15
+      - name: Check release assets
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          chmod +x test/e2e-docker-compose.sh
-          ./test/e2e-docker-compose.sh
+          VERSION="${GITHUB_REF#refs/tags/}"
 
-      - name: Cleanup
-        if: always()
-        run: docker compose down -v --remove-orphans 2>/dev/null || true
+          # Wait a moment for auto-release to potentially upload assets
+          sleep 10
+
+          if gh release view "$VERSION" --repo ${{ github.repository }} >/dev/null 2>&1; then
+            ASSETS=$(gh release view "$VERSION" --repo ${{ github.repository }} --json assets -q '.assets | length')
+            if [ "$ASSETS" -gt "0" ]; then
+              echo "Release has $ASSETS assets, skipping build (handled by auto-release)"
+              echo "has_assets=true" >> $GITHUB_OUTPUT
+            else
+              echo "Release exists but has no assets, proceeding with build"
+              echo "has_assets=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "No release found, proceeding with build"
+            echo "has_assets=false" >> $GITHUB_OUTPUT
+          fi
 
   release:
     runs-on: ubuntu-latest
-    needs: [verify]
+    needs: check-assets
+    if: needs.check-assets.outputs.has_assets != 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,17 +58,17 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run tests
-        run: go test -v ./...
-
       - name: Get version
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION_NUM=${VERSION#v}" >> $GITHUB_OUTPUT
 
       - name: Build binaries
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          VERSION_NUM="${VERSION#v}"
+          VERSION_NUM="${{ steps.version.outputs.VERSION_NUM }}"
           LDFLAGS="-s -w -X github.com/szibis/metrics-governor/internal/config.version=${VERSION_NUM}"
           mkdir -p bin
 
@@ -82,10 +79,6 @@ jobs:
           GOOS=linux GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-linux-arm64 ./cmd/metrics-governor
           GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-linux-amd64 ./cmd/metrics-governor
 
-          # Verify version is embedded
-          echo "Verifying version..."
-          ./bin/metrics-governor-linux-amd64 -version || true
-
           cd bin
           tar -czvf metrics-governor-${VERSION}-darwin-arm64.tar.gz metrics-governor-darwin-arm64
           tar -czvf metrics-governor-${VERSION}-darwin-amd64.tar.gz metrics-governor-darwin-amd64
@@ -95,33 +88,32 @@ jobs:
 
       - name: Package Helm chart
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          VERSION_NUM="${VERSION#v}"
-          sed -i "s/^version:.*/version: ${VERSION_NUM}/" helm/metrics-governor/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${VERSION_NUM}\"/" helm/metrics-governor/Chart.yaml
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           helm package helm/metrics-governor -d bin/
 
-      - name: Create Release
+      - name: Upload to Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          # Check if release already exists
+          PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | sed -n '2p')
+
           if gh release view "$VERSION" >/dev/null 2>&1; then
-            echo "Release $VERSION exists, uploading assets..."
+            echo "Uploading assets to existing release $VERSION..."
             gh release upload "$VERSION" bin/metrics-governor-*.tar.gz bin/checksums.txt bin/metrics-governor-*.tgz --clobber
           else
             echo "Creating release $VERSION..."
             gh release create "$VERSION" \
               --title "Release $VERSION" \
               --generate-notes \
+              --notes-start-tag "$PREV_TAG" \
               bin/metrics-governor-*.tar.gz bin/checksums.txt bin/metrics-governor-*.tgz
           fi
 
   docker:
     runs-on: ubuntu-latest
-    needs: release
+    needs: [check-assets, release]
+    if: needs.check-assets.outputs.has_assets != 'true'
     steps:
       - uses: actions/checkout@v4
 
