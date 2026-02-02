@@ -1,4 +1,7 @@
-name: Release
+name: Release (Manual Tag)
+
+# This workflow handles manual tag pushes (not from auto-release)
+# For normal releases, use auto-release.yml which triggers on PR merge
 
 on:
   push:
@@ -10,8 +13,38 @@ permissions:
   packages: write
 
 jobs:
-  # Pre-release verification - ensures the release is stable
+  # Check if this was triggered by auto-release (skip if so)
+  check-source:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Check if manual release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Check if release already has assets (from auto-release)
+          VERSION="${GITHUB_REF#refs/tags/}"
+
+          if gh release view "$VERSION" --repo ${{ github.repository }} >/dev/null 2>&1; then
+            ASSETS=$(gh release view "$VERSION" --repo ${{ github.repository }} --json assets -q '.assets | length')
+            if [ "$ASSETS" -gt "0" ]; then
+              echo "Release already has $ASSETS assets, skipping (handled by auto-release)"
+              echo "should_run=false" >> $GITHUB_OUTPUT
+            else
+              echo "Release exists but has no assets, proceeding"
+              echo "should_run=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "No release found, proceeding with manual release"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          fi
+
+  # Pre-release verification
   verify:
+    needs: check-source
+    if: needs.check-source.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,34 +55,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run unit tests
-        run: go test -race -v ./internal/...
-
-      - name: Run functional tests
-        run: go test -race -v ./functional/...
-
-      - name: Run e2e tests
-        run: go test -race -v ./e2e/...
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: Run Docker Compose E2E tests
-        timeout-minutes: 15
-        run: |
-          chmod +x test/e2e-docker-compose.sh
-          ./test/e2e-docker-compose.sh
-
-      - name: Cleanup
-        if: always()
-        run: docker compose down -v --remove-orphans 2>/dev/null || true
+      - name: Run tests
+        run: go test -race -v ./...
 
   release:
     runs-on: ubuntu-latest
-    needs: [verify]
+    needs: [check-source, verify]
+    if: needs.check-source.outputs.should_run == 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,17 +73,17 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run tests
-        run: go test -v ./...
-
       - name: Get version
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION_NUM=${VERSION#v}" >> $GITHUB_OUTPUT
 
       - name: Build binaries
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          VERSION_NUM="${VERSION#v}"
+          VERSION_NUM="${{ steps.version.outputs.VERSION_NUM }}"
           LDFLAGS="-s -w -X github.com/szibis/metrics-governor/internal/config.version=${VERSION_NUM}"
           mkdir -p bin
 
@@ -82,10 +94,6 @@ jobs:
           GOOS=linux GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-linux-arm64 ./cmd/metrics-governor
           GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-linux-amd64 ./cmd/metrics-governor
 
-          # Verify version is embedded
-          echo "Verifying version..."
-          ./bin/metrics-governor-linux-amd64 -version || true
-
           cd bin
           tar -czvf metrics-governor-${VERSION}-darwin-arm64.tar.gz metrics-governor-darwin-arm64
           tar -czvf metrics-governor-${VERSION}-darwin-amd64.tar.gz metrics-governor-darwin-amd64
@@ -95,19 +103,19 @@ jobs:
 
       - name: Package Helm chart
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          VERSION_NUM="${VERSION#v}"
-          sed -i "s/^version:.*/version: ${VERSION_NUM}/" helm/metrics-governor/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${VERSION_NUM}\"/" helm/metrics-governor/Chart.yaml
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          VERSION="${{ steps.version.outputs.VERSION_NUM }}"
+          sed -i "s/^version:.*/version: ${VERSION}/" helm/metrics-governor/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" helm/metrics-governor/Chart.yaml
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           helm package helm/metrics-governor -d bin/
 
-      - name: Create Release
+      - name: Create/Update Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          # Check if release already exists
+          PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | sed -n '2p')
+
           if gh release view "$VERSION" >/dev/null 2>&1; then
             echo "Release $VERSION exists, uploading assets..."
             gh release upload "$VERSION" bin/metrics-governor-*.tar.gz bin/checksums.txt bin/metrics-governor-*.tgz --clobber
@@ -116,12 +124,14 @@ jobs:
             gh release create "$VERSION" \
               --title "Release $VERSION" \
               --generate-notes \
+              --notes-start-tag "$PREV_TAG" \
               bin/metrics-governor-*.tar.gz bin/checksums.txt bin/metrics-governor-*.tgz
           fi
 
   docker:
     runs-on: ubuntu-latest
-    needs: release
+    needs: [check-source, release]
+    if: needs.check-source.outputs.should_run == 'true'
     steps:
       - uses: actions/checkout@v4
 

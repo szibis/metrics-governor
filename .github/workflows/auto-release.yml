@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   auto-release:
@@ -15,10 +16,38 @@ jobs:
     outputs:
       released: ${{ steps.release.outputs.released }}
       version: ${{ steps.release.outputs.version }}
+      chart_bumped: ${{ steps.detect.outputs.chart_changed }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Detect changes
+        id: detect
+        run: |
+          # Get changed files in this PR
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # Check if helm chart files changed
+          if echo "$CHANGED_FILES" | grep -q "^helm/"; then
+            echo "chart_changed=true" >> $GITHUB_OUTPUT
+            echo "Helm chart files changed"
+          else
+            echo "chart_changed=false" >> $GITHUB_OUTPUT
+            echo "No helm chart changes"
+          fi
+
+          # Check if app files changed (anything outside helm/, docs/, .github/)
+          if echo "$CHANGED_FILES" | grep -qvE "^(helm/|docs/|\.github/|README|CHANGELOG|LICENSE)"; then
+            echo "app_changed=true" >> $GITHUB_OUTPUT
+            echo "App files changed"
+          else
+            echo "app_changed=false" >> $GITHUB_OUTPUT
+            echo "No app changes"
+          fi
 
       - name: Determine version bump
         id: bump
@@ -70,9 +99,8 @@ jobs:
               'perf': 'patch',
               'security': 'patch',
               'deps': 'patch',
-              'ci': 'patch',      // CI improvements trigger patch release
-              'build': 'patch',   // Build system changes trigger patch release
-              // These types don't trigger release by default
+              'ci': 'patch',
+              'build': 'patch',
               'docs': 'none',
               'chore': 'none',
               'test': 'none',
@@ -119,6 +147,11 @@ jobs:
           echo "minor=$MINOR" >> $GITHUB_OUTPUT
           echo "patch=$PATCH" >> $GITHUB_OUTPUT
 
+          # Get current chart version from Chart.yaml
+          CHART_VERSION=$(grep "^version:" helm/metrics-governor/Chart.yaml | awk '{print $2}')
+          echo "Current chart version: $CHART_VERSION"
+          echo "chart_version=$CHART_VERSION" >> $GITHUB_OUTPUT
+
       - name: Calculate new version
         if: steps.bump.outputs.skip != 'true'
         id: new_version
@@ -145,6 +178,23 @@ jobs:
 
           echo "New version: $NEW_VERSION (bump: $BUMP)"
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "version_num=${NEW_VERSION#v}" >> $GITHUB_OUTPUT
+
+          # Calculate new chart version (only if chart changed)
+          CHART_VERSION="${{ steps.current.outputs.chart_version }}"
+          if [ "${{ steps.detect.outputs.chart_changed }}" == "true" ]; then
+            # Bump chart patch version
+            CHART_MAJOR=$(echo "$CHART_VERSION" | cut -d. -f1)
+            CHART_MINOR=$(echo "$CHART_VERSION" | cut -d. -f2)
+            CHART_PATCH=$(echo "$CHART_VERSION" | cut -d. -f3)
+            NEW_CHART_PATCH=$((CHART_PATCH + 1))
+            NEW_CHART_VERSION="${CHART_MAJOR}.${CHART_MINOR}.${NEW_CHART_PATCH}"
+            echo "New chart version: $NEW_CHART_VERSION"
+          else
+            NEW_CHART_VERSION="$CHART_VERSION"
+            echo "Chart version unchanged: $NEW_CHART_VERSION"
+          fi
+          echo "chart_version=$NEW_CHART_VERSION" >> $GITHUB_OUTPUT
 
       - name: Check if tag exists
         if: steps.bump.outputs.skip != 'true'
@@ -158,6 +208,120 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Generate changelog entry
+        if: steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
+        id: changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.new_version.outputs.version_num }}"
+          PREV_TAG="${{ steps.current.outputs.tag }}"
+          DATE=$(date +%Y-%m-%d)
+
+          # Generate changelog from commits since last tag
+          echo "## [$VERSION] - $DATE" > /tmp/changelog_entry.md
+          echo "" >> /tmp/changelog_entry.md
+
+          # Get commits since last tag
+          COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"%s" --no-merges 2>/dev/null || git log HEAD~10..HEAD --pretty=format:"%s" --no-merges)
+
+          # Categorize commits
+          FEATURES=""
+          FIXES=""
+          PERFORMANCE=""
+          OTHER=""
+
+          while IFS= read -r commit; do
+            if [[ "$commit" =~ ^feat ]]; then
+              FEATURES="${FEATURES}- ${commit}\n"
+            elif [[ "$commit" =~ ^fix ]]; then
+              FIXES="${FIXES}- ${commit}\n"
+            elif [[ "$commit" =~ ^perf ]]; then
+              PERFORMANCE="${PERFORMANCE}- ${commit}\n"
+            elif [[ "$commit" =~ ^(ci|build|chore|docs|test|refactor) ]]; then
+              OTHER="${OTHER}- ${commit}\n"
+            fi
+          done <<< "$COMMITS"
+
+          if [ -n "$FEATURES" ]; then
+            echo "### Added" >> /tmp/changelog_entry.md
+            echo "" >> /tmp/changelog_entry.md
+            echo -e "$FEATURES" >> /tmp/changelog_entry.md
+          fi
+
+          if [ -n "$FIXES" ]; then
+            echo "### Fixed" >> /tmp/changelog_entry.md
+            echo "" >> /tmp/changelog_entry.md
+            echo -e "$FIXES" >> /tmp/changelog_entry.md
+          fi
+
+          if [ -n "$PERFORMANCE" ]; then
+            echo "### Performance" >> /tmp/changelog_entry.md
+            echo "" >> /tmp/changelog_entry.md
+            echo -e "$PERFORMANCE" >> /tmp/changelog_entry.md
+          fi
+
+          if [ -n "$OTHER" ]; then
+            echo "### Other" >> /tmp/changelog_entry.md
+            echo "" >> /tmp/changelog_entry.md
+            echo -e "$OTHER" >> /tmp/changelog_entry.md
+          fi
+
+          echo "Generated changelog entry:"
+          cat /tmp/changelog_entry.md
+
+      - name: Update version files
+        if: steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
+        run: |
+          VERSION="${{ steps.new_version.outputs.version_num }}"
+          CHART_VERSION="${{ steps.new_version.outputs.chart_version }}"
+
+          echo "Updating app version to $VERSION"
+          echo "Updating chart version to $CHART_VERSION"
+
+          # Update Helm Chart.yaml - appVersion always updates, version only if chart changed
+          sed -i "s/^appVersion: .*/appVersion: \"$VERSION\"/" helm/metrics-governor/Chart.yaml
+
+          if [ "${{ steps.detect.outputs.chart_changed }}" == "true" ]; then
+            sed -i "s/^version: .*/version: $CHART_VERSION/" helm/metrics-governor/Chart.yaml
+            echo "Chart version bumped to $CHART_VERSION"
+          else
+            echo "Chart version unchanged (no chart files modified)"
+          fi
+
+          echo "Updated helm/metrics-governor/Chart.yaml:"
+          head -10 helm/metrics-governor/Chart.yaml
+
+          # Update CHANGELOG.md
+          {
+            head -7 CHANGELOG.md
+            echo ""
+            cat /tmp/changelog_entry.md
+            tail -n +8 CHANGELOG.md
+          } > CHANGELOG.md.tmp
+          mv CHANGELOG.md.tmp CHANGELOG.md
+
+          echo "Updated CHANGELOG.md:"
+          head -30 CHANGELOG.md
+
+      - name: Commit version updates
+        if: steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
+        run: |
+          VERSION="${{ steps.new_version.outputs.version }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Check if there are changes to commit
+          if git diff --quiet helm/metrics-governor/Chart.yaml CHANGELOG.md; then
+            echo "No changes to commit"
+          else
+            git add helm/metrics-governor/Chart.yaml CHANGELOG.md
+            git commit -m "chore: bump version to $VERSION [skip ci]"
+            git push origin main
+            echo "Version files committed and pushed"
+          fi
+
       - name: Create and push tag
         if: steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
         id: release
@@ -165,33 +329,12 @@ jobs:
           VERSION="${{ steps.new_version.outputs.version }}"
           PR_TITLE="${{ github.event.pull_request.title }}"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
           git tag -a "$VERSION" -m "$PR_TITLE"
           git push origin "$VERSION"
 
           echo "Created and pushed tag: $VERSION"
           echo "released=true" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Generate release notes
-        if: steps.release.outputs.released == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          VERSION="${{ steps.release.outputs.version }}"
-          PREV_TAG="${{ steps.current.outputs.tag }}"
-
-          echo "Creating release $VERSION..."
-
-          # Create release with auto-generated notes
-          gh release create "$VERSION" \
-            --title "Release $VERSION" \
-            --generate-notes \
-            --notes-start-tag "$PREV_TAG"
-
-          echo "Release created: $VERSION"
 
       - name: Summary
         if: always()
@@ -215,85 +358,129 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "| | |" >> $GITHUB_STEP_SUMMARY
             echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-            echo "| **Version** | ${{ steps.release.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **App Version** | ${{ steps.release.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Chart Version** | ${{ steps.new_version.outputs.chart_version }} |" >> $GITHUB_STEP_SUMMARY
             echo "| **Bump** | ${{ steps.bump.outputs.bump }} |" >> $GITHUB_STEP_SUMMARY
             echo "| **Previous** | ${{ steps.current.outputs.tag }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Chart Changed** | ${{ steps.detect.outputs.chart_changed }} |" >> $GITHUB_STEP_SUMMARY
             echo "| **PR** | #${{ github.event.pull_request.number }} |" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "[View Release](https://github.com/${{ github.repository }}/releases/tag/${{ steps.release.outputs.version }})" >> $GITHUB_STEP_SUMMARY
           fi
 
-  # Update version files in the repository
-  update-version-files:
+  # Build binaries and helm chart, upload to release
+  build-and-release:
     needs: auto-release
     if: needs.auto-release.outputs.released == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ needs.auto-release.outputs.version }}
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_PAT }}
 
-      - name: Update version files
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Get version
+        id: version
         run: |
           VERSION="${{ needs.auto-release.outputs.version }}"
-          VERSION_NUM="${VERSION#v}"  # Remove 'v' prefix
-          DATE=$(date +%Y-%m-%d)
-          PR_NUMBER="${{ github.event.pull_request.number }}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION_NUM=${VERSION#v}" >> $GITHUB_OUTPUT
 
-          echo "Updating version to $VERSION_NUM"
-
-          # Update Helm Chart.yaml
-          sed -i "s/^version: .*/version: $VERSION_NUM/" helm/metrics-governor/Chart.yaml
-          sed -i "s/^appVersion: .*/appVersion: \"$VERSION_NUM\"/" helm/metrics-governor/Chart.yaml
-
-          echo "Updated helm/metrics-governor/Chart.yaml"
-          head -10 helm/metrics-governor/Chart.yaml
-
-          # Update CHANGELOG.md - insert new entry after line 7 (after header)
-          {
-            head -7 CHANGELOG.md
-            echo ""
-            echo "## [$VERSION_NUM] - $DATE"
-            echo ""
-            echo "### Changed"
-            echo ""
-            echo "- $PR_TITLE (#$PR_NUMBER)"
-            echo ""
-            tail -n +8 CHANGELOG.md
-          } > CHANGELOG.md.tmp
-          mv CHANGELOG.md.tmp CHANGELOG.md
-
-          echo "Updated CHANGELOG.md"
-          head -20 CHANGELOG.md
-
-      - name: Commit and push version updates
-        env:
-          PAT_TOKEN: ${{ secrets.RELEASE_PAT }}
+      - name: Build binaries
         run: |
-          VERSION="${{ needs.auto-release.outputs.version }}"
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          VERSION_NUM="${{ steps.version.outputs.VERSION_NUM }}"
+          LDFLAGS="-s -w -X github.com/szibis/metrics-governor/internal/config.version=${VERSION_NUM}"
+          mkdir -p bin
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          echo "Building version: ${VERSION_NUM}"
 
-          # Check if there are changes to commit
-          if git diff --quiet helm/metrics-governor/Chart.yaml CHANGELOG.md; then
-            echo "No changes to commit"
-            exit 0
+          GOOS=darwin GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-darwin-arm64 ./cmd/metrics-governor
+          GOOS=darwin GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-darwin-amd64 ./cmd/metrics-governor
+          GOOS=linux GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-linux-arm64 ./cmd/metrics-governor
+          GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o bin/metrics-governor-linux-amd64 ./cmd/metrics-governor
+
+          cd bin
+          tar -czvf metrics-governor-${VERSION}-darwin-arm64.tar.gz metrics-governor-darwin-arm64
+          tar -czvf metrics-governor-${VERSION}-darwin-amd64.tar.gz metrics-governor-darwin-amd64
+          tar -czvf metrics-governor-${VERSION}-linux-arm64.tar.gz metrics-governor-linux-arm64
+          tar -czvf metrics-governor-${VERSION}-linux-amd64.tar.gz metrics-governor-linux-amd64
+          sha256sum metrics-governor-*.tar.gz > checksums.txt
+
+      - name: Package Helm chart
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          helm package helm/metrics-governor -d bin/
+
+      - name: Create/Update Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | sed -n '2p')
+
+          # Check if release already exists
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION exists, uploading assets..."
+            gh release upload "$VERSION" bin/metrics-governor-*.tar.gz bin/checksums.txt bin/metrics-governor-*.tgz --clobber
+          else
+            echo "Creating release $VERSION..."
+            gh release create "$VERSION" \
+              --title "Release $VERSION" \
+              --generate-notes \
+              --notes-start-tag "$PREV_TAG" \
+              bin/metrics-governor-*.tar.gz bin/checksums.txt bin/metrics-governor-*.tgz
           fi
 
-          git add helm/metrics-governor/Chart.yaml CHANGELOG.md
-          git commit -m "chore: bump version to $VERSION [skip ci]"
+  # Build and push Docker images
+  docker:
+    needs: [auto-release, build-and-release]
+    if: needs.auto-release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.auto-release.outputs.version }}
 
-          # Push using PAT to bypass branch protection
-          git remote set-url origin "https://x-access-token:${PAT_TOKEN}@github.com/${{ github.repository }}.git"
-          git push origin main
+      - name: Get version
+        id: version
+        run: |
+          VERSION="${{ needs.auto-release.outputs.version }}"
+          echo "VERSION=${VERSION#v}" >> $GITHUB_OUTPUT
 
-          echo "Version files updated and pushed to main"
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
-  # Note: release.yml workflow is triggered automatically by the tag push
-  # It builds binaries (darwin-arm64, darwin-amd64, linux-arm64, linux-amd64),
-  # packages Helm chart, and uploads all artifacts to the GitHub release
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            VERSION=${{ steps.version.outputs.VERSION }}
+          tags: |
+            slaskoss/metrics-governor:${{ steps.version.outputs.VERSION }}
+            slaskoss/metrics-governor:latest
+            ghcr.io/szibis/metrics-governor:${{ steps.version.outputs.VERSION }}
+            ghcr.io/szibis/metrics-governor:latest
