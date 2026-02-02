@@ -145,7 +145,9 @@ func (e *Enforcer) processMetric(m *metricspb.Metric, resourceAttrs map[string]s
 	// Find matching rule
 	rule := e.findMatchingRule(metricName, resourceAttrs)
 	if rule == nil {
-		return m // No rule matches, pass through
+		// No rule matches, count as passed and pass through
+		e.recordPass("no_rule", countDatapoints(m))
+		return m
 	}
 
 	// Build group key based on rule's GroupBy labels
