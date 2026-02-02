@@ -394,6 +394,10 @@ func (e *QueuedExporter) processQueue() bool {
 		e.circuitBreaker.RecordFailure()
 	}
 
+	// Classify the error for metrics
+	errType := classifyExportError(err)
+	queue.IncrementRetryFailure(string(errType))
+
 	// Re-push to queue for later retry
 	// Note: This puts it at the back of the queue
 	if pushErr := e.queue.Push(req); pushErr != nil {
@@ -401,6 +405,7 @@ func (e *QueuedExporter) processQueue() bool {
 	}
 	logging.Info("retry failed", logging.F(
 		"error", err.Error(),
+		"error_type", string(errType),
 		"queue_size", e.queue.Len(),
 		"circuit_state", e.getCircuitState(),
 	))
@@ -422,6 +427,83 @@ func (e *QueuedExporter) getCircuitState() string {
 	default:
 		return "unknown"
 	}
+}
+
+// classifyExportError categorizes an export error for metrics.
+// Uses the same error types as the main exporter for consistency.
+func classifyExportError(err error) ErrorType {
+	if err == nil {
+		return ErrorTypeUnknown
+	}
+
+	errStr := err.Error()
+
+	// Check for timeout patterns
+	if containsStr(errStr, "timeout") ||
+		containsStr(errStr, "deadline exceeded") ||
+		containsStr(errStr, "context deadline") {
+		return ErrorTypeTimeout
+	}
+
+	// Check for network patterns
+	if containsStr(errStr, "connection refused") ||
+		containsStr(errStr, "no such host") ||
+		containsStr(errStr, "network is unreachable") ||
+		containsStr(errStr, "connection reset") ||
+		containsStr(errStr, "broken pipe") ||
+		containsStr(errStr, "EOF") ||
+		containsStr(errStr, "i/o timeout") {
+		return ErrorTypeNetwork
+	}
+
+	// Check for HTTP status codes in error message
+	if containsStr(errStr, "status code: 401") ||
+		containsStr(errStr, "status code: 403") ||
+		containsStr(errStr, "Unauthenticated") ||
+		containsStr(errStr, "PermissionDenied") {
+		return ErrorTypeAuth
+	}
+
+	if containsStr(errStr, "status code: 429") ||
+		containsStr(errStr, "ResourceExhausted") {
+		return ErrorTypeRateLimit
+	}
+
+	if containsStr(errStr, "status code: 5") ||
+		containsStr(errStr, "Internal") ||
+		containsStr(errStr, "Unavailable") {
+		return ErrorTypeServerError
+	}
+
+	if containsStr(errStr, "status code: 4") {
+		return ErrorTypeClientError
+	}
+
+	return ErrorTypeUnknown
+}
+
+// containsStr is a simple case-insensitive substring check.
+func containsStr(s, substr string) bool {
+	sLower := toLowerStr(s)
+	substrLower := toLowerStr(substr)
+	for i := 0; i+len(substrLower) <= len(sLower); i++ {
+		if sLower[i:i+len(substrLower)] == substrLower {
+			return true
+		}
+	}
+	return false
+}
+
+func toLowerStr(s string) string {
+	b := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		b[i] = c
+	}
+	return string(b)
 }
 
 // drainQueue attempts to export all remaining entries.

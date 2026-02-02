@@ -15,11 +15,34 @@ import (
 	"github.com/szibis/metrics-governor/internal/compression"
 	tlspkg "github.com/szibis/metrics-governor/internal/tls"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+)
+
+// ErrorType represents a category of export error for metrics.
+type ErrorType string
+
+const (
+	// ErrorTypeNetwork represents network-level errors (DNS, connection refused, etc.)
+	ErrorTypeNetwork ErrorType = "network"
+	// ErrorTypeTimeout represents timeout errors
+	ErrorTypeTimeout ErrorType = "timeout"
+	// ErrorTypeServerError represents server-side errors (5xx status codes)
+	ErrorTypeServerError ErrorType = "server_error"
+	// ErrorTypeClientError represents client-side errors (4xx status codes)
+	ErrorTypeClientError ErrorType = "client_error"
+	// ErrorTypeAuth represents authentication/authorization errors (401, 403)
+	ErrorTypeAuth ErrorType = "auth"
+	// ErrorTypeRateLimit represents rate limiting errors (429)
+	ErrorTypeRateLimit ErrorType = "rate_limit"
+	// ErrorTypeUnknown represents unclassified errors
+	ErrorTypeUnknown ErrorType = "unknown"
 )
 
 var (
@@ -35,10 +58,16 @@ var (
 		Help: "Total number of OTLP export requests",
 	})
 
-	// otlpExportErrorsTotal tracks the number of export errors
-	otlpExportErrorsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	// otlpExportErrorsTotal tracks the number of export errors by type
+	otlpExportErrorsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "metrics_governor_otlp_export_errors_total",
-		Help: "Total number of OTLP export errors",
+		Help: "Total number of OTLP export errors by error type",
+	}, []string{"error_type"})
+
+	// otlpExportDatapointsTotal tracks the number of datapoints exported
+	otlpExportDatapointsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_otlp_export_datapoints_total",
+		Help: "Total number of datapoints exported to OTLP backend",
 	})
 )
 
@@ -46,6 +75,7 @@ func init() {
 	prometheus.MustRegister(otlpExportBytesTotal)
 	prometheus.MustRegister(otlpExportRequestsTotal)
 	prometheus.MustRegister(otlpExportErrorsTotal)
+	prometheus.MustRegister(otlpExportDatapointsTotal)
 }
 
 // Protocol represents the export protocol.
@@ -303,19 +333,52 @@ func (e *OTLPExporter) Export(ctx context.Context, req *colmetricspb.ExportMetri
 func (e *OTLPExporter) exportGRPC(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error {
 	// Estimate size for metrics tracking (gRPC handles compression internally)
 	size := proto.Size(req)
+	datapoints := countDatapoints(req)
 
 	otlpExportRequestsTotal.Inc()
 
 	_, err := e.grpcClient.Export(ctx, req)
 	if err != nil {
-		otlpExportErrorsTotal.Inc()
+		errType := classifyGRPCError(err)
+		recordExportError(errType)
 		return err
 	}
 
 	// Track as uncompressed since gRPC compression is handled at transport level
 	otlpExportBytesTotal.WithLabelValues("grpc").Add(float64(size))
+	recordExportSuccess(datapoints)
 
 	return nil
+}
+
+// classifyGRPCError categorizes a gRPC error into an error type.
+func classifyGRPCError(err error) ErrorType {
+	if err == nil {
+		return ErrorTypeUnknown
+	}
+
+	// Check for gRPC status codes
+	if st, ok := status.FromError(err); ok {
+		switch st.Code() {
+		case codes.DeadlineExceeded:
+			return ErrorTypeTimeout
+		case codes.Unavailable:
+			return ErrorTypeNetwork
+		case codes.Unauthenticated:
+			return ErrorTypeAuth
+		case codes.PermissionDenied:
+			return ErrorTypeAuth
+		case codes.ResourceExhausted:
+			return ErrorTypeRateLimit
+		case codes.InvalidArgument, codes.FailedPrecondition, codes.OutOfRange:
+			return ErrorTypeClientError
+		case codes.Internal, codes.Unknown, codes.DataLoss, codes.Aborted:
+			return ErrorTypeServerError
+		}
+	}
+
+	// Fall back to generic error classification
+	return classifyError(err)
 }
 
 // exportHTTP exports metrics via HTTP.
@@ -325,8 +388,9 @@ func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportM
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Track uncompressed size
+	// Track uncompressed size and datapoints
 	uncompressedSize := len(body)
+	datapoints := countDatapoints(req)
 	compressionLabel := "none"
 
 	// Apply compression if configured
@@ -354,7 +418,8 @@ func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportM
 
 	resp, err := e.httpClient.Do(httpReq)
 	if err != nil {
-		otlpExportErrorsTotal.Inc()
+		errType := classifyError(err)
+		recordExportError(errType)
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -363,16 +428,18 @@ func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportM
 	_, _ = io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		otlpExportErrorsTotal.Inc()
+		errType := classifyHTTPStatusCode(resp.StatusCode)
+		recordExportError(errType)
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	// Track exported bytes
+	// Track exported bytes and datapoints
 	otlpExportBytesTotal.WithLabelValues(compressionLabel).Add(float64(len(body)))
 	if compressionLabel != "none" {
 		// Also track uncompressed for comparison
 		otlpExportBytesTotal.WithLabelValues("uncompressed").Add(float64(uncompressedSize))
 	}
+	recordExportSuccess(datapoints)
 
 	return nil
 }
@@ -415,4 +482,162 @@ func hasPath(url string) bool {
 		}
 	}
 	return false
+}
+
+// classifyError categorizes an error into a low-cardinality error type.
+func classifyError(err error) ErrorType {
+	if err == nil {
+		return ErrorTypeUnknown
+	}
+
+	errStr := err.Error()
+
+	// Check for timeout errors
+	if isTimeoutError(err) {
+		return ErrorTypeTimeout
+	}
+
+	// Check for network errors
+	if isNetworkError(err) {
+		return ErrorTypeNetwork
+	}
+
+	// Check for common error patterns in error string
+	if contains(errStr, "connection refused") ||
+		contains(errStr, "no such host") ||
+		contains(errStr, "network is unreachable") ||
+		contains(errStr, "connection reset") ||
+		contains(errStr, "broken pipe") {
+		return ErrorTypeNetwork
+	}
+
+	if contains(errStr, "timeout") ||
+		contains(errStr, "deadline exceeded") {
+		return ErrorTypeTimeout
+	}
+
+	return ErrorTypeUnknown
+}
+
+// classifyHTTPStatusCode categorizes an HTTP status code into an error type.
+func classifyHTTPStatusCode(statusCode int) ErrorType {
+	switch {
+	case statusCode == 401 || statusCode == 403:
+		return ErrorTypeAuth
+	case statusCode == 429:
+		return ErrorTypeRateLimit
+	case statusCode >= 400 && statusCode < 500:
+		return ErrorTypeClientError
+	case statusCode >= 500:
+		return ErrorTypeServerError
+	default:
+		return ErrorTypeUnknown
+	}
+}
+
+// isTimeoutError checks if the error is a timeout error.
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Check for net.Error timeout
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return true
+	}
+	// Check for context deadline exceeded
+	if err == context.DeadlineExceeded {
+		return true
+	}
+	return false
+}
+
+// isNetworkError checks if the error is a network error.
+func isNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Check for net.Error (but not timeout)
+	if netErr, ok := err.(net.Error); ok && !netErr.Timeout() {
+		return true
+	}
+	// Check for DNS errors
+	if _, ok := err.(*net.DNSError); ok {
+		return true
+	}
+	// Check for OpError
+	if _, ok := err.(*net.OpError); ok {
+		return true
+	}
+	return false
+}
+
+// contains is a simple case-insensitive substring check.
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
+		(len(s) > 0 && len(substr) > 0 && containsLower(toLower(s), toLower(substr))))
+}
+
+func containsLower(s, substr string) bool {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func toLower(s string) string {
+	b := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		b[i] = c
+	}
+	return string(b)
+}
+
+// countDatapoints counts the total number of datapoints in a request.
+func countDatapoints(req *colmetricspb.ExportMetricsServiceRequest) int64 {
+	var count int64
+	for _, rm := range req.ResourceMetrics {
+		for _, sm := range rm.ScopeMetrics {
+			for _, m := range sm.Metrics {
+				switch data := m.Data.(type) {
+				case *metricspb.Metric_Gauge:
+					if data.Gauge != nil {
+						count += int64(len(data.Gauge.DataPoints))
+					}
+				case *metricspb.Metric_Sum:
+					if data.Sum != nil {
+						count += int64(len(data.Sum.DataPoints))
+					}
+				case *metricspb.Metric_Histogram:
+					if data.Histogram != nil {
+						count += int64(len(data.Histogram.DataPoints))
+					}
+				case *metricspb.Metric_ExponentialHistogram:
+					if data.ExponentialHistogram != nil {
+						count += int64(len(data.ExponentialHistogram.DataPoints))
+					}
+				case *metricspb.Metric_Summary:
+					if data.Summary != nil {
+						count += int64(len(data.Summary.DataPoints))
+					}
+				}
+			}
+		}
+	}
+	return count
+}
+
+// recordExportError increments the error counter with the appropriate error type.
+func recordExportError(errType ErrorType) {
+	otlpExportErrorsTotal.WithLabelValues(string(errType)).Inc()
+}
+
+// recordExportSuccess tracks successful export metrics.
+func recordExportSuccess(datapoints int64) {
+	otlpExportDatapointsTotal.Add(float64(datapoints))
 }

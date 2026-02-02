@@ -1671,7 +1671,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "title": "Export Batches & Errors",
-      "description": "Overall export batches and errors rate",
+      "description": "Overall export batches and errors rate. Shows successful batch sends vs total errors. Errors breakdown by type available in 'Export Errors by Type' panel. High error rates indicate connectivity or backend issues - check the error type breakdown for root cause analysis.",
       "type": "timeseries",
       "targets": [
         {
@@ -1679,8 +1679,8 @@
           "legendFormat": "Batches Sent/s"
         },
         {
-          "expr": "sum(rate(metrics_governor_export_errors_total[5m]))",
-          "legendFormat": "Export Errors/s"
+          "expr": "sum(rate(metrics_governor_otlp_export_errors_total[5m]))",
+          "legendFormat": "OTLP Export Errors/s"
         },
         {
           "expr": "sum(rate(metrics_governor_sharding_export_errors_total[5m]))",
@@ -1689,8 +1689,258 @@
       ]
     },
     {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "network" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "timeout" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "server_error" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "auth" }, "properties": [{ "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "rate_limit" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 104 },
+      "id": 48,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "sum"], "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Export Errors by Type",
+      "description": "Breakdown of export errors by error type (stacked). Error types help identify root cause:\n\n- **network**: Connection refused, DNS failures, connection reset - check network connectivity and backend availability\n- **timeout**: Request timeouts - increase exporter timeout or check backend latency\n- **server_error**: 5xx HTTP status or gRPC Internal/Unavailable - backend is overloaded or failing\n- **auth**: 401/403 status or Unauthenticated - check credentials and permissions\n- **rate_limit**: 429 status or ResourceExhausted - backend is rate limiting, reduce send rate\n- **client_error**: 4xx status (except auth/rate_limit) - check request format\n- **unknown**: Unclassified errors - check logs for details",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (error_type) (rate(metrics_governor_otlp_export_errors_total[5m]))",
+          "legendFormat": "{{error_type}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "network" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "timeout" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "server_error" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 104 },
+      "id": 49,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "sum"], "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Queue Retry Failures by Type",
+      "description": "Breakdown of queue retry failures by error type (stacked). These are errors that occurred during retry attempts from the persistent queue.\n\nHigh values indicate the backend is consistently failing. Combined with circuit breaker state, this helps understand:\n- If retries are being attempted (circuit closed/half-open)\n- What types of errors are causing failures\n- Whether the backend is recovering or still unhealthy\n\nCompare with 'Export Errors by Type' to see if initial exports and retries fail for the same reasons.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (error_type) (rate(metrics_governor_queue_retry_failure_total[5m]))",
+          "legendFormat": "{{error_type}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 112 },
+      "id": 50,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Datapoints Exported/s",
+      "description": "Rate of datapoints successfully exported to the backend. This metric tracks actual datapoints (not batches) that were accepted by the backend without errors.\n\nCompare with 'Datapoints/sec' (received) to see export success rate. If exported rate is significantly lower than received rate, data is being dropped or queued.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(metrics_governor_otlp_export_datapoints_total[1m]))",
+          "legendFormat": "Datapoints/s"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 10 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 112 },
+      "id": 51,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Export Errors/s",
+      "description": "Total export error rate across all error types. High values indicate export failures. Check 'Export Errors by Type' panel for breakdown of error causes.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(metrics_governor_otlp_export_errors_total[1m]))",
+          "legendFormat": "Errors/s"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 10 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 112 },
+      "id": 52,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Retry Failures/s",
+      "description": "Total queue retry failure rate. These are batches that failed to export during retry attempts. High values indicate persistent backend issues.\n\nCompare with 'Retry Attempts/s' to calculate retry success rate. If failures >> successes, the backend may be unhealthy.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(metrics_governor_queue_retry_failure_total[1m]))",
+          "legendFormat": "Failures/s"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "green", "value": 90 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 112 },
+      "id": 53,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Retry Success Rate",
+      "description": "Percentage of queue retries that succeed. Formula: retries_success / (retries_success + retries_failure) * 100.\n\nValues:\n- Green (>90%): Backend is healthy, occasional failures are expected\n- Yellow (50-90%): Backend is struggling, check for issues\n- Red (<50%): Backend is unhealthy, most retries fail",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "100 * sum(rate(metrics_governor_queue_retry_success_total[5m])) / clamp_min(sum(rate(metrics_governor_queue_retry_success_total[5m])) + sum(rate(metrics_governor_queue_retry_failure_total[5m])), 1)",
+          "legendFormat": "Success Rate"
+        }
+      ]
+    },
+    {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 104 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 116 },
       "id": 200,
       "panels": [],
       "title": "FastQueue I/O",

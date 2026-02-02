@@ -67,6 +67,11 @@ var (
 		Help: "Total number of successful retries",
 	})
 
+	queueRetryFailureTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "metrics_governor_queue_retry_failure_total",
+		Help: "Total number of failed retries by error type",
+	}, []string{"error_type"})
+
 	queueDiskFullTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "metrics_governor_queue_disk_full_total",
 		Help: "Total number of disk full events",
@@ -134,6 +139,7 @@ func init() {
 	prometheus.MustRegister(queueDroppedTotal)
 	prometheus.MustRegister(queueRetryTotal)
 	prometheus.MustRegister(queueRetrySuccessTotal)
+	prometheus.MustRegister(queueRetryFailureTotal)
 	prometheus.MustRegister(queueDiskFullTotal)
 	// FastQueue metrics
 	prometheus.MustRegister(fastqueueInmemoryBlocks)
@@ -174,6 +180,11 @@ func IncrementRetryTotal() {
 // IncrementRetrySuccessTotal increments the successful retry counter.
 func IncrementRetrySuccessTotal() {
 	queueRetrySuccessTotal.Inc()
+}
+
+// IncrementRetryFailure increments the failed retry counter by error type.
+func IncrementRetryFailure(errorType string) {
+	queueRetryFailureTotal.WithLabelValues(errorType).Inc()
 }
 
 // SetCapacityMetrics sets the configured capacity metrics.

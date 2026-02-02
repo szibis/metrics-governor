@@ -36,6 +36,7 @@ var knownMetrics = []string{
 	"metrics_governor_otlp_export_bytes_total",
 	"metrics_governor_otlp_export_requests_total",
 	"metrics_governor_otlp_export_errors_total",
+	"metrics_governor_otlp_export_datapoints_total",
 
 	// gRPC receiver metrics (receiver/grpc.go)
 	"metrics_governor_grpc_received_bytes_total",
@@ -62,6 +63,7 @@ var knownMetrics = []string{
 	"metrics_governor_queue_dropped_total",
 	"metrics_governor_queue_retry_total",
 	"metrics_governor_queue_retry_success_total",
+	"metrics_governor_queue_retry_failure_total",
 	"metrics_governor_queue_disk_full_total",
 	"metrics_governor_fastqueue_inmemory_blocks",
 	"metrics_governor_fastqueue_disk_bytes",
