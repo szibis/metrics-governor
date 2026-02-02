@@ -435,8 +435,8 @@ check_memory_stability() {
 
     local container_name="metrics-governor-metrics-governor-1"
 
-    # Get initial memory
-    local initial_mem=$(docker stats --no-stream --format "{{.MemUsage}}" "$container_name" 2>/dev/null | cut -d'/' -f1 | tr -d ' ' | sed 's/MiB//' | sed 's/GiB/*1024/' | bc 2>/dev/null || echo "0")
+    # Get initial memory (truncate to integer for bash comparison)
+    local initial_mem=$(docker stats --no-stream --format "{{.MemUsage}}" "$container_name" 2>/dev/null | cut -d'/' -f1 | tr -d ' ' | sed 's/MiB//' | sed 's/GiB/*1024/' | bc 2>/dev/null | cut -d'.' -f1 || echo "0")
     local initial_goroutines=$(curl -s http://localhost:9090/metrics 2>/dev/null | grep "^metrics_governor_goroutines " | awk '{print $2}' | cut -d'.' -f1)
 
     initial_mem=${initial_mem:-0}
@@ -453,7 +453,7 @@ check_memory_stability() {
     for i in $(seq 1 $samples); do
         sleep $interval
 
-        local current_mem=$(docker stats --no-stream --format "{{.MemUsage}}" "$container_name" 2>/dev/null | cut -d'/' -f1 | tr -d ' ' | sed 's/MiB//' | sed 's/GiB/*1024/' | bc 2>/dev/null || echo "0")
+        local current_mem=$(docker stats --no-stream --format "{{.MemUsage}}" "$container_name" 2>/dev/null | cut -d'/' -f1 | tr -d ' ' | sed 's/MiB//' | sed 's/GiB/*1024/' | bc 2>/dev/null | cut -d'.' -f1 || echo "0")
         local current_goroutines=$(curl -s http://localhost:9090/metrics 2>/dev/null | grep "^metrics_governor_goroutines " | awk '{print $2}' | cut -d'.' -f1)
 
         current_mem=${current_mem:-0}
@@ -461,7 +461,7 @@ check_memory_stability() {
 
         log_info "Sample $i/$samples: ${current_mem}MB memory, ${current_goroutines} goroutines"
 
-        if [ "$current_mem" -gt "$max_mem" ]; then
+        if [ "$current_mem" -gt "$max_mem" ] 2>/dev/null; then
             max_mem=$current_mem
         fi
         if [ "$current_goroutines" -gt "$max_goroutines" ]; then
