@@ -1936,6 +1936,358 @@
     {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 121 },
+      "id": 300,
+      "panels": [],
+      "title": "Circuit Breaker & Backoff",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "options": { "0": { "color": "green", "text": "Closed" } }, "type": "value" },
+            { "options": { "1": { "color": "red", "text": "Open" } }, "type": "value" },
+            { "options": { "2": { "color": "yellow", "text": "Half-Open" } }, "type": "value" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 2 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 122 },
+      "id": 301,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "title": "Circuit State",
+      "description": "Current circuit breaker state. Closed = normal operation, Open = blocking retries due to consecutive failures, Half-Open = testing if backend recovered",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "metrics_governor_circuit_breaker_state{state=\"closed\"} * 0 + metrics_governor_circuit_breaker_state{state=\"open\"} * 1 + metrics_governor_circuit_breaker_state{state=\"half_open\"} * 2",
+          "legendFormat": "State"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 30 }
+            ]
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 122 },
+      "id": 302,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Current Backoff",
+      "description": "Current exponential backoff delay between retry attempts. Increases on failures, resets on success. Higher values mean longer waits between retries.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "metrics_governor_queue_backoff_seconds",
+          "legendFormat": "Backoff"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 122 },
+      "id": 303,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Circuit Opens",
+      "description": "Total number of times the circuit breaker has opened due to consecutive failures. High values indicate persistent backend issues.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(increase(metrics_governor_circuit_breaker_open_total[1h])) or vector(0)",
+          "legendFormat": "Opens"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 1000 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 122 },
+      "id": 304,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Rejected by Circuit",
+      "description": "Total retry requests rejected because the circuit breaker was open. Prevents wasting resources on a failing backend.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(increase(metrics_governor_circuit_breaker_rejected_total[1h])) or vector(0)",
+          "legendFormat": "Rejected"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 122 },
+      "id": 305,
+      "options": {
+        "legend": { "calcs": ["last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Circuit Breaker State Over Time",
+      "description": "Shows circuit breaker state transitions over time. Value 1 means that state is active. Closed = healthy, Open = blocking retries, Half-Open = recovery probe",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "metrics_governor_circuit_breaker_state",
+          "legendFormat": "{{state}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 126 },
+      "id": 306,
+      "options": {
+        "legend": { "calcs": ["last", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Backoff Delay Over Time",
+      "description": "Tracks how the exponential backoff delay changes over time. Increases with consecutive failures (multiplied by backoff multiplier), resets to base delay on successful retry.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "metrics_governor_queue_backoff_seconds",
+          "legendFormat": "Backoff Delay"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 126 },
+      "id": 307,
+      "options": {
+        "legend": { "calcs": ["last", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Circuit Breaker Events",
+      "description": "Rate of circuit breaker events: opens (circuit tripped due to failures) and rejections (retry blocked by open circuit). Spikes indicate backend stability issues.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(metrics_governor_circuit_breaker_open_total[5m])",
+          "legendFormat": "Opens/s"
+        },
+        {
+          "expr": "rate(metrics_governor_circuit_breaker_rejected_total[5m])",
+          "legendFormat": "Rejected/s"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 126 },
+      "id": 308,
+      "options": {
+        "legend": { "calcs": ["last", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Retry Success Rate",
+      "description": "Comparison of total retry attempts vs successful retries. A healthy system should show retries eventually succeeding. Persistent gaps indicate backend issues.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(metrics_governor_queue_retry_total[5m])",
+          "legendFormat": "Retry Attempts/s"
+        },
+        {
+          "expr": "rate(metrics_governor_queue_retry_success_total[5m])",
+          "legendFormat": "Retry Success/s"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 134 },
       "id": 50,
       "panels": [],
       "title": "Sharding (if enabled)",
@@ -1971,7 +2323,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 122 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 135 },
       "id": 51,
       "options": {
         "legend": { "calcs": ["last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -2017,7 +2369,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 122 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 135 },
       "id": 52,
       "options": {
         "legend": { "calcs": ["mean", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -2063,7 +2415,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 122 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 135 },
       "id": 53,
       "options": {
         "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -2117,7 +2469,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 130 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 143 },
       "id": 54,
       "options": {
         "legend": { "calcs": ["mean", "p95", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -2171,7 +2523,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 130 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 143 },
       "id": 55,
       "options": {
         "legend": { "calcs": ["mean", "p95", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -2221,7 +2573,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 130 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 143 },
       "id": 56,
       "options": {
         "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -2239,7 +2591,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 138 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 151 },
       "id": 70,
       "panels": [],
       "title": "Runtime",

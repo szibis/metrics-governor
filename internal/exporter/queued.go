@@ -3,6 +3,7 @@ package exporter
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/logging"
@@ -10,12 +11,144 @@ import (
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 )
 
+// CircuitState represents the state of a circuit breaker.
+type CircuitState int32
+
+const (
+	// CircuitClosed means the circuit is operating normally.
+	CircuitClosed CircuitState = iota
+	// CircuitOpen means the circuit is open and requests are blocked.
+	CircuitOpen
+	// CircuitHalfOpen means the circuit is testing if the service is recovered.
+	CircuitHalfOpen
+)
+
+// CircuitBreaker implements the circuit breaker pattern to prevent cascading failures.
+type CircuitBreaker struct {
+	state            atomic.Int32
+	consecutiveFails atomic.Int32
+	lastFailure      atomic.Int64 // Unix timestamp
+	lastStateChange  atomic.Int64 // Unix timestamp
+
+	// Configuration
+	failureThreshold int           // Number of failures before opening circuit
+	resetTimeout     time.Duration // Time to wait before trying again (half-open)
+	halfOpenMaxTries int           // Max attempts in half-open state
+}
+
+// NewCircuitBreaker creates a new circuit breaker with the given configuration.
+func NewCircuitBreaker(failureThreshold int, resetTimeout time.Duration) *CircuitBreaker {
+	cb := &CircuitBreaker{
+		failureThreshold: failureThreshold,
+		resetTimeout:     resetTimeout,
+		halfOpenMaxTries: 1,
+	}
+	cb.state.Store(int32(CircuitClosed))
+	return cb
+}
+
+// State returns the current circuit state.
+func (cb *CircuitBreaker) State() CircuitState {
+	return CircuitState(cb.state.Load())
+}
+
+// ConsecutiveFailures returns the current consecutive failure count.
+func (cb *CircuitBreaker) ConsecutiveFailures() int {
+	return int(cb.consecutiveFails.Load())
+}
+
+// AllowRequest checks if a request should be allowed through.
+func (cb *CircuitBreaker) AllowRequest() bool {
+	state := CircuitState(cb.state.Load())
+
+	switch state {
+	case CircuitClosed:
+		return true
+	case CircuitOpen:
+		// Check if reset timeout has passed
+		lastFail := cb.lastFailure.Load()
+		if time.Now().Unix()-lastFail >= int64(cb.resetTimeout.Seconds()) {
+			// Transition to half-open
+			cb.state.Store(int32(CircuitHalfOpen))
+			cb.lastStateChange.Store(time.Now().Unix())
+			queue.SetCircuitState("half_open")
+			logging.Info("circuit breaker transitioning to half-open", logging.F(
+				"reset_timeout", cb.resetTimeout.String(),
+			))
+			return true
+		}
+		return false
+	case CircuitHalfOpen:
+		// Allow limited requests in half-open state
+		return true
+	default:
+		return true
+	}
+}
+
+// RecordSuccess records a successful request.
+func (cb *CircuitBreaker) RecordSuccess() {
+	state := CircuitState(cb.state.Load())
+
+	// Reset consecutive failures
+	cb.consecutiveFails.Store(0)
+
+	if state == CircuitHalfOpen {
+		// Success in half-open state, close the circuit
+		cb.state.Store(int32(CircuitClosed))
+		cb.lastStateChange.Store(time.Now().Unix())
+		queue.SetCircuitState("closed")
+		logging.Info("circuit breaker closed after successful request")
+	}
+}
+
+// RecordFailure records a failed request.
+func (cb *CircuitBreaker) RecordFailure() {
+	fails := cb.consecutiveFails.Add(1)
+	cb.lastFailure.Store(time.Now().Unix())
+
+	state := CircuitState(cb.state.Load())
+
+	if state == CircuitHalfOpen {
+		// Failure in half-open state, reopen the circuit
+		cb.state.Store(int32(CircuitOpen))
+		cb.lastStateChange.Store(time.Now().Unix())
+		queue.SetCircuitState("open")
+		queue.IncrementCircuitOpen()
+		logging.Warn("circuit breaker reopened after half-open failure", logging.F(
+			"consecutive_failures", fails,
+		))
+		return
+	}
+
+	if state == CircuitClosed && int(fails) >= cb.failureThreshold {
+		// Too many failures, open the circuit
+		cb.state.Store(int32(CircuitOpen))
+		cb.lastStateChange.Store(time.Now().Unix())
+		queue.SetCircuitState("open")
+		queue.IncrementCircuitOpen()
+		logging.Warn("circuit breaker opened due to consecutive failures", logging.F(
+			"consecutive_failures", fails,
+			"threshold", cb.failureThreshold,
+			"reset_timeout", cb.resetTimeout.String(),
+		))
+	}
+}
+
 // QueuedExporter wraps an Exporter with a persistent queue for retry.
 type QueuedExporter struct {
-	exporter  Exporter
-	queue     *queue.SendQueue
-	baseDelay time.Duration
-	maxDelay  time.Duration
+	exporter       Exporter
+	queue          *queue.SendQueue
+	baseDelay      time.Duration
+	maxDelay       time.Duration
+	circuitBreaker *CircuitBreaker
+
+	// Backoff configuration
+	backoffEnabled    bool
+	backoffMultiplier float64
+
+	// Backoff state
+	currentDelay atomic.Int64 // Current backoff delay in nanoseconds
 
 	retryStop chan struct{}
 	retryDone chan struct{}
@@ -25,19 +158,58 @@ type QueuedExporter struct {
 }
 
 // NewQueued creates a new QueuedExporter.
+// Configuration is read from queueCfg including backoff and circuit breaker settings.
 func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error) {
 	q, err := queue.New(queueCfg)
 	if err != nil {
 		return nil, err
 	}
 
+	// Apply defaults for backoff settings
+	backoffEnabled := queueCfg.BackoffEnabled
+	backoffMultiplier := queueCfg.BackoffMultiplier
+	if backoffMultiplier <= 0 {
+		backoffMultiplier = 2.0 // Default multiplier
+	}
+
 	qe := &QueuedExporter{
-		exporter:  exporter,
-		queue:     q,
-		baseDelay: queueCfg.RetryInterval,
-		maxDelay:  queueCfg.MaxRetryDelay,
-		retryStop: make(chan struct{}),
-		retryDone: make(chan struct{}),
+		exporter:          exporter,
+		queue:             q,
+		baseDelay:         queueCfg.RetryInterval,
+		maxDelay:          queueCfg.MaxRetryDelay,
+		backoffEnabled:    backoffEnabled,
+		backoffMultiplier: backoffMultiplier,
+		retryStop:         make(chan struct{}),
+		retryDone:         make(chan struct{}),
+	}
+
+	// Initialize current delay to base delay
+	qe.currentDelay.Store(int64(queueCfg.RetryInterval))
+
+	// Initialize circuit breaker if enabled
+	if queueCfg.CircuitBreakerEnabled {
+		threshold := queueCfg.CircuitBreakerThreshold
+		if threshold <= 0 {
+			threshold = 10 // Default threshold
+		}
+		resetTimeout := queueCfg.CircuitBreakerResetTimeout
+		if resetTimeout <= 0 {
+			resetTimeout = 30 * time.Second // Default timeout
+		}
+		qe.circuitBreaker = NewCircuitBreaker(threshold, resetTimeout)
+		queue.SetCircuitState("closed")
+		logging.Info("circuit breaker initialized", logging.F(
+			"failure_threshold", threshold,
+			"reset_timeout", resetTimeout.String(),
+		))
+	}
+
+	if backoffEnabled {
+		logging.Info("exponential backoff enabled", logging.F(
+			"multiplier", backoffMultiplier,
+			"base_delay", queueCfg.RetryInterval.String(),
+			"max_delay", queueCfg.MaxRetryDelay.String(),
+		))
 	}
 
 	// Start the retry loop
@@ -105,7 +277,12 @@ func (e *QueuedExporter) Close() error {
 func (e *QueuedExporter) retryLoop() {
 	defer close(e.retryDone)
 
-	ticker := time.NewTicker(e.baseDelay)
+	// Start with base delay (ensure positive for ticker)
+	currentDelay := e.baseDelay
+	if currentDelay <= 0 {
+		currentDelay = 5 * time.Second // Default if not set
+	}
+	ticker := time.NewTicker(currentDelay)
 	defer ticker.Stop()
 
 	for {
@@ -116,30 +293,79 @@ func (e *QueuedExporter) retryLoop() {
 			return
 
 		case <-ticker.C:
-			e.processQueue()
+			// Check circuit breaker before processing
+			if e.circuitBreaker != nil && !e.circuitBreaker.AllowRequest() {
+				// Circuit breaker is open, skip retry
+				queue.IncrementCircuitRejected()
+				continue
+			}
+
+			success := e.processQueue()
+
+			// Adjust backoff based on result
+			if success {
+				// Reset to base delay on success
+				baseDelay := e.baseDelay
+				if baseDelay <= 0 {
+					baseDelay = 5 * time.Second
+				}
+				if currentDelay != baseDelay {
+					currentDelay = baseDelay
+					ticker.Reset(currentDelay)
+					logging.Info("backoff reset to base delay", logging.F(
+						"delay", currentDelay.String(),
+					))
+				}
+			} else {
+				// Exponential backoff on failure (only if enabled and we actually tried)
+				if e.backoffEnabled && e.queue.Len() > 0 {
+					newDelay := time.Duration(float64(currentDelay) * e.backoffMultiplier)
+					if newDelay > e.maxDelay && e.maxDelay > 0 {
+						newDelay = e.maxDelay
+					}
+					// Ensure delay is positive for ticker
+					if newDelay <= 0 {
+						newDelay = 5 * time.Second
+					}
+					if newDelay != currentDelay {
+						currentDelay = newDelay
+						ticker.Reset(currentDelay)
+						logging.Info("exponential backoff increased", logging.F(
+							"delay", currentDelay.String(),
+							"max_delay", e.maxDelay.String(),
+							"multiplier", e.backoffMultiplier,
+						))
+					}
+				}
+			}
+
+			// Update metric
+			queue.SetCurrentBackoff(currentDelay)
 		}
 	}
 }
 
 // processQueue attempts to process one entry from the queue.
-func (e *QueuedExporter) processQueue() {
+// Returns true if successful or queue is empty, false on failure.
+func (e *QueuedExporter) processQueue() bool {
 	// Pop the entry from the queue - with FastQueue, we must use Pop() not Peek()
 	// because Remove() is a no-op in FastQueue
 	entry, err := e.queue.Pop()
 	if err != nil {
 		logging.Error("failed to pop queue", logging.F("error", err.Error()))
-		return
+		return false
 	}
 
 	if entry == nil {
-		return
+		// Queue is empty - considered success for backoff purposes
+		return true
 	}
 
 	req, err := entry.GetRequest()
 	if err != nil {
 		logging.Error("failed to deserialize queued request", logging.F("error", err.Error()))
 		// Don't re-push corrupted data
-		return
+		return false
 	}
 
 	queue.IncrementRetryTotal()
@@ -151,19 +377,50 @@ func (e *QueuedExporter) processQueue() {
 	if err == nil {
 		// Success - entry already removed by Pop()
 		queue.IncrementRetrySuccessTotal()
+
+		// Record success with circuit breaker
+		if e.circuitBreaker != nil {
+			e.circuitBreaker.RecordSuccess()
+		}
+
 		logging.Info("retry succeeded", logging.F(
 			"queue_size", e.queue.Len(),
 		))
-	} else {
-		// Failure - re-push to queue for later retry
-		// Note: This puts it at the back of the queue
-		if pushErr := e.queue.Push(req); pushErr != nil {
-			logging.Error("failed to re-queue failed entry", logging.F("error", pushErr.Error()))
-		}
-		logging.Info("retry failed", logging.F(
-			"error", err.Error(),
-			"queue_size", e.queue.Len(),
-		))
+		return true
+	}
+
+	// Failure - record with circuit breaker
+	if e.circuitBreaker != nil {
+		e.circuitBreaker.RecordFailure()
+	}
+
+	// Re-push to queue for later retry
+	// Note: This puts it at the back of the queue
+	if pushErr := e.queue.Push(req); pushErr != nil {
+		logging.Error("failed to re-queue failed entry", logging.F("error", pushErr.Error()))
+	}
+	logging.Info("retry failed", logging.F(
+		"error", err.Error(),
+		"queue_size", e.queue.Len(),
+		"circuit_state", e.getCircuitState(),
+	))
+	return false
+}
+
+// getCircuitState returns the current circuit breaker state as a string.
+func (e *QueuedExporter) getCircuitState() string {
+	if e.circuitBreaker == nil {
+		return "disabled"
+	}
+	switch e.circuitBreaker.State() {
+	case CircuitClosed:
+		return "closed"
+	case CircuitOpen:
+		return "open"
+	case CircuitHalfOpen:
+		return "half_open"
+	default:
+		return "unknown"
 	}
 }
 

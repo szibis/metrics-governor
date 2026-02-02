@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/szibis/metrics-governor/internal/buffer"
@@ -42,6 +44,10 @@ func (m *metricsRecorder) WriteHeader(statusCode int) {
 
 func main() {
 	cfg := config.ParseFlags()
+
+	// Auto-detect and set GOMEMLIMIT based on container memory limits (cgroups)
+	// Uses configurable ratio (default 90%) to leave headroom for other processes
+	initMemoryLimit(cfg.MemoryLimitRatio)
 
 	if cfg.ShowHelp {
 		config.PrintUsage()
@@ -85,19 +91,24 @@ func main() {
 			FallbackOnEmpty:    shardingCfg.FallbackOnEmpty,
 			QueueEnabled:       cfg.QueueEnabled,
 			QueueConfig: queue.Config{
-				Path:               cfg.QueuePath,
-				MaxSize:            cfg.QueueMaxSize,
-				MaxBytes:           cfg.QueueMaxBytes,
-				RetryInterval:      cfg.QueueRetryInterval,
-				MaxRetryDelay:      cfg.QueueMaxRetryDelay,
-				FullBehavior:       queue.FullBehavior(cfg.QueueFullBehavior),
-				TargetUtilization:  cfg.QueueTargetUtilization,
-				AdaptiveEnabled:    cfg.QueueAdaptiveEnabled,
-				CompactThreshold:   cfg.QueueCompactThreshold,
-				InmemoryBlocks:     cfg.QueueInmemoryBlocks,
-				ChunkSize:          cfg.QueueChunkSize,
-				MetaSyncInterval:   cfg.QueueMetaSyncInterval,
-				StaleFlushInterval: cfg.QueueStaleFlushInterval,
+				Path:                       cfg.QueuePath,
+				MaxSize:                    cfg.QueueMaxSize,
+				MaxBytes:                   cfg.QueueMaxBytes,
+				RetryInterval:              cfg.QueueRetryInterval,
+				MaxRetryDelay:              cfg.QueueMaxRetryDelay,
+				FullBehavior:               queue.FullBehavior(cfg.QueueFullBehavior),
+				TargetUtilization:          cfg.QueueTargetUtilization,
+				AdaptiveEnabled:            cfg.QueueAdaptiveEnabled,
+				CompactThreshold:           cfg.QueueCompactThreshold,
+				BackoffEnabled:             cfg.QueueBackoffEnabled,
+				BackoffMultiplier:          cfg.QueueBackoffMultiplier,
+				CircuitBreakerEnabled:      cfg.QueueCircuitBreakerEnabled,
+				CircuitBreakerThreshold:    cfg.QueueCircuitBreakerThreshold,
+				CircuitBreakerResetTimeout: cfg.QueueCircuitBreakerResetTimeout,
+				InmemoryBlocks:             cfg.QueueInmemoryBlocks,
+				ChunkSize:                  cfg.QueueChunkSize,
+				MetaSyncInterval:           cfg.QueueMetaSyncInterval,
+				StaleFlushInterval:         cfg.QueueStaleFlushInterval,
 			},
 		}
 
@@ -124,19 +135,24 @@ func main() {
 		// Wrap with queued exporter if enabled
 		if cfg.QueueEnabled {
 			queueCfg := queue.Config{
-				Path:               cfg.QueuePath,
-				MaxSize:            cfg.QueueMaxSize,
-				MaxBytes:           cfg.QueueMaxBytes,
-				RetryInterval:      cfg.QueueRetryInterval,
-				MaxRetryDelay:      cfg.QueueMaxRetryDelay,
-				FullBehavior:       queue.FullBehavior(cfg.QueueFullBehavior),
-				TargetUtilization:  cfg.QueueTargetUtilization,
-				AdaptiveEnabled:    cfg.QueueAdaptiveEnabled,
-				CompactThreshold:   cfg.QueueCompactThreshold,
-				InmemoryBlocks:     cfg.QueueInmemoryBlocks,
-				ChunkSize:          cfg.QueueChunkSize,
-				MetaSyncInterval:   cfg.QueueMetaSyncInterval,
-				StaleFlushInterval: cfg.QueueStaleFlushInterval,
+				Path:                       cfg.QueuePath,
+				MaxSize:                    cfg.QueueMaxSize,
+				MaxBytes:                   cfg.QueueMaxBytes,
+				RetryInterval:              cfg.QueueRetryInterval,
+				MaxRetryDelay:              cfg.QueueMaxRetryDelay,
+				FullBehavior:               queue.FullBehavior(cfg.QueueFullBehavior),
+				TargetUtilization:          cfg.QueueTargetUtilization,
+				AdaptiveEnabled:            cfg.QueueAdaptiveEnabled,
+				CompactThreshold:           cfg.QueueCompactThreshold,
+				BackoffEnabled:             cfg.QueueBackoffEnabled,
+				BackoffMultiplier:          cfg.QueueBackoffMultiplier,
+				CircuitBreakerEnabled:      cfg.QueueCircuitBreakerEnabled,
+				CircuitBreakerThreshold:    cfg.QueueCircuitBreakerThreshold,
+				CircuitBreakerResetTimeout: cfg.QueueCircuitBreakerResetTimeout,
+				InmemoryBlocks:             cfg.QueueInmemoryBlocks,
+				ChunkSize:                  cfg.QueueChunkSize,
+				MetaSyncInterval:           cfg.QueueMetaSyncInterval,
+				StaleFlushInterval:         cfg.QueueStaleFlushInterval,
 			}
 
 			queuedExp, queueErr := exporter.NewQueued(exp, queueCfg)
@@ -368,4 +384,53 @@ func main() {
 	}
 
 	logging.Info("shutdown complete")
+}
+
+// initMemoryLimit auto-detects container memory limits and sets GOMEMLIMIT.
+// This helps prevent OOM kills by making the Go GC more aggressive as memory
+// approaches the limit.
+func initMemoryLimit(ratio float64) {
+	// Check if GOMEMLIMIT is already set via environment
+	if os.Getenv("GOMEMLIMIT") != "" {
+		// User explicitly set GOMEMLIMIT, respect their choice
+		limit := debug.SetMemoryLimit(-1) // Get current limit without changing
+		logging.Info("using explicit GOMEMLIMIT from environment", logging.F(
+			"limit_bytes", limit,
+			"limit_mb", limit/(1024*1024),
+		))
+		return
+	}
+
+	// Validate and apply defaults for ratio
+	if ratio <= 0 || ratio > 1.0 {
+		ratio = 0.9 // Default to 90%
+	}
+
+	// Auto-detect container memory limit (cgroups v1 and v2)
+	limit, err := memlimit.SetGoMemLimitWithOpts(
+		memlimit.WithRatio(ratio),
+		memlimit.WithProvider(memlimit.ApplyFallback(
+			memlimit.FromCgroup,
+			memlimit.FromSystem,
+		)),
+	)
+
+	if err != nil {
+		logging.Warn("failed to auto-detect memory limit", logging.F(
+			"error", err.Error(),
+		))
+		return
+	}
+
+	if limit == 0 {
+		logging.Info("no memory limit detected, GOMEMLIMIT not set")
+		return
+	}
+
+	logging.Info("auto-detected memory limit and set GOMEMLIMIT", logging.F(
+		"limit_bytes", limit,
+		"limit_mb", limit/(1024*1024),
+		"ratio", ratio,
+		"source", "cgroup/system",
+	))
 }

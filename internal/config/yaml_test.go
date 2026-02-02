@@ -390,3 +390,314 @@ func TestHeadersMapToStringEmpty(t *testing.T) {
 		t.Errorf("expected empty string for empty map, got %s", result)
 	}
 }
+
+// Tests for new resilience settings (backoff, circuit breaker, memory)
+
+func TestParseYAMLQueueBackoff(t *testing.T) {
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+  queue:
+    enabled: true
+    path: "/data/queue"
+    backoff:
+      enabled: true
+      multiplier: 3.0
+`
+	cfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	if !*cfg.Exporter.Queue.Enabled {
+		t.Error("expected queue enabled")
+	}
+	if !*cfg.Exporter.Queue.Backoff.Enabled {
+		t.Error("expected backoff enabled")
+	}
+	if cfg.Exporter.Queue.Backoff.Multiplier != 3.0 {
+		t.Errorf("expected multiplier 3.0, got %f", cfg.Exporter.Queue.Backoff.Multiplier)
+	}
+}
+
+func TestParseYAMLQueueCircuitBreaker(t *testing.T) {
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+  queue:
+    enabled: true
+    circuit_breaker:
+      enabled: true
+      threshold: 15
+      reset_timeout: "45s"
+`
+	cfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	if !*cfg.Exporter.Queue.CircuitBreaker.Enabled {
+		t.Error("expected circuit breaker enabled")
+	}
+	if cfg.Exporter.Queue.CircuitBreaker.Threshold != 15 {
+		t.Errorf("expected threshold 15, got %d", cfg.Exporter.Queue.CircuitBreaker.Threshold)
+	}
+	if time.Duration(cfg.Exporter.Queue.CircuitBreaker.ResetTimeout) != 45*time.Second {
+		t.Errorf("expected reset timeout 45s, got %v", cfg.Exporter.Queue.CircuitBreaker.ResetTimeout)
+	}
+}
+
+func TestParseYAMLMemoryLimitRatio(t *testing.T) {
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+memory:
+  limit_ratio: 0.85
+`
+	cfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	if cfg.Memory.LimitRatio != 0.85 {
+		t.Errorf("expected limit ratio 0.85, got %f", cfg.Memory.LimitRatio)
+	}
+}
+
+func TestParseYAMLFastQueueSettings(t *testing.T) {
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+  queue:
+    enabled: true
+    inmemory_blocks: 512
+    chunk_size: 268435456
+    meta_sync_interval: "2s"
+    stale_flush_interval: "10s"
+`
+	cfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	if cfg.Exporter.Queue.InmemoryBlocks != 512 {
+		t.Errorf("expected inmemory_blocks 512, got %d", cfg.Exporter.Queue.InmemoryBlocks)
+	}
+	if cfg.Exporter.Queue.ChunkSize != 268435456 {
+		t.Errorf("expected chunk_size 268435456, got %d", cfg.Exporter.Queue.ChunkSize)
+	}
+	if time.Duration(cfg.Exporter.Queue.MetaSyncInterval) != 2*time.Second {
+		t.Errorf("expected meta_sync_interval 2s, got %v", cfg.Exporter.Queue.MetaSyncInterval)
+	}
+	if time.Duration(cfg.Exporter.Queue.StaleFlushInterval) != 10*time.Second {
+		t.Errorf("expected stale_flush_interval 10s, got %v", cfg.Exporter.Queue.StaleFlushInterval)
+	}
+}
+
+func TestApplyDefaultsBackoff(t *testing.T) {
+	cfg := &YAMLConfig{}
+	cfg.ApplyDefaults()
+
+	if cfg.Exporter.Queue.Backoff.Enabled == nil {
+		t.Fatal("expected backoff enabled to be set")
+	}
+	if !*cfg.Exporter.Queue.Backoff.Enabled {
+		t.Error("expected default backoff enabled true")
+	}
+	if cfg.Exporter.Queue.Backoff.Multiplier != 2.0 {
+		t.Errorf("expected default multiplier 2.0, got %f", cfg.Exporter.Queue.Backoff.Multiplier)
+	}
+}
+
+func TestApplyDefaultsCircuitBreaker(t *testing.T) {
+	cfg := &YAMLConfig{}
+	cfg.ApplyDefaults()
+
+	if cfg.Exporter.Queue.CircuitBreaker.Enabled == nil {
+		t.Fatal("expected circuit breaker enabled to be set")
+	}
+	if !*cfg.Exporter.Queue.CircuitBreaker.Enabled {
+		t.Error("expected default circuit breaker enabled true")
+	}
+	if cfg.Exporter.Queue.CircuitBreaker.Threshold != 10 {
+		t.Errorf("expected default threshold 10, got %d", cfg.Exporter.Queue.CircuitBreaker.Threshold)
+	}
+	if time.Duration(cfg.Exporter.Queue.CircuitBreaker.ResetTimeout) != 30*time.Second {
+		t.Errorf("expected default reset timeout 30s, got %v", cfg.Exporter.Queue.CircuitBreaker.ResetTimeout)
+	}
+}
+
+func TestApplyDefaultsMemory(t *testing.T) {
+	cfg := &YAMLConfig{}
+	cfg.ApplyDefaults()
+
+	if cfg.Memory.LimitRatio != 0.9 {
+		t.Errorf("expected default limit ratio 0.9, got %f", cfg.Memory.LimitRatio)
+	}
+}
+
+func TestApplyDefaultsFastQueue(t *testing.T) {
+	cfg := &YAMLConfig{}
+	cfg.ApplyDefaults()
+
+	if cfg.Exporter.Queue.InmemoryBlocks != 256 {
+		t.Errorf("expected default inmemory_blocks 256, got %d", cfg.Exporter.Queue.InmemoryBlocks)
+	}
+	if cfg.Exporter.Queue.ChunkSize != 512*1024*1024 {
+		t.Errorf("expected default chunk_size 512MB, got %d", cfg.Exporter.Queue.ChunkSize)
+	}
+	if time.Duration(cfg.Exporter.Queue.MetaSyncInterval) != time.Second {
+		t.Errorf("expected default meta_sync_interval 1s, got %v", cfg.Exporter.Queue.MetaSyncInterval)
+	}
+	if time.Duration(cfg.Exporter.Queue.StaleFlushInterval) != 5*time.Second {
+		t.Errorf("expected default stale_flush_interval 5s, got %v", cfg.Exporter.Queue.StaleFlushInterval)
+	}
+}
+
+func TestToConfigBackoffAndCircuitBreaker(t *testing.T) {
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+  queue:
+    enabled: true
+    backoff:
+      enabled: true
+      multiplier: 2.5
+    circuit_breaker:
+      enabled: true
+      threshold: 20
+      reset_timeout: "1m"
+memory:
+  limit_ratio: 0.75
+`
+	yamlCfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	cfg := yamlCfg.ToConfig()
+
+	// Verify backoff settings
+	if !cfg.QueueBackoffEnabled {
+		t.Error("expected QueueBackoffEnabled true")
+	}
+	if cfg.QueueBackoffMultiplier != 2.5 {
+		t.Errorf("expected QueueBackoffMultiplier 2.5, got %f", cfg.QueueBackoffMultiplier)
+	}
+
+	// Verify circuit breaker settings
+	if !cfg.QueueCircuitBreakerEnabled {
+		t.Error("expected QueueCircuitBreakerEnabled true")
+	}
+	if cfg.QueueCircuitBreakerThreshold != 20 {
+		t.Errorf("expected QueueCircuitBreakerThreshold 20, got %d", cfg.QueueCircuitBreakerThreshold)
+	}
+	if cfg.QueueCircuitBreakerResetTimeout != time.Minute {
+		t.Errorf("expected QueueCircuitBreakerResetTimeout 1m, got %v", cfg.QueueCircuitBreakerResetTimeout)
+	}
+
+	// Verify memory limit
+	if cfg.MemoryLimitRatio != 0.75 {
+		t.Errorf("expected MemoryLimitRatio 0.75, got %f", cfg.MemoryLimitRatio)
+	}
+}
+
+func TestToConfigFastQueueSettings(t *testing.T) {
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+  queue:
+    enabled: true
+    inmemory_blocks: 128
+    chunk_size: 134217728
+    meta_sync_interval: "500ms"
+    stale_flush_interval: "3s"
+`
+	yamlCfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	cfg := yamlCfg.ToConfig()
+
+	if cfg.QueueInmemoryBlocks != 128 {
+		t.Errorf("expected QueueInmemoryBlocks 128, got %d", cfg.QueueInmemoryBlocks)
+	}
+	if cfg.QueueChunkSize != 134217728 {
+		t.Errorf("expected QueueChunkSize 134217728, got %d", cfg.QueueChunkSize)
+	}
+	if cfg.QueueMetaSyncInterval != 500*time.Millisecond {
+		t.Errorf("expected QueueMetaSyncInterval 500ms, got %v", cfg.QueueMetaSyncInterval)
+	}
+	if cfg.QueueStaleFlushInterval != 3*time.Second {
+		t.Errorf("expected QueueStaleFlushInterval 3s, got %v", cfg.QueueStaleFlushInterval)
+	}
+}
+
+func TestParseYAMLFullResilienceConfig(t *testing.T) {
+	yaml := `
+exporter:
+  endpoint: "backend:4317"
+  protocol: "http"
+  queue:
+    enabled: true
+    path: "/data/queue"
+    max_size: 5000
+    max_bytes: 536870912
+    retry_interval: "10s"
+    max_retry_delay: "2m"
+    full_behavior: "drop_oldest"
+    inmemory_blocks: 128
+    chunk_size: 268435456
+    meta_sync_interval: "2s"
+    stale_flush_interval: "5s"
+    backoff:
+      enabled: true
+      multiplier: 1.5
+    circuit_breaker:
+      enabled: true
+      threshold: 5
+      reset_timeout: "1m"
+memory:
+  limit_ratio: 0.8
+`
+	cfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	// Verify all queue settings
+	if !*cfg.Exporter.Queue.Enabled {
+		t.Error("expected queue enabled")
+	}
+	if cfg.Exporter.Queue.Path != "/data/queue" {
+		t.Errorf("expected path '/data/queue', got %s", cfg.Exporter.Queue.Path)
+	}
+	if cfg.Exporter.Queue.MaxSize != 5000 {
+		t.Errorf("expected max_size 5000, got %d", cfg.Exporter.Queue.MaxSize)
+	}
+	if cfg.Exporter.Queue.MaxBytes != 536870912 {
+		t.Errorf("expected max_bytes 536870912, got %d", cfg.Exporter.Queue.MaxBytes)
+	}
+
+	// Verify backoff
+	if !*cfg.Exporter.Queue.Backoff.Enabled {
+		t.Error("expected backoff enabled")
+	}
+	if cfg.Exporter.Queue.Backoff.Multiplier != 1.5 {
+		t.Errorf("expected multiplier 1.5, got %f", cfg.Exporter.Queue.Backoff.Multiplier)
+	}
+
+	// Verify circuit breaker
+	if !*cfg.Exporter.Queue.CircuitBreaker.Enabled {
+		t.Error("expected circuit breaker enabled")
+	}
+	if cfg.Exporter.Queue.CircuitBreaker.Threshold != 5 {
+		t.Errorf("expected threshold 5, got %d", cfg.Exporter.Queue.CircuitBreaker.Threshold)
+	}
+
+	// Verify memory
+	if cfg.Memory.LimitRatio != 0.8 {
+		t.Errorf("expected limit_ratio 0.8, got %f", cfg.Memory.LimitRatio)
+	}
+}

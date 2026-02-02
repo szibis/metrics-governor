@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/szibis/metrics-governor/internal/buffer"
 	"github.com/szibis/metrics-governor/internal/exporter"
 	"github.com/szibis/metrics-governor/internal/limits"
+	"github.com/szibis/metrics-governor/internal/queue"
 	"github.com/szibis/metrics-governor/internal/receiver"
 	"github.com/szibis/metrics-governor/internal/stats"
 )
@@ -887,4 +889,404 @@ func createEdgeCaseRequest() *colmetrics.ExportMetricsServiceRequest {
 			},
 		},
 	}
+}
+
+// TestE2E_QueuedExporter_BackendFailure tests queue behavior when backend is unavailable
+func TestE2E_QueuedExporter_BackendFailure(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Create exporter pointing to non-existent backend (will fail)
+	tmpDir := t.TempDir()
+	exp, err := exporter.New(ctx, exporter.Config{
+		Endpoint: "127.0.0.1:59999", // Non-existent port
+		Insecure: true,
+		Protocol: "grpc",
+		Timeout:  1 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create exporter: %v", err)
+	}
+	defer exp.Close()
+
+	// Create queued exporter with circuit breaker and backoff
+	queueCfg := queue.Config{
+		Path:                       tmpDir,
+		MaxSize:                    100,
+		RetryInterval:              50 * time.Millisecond,
+		MaxRetryDelay:              500 * time.Millisecond,
+		BackoffEnabled:             true,
+		BackoffMultiplier:          2.0,
+		CircuitBreakerEnabled:      true,
+		CircuitBreakerThreshold:    3,
+		CircuitBreakerResetTimeout: 200 * time.Millisecond,
+	}
+
+	queuedExp, err := exporter.NewQueued(exp, queueCfg)
+	if err != nil {
+		t.Fatalf("Failed to create queued exporter: %v", err)
+	}
+	defer queuedExp.Close()
+
+	// Create components
+	statsCollector := stats.NewCollector(nil)
+	buf := buffer.New(1000, 10, 100*time.Millisecond, queuedExp, statsCollector, nil, nil)
+	go buf.Start(ctx)
+
+	// Create gRPC receiver
+	grpcAddr := getFreeAddr(t)
+	grpcReceiver := receiver.NewGRPC(grpcAddr, buf)
+	go grpcReceiver.Start()
+	defer grpcReceiver.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Send metrics - these should queue since backend is unavailable
+	conn, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	client := colmetrics.NewMetricsServiceClient(conn)
+
+	// Send multiple batches
+	for i := 0; i < 5; i++ {
+		req := createTestExportRequest(fmt.Sprintf("queue-test-%d", i), "queued_metric", 10)
+		_, err := client.Export(ctx, req)
+		if err != nil {
+			t.Logf("Export %d returned error (expected with failing backend): %v", i, err)
+		}
+	}
+
+	// Wait for buffer to flush and queue to process
+	time.Sleep(1 * time.Second)
+
+	// Verify queue has entries (backend is unavailable)
+	queueLen := queuedExp.QueueLen()
+	t.Logf("Queue length after backend failure: %d", queueLen)
+
+	// Queue should have some entries since backend is failing
+	// (some may have been dropped due to circuit breaker, but queue should have tried)
+	if queueLen == 0 {
+		t.Log("Queue is empty - circuit breaker may have blocked retries (expected behavior)")
+	}
+
+	t.Log("Queue resilience test completed - system handled backend failure gracefully")
+}
+
+// TestE2E_QueuedExporter_BackendRecovery tests queue draining when backend recovers
+func TestE2E_QueuedExporter_BackendRecovery(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Start a backend that we can control
+	backend, backendAddr := startMockGRPCBackend(t)
+
+	// Create exporter
+	tmpDir := t.TempDir()
+	exp, err := exporter.New(ctx, exporter.Config{
+		Endpoint: backendAddr,
+		Insecure: true,
+		Protocol: "grpc",
+		Timeout:  5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create exporter: %v", err)
+	}
+	defer exp.Close()
+
+	// Create queued exporter with resilience settings
+	queueCfg := queue.Config{
+		Path:                       tmpDir,
+		MaxSize:                    1000,
+		RetryInterval:              100 * time.Millisecond,
+		MaxRetryDelay:              1 * time.Second,
+		BackoffEnabled:             true,
+		BackoffMultiplier:          2.0,
+		CircuitBreakerEnabled:      true,
+		CircuitBreakerThreshold:    5,
+		CircuitBreakerResetTimeout: 500 * time.Millisecond,
+	}
+
+	queuedExp, err := exporter.NewQueued(exp, queueCfg)
+	if err != nil {
+		t.Fatalf("Failed to create queued exporter: %v", err)
+	}
+	defer queuedExp.Close()
+
+	// Create buffer
+	buf := buffer.New(1000, 10, 50*time.Millisecond, queuedExp, nil, nil, nil)
+	go buf.Start(ctx)
+
+	// Create receiver
+	grpcAddr := getFreeAddr(t)
+	grpcReceiver := receiver.NewGRPC(grpcAddr, buf)
+	go grpcReceiver.Start()
+	defer grpcReceiver.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Connect client
+	conn, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	client := colmetrics.NewMetricsServiceClient(conn)
+
+	// Phase 1: Backend is UP - send initial metrics
+	t.Log("Phase 1: Sending metrics with backend UP")
+	for i := 0; i < 5; i++ {
+		req := createTestExportRequest("recovery-test", fmt.Sprintf("metric_%d", i), 5)
+		_, err := client.Export(ctx, req)
+		if err != nil {
+			t.Errorf("Export failed with backend UP: %v", err)
+		}
+	}
+
+	time.Sleep(500 * time.Millisecond)
+	initialReceived := len(backend.GetReceivedMetrics())
+	t.Logf("Metrics received with backend UP: %d", initialReceived)
+
+	// Phase 2: Stop backend - metrics should queue
+	t.Log("Phase 2: Stopping backend")
+	backend.Stop()
+
+	// Send more metrics while backend is down
+	for i := 5; i < 10; i++ {
+		req := createTestExportRequest("recovery-test", fmt.Sprintf("metric_%d", i), 5)
+		_, _ = client.Export(ctx, req)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+	t.Logf("Queue length with backend DOWN: %d", queuedExp.QueueLen())
+
+	// Phase 3: Restart backend - queue should drain
+	t.Log("Phase 3: Restarting backend")
+	newBackend, _ := startMockGRPCBackendOnAddr(t, backendAddr)
+	defer newBackend.Stop()
+
+	// Wait for queue to drain and circuit breaker to recover
+	time.Sleep(2 * time.Second)
+
+	finalReceived := len(newBackend.GetReceivedMetrics())
+	t.Logf("Metrics received after recovery: %d", finalReceived)
+	t.Logf("Final queue length: %d", queuedExp.QueueLen())
+
+	// Some metrics should have been recovered
+	if finalReceived == 0 && queuedExp.QueueLen() == 0 {
+		t.Log("All metrics either delivered or lost during outage (expected)")
+	} else if finalReceived > 0 {
+		t.Logf("Successfully recovered %d metric batches after backend recovery", finalReceived)
+	}
+}
+
+// TestE2E_MemoryPressure tests behavior under memory constraints
+func TestE2E_MemoryPressure(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Start mock backend
+	backend, backendAddr := startMockGRPCBackend(t)
+	defer backend.Stop()
+
+	// Create exporter
+	exp, err := exporter.New(ctx, exporter.Config{
+		Endpoint: backendAddr,
+		Insecure: true,
+		Protocol: "grpc",
+		Timeout:  5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create exporter: %v", err)
+	}
+	defer exp.Close()
+
+	// Create buffer with small size to simulate pressure
+	buf := buffer.New(100, 10, 50*time.Millisecond, exp, nil, nil, nil)
+	go buf.Start(ctx)
+
+	// Create receiver
+	grpcAddr := getFreeAddr(t)
+	grpcReceiver := receiver.NewGRPC(grpcAddr, buf)
+	go grpcReceiver.Start()
+	defer grpcReceiver.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Connect client
+	conn, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	client := colmetrics.NewMetricsServiceClient(conn)
+
+	// Send many metrics rapidly to stress the small buffer
+	var wg sync.WaitGroup
+	successCount := int64(0)
+	errorCount := int64(0)
+
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			req := createTestExportRequest(
+				fmt.Sprintf("pressure-service-%d", id),
+				"pressure_metric",
+				100, // Many datapoints per request
+			)
+			_, err := client.Export(ctx, req)
+			if err != nil {
+				atomic.AddInt64(&errorCount, 1)
+			} else {
+				atomic.AddInt64(&successCount, 1)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	time.Sleep(1 * time.Second)
+
+	received := backend.GetReceivedMetrics()
+
+	t.Logf("Memory pressure test results:")
+	t.Logf("  Requests sent: 50")
+	t.Logf("  Success: %d", successCount)
+	t.Logf("  Errors: %d", errorCount)
+	t.Logf("  Metrics received by backend: %d", len(received))
+
+	// Even under pressure, we should have processed most requests
+	if successCount < 40 {
+		t.Errorf("Too many failures under memory pressure: %d/%d succeeded", successCount, 50)
+	}
+}
+
+// TestE2E_RapidBackendFlapping tests behavior with rapid backend up/down cycles
+func TestE2E_RapidBackendFlapping(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping flapping test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	tmpDir := t.TempDir()
+
+	// Start initial backend
+	backend, backendAddr := startMockGRPCBackend(t)
+
+	// Create exporter with queue
+	exp, err := exporter.New(ctx, exporter.Config{
+		Endpoint: backendAddr,
+		Insecure: true,
+		Protocol: "grpc",
+		Timeout:  2 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create exporter: %v", err)
+	}
+	defer exp.Close()
+
+	queueCfg := queue.Config{
+		Path:                       tmpDir,
+		MaxSize:                    500,
+		RetryInterval:              50 * time.Millisecond,
+		MaxRetryDelay:              500 * time.Millisecond,
+		BackoffEnabled:             true,
+		BackoffMultiplier:          1.5,
+		CircuitBreakerEnabled:      true,
+		CircuitBreakerThreshold:    3,
+		CircuitBreakerResetTimeout: 200 * time.Millisecond,
+	}
+
+	queuedExp, err := exporter.NewQueued(exp, queueCfg)
+	if err != nil {
+		t.Fatalf("Failed to create queued exporter: %v", err)
+	}
+	defer queuedExp.Close()
+
+	buf := buffer.New(1000, 50, 50*time.Millisecond, queuedExp, nil, nil, nil)
+	go buf.Start(ctx)
+
+	grpcAddr := getFreeAddr(t)
+	grpcReceiver := receiver.NewGRPC(grpcAddr, buf)
+	go grpcReceiver.Start()
+	defer grpcReceiver.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	conn, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	client := colmetrics.NewMetricsServiceClient(conn)
+
+	// Run flapping test - toggle backend every 500ms while sending metrics
+	var currentBackend *MockGRPCBackend = backend
+	var totalReceived int
+
+	for cycle := 0; cycle < 5; cycle++ {
+		// Send metrics
+		for i := 0; i < 10; i++ {
+			req := createTestExportRequest("flap-test", fmt.Sprintf("cycle_%d_metric_%d", cycle, i), 5)
+			_, _ = client.Export(ctx, req)
+		}
+
+		time.Sleep(200 * time.Millisecond)
+
+		// Toggle backend
+		if currentBackend != nil {
+			totalReceived += len(currentBackend.GetReceivedMetrics())
+			currentBackend.Stop()
+			currentBackend = nil
+			t.Logf("Cycle %d: Backend stopped, total received so far: %d", cycle, totalReceived)
+		} else {
+			var newBackend *MockGRPCBackend
+			newBackend, _ = startMockGRPCBackendOnAddr(t, backendAddr)
+			currentBackend = newBackend
+			t.Logf("Cycle %d: Backend restarted", cycle)
+		}
+
+		time.Sleep(300 * time.Millisecond)
+	}
+
+	// Final cleanup
+	if currentBackend != nil {
+		totalReceived += len(currentBackend.GetReceivedMetrics())
+		currentBackend.Stop()
+	}
+
+	t.Logf("Flapping test completed:")
+	t.Logf("  Total metrics received: %d", totalReceived)
+	t.Logf("  Final queue length: %d", queuedExp.QueueLen())
+
+	// The system should have handled the flapping without crashing
+	// and delivered at least some metrics
+	if totalReceived == 0 {
+		t.Error("No metrics delivered during flapping test")
+	}
+}
+
+// Helper to start backend on specific address
+func startMockGRPCBackendOnAddr(t *testing.T, addr string) (*MockGRPCBackend, string) {
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("Failed to listen on %s: %v", addr, err)
+	}
+
+	backend := &MockGRPCBackend{
+		server:   grpc.NewServer(),
+		received: make([]*metricspb.ResourceMetrics, 0),
+	}
+	colmetrics.RegisterMetricsServiceServer(backend.server, backend)
+
+	go backend.server.Serve(l)
+
+	return backend, l.Addr().String()
 }

@@ -46,6 +46,20 @@ type Config struct {
 	// CompactThreshold is the ratio of consumed entries before compaction (default: 0.5).
 	CompactThreshold float64
 
+	// Backoff settings
+	// BackoffEnabled enables exponential backoff for retries (default: true).
+	BackoffEnabled bool
+	// BackoffMultiplier is the factor to multiply delay by on each failure (default: 2.0).
+	BackoffMultiplier float64
+
+	// Circuit breaker settings
+	// CircuitBreakerEnabled enables the circuit breaker pattern (default: true).
+	CircuitBreakerEnabled bool
+	// CircuitBreakerThreshold is the number of consecutive failures before opening (default: 10).
+	CircuitBreakerThreshold int
+	// CircuitBreakerResetTimeout is time to wait before half-open state (default: 30s).
+	CircuitBreakerResetTimeout time.Duration
+
 	// FastQueue settings
 	// InmemoryBlocks is the in-memory channel size (default: 256).
 	InmemoryBlocks int
@@ -60,20 +74,25 @@ type Config struct {
 // DefaultConfig returns a default queue configuration.
 func DefaultConfig() Config {
 	return Config{
-		Path:               "./queue",
-		MaxSize:            10000,
-		MaxBytes:           1073741824, // 1GB
-		RetryInterval:      5 * time.Second,
-		MaxRetryDelay:      5 * time.Minute,
-		FullBehavior:       DropOldest,
-		BlockTimeout:       30 * time.Second,
-		TargetUtilization:  0.85,
-		AdaptiveEnabled:    true,
-		CompactThreshold:   0.5,
-		InmemoryBlocks:     256,
-		ChunkSize:          512 * 1024 * 1024, // 512MB
-		MetaSyncInterval:   time.Second,
-		StaleFlushInterval: 5 * time.Second,
+		Path:                       "./queue",
+		MaxSize:                    10000,
+		MaxBytes:                   1073741824, // 1GB
+		RetryInterval:              5 * time.Second,
+		MaxRetryDelay:              5 * time.Minute,
+		FullBehavior:               DropOldest,
+		BlockTimeout:               30 * time.Second,
+		TargetUtilization:          0.85,
+		AdaptiveEnabled:            true,
+		CompactThreshold:           0.5,
+		BackoffEnabled:             true,
+		BackoffMultiplier:          2.0,
+		CircuitBreakerEnabled:      true,
+		CircuitBreakerThreshold:    10,
+		CircuitBreakerResetTimeout: 30 * time.Second,
+		InmemoryBlocks:             256,
+		ChunkSize:                  512 * 1024 * 1024, // 512MB
+		MetaSyncInterval:           time.Second,
+		StaleFlushInterval:         5 * time.Second,
 	}
 }
 

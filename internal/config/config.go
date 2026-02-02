@@ -108,6 +108,16 @@ type Config struct {
 	QueueChunkSize          int64         // Chunk file size (default: 512MB)
 	QueueMetaSyncInterval   time.Duration // Metadata sync interval (default: 1s)
 	QueueStaleFlushInterval time.Duration // Stale flush interval (default: 5s)
+	// Backoff settings
+	QueueBackoffEnabled    bool    // Enable exponential backoff (default: true)
+	QueueBackoffMultiplier float64 // Backoff multiplier (default: 2.0)
+	// Circuit breaker settings
+	QueueCircuitBreakerEnabled      bool          // Enable circuit breaker (default: true)
+	QueueCircuitBreakerThreshold    int           // Failures before opening (default: 10)
+	QueueCircuitBreakerResetTimeout time.Duration // Time to wait before half-open (default: 30s)
+
+	// Memory limit settings
+	MemoryLimitRatio float64 // Ratio of container memory to use for GOMEMLIMIT (default: 0.9)
 
 	// Sharding settings
 	ShardingEnabled            bool
@@ -276,6 +286,16 @@ func ParseFlags() *Config {
 	flag.Int64Var(&cfg.QueueChunkSize, "queue-chunk-size", 536870912, "Chunk file size in bytes (512MB default)")
 	flag.DurationVar(&cfg.QueueMetaSyncInterval, "queue-meta-sync", 1*time.Second, "Metadata sync interval (max data loss window)")
 	flag.DurationVar(&cfg.QueueStaleFlushInterval, "queue-stale-flush", 5*time.Second, "Interval to flush stale in-memory blocks to disk")
+	// Backoff flags
+	flag.BoolVar(&cfg.QueueBackoffEnabled, "queue-backoff-enabled", true, "Enable exponential backoff for retries")
+	flag.Float64Var(&cfg.QueueBackoffMultiplier, "queue-backoff-multiplier", 2.0, "Backoff delay multiplier on each failure")
+	// Circuit breaker flags
+	flag.BoolVar(&cfg.QueueCircuitBreakerEnabled, "queue-circuit-breaker-enabled", true, "Enable circuit breaker pattern for retries")
+	flag.IntVar(&cfg.QueueCircuitBreakerThreshold, "queue-circuit-breaker-threshold", 10, "Consecutive failures before opening circuit")
+	flag.DurationVar(&cfg.QueueCircuitBreakerResetTimeout, "queue-circuit-breaker-reset-timeout", 30*time.Second, "Time to wait before half-open state")
+
+	// Memory limit flags
+	flag.Float64Var(&cfg.MemoryLimitRatio, "memory-limit-ratio", 0.9, "Ratio of container memory to use for GOMEMLIMIT (0.0-1.0)")
 
 	// Sharding flags
 	flag.BoolVar(&cfg.ShardingEnabled, "sharding-enabled", false, "Enable consistent sharding")
@@ -574,6 +594,32 @@ func applyFlagOverrides(cfg *Config) {
 		case "queue-stale-flush":
 			if d, err := time.ParseDuration(f.Value.String()); err == nil {
 				cfg.QueueStaleFlushInterval = d
+			}
+		case "queue-backoff-enabled":
+			cfg.QueueBackoffEnabled = f.Value.String() == "true"
+		case "queue-backoff-multiplier":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if fv, ok := v.Get().(float64); ok {
+					cfg.QueueBackoffMultiplier = fv
+				}
+			}
+		case "queue-circuit-breaker-enabled":
+			cfg.QueueCircuitBreakerEnabled = f.Value.String() == "true"
+		case "queue-circuit-breaker-threshold":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.QueueCircuitBreakerThreshold = i
+				}
+			}
+		case "queue-circuit-breaker-reset-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.QueueCircuitBreakerResetTimeout = d
+			}
+		case "memory-limit-ratio":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if fv, ok := v.Get().(float64); ok {
+					cfg.MemoryLimitRatio = fv
+				}
 			}
 		case "sharding-enabled":
 			cfg.ShardingEnabled = f.Value.String() == "true"
@@ -1151,6 +1197,17 @@ OPTIONS:
         -queue-meta-sync <dur>           Metadata sync interval / max data loss window (default: 1s)
         -queue-stale-flush <dur>         Interval to flush stale in-memory blocks to disk (default: 5s)
 
+    Queue Resilience (Backoff & Circuit Breaker):
+        -queue-backoff-enabled           Enable exponential backoff for retries (default: true)
+        -queue-backoff-multiplier <n>    Backoff delay multiplier on each failure (default: 2.0)
+        -queue-circuit-breaker-enabled   Enable circuit breaker pattern (default: true)
+        -queue-circuit-breaker-threshold <n>      Consecutive failures before opening circuit (default: 10)
+        -queue-circuit-breaker-reset-timeout <dur> Time to wait before half-open state (default: 30s)
+
+    Memory:
+        -memory-limit-ratio <ratio>      Ratio of container memory for GOMEMLIMIT (0.0-1.0) (default: 0.9)
+                                         Auto-detects container limits via cgroups (Docker/K8s)
+
     Sharding (Consistent Hash Distribution):
         -sharding-enabled                Enable consistent sharding (default: false)
         -sharding-headless-service       K8s headless service DNS name (e.g., vminsert-headless.monitoring.svc:8428)
@@ -1295,8 +1352,14 @@ func DefaultConfig() *Config {
 		QueueInmemoryBlocks:         256,
 		QueueChunkSize:              536870912, // 512MB
 		QueueMetaSyncInterval:       1 * time.Second,
-		QueueStaleFlushInterval:     5 * time.Second,
-		ShardingEnabled:             false,
+		QueueStaleFlushInterval:         5 * time.Second,
+		QueueBackoffEnabled:             true,
+		QueueBackoffMultiplier:          2.0,
+		QueueCircuitBreakerEnabled:      true,
+		QueueCircuitBreakerThreshold:    10,
+		QueueCircuitBreakerResetTimeout: 30 * time.Second,
+		MemoryLimitRatio:                0.9,
+		ShardingEnabled:                 false,
 		ShardingDNSRefreshInterval:  30 * time.Second,
 		ShardingDNSTimeout:          5 * time.Second,
 		ShardingVirtualNodes:        150,

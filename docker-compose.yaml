@@ -20,6 +20,12 @@ services:
       - "14317:4317"    # gRPC receiver (from otel-collector)
       - "14318:4318"    # HTTP receiver (from otel-collector)
       - "9090:9090"     # Prometheus metrics
+    deploy:
+      resources:
+        limits:
+          # Memory limit - auto-detected by Go runtime via cgroups
+          # GOMEMLIMIT is automatically set to 90% of this value
+          memory: 512M
     command:
       - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
       - "-exporter-protocol=http"
@@ -46,6 +52,14 @@ services:
       - "-queue-chunk-size=134217728"
       - "-queue-meta-sync=1s"
       - "-queue-stale-flush=5s"
+      # Queue resilience - backoff and circuit breaker
+      - "-queue-backoff-enabled=true"
+      - "-queue-backoff-multiplier=2.0"
+      - "-queue-circuit-breaker-enabled=true"
+      - "-queue-circuit-breaker-threshold=10"
+      - "-queue-circuit-breaker-reset-timeout=30s"
+      # Memory limit - auto-detect container limits
+      - "-memory-limit-ratio=0.9"
       # Sharding configuration - consistent hashing across endpoints
       - "-sharding-enabled=true"
       - "-sharding-headless-service=victoriametrics:8428"

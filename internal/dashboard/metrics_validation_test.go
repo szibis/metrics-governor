@@ -68,6 +68,11 @@ var knownMetrics = []string{
 	"metrics_governor_fastqueue_meta_sync_total",
 	"metrics_governor_fastqueue_chunk_rotations",
 	"metrics_governor_fastqueue_inmemory_flushes",
+	// Circuit breaker and backoff metrics (queue/metrics.go)
+	"metrics_governor_circuit_breaker_state",
+	"metrics_governor_circuit_breaker_open_total",
+	"metrics_governor_circuit_breaker_rejected_total",
+	"metrics_governor_queue_backoff_seconds",
 
 	// Sharding metrics (sharding/metrics.go)
 	"metrics_governor_sharding_endpoints_total",
@@ -386,6 +391,7 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_label_",
 		"metrics_governor_queue",
 		"metrics_governor_fastqueue",
+		"metrics_governor_circuit_breaker",
 		"metrics_governor_sharding",
 		"metrics_governor_limit",
 		"metrics_governor_rule",

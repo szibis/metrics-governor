@@ -65,9 +65,16 @@ exporter:
     force_http2: false
     http2_read_idle_timeout: 0s
     http2_ping_timeout: 0s
-  # Persistent queue for export retries (FastQueue-based)
+
+  #############################################################################
+  # Queue Configuration - Persistent Retry Queue with Resilience Features
+  #############################################################################
+  # The queue provides durability for export failures, ensuring metrics are
+  # not lost during backend outages. It includes circuit breaker and exponential
+  # backoff to prevent resource exhaustion during prolonged failures.
   queue:
-    enabled: false                     # enable persistent queue
+    # Core queue settings
+    enabled: false                     # enable persistent queue for retries
     path: "./queue"                    # queue storage directory
     max_size: 10000                    # max batches in queue
     max_bytes: 1073741824              # max total size (1GB)
@@ -76,10 +83,27 @@ exporter:
     full_behavior: drop_oldest         # drop_oldest, drop_newest, or block
     target_utilization: 0.85           # target disk utilization (0.0-1.0)
     adaptive_enabled: true             # enable adaptive sizing based on disk space
-    inmemory_blocks: 256               # in-memory channel size
+
+    # Storage settings (advanced tuning)
+    inmemory_blocks: 256               # in-memory channel size before spilling to disk
     chunk_size: 536870912              # chunk file size (512MB)
-    meta_sync_interval: 1s             # metadata sync interval
+    meta_sync_interval: 1s             # metadata sync interval (max data loss window)
     stale_flush_interval: 5s           # flush stale in-memory data to disk
+
+    # Exponential backoff - increases delay between retries on repeated failures
+    # Prevents overwhelming a struggling backend with rapid retry attempts
+    backoff:
+      enabled: true                    # enable exponential backoff for retries
+      multiplier: 2.0                  # multiply delay by this on each failure
+                                       # e.g., 5s -> 10s -> 20s -> 40s (capped at max_retry_delay)
+
+    # Circuit breaker - stops retries after consecutive failures
+    # Prevents wasting resources on a completely unavailable backend
+    # States: closed (normal) -> open (blocking) -> half-open (testing recovery)
+    circuit_breaker:
+      enabled: true                    # enable circuit breaker pattern
+      threshold: 10                    # consecutive failures before opening circuit
+      reset_timeout: 30s               # time before testing recovery (half-open state)
 
 # Buffer configuration - internal metrics buffering
 buffer:
@@ -105,3 +129,11 @@ performance:
   export_concurrency: 0                # max concurrent export goroutines (0 = NumCPU * 4)
   string_interning: true               # deduplicate label strings to reduce allocations
   intern_max_value_length: 64          # max length for interned label values
+
+# Memory limit configuration
+# Auto-detects container memory limits (Docker/K8s via cgroups) and sets GOMEMLIMIT
+# This helps prevent OOM kills by making Go GC more aggressive as memory approaches limit
+memory:
+  limit_ratio: 0.9                     # ratio of container memory for GOMEMLIMIT (0.0-1.0)
+                                       # 0.9 = 90% of container limit, leaves 10% headroom
+                                       # Set to 0 to disable auto-detection

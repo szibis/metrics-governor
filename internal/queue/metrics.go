@@ -1,6 +1,10 @@
 package queue
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 var (
 	queueSize = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -93,6 +97,28 @@ var (
 		Name: "metrics_governor_fastqueue_inmemory_flushes",
 		Help: "Total number of in-memory channel flushes to disk",
 	})
+
+	// Circuit breaker metrics
+	circuitBreakerState = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "metrics_governor_circuit_breaker_state",
+		Help: "Current circuit breaker state (1 = active state): closed, open, half_open",
+	}, []string{"state"})
+
+	circuitBreakerOpenTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_circuit_breaker_open_total",
+		Help: "Total number of times the circuit breaker opened",
+	})
+
+	circuitBreakerRejectedTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_circuit_breaker_rejected_total",
+		Help: "Total number of requests rejected by open circuit breaker",
+	})
+
+	// Backoff metrics
+	currentBackoffSeconds = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_queue_backoff_seconds",
+		Help: "Current exponential backoff delay in seconds",
+	})
 )
 
 func init() {
@@ -115,6 +141,11 @@ func init() {
 	prometheus.MustRegister(fastqueueMetaSyncTotal)
 	prometheus.MustRegister(fastqueueChunkRotations)
 	prometheus.MustRegister(fastqueueInmemoryFlushes)
+	// Circuit breaker metrics
+	prometheus.MustRegister(circuitBreakerState)
+	prometheus.MustRegister(circuitBreakerOpenTotal)
+	prometheus.MustRegister(circuitBreakerRejectedTotal)
+	prometheus.MustRegister(currentBackoffSeconds)
 
 	// Initialize gauges to 0 so they appear in Prometheus immediately
 	// (before queue is created or used)
@@ -128,6 +159,11 @@ func init() {
 	queueDiskAvailableBytes.Set(0)
 	fastqueueInmemoryBlocks.Set(0)
 	fastqueueDiskBytes.Set(0)
+	currentBackoffSeconds.Set(0)
+	// Initialize circuit breaker states
+	circuitBreakerState.WithLabelValues("closed").Set(0)
+	circuitBreakerState.WithLabelValues("open").Set(0)
+	circuitBreakerState.WithLabelValues("half_open").Set(0)
 }
 
 // IncrementRetryTotal increments the retry counter.
@@ -194,4 +230,29 @@ func IncrementChunkRotation() {
 // IncrementInmemoryFlush increments the in-memory flush counter.
 func IncrementInmemoryFlush() {
 	fastqueueInmemoryFlushes.Inc()
+}
+
+// SetCircuitState sets the circuit breaker state metric.
+func SetCircuitState(state string) {
+	// Reset all states
+	circuitBreakerState.WithLabelValues("closed").Set(0)
+	circuitBreakerState.WithLabelValues("open").Set(0)
+	circuitBreakerState.WithLabelValues("half_open").Set(0)
+	// Set the active state
+	circuitBreakerState.WithLabelValues(state).Set(1)
+}
+
+// IncrementCircuitOpen increments the circuit breaker open counter.
+func IncrementCircuitOpen() {
+	circuitBreakerOpenTotal.Inc()
+}
+
+// IncrementCircuitRejected increments the circuit breaker rejected counter.
+func IncrementCircuitRejected() {
+	circuitBreakerRejectedTotal.Inc()
+}
+
+// SetCurrentBackoff sets the current backoff delay metric.
+func SetCurrentBackoff(d time.Duration) {
+	currentBackoffSeconds.Set(d.Seconds())
 }
