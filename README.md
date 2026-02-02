@@ -27,7 +27,7 @@
 - **Dual Protocol Support** - Native OTLP (gRPC/HTTP) and Prometheus Remote Write (PRW 1.0/2.0) pipelines, each running independently with zero conversion overhead
 - **Intelligent Limiting** - Unlike simple rate limiters that drop everything, metrics-governor identifies and drops only the top offenders while preserving data from well-behaved services
 - **Consistent Sharding** - Automatic endpoint discovery from Kubernetes headless services with consistent hashing ensures the same time-series always route to the same backend (works for both OTLP and PRW)
-- **Production-Ready** - FastQueue durable persistence, TLS/mTLS, authentication, compression (gzip/zstd/snappy/lz4), and Helm chart included
+- **Production-Ready** - FastQueue durable persistence with circuit breaker and exponential backoff, auto memory limits, TLS/mTLS, authentication, compression (gzip/zstd/snappy/lz4), and Helm chart included
 - **High-Performance Optimizations** - String interning reduces allocations by 76%, concurrency limiting prevents goroutine explosion, Bloom filters reduce cardinality tracking memory by 98% (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
 - **Zero Configuration Start** - Works out of the box with sensible defaults; add limits and sharding when needed
 
@@ -42,10 +42,10 @@ flowchart LR
     end
 
     subgraph MG["metrics-governor"]
-        subgraph Receivers["Receivers"]
-            GRPC["gRPC Receiver<br/>:4317"]
-            HTTP["HTTP Receiver<br/>:4318"]
-            PRW["PRW Receiver<br/>:9091"]
+        subgraph Receivers["Receivers<br/>(configurable paths)"]
+            GRPC["gRPC :4317"]
+            HTTP["HTTP :4318"]
+            PRW["PRW :9091"]
         end
 
         subgraph Pipelines["Independent Pipelines"]
@@ -63,15 +63,17 @@ flowchart LR
             end
         end
 
-        subgraph Queue["Persistent Queues"]
-            OQueue["OTLP Queue<br/>(FastQueue)"]
-            PQueue["PRW Queue<br/>(FastQueue)"]
+        subgraph Resilience["Queue & Resilience"]
+            OQueue["OTLP FastQueue"]
+            PQueue["PRW FastQueue"]
+            CB["Circuit Breaker"]
+            BO["Exp. Backoff"]
         end
     end
 
     subgraph Backends["Any Compatible Backend"]
-        OTLP_BE["OTLP Backends<br/>(gRPC/HTTP)<br/>OTel Collector • Mimir<br/>VictoriaMetrics • etc."]
-        PRW_BE["PRW Backends<br/>(HTTP)<br/>Prometheus • Thanos<br/>VictoriaMetrics • etc."]
+        OTLP_BE["OTLP (gRPC/HTTP)<br/>OTel Collector • Mimir<br/>VictoriaMetrics • etc."]
+        PRW_BE["PRW (HTTP)<br/>Prometheus • Thanos<br/>VictoriaMetrics • etc."]
     end
 
     App1 -->|"OTLP/gRPC"| GRPC
@@ -83,9 +85,13 @@ flowchart LR
     PRW --> PBuf --> PStats --> PLimits --> PExp
 
     OExp -->|"Success"| OTLP_BE
-    OExp -.->|"Failure"| OQueue -.->|"Retry"| OExp
+    OExp -.->|"Failure"| CB
+    CB -.-> OQueue
+    OQueue -.-> BO -.->|"Retry"| OExp
+
     PExp -->|"Success"| PRW_BE
-    PExp -.->|"Failure"| PQueue -.->|"Retry"| PExp
+    PExp -.->|"Failure"| CB
+    PQueue -.-> BO -.->|"Retry"| PExp
 ```
 
 ## Quick Start
@@ -137,6 +143,7 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
 | 🧪 | [**Testing**](docs/testing.md) | Test environment, Docker Compose, verification |
 | 🛠️ | [**Development**](docs/development.md) | Building, project structure, contributing |
 | ⚡ | [**Performance**](docs/performance.md) | Bloom filters, string interning, queue optimization |
+| 🛡️ | [**Resilience**](docs/resilience.md) | Circuit breaker, exponential backoff, memory limits |
 
 ---
 
@@ -151,7 +158,7 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
 | **Real-time Statistics** | Per-metric cardinality, datapoints, and limit violation tracking |
 | **Prometheus Integration** | Native `/metrics` endpoint for monitoring the proxy itself |
 | **Consistent Sharding** | Distribute metrics across multiple backends via DNS discovery (OTLP and PRW) |
-| **Persistent Queue** | FastQueue durable persistence with automatic retry (OTLP and PRW) |
+| **Persistent Queue** | FastQueue with circuit breaker, exponential backoff, and automatic retry (OTLP and PRW) |
 | **Memory Optimized** | Bloom filter cardinality tracking uses 98% less memory (1.2MB vs 75MB per 1M series) |
 | **Performance Optimized** | String interning and concurrency limiting for high-throughput workloads |
 | **Production Ready** | Helm chart, multi-arch Docker images, graceful shutdown |
