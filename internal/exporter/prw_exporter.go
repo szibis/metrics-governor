@@ -77,6 +77,33 @@ func init() {
 	prometheus.MustRegister(prwRetryFailureTotal)
 	prometheus.MustRegister(prwRetryTotal)
 	prometheus.MustRegister(prwRetrySuccessTotal)
+
+	// Initialize all counters with 0 so they appear in /metrics immediately
+	prwExportRequestsTotal.Add(0)
+	prwExportTimeseriesTotal.Add(0)
+	prwExportSamplesTotal.Add(0)
+	prwRetryTotal.Add(0)
+	prwRetrySuccessTotal.Add(0)
+	// Initialize counter vectors with all known label values
+	prwExportBytesTotal.WithLabelValues("none").Add(0)
+	prwExportBytesTotal.WithLabelValues("snappy").Add(0)
+	prwExportBytesTotal.WithLabelValues("zstd").Add(0)
+	// Initialize error types
+	prwExportErrorsTotal.WithLabelValues(string(ErrorTypeNetwork)).Add(0)
+	prwExportErrorsTotal.WithLabelValues(string(ErrorTypeTimeout)).Add(0)
+	prwExportErrorsTotal.WithLabelValues(string(ErrorTypeServerError)).Add(0)
+	prwExportErrorsTotal.WithLabelValues(string(ErrorTypeClientError)).Add(0)
+	prwExportErrorsTotal.WithLabelValues(string(ErrorTypeAuth)).Add(0)
+	prwExportErrorsTotal.WithLabelValues(string(ErrorTypeRateLimit)).Add(0)
+	prwExportErrorsTotal.WithLabelValues(string(ErrorTypeUnknown)).Add(0)
+	// Initialize retry failure error types
+	prwRetryFailureTotal.WithLabelValues(string(ErrorTypeNetwork)).Add(0)
+	prwRetryFailureTotal.WithLabelValues(string(ErrorTypeTimeout)).Add(0)
+	prwRetryFailureTotal.WithLabelValues(string(ErrorTypeServerError)).Add(0)
+	prwRetryFailureTotal.WithLabelValues(string(ErrorTypeClientError)).Add(0)
+	prwRetryFailureTotal.WithLabelValues(string(ErrorTypeAuth)).Add(0)
+	prwRetryFailureTotal.WithLabelValues(string(ErrorTypeRateLimit)).Add(0)
+	prwRetryFailureTotal.WithLabelValues(string(ErrorTypeUnknown)).Add(0)
 }
 
 // PRWExporterConfig holds PRW exporter configuration.

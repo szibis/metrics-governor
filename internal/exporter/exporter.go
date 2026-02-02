@@ -76,6 +76,23 @@ func init() {
 	prometheus.MustRegister(otlpExportRequestsTotal)
 	prometheus.MustRegister(otlpExportErrorsTotal)
 	prometheus.MustRegister(otlpExportDatapointsTotal)
+
+	// Initialize all counters with 0 so they appear in /metrics immediately
+	otlpExportRequestsTotal.Add(0)
+	otlpExportDatapointsTotal.Add(0)
+	// Initialize counter vectors with all known label values
+	otlpExportBytesTotal.WithLabelValues("none").Add(0)
+	otlpExportBytesTotal.WithLabelValues("gzip").Add(0)
+	otlpExportBytesTotal.WithLabelValues("zstd").Add(0)
+	otlpExportBytesTotal.WithLabelValues("snappy").Add(0)
+	// Initialize error types
+	otlpExportErrorsTotal.WithLabelValues(string(ErrorTypeNetwork)).Add(0)
+	otlpExportErrorsTotal.WithLabelValues(string(ErrorTypeTimeout)).Add(0)
+	otlpExportErrorsTotal.WithLabelValues(string(ErrorTypeServerError)).Add(0)
+	otlpExportErrorsTotal.WithLabelValues(string(ErrorTypeClientError)).Add(0)
+	otlpExportErrorsTotal.WithLabelValues(string(ErrorTypeAuth)).Add(0)
+	otlpExportErrorsTotal.WithLabelValues(string(ErrorTypeRateLimit)).Add(0)
+	otlpExportErrorsTotal.WithLabelValues(string(ErrorTypeUnknown)).Add(0)
 }
 
 // Protocol represents the export protocol.

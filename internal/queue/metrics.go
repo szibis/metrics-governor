@@ -166,8 +166,32 @@ func init() {
 	fastqueueInmemoryBlocks.Set(0)
 	fastqueueDiskBytes.Set(0)
 	currentBackoffSeconds.Set(0)
+
+	// Initialize counters to 0
+	queuePushTotal.Add(0)
+	queueRetryTotal.Add(0)
+	queueRetrySuccessTotal.Add(0)
+	queueDiskFullTotal.Add(0)
+	fastqueueMetaSyncTotal.Add(0)
+	fastqueueChunkRotations.Add(0)
+	fastqueueInmemoryFlushes.Add(0)
+	circuitBreakerOpenTotal.Add(0)
+	circuitBreakerRejectedTotal.Add(0)
+
+	// Initialize counter vectors with known label values
+	queueDroppedTotal.WithLabelValues("full").Add(0)
+	queueDroppedTotal.WithLabelValues("disk_full").Add(0)
+	queueDroppedTotal.WithLabelValues("error").Add(0)
+	queueRetryFailureTotal.WithLabelValues("network").Add(0)
+	queueRetryFailureTotal.WithLabelValues("timeout").Add(0)
+	queueRetryFailureTotal.WithLabelValues("server_error").Add(0)
+	queueRetryFailureTotal.WithLabelValues("client_error").Add(0)
+	queueRetryFailureTotal.WithLabelValues("auth").Add(0)
+	queueRetryFailureTotal.WithLabelValues("rate_limit").Add(0)
+	queueRetryFailureTotal.WithLabelValues("unknown").Add(0)
+
 	// Initialize circuit breaker states
-	circuitBreakerState.WithLabelValues("closed").Set(0)
+	circuitBreakerState.WithLabelValues("closed").Set(1) // Start in closed state
 	circuitBreakerState.WithLabelValues("open").Set(0)
 	circuitBreakerState.WithLabelValues("half_open").Set(0)
 }
