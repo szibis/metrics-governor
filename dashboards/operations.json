@@ -1394,7 +1394,7 @@
           "unit": "bytes"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 88 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 88 },
       "id": 43,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1452,7 +1452,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 88 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 88 },
       "id": 44,
       "options": {
         "legend": { "calcs": ["sum", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1610,7 +1610,7 @@
           "unit": "bytes"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 83 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 88 },
       "id": 60,
       "options": {
         "legend": { "calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true },
