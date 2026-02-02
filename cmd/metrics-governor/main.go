@@ -244,10 +244,10 @@ func main() {
 			w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 			gz := gzip.NewWriter(w)
 			defer gz.Close()
-			io.Copy(gz, &buf)
+			_, _ = io.Copy(gz, &buf)
 		} else {
 			w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-			io.Copy(w, &buf)
+			_, _ = io.Copy(w, &buf)
 		}
 	})
 

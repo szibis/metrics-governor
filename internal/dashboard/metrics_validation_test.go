@@ -32,6 +32,11 @@ var knownMetrics = []string{
 	// OTLP stats (stats.go)
 	"metrics_governor_otlp_bytes_total",
 
+	// OTLP export metrics (exporter/exporter.go)
+	"metrics_governor_otlp_export_bytes_total",
+	"metrics_governor_otlp_export_requests_total",
+	"metrics_governor_otlp_export_errors_total",
+
 	// gRPC receiver metrics (receiver/grpc.go)
 	"metrics_governor_grpc_received_bytes_total",
 
