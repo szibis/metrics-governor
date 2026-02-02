@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -9,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/szibis/metrics-governor/internal/buffer"
 	"github.com/szibis/metrics-governor/internal/cardinality"
@@ -22,6 +26,19 @@ import (
 	"github.com/szibis/metrics-governor/internal/stats"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
+
+// metricsRecorder is a minimal http.ResponseWriter that writes to an io.Writer
+type metricsRecorder struct {
+	io.Writer
+}
+
+func (m *metricsRecorder) Header() http.Header {
+	return http.Header{}
+}
+
+func (m *metricsRecorder) WriteHeader(statusCode int) {
+	// Ignore status codes since we're just collecting metrics text
+}
 
 func main() {
 	cfg := config.ParseFlags()
@@ -201,16 +218,37 @@ func main() {
 	// Start stats HTTP server with combined metrics
 	statsMux := http.NewServeMux()
 	statsMux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		// Buffer all metrics first to support proper compression
+		var buf bytes.Buffer
+
+		// Create a response recorder to capture all metrics
+		recorder := &metricsRecorder{Writer: &buf}
+
 		// Write stats metrics
-		statsCollector.ServeHTTP(w, r)
+		statsCollector.ServeHTTP(recorder, r)
 		// Write limits metrics (if enabled)
 		if limitsEnforcer != nil {
-			limitsEnforcer.ServeHTTP(w, r)
+			limitsEnforcer.ServeHTTP(recorder, r)
 		}
 		// Write runtime metrics (goroutines, memory, GC, PSI)
-		runtimeStats.ServeHTTP(w, r)
+		runtimeStats.ServeHTTP(recorder, r)
 		// Write Prometheus registry metrics (queue, sharding, etc.)
-		promhttp.Handler().ServeHTTP(w, r)
+		promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
+			DisableCompression: true,
+		}).ServeHTTP(recorder, r)
+
+		// Check if client accepts gzip
+		acceptEncoding := r.Header.Get("Accept-Encoding")
+		if strings.Contains(acceptEncoding, "gzip") {
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+			gz := gzip.NewWriter(w)
+			defer gz.Close()
+			io.Copy(gz, &buf)
+		} else {
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+			io.Copy(w, &buf)
+		}
 	})
 
 	statsServer := &http.Server{
