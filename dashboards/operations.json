@@ -1571,11 +1571,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by (reason) (rate(metrics_governor_queue_dropped_total[5m]))",
+          "expr": "sum by (reason) (rate(metrics_governor_queue_dropped_total[5m])) or on() vector(0)",
           "legendFormat": "{{reason}}"
         },
         {
-          "expr": "sum(rate(metrics_governor_queue_disk_full_total[5m]))",
+          "expr": "sum(rate(metrics_governor_queue_disk_full_total[5m])) or vector(0)",
           "legendFormat": "Disk Full Events"
         }
       ]
@@ -1928,8 +1928,8 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum by (reason) (increase(metrics_governor_queue_dropped_total[5m]))",
-          "legendFormat": "{{reason}}"
+          "expr": "sum(increase(metrics_governor_queue_dropped_total[5m])) or vector(0)",
+          "legendFormat": "Drops"
         }
       ]
     },
