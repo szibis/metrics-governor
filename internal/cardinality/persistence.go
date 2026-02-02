@@ -181,8 +181,8 @@ func DefaultPersistenceConfig() PersistenceConfig {
 		SaveInterval:     30 * time.Second,
 		StateTTL:         time.Hour,
 		CleanupInterval:  5 * time.Minute,
-		MaxSize:          500 * 1024 * 1024,  // 500MB
-		MaxMemory:        256 * 1024 * 1024,  // 256MB
+		MaxSize:          500 * 1024 * 1024, // 500MB
+		MaxMemory:        256 * 1024 * 1024, // 256MB
 		Compression:      true,
 		CompressionLevel: 1, // Fast compression
 	}
@@ -202,24 +202,24 @@ type TrackerMeta struct {
 
 // PersistenceIndex holds index of all persisted trackers.
 type PersistenceIndex struct {
-	Version  int                      `json:"version"`
-	Trackers map[string]*TrackerMeta  `json:"trackers"`
+	Version  int                     `json:"version"`
+	Trackers map[string]*TrackerMeta `json:"trackers"`
 }
 
 // TrackerStore manages persistence for multiple trackers.
 type TrackerStore struct {
-	cfg           PersistenceConfig
-	bloomCfg      Config
-	index         *PersistenceIndex
-	trackers      map[string]*PersistentTracker
-	dirty         map[string]bool
-	diskUsage     int64
-	memoryUsage   int64
-	mu            sync.RWMutex
+	cfg         PersistenceConfig
+	bloomCfg    Config
+	index       *PersistenceIndex
+	trackers    map[string]*PersistentTracker
+	dirty       map[string]bool
+	diskUsage   int64
+	memoryUsage int64
+	mu          sync.RWMutex
 
-	ctx           context.Context
-	cancel        context.CancelFunc
-	wg            sync.WaitGroup
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
 }
 
 // NewTrackerStore creates a new tracker store.
@@ -456,11 +456,10 @@ func (s *TrackerStore) saveTracker(key string) error {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 
-	var w io.Writer = tmpFile
 	var gzWriter *gzip.Writer
 	crcWriter := crc32.NewIEEE()
 	multiWriter := io.MultiWriter(tmpFile, crcWriter)
-	w = multiWriter
+	var w io.Writer = multiWriter
 
 	if s.cfg.Compression {
 		gzWriter, err = gzip.NewWriterLevel(multiWriter, s.cfg.CompressionLevel)

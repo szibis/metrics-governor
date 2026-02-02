@@ -1520,8 +1520,8 @@ func DefaultConfig() *Config {
 		BloomPersistenceSaveInterval:     30 * time.Second,
 		BloomPersistenceStateTTL:         time.Hour,
 		BloomPersistenceCleanupInterval:  5 * time.Minute,
-		BloomPersistenceMaxSize:          524288000,  // 500MB
-		BloomPersistenceMaxMemory:        268435456,  // 256MB
+		BloomPersistenceMaxSize:          524288000, // 500MB
+		BloomPersistenceMaxMemory:        268435456, // 256MB
 		BloomPersistenceCompression:      true,
 		BloomPersistenceCompressionLevel: 1,
 	}
