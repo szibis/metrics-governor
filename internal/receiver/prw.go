@@ -39,6 +39,9 @@ type PRWServerConfig struct {
 type PRWConfig struct {
 	// Addr is the listen address.
 	Addr string
+	// Path is the URL path for receiving PRW data (default: /api/v1/write).
+	// If empty, both /api/v1/write and /write are registered.
+	Path string
 	// TLS configuration for secure connections.
 	TLS tlspkg.ServerConfig
 	// Auth configuration for authentication.
@@ -89,10 +92,14 @@ func NewPRWWithConfig(cfg PRWConfig, buf PRWBuffer) *PRWReceiver {
 	}
 
 	mux := http.NewServeMux()
-	// Standard PRW endpoint
-	mux.HandleFunc("/api/v1/write", r.handleWrite)
-	// VictoriaMetrics shorthand endpoint
-	mux.HandleFunc("/write", r.handleWrite)
+	if cfg.Path != "" {
+		// Use custom path if specified
+		mux.HandleFunc(cfg.Path, r.handleWrite)
+	} else {
+		// Default: register both standard and VM shorthand endpoints
+		mux.HandleFunc("/api/v1/write", r.handleWrite)
+		mux.HandleFunc("/write", r.handleWrite)
+	}
 
 	// Wrap with auth middleware if enabled
 	var handler http.Handler = mux
@@ -134,6 +141,8 @@ func NewPRWWithConfig(cfg PRWConfig, buf PRWBuffer) *PRWReceiver {
 
 // handleWrite handles incoming PRW write requests.
 func (r *PRWReceiver) handleWrite(w http.ResponseWriter, req *http.Request) {
+	IncrementReceiverRequests("prw")
+
 	if req.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -142,6 +151,7 @@ func (r *PRWReceiver) handleWrite(w http.ResponseWriter, req *http.Request) {
 	// Validate Content-Type
 	contentType := req.Header.Get("Content-Type")
 	if contentType != "" && contentType != "application/x-protobuf" {
+		IncrementReceiverError("decode")
 		http.Error(w, "Unsupported content type, expected application/x-protobuf", http.StatusUnsupportedMediaType)
 		return
 	}
@@ -154,6 +164,7 @@ func (r *PRWReceiver) handleWrite(w http.ResponseWriter, req *http.Request) {
 
 	body, err := io.ReadAll(bodyReader)
 	if err != nil {
+		IncrementReceiverError("read")
 		http.Error(w, "Failed to read body", http.StatusBadRequest)
 		return
 	}
@@ -166,6 +177,7 @@ func (r *PRWReceiver) handleWrite(w http.ResponseWriter, req *http.Request) {
 		if compressionType != compression.TypeNone {
 			body, err = compression.Decompress(body, compressionType)
 			if err != nil {
+				IncrementReceiverError("decompress")
 				logging.Error("failed to decompress PRW request body", logging.F(
 					"encoding", contentEncoding,
 					"error", err.Error(),
@@ -179,6 +191,7 @@ func (r *PRWReceiver) handleWrite(w http.ResponseWriter, req *http.Request) {
 	// Unmarshal the WriteRequest
 	var writeReq prw.WriteRequest
 	if err := writeReq.Unmarshal(body); err != nil {
+		IncrementReceiverError("decode")
 		logging.Error("failed to unmarshal PRW request", logging.F("error", err.Error()))
 		http.Error(w, "Failed to unmarshal protobuf", http.StatusBadRequest)
 		return

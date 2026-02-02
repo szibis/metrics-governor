@@ -48,6 +48,14 @@ services:
       - "-export-concurrency=64"      # Higher concurrency for perf testing
       - "-string-interning=true"
       - "-intern-max-value-length=64"
+      # Queue resilience (optimized for high load)
+      - "-queue-backoff-enabled=true"
+      - "-queue-backoff-multiplier=1.5"  # Less aggressive backoff
+      - "-queue-circuit-breaker-enabled=true"
+      - "-queue-circuit-breaker-threshold=20"  # Higher threshold for perf
+      - "-queue-circuit-breaker-reset-timeout=15s"
+      # Memory limit (more headroom for perf testing)
+      - "-memory-limit-ratio=0.85"
     deploy:
       resources:
         limits:

@@ -43,6 +43,14 @@ services:
       - "-buffer-size=1000"           # Smaller buffer
       # Performance tuning (defaults for development)
       - "-string-interning=true"
+      # Queue resilience (conservative for light testing)
+      - "-queue-backoff-enabled=true"
+      - "-queue-backoff-multiplier=2.0"
+      - "-queue-circuit-breaker-enabled=true"
+      - "-queue-circuit-breaker-threshold=10"
+      - "-queue-circuit-breaker-reset-timeout=30s"
+      # Memory limit
+      - "-memory-limit-ratio=0.9"
 
   victoriametrics:
     deploy:

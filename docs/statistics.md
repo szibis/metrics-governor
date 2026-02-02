@@ -2,6 +2,80 @@
 
 > **Dual Pipeline Support**: Statistics are collected separately for OTLP and PRW pipelines. OTLP metrics use the `metrics_governor_*` prefix, while PRW metrics use `metrics_governor_prw_*` prefix.
 
+## Metrics Collection Flow
+
+```mermaid
+flowchart TB
+    subgraph Input["Incoming Metrics"]
+        OTLP[OTLP Metrics]
+        PRW[PRW Metrics]
+    end
+
+    subgraph Stats["Stats Collector"]
+        Global[Global Stats<br/>datapoints_total<br/>metrics_total]
+        PerMetric[Per-Metric Stats<br/>metric_datapoints_total<br/>metric_cardinality]
+        PerLabel[Per-Label Stats<br/>label_datapoints_total<br/>label_cardinality]
+        Cardinality[Cardinality Tracker<br/>Bloom Filter / Exact]
+    end
+
+    subgraph Limits["Limits Stats"]
+        RuleStats[Rule Stats<br/>current_datapoints<br/>current_cardinality]
+        Violations[Violation Counters<br/>exceeded_total<br/>dropped_total]
+    end
+
+    subgraph Queue["Queue Stats"]
+        QueueSize[Queue Metrics<br/>size, bytes<br/>utilization]
+        Resilience[Resilience Metrics<br/>circuit_breaker<br/>backoff]
+    end
+
+    subgraph Export["Prometheus Export"]
+        Endpoint[":9090/metrics"]
+    end
+
+    OTLP --> Global
+    OTLP --> PerMetric
+    OTLP --> PerLabel
+    PRW --> Global
+
+    PerMetric --> Cardinality
+    PerLabel --> Cardinality
+
+    Global --> Endpoint
+    PerMetric --> Endpoint
+    PerLabel --> Endpoint
+    Cardinality --> Endpoint
+    RuleStats --> Endpoint
+    Violations --> Endpoint
+    QueueSize --> Endpoint
+    Resilience --> Endpoint
+
+    style Endpoint fill:#9f9,stroke:#333
+```
+
+## Cardinality Tracking Modes
+
+```mermaid
+flowchart LR
+    subgraph Exact["Exact Mode"]
+        Map["map[string]struct{}<br/>100% accurate<br/>High memory"]
+    end
+
+    subgraph Bloom["Bloom Filter Mode (Default)"]
+        BF["Bloom Filter<br/>~1% false positive<br/>98% less memory"]
+    end
+
+    subgraph Memory["Memory Usage @ 1M Series"]
+        ExactMem["75 MB"]
+        BloomMem["1.2 MB"]
+    end
+
+    Map --> ExactMem
+    BF --> BloomMem
+
+    style Bloom fill:#9cf,stroke:#333
+    style BloomMem fill:#9f9,stroke:#333
+```
+
 ## Prometheus Metrics Endpoint
 
 Stats are exposed on `:9090/metrics` (configurable via `-stats-addr`):

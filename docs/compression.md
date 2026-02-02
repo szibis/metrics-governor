@@ -4,6 +4,48 @@ metrics-governor supports compression for HTTP exporters and automatic decompres
 
 > **Dual Pipeline Support**: Compression works for both OTLP and PRW pipelines. OTLP supports multiple algorithms (gzip, zstd, snappy, etc.), while PRW uses snappy (required) or zstd (PRW 2.0 optional).
 
+## Compression Pipeline
+
+```mermaid
+flowchart LR
+    subgraph Receiver["HTTP Receiver"]
+        RX[Receive<br/>Request]
+        Detect{Content-<br/>Encoding?}
+        Decomp[Decompress]
+        Parse[Parse<br/>Protobuf]
+    end
+
+    subgraph Processing["Processing"]
+        Buffer[Buffer &<br/>Batch]
+        Limits[Apply<br/>Limits]
+    end
+
+    subgraph Exporter["HTTP Exporter"]
+        Marshal[Marshal<br/>Protobuf]
+        Compress[Compress]
+        Send[Send with<br/>Content-Encoding]
+    end
+
+    RX --> Detect
+    Detect -->|gzip/zstd/snappy| Decomp --> Parse
+    Detect -->|none| Parse
+    Parse --> Buffer --> Limits
+    Limits --> Marshal --> Compress --> Send
+
+    style Decomp fill:#9cf,stroke:#333
+    style Compress fill:#9cf,stroke:#333
+```
+
+## Compression Ratio Comparison
+
+```mermaid
+xychart-beta
+    title "Compression Performance (lower is better)"
+    x-axis [lz4, snappy, gzip-1, gzip-6, gzip-9, zstd-1, zstd-6, zstd-11]
+    y-axis "Relative Size %" 0 --> 100
+    bar [85, 75, 45, 35, 30, 40, 28, 22]
+```
+
 ## Supported Algorithms
 
 | Algorithm | Content-Encoding | OTLP | PRW | Description |

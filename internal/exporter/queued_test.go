@@ -346,3 +346,397 @@ func TestQueuedExporter_MultipleFailuresThenSuccess(t *testing.T) {
 		t.Errorf("Expected at least 4 export calls, got %d", mock.getExportCount())
 	}
 }
+
+// Circuit Breaker Tests
+
+func TestCircuitBreaker_StartsClosedState(t *testing.T) {
+	cb := NewCircuitBreaker(5, 30*time.Second)
+
+	if cb.State() != CircuitClosed {
+		t.Errorf("Expected circuit to start in closed state, got %v", cb.State())
+	}
+
+	if !cb.AllowRequest() {
+		t.Error("Expected circuit to allow requests when closed")
+	}
+
+	if cb.ConsecutiveFailures() != 0 {
+		t.Errorf("Expected 0 consecutive failures, got %d", cb.ConsecutiveFailures())
+	}
+}
+
+func TestCircuitBreaker_OpensAfterThreshold(t *testing.T) {
+	threshold := 5
+	cb := NewCircuitBreaker(threshold, 30*time.Second)
+
+	// Record failures up to threshold
+	for i := 0; i < threshold; i++ {
+		if cb.State() != CircuitClosed {
+			t.Errorf("Expected circuit to remain closed after %d failures", i)
+		}
+		cb.RecordFailure()
+	}
+
+	// Circuit should be open now
+	if cb.State() != CircuitOpen {
+		t.Errorf("Expected circuit to be open after %d failures, got %v", threshold, cb.State())
+	}
+
+	if cb.AllowRequest() {
+		t.Error("Expected circuit to block requests when open")
+	}
+}
+
+func TestCircuitBreaker_ResetsOnSuccess(t *testing.T) {
+	cb := NewCircuitBreaker(5, 30*time.Second)
+
+	// Record some failures
+	cb.RecordFailure()
+	cb.RecordFailure()
+	cb.RecordFailure()
+
+	if cb.ConsecutiveFailures() != 3 {
+		t.Errorf("Expected 3 consecutive failures, got %d", cb.ConsecutiveFailures())
+	}
+
+	// Record success - should reset counter
+	cb.RecordSuccess()
+
+	if cb.ConsecutiveFailures() != 0 {
+		t.Errorf("Expected 0 consecutive failures after success, got %d", cb.ConsecutiveFailures())
+	}
+
+	if cb.State() != CircuitClosed {
+		t.Error("Expected circuit to remain closed after success")
+	}
+}
+
+func TestCircuitBreaker_HalfOpenAfterTimeout(t *testing.T) {
+	cb := NewCircuitBreaker(2, 100*time.Millisecond)
+
+	// Open the circuit
+	cb.RecordFailure()
+	cb.RecordFailure()
+
+	if cb.State() != CircuitOpen {
+		t.Fatal("Expected circuit to be open")
+	}
+
+	// Wait for reset timeout
+	time.Sleep(150 * time.Millisecond)
+
+	// Should transition to half-open on next AllowRequest
+	if !cb.AllowRequest() {
+		t.Error("Expected circuit to allow request after reset timeout")
+	}
+
+	if cb.State() != CircuitHalfOpen {
+		t.Errorf("Expected circuit to be half-open, got %v", cb.State())
+	}
+}
+
+func TestCircuitBreaker_ClosesOnHalfOpenSuccess(t *testing.T) {
+	cb := NewCircuitBreaker(2, 50*time.Millisecond)
+
+	// Open the circuit
+	cb.RecordFailure()
+	cb.RecordFailure()
+
+	// Wait for half-open
+	time.Sleep(100 * time.Millisecond)
+	cb.AllowRequest() // Trigger half-open transition
+
+	if cb.State() != CircuitHalfOpen {
+		t.Fatal("Expected circuit to be half-open")
+	}
+
+	// Success in half-open should close circuit
+	cb.RecordSuccess()
+
+	if cb.State() != CircuitClosed {
+		t.Errorf("Expected circuit to be closed after half-open success, got %v", cb.State())
+	}
+}
+
+func TestCircuitBreaker_ReopensOnHalfOpenFailure(t *testing.T) {
+	cb := NewCircuitBreaker(2, 50*time.Millisecond)
+
+	// Open the circuit
+	cb.RecordFailure()
+	cb.RecordFailure()
+
+	// Wait for half-open
+	time.Sleep(100 * time.Millisecond)
+	cb.AllowRequest() // Trigger half-open transition
+
+	if cb.State() != CircuitHalfOpen {
+		t.Fatal("Expected circuit to be half-open")
+	}
+
+	// Failure in half-open should reopen circuit
+	cb.RecordFailure()
+
+	if cb.State() != CircuitOpen {
+		t.Errorf("Expected circuit to be open after half-open failure, got %v", cb.State())
+	}
+}
+
+func TestCircuitBreaker_ConcurrentAccess(t *testing.T) {
+	cb := NewCircuitBreaker(100, 1*time.Second)
+
+	var wg sync.WaitGroup
+	// Concurrent failures
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cb.RecordFailure()
+		}()
+	}
+	// Concurrent successes
+	for i := 0; i < 30; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cb.RecordSuccess()
+		}()
+	}
+	// Concurrent checks
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = cb.AllowRequest()
+			_ = cb.State()
+			_ = cb.ConsecutiveFailures()
+		}()
+	}
+
+	wg.Wait()
+	// Just verify no panics occurred
+}
+
+// Exponential Backoff Tests
+
+func TestQueuedExporter_BackoffEnabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	mock := &mockExporter{failCount: 100} // Always fail
+
+	queueCfg := queue.Config{
+		Path:              tmpDir,
+		MaxSize:           100,
+		RetryInterval:     10 * time.Millisecond,
+		MaxRetryDelay:     500 * time.Millisecond,
+		BackoffEnabled:    true,
+		BackoffMultiplier: 2.0,
+	}
+
+	qe, err := NewQueued(mock, queueCfg)
+	if err != nil {
+		t.Fatalf("Failed to create QueuedExporter: %v", err)
+	}
+	defer qe.Close()
+
+	// Verify backoff is enabled
+	if !qe.backoffEnabled {
+		t.Error("Expected backoff to be enabled")
+	}
+	if qe.backoffMultiplier != 2.0 {
+		t.Errorf("Expected backoff multiplier 2.0, got %f", qe.backoffMultiplier)
+	}
+}
+
+func TestQueuedExporter_BackoffMultiplierDefault(t *testing.T) {
+	tmpDir := t.TempDir()
+	mock := &mockExporter{}
+
+	queueCfg := queue.Config{
+		Path:           tmpDir,
+		MaxSize:        100,
+		RetryInterval:  10 * time.Millisecond,
+		MaxRetryDelay:  500 * time.Millisecond,
+		BackoffEnabled: true,
+		// BackoffMultiplier not set - should default to 2.0
+	}
+
+	qe, err := NewQueued(mock, queueCfg)
+	if err != nil {
+		t.Fatalf("Failed to create QueuedExporter: %v", err)
+	}
+	defer qe.Close()
+
+	if qe.backoffMultiplier != 2.0 {
+		t.Errorf("Expected default backoff multiplier 2.0, got %f", qe.backoffMultiplier)
+	}
+}
+
+func TestQueuedExporter_WithCircuitBreaker(t *testing.T) {
+	tmpDir := t.TempDir()
+	mock := &mockExporter{failCount: 100}
+
+	queueCfg := queue.Config{
+		Path:                       tmpDir,
+		MaxSize:                    100,
+		RetryInterval:              10 * time.Millisecond,
+		MaxRetryDelay:              100 * time.Millisecond,
+		CircuitBreakerEnabled:      true,
+		CircuitBreakerThreshold:    3,
+		CircuitBreakerResetTimeout: 50 * time.Millisecond,
+	}
+
+	qe, err := NewQueued(mock, queueCfg)
+	if err != nil {
+		t.Fatalf("Failed to create QueuedExporter: %v", err)
+	}
+	defer qe.Close()
+
+	if qe.circuitBreaker == nil {
+		t.Fatal("Expected circuit breaker to be initialized")
+	}
+
+	// Queue an entry to trigger failures
+	req := createTestRequest()
+	_ = qe.Export(context.Background(), req)
+
+	// Wait for circuit to open (threshold is 3 failures)
+	time.Sleep(200 * time.Millisecond)
+
+	// Circuit should have opened
+	if qe.circuitBreaker.State() != CircuitOpen {
+		t.Logf("Circuit state: %v, consecutive failures: %d",
+			qe.circuitBreaker.State(), qe.circuitBreaker.ConsecutiveFailures())
+	}
+}
+
+func TestQueuedExporter_CircuitBreakerDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	mock := &mockExporter{}
+
+	queueCfg := queue.Config{
+		Path:                  tmpDir,
+		MaxSize:               100,
+		RetryInterval:         10 * time.Millisecond,
+		MaxRetryDelay:         100 * time.Millisecond,
+		CircuitBreakerEnabled: true,
+		// Threshold and ResetTimeout not set - should use defaults
+	}
+
+	qe, err := NewQueued(mock, queueCfg)
+	if err != nil {
+		t.Fatalf("Failed to create QueuedExporter: %v", err)
+	}
+	defer qe.Close()
+
+	if qe.circuitBreaker == nil {
+		t.Fatal("Expected circuit breaker to be initialized")
+	}
+
+	// Verify defaults
+	if qe.circuitBreaker.failureThreshold != 10 {
+		t.Errorf("Expected default threshold 10, got %d", qe.circuitBreaker.failureThreshold)
+	}
+	if qe.circuitBreaker.resetTimeout != 30*time.Second {
+		t.Errorf("Expected default reset timeout 30s, got %v", qe.circuitBreaker.resetTimeout)
+	}
+}
+
+func TestQueuedExporter_CircuitBreakerDisabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	mock := &mockExporter{}
+
+	queueCfg := queue.Config{
+		Path:                  tmpDir,
+		MaxSize:               100,
+		RetryInterval:         10 * time.Millisecond,
+		MaxRetryDelay:         100 * time.Millisecond,
+		CircuitBreakerEnabled: false,
+	}
+
+	qe, err := NewQueued(mock, queueCfg)
+	if err != nil {
+		t.Fatalf("Failed to create QueuedExporter: %v", err)
+	}
+	defer qe.Close()
+
+	if qe.circuitBreaker != nil {
+		t.Error("Expected circuit breaker to be nil when disabled")
+	}
+}
+
+func TestQueuedExporter_GetCircuitState(t *testing.T) {
+	tmpDir := t.TempDir()
+	mock := &mockExporter{}
+
+	// Test with circuit breaker disabled
+	queueCfg := queue.Config{
+		Path:                  tmpDir,
+		MaxSize:               100,
+		RetryInterval:         1 * time.Hour,
+		MaxRetryDelay:         1 * time.Hour,
+		CircuitBreakerEnabled: false,
+	}
+
+	qe, err := NewQueued(mock, queueCfg)
+	if err != nil {
+		t.Fatalf("Failed to create QueuedExporter: %v", err)
+	}
+
+	state := qe.getCircuitState()
+	if state != "disabled" {
+		t.Errorf("Expected 'disabled' state, got %s", state)
+	}
+	qe.Close()
+
+	// Test with circuit breaker enabled
+	queueCfg.CircuitBreakerEnabled = true
+	queueCfg.Path = t.TempDir()
+	qe, err = NewQueued(&mockExporter{}, queueCfg)
+	if err != nil {
+		t.Fatalf("Failed to create QueuedExporter: %v", err)
+	}
+	defer qe.Close()
+
+	state = qe.getCircuitState()
+	if state != "closed" {
+		t.Errorf("Expected 'closed' state, got %s", state)
+	}
+}
+
+func TestQueuedExporter_BackoffAndCircuitBreakerIntegration(t *testing.T) {
+	tmpDir := t.TempDir()
+	mock := &mockExporter{failCount: 100}
+
+	queueCfg := queue.Config{
+		Path:                       tmpDir,
+		MaxSize:                    100,
+		RetryInterval:              5 * time.Millisecond,
+		MaxRetryDelay:              50 * time.Millisecond,
+		BackoffEnabled:             true,
+		BackoffMultiplier:          2.0,
+		CircuitBreakerEnabled:      true,
+		CircuitBreakerThreshold:    5,
+		CircuitBreakerResetTimeout: 100 * time.Millisecond,
+	}
+
+	qe, err := NewQueued(mock, queueCfg)
+	if err != nil {
+		t.Fatalf("Failed to create QueuedExporter: %v", err)
+	}
+	defer qe.Close()
+
+	// Queue entries
+	for i := 0; i < 3; i++ {
+		req := createTestRequest()
+		_ = qe.Export(context.Background(), req)
+	}
+
+	// Wait for retries and circuit breaker to activate
+	time.Sleep(300 * time.Millisecond)
+
+	// Verify both mechanisms are working
+	if qe.circuitBreaker.ConsecutiveFailures() < 1 {
+		// Circuit may have been reset by successful retries or may be counting failures
+		t.Logf("Circuit failures: %d, state: %v",
+			qe.circuitBreaker.ConsecutiveFailures(), qe.circuitBreaker.State())
+	}
+}

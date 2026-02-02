@@ -41,6 +41,8 @@ type HTTPServerConfig struct {
 type HTTPConfig struct {
 	// Addr is the listen address.
 	Addr string
+	// Path is the URL path for receiving metrics (default: /v1/metrics).
+	Path string
 	// TLS configuration for secure connections.
 	TLS tlspkg.ServerConfig
 	// Auth configuration for authentication.
@@ -81,8 +83,14 @@ func NewHTTPWithConfig(cfg HTTPConfig, buf *buffer.MetricsBuffer) *HTTPReceiver 
 		}
 	}
 
+	// Use default path if not specified
+	path := cfg.Path
+	if path == "" {
+		path = "/v1/metrics"
+	}
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/metrics", r.handleMetrics)
+	mux.HandleFunc(path, r.handleMetrics)
 
 	// Wrap with auth middleware if enabled
 	var handler http.Handler = mux
@@ -124,6 +132,8 @@ func NewHTTPWithConfig(cfg HTTPConfig, buf *buffer.MetricsBuffer) *HTTPReceiver 
 
 // handleMetrics handles incoming OTLP HTTP metrics requests.
 func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
+	IncrementReceiverRequests("http")
+
 	if req.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -137,6 +147,7 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 
 	body, err := io.ReadAll(bodyReader)
 	if err != nil {
+		IncrementReceiverError("read")
 		http.Error(w, "Failed to read body", http.StatusBadRequest)
 		return
 	}
@@ -149,6 +160,7 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 		if compressionType != compression.TypeNone {
 			body, err = compression.Decompress(body, compressionType)
 			if err != nil {
+				IncrementReceiverError("decompress")
 				logging.Error("failed to decompress request body", logging.F("encoding", contentEncoding, "error", err.Error()))
 				http.Error(w, "Failed to decompress body", http.StatusBadRequest)
 				return
@@ -162,11 +174,13 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 	switch contentType {
 	case "application/x-protobuf":
 		if err := proto.Unmarshal(body, &exportReq); err != nil {
+			IncrementReceiverError("decode")
 			http.Error(w, "Failed to unmarshal protobuf", http.StatusBadRequest)
 			return
 		}
 	default:
 		// TODO: add JSON support
+		IncrementReceiverError("decode")
 		http.Error(w, "Unsupported content type", http.StatusUnsupportedMediaType)
 		return
 	}

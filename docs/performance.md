@@ -12,6 +12,7 @@ metrics-governor includes several high-performance optimizations for production 
 | String Interning | Yes | Yes | -76% allocations | -12% CPU |
 | Concurrency Limiting | Yes | Yes | Bounded goroutines | Controlled parallelism |
 | Queue I/O Optimization | Yes | Yes | -40-60% disk (compression) | 10x throughput |
+| Memory Limit Auto-Detection | Yes | Yes | Prevents OOM kills | More predictable GC |
 
 ---
 
@@ -190,6 +191,63 @@ metrics-governor -queue-stale-flush=5s
 
 ---
 
+## Memory Limit Auto-Detection
+
+Automatically detects container memory limits and sets GOMEMLIMIT for optimal GC behavior:
+
+- **Container-aware** - Reads cgroups v1/v2 limits (Docker, Kubernetes)
+- **OOM prevention** - GC becomes more aggressive as memory approaches limit
+- **Configurable headroom** - Default 90% leaves 10% for non-heap memory
+
+**Applies to:** All pipelines (global setting)
+
+### How It Works
+
+```
+Container Memory: 4GB
+├── GOMEMLIMIT: 3.6GB (90%)  ← Go GC target
+│   ├── Heap: variable
+│   └── Stacks: variable
+└── Headroom: 400MB (10%)    ← OS buffers, cgo, page cache
+```
+
+When heap approaches GOMEMLIMIT, Go's GC runs more frequently to avoid exceeding the limit.
+
+### Configuration
+
+```bash
+# Enable memory limit auto-detection (default)
+metrics-governor -memory-limit-ratio=0.9
+
+# Use 85% for larger containers (more headroom)
+metrics-governor -memory-limit-ratio=0.85
+
+# Disable auto-detection
+metrics-governor -memory-limit-ratio=0
+```
+
+### YAML Configuration
+
+```yaml
+memory:
+  limit_ratio: 0.9    # Ratio of container memory for GOMEMLIMIT
+```
+
+### Recommended Settings
+
+| Container Size | Ratio | GOMEMLIMIT | Headroom |
+|----------------|-------|------------|----------|
+| < 2GB | 0.90 | 1.8GB | 200MB |
+| 2-4GB | 0.90 | 3.6GB | 400MB |
+| 4-8GB | 0.85 | 6.8GB | 1.2GB |
+| > 8GB | 0.85 | 85% | 15% |
+
+> **Note**: For memory-constrained environments, consider reducing buffer sizes (`-buffer-size`, `-queue-inmemory-blocks`) in addition to setting memory limits.
+
+See [resilience.md](./resilience.md) for detailed memory limit documentation.
+
+---
+
 ## VictoriaMetrics Inspiration
 
 Many of these optimizations are inspired by techniques described in [VictoriaMetrics articles](https://valyala.medium.com/), including:
@@ -197,3 +255,4 @@ Many of these optimizations are inspired by techniques described in [VictoriaMet
 - String interning for label deduplication
 - Bloom filters for cardinality tracking
 - Efficient queue design with metadata-only persistence
+- Memory-aware resource management

@@ -204,6 +204,7 @@ func NewGRPCWithConfig(cfg GRPCConfig, buf *buffer.MetricsBuffer) *GRPCReceiver 
 
 // Export implements the OTLP MetricsService Export method.
 func (r *GRPCReceiver) Export(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) (*colmetricspb.ExportMetricsServiceResponse, error) {
+	IncrementReceiverRequests("grpc")
 	r.buffer.Add(req.ResourceMetrics)
 	return &colmetricspb.ExportMetricsServiceResponse{}, nil
 }

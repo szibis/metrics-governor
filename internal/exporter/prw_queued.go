@@ -7,6 +7,7 @@ import (
 
 	"github.com/szibis/metrics-governor/internal/logging"
 	"github.com/szibis/metrics-governor/internal/prw"
+	"github.com/szibis/metrics-governor/internal/queue"
 )
 
 // PRWQueueConfig holds configuration for the PRW queued exporter.
@@ -21,16 +22,23 @@ type PRWQueueConfig struct {
 	RetryInterval time.Duration
 	// MaxRetryDelay is the maximum retry backoff delay.
 	MaxRetryDelay time.Duration
+	// Circuit breaker settings
+	CircuitBreakerEnabled   bool          // Enable circuit breaker (default: true)
+	CircuitFailureThreshold int           // Failures before opening (default: 10)
+	CircuitResetTimeout     time.Duration // Time to wait before half-open (default: 30s)
 }
 
 // DefaultPRWQueueConfig returns default queue configuration.
 func DefaultPRWQueueConfig() PRWQueueConfig {
 	return PRWQueueConfig{
-		Path:          "./prw-queue",
-		MaxSize:       10000,
-		MaxBytes:      1073741824, // 1GB
-		RetryInterval: 5 * time.Second,
-		MaxRetryDelay: 5 * time.Minute,
+		Path:                    "./prw-queue",
+		MaxSize:                 10000,
+		MaxBytes:                1073741824, // 1GB
+		RetryInterval:           5 * time.Second,
+		MaxRetryDelay:           5 * time.Minute,
+		CircuitBreakerEnabled:   true,
+		CircuitFailureThreshold: 10,
+		CircuitResetTimeout:     30 * time.Second,
 	}
 }
 
@@ -48,14 +56,15 @@ type prwExporterInterface interface {
 
 // PRWQueuedExporter wraps a PRWExporter with an in-memory retry queue.
 type PRWQueuedExporter struct {
-	exporter  prwExporterInterface
-	queue     []*prwQueueEntry
-	maxSize   int
-	baseDelay time.Duration
-	maxDelay  time.Duration
-	retryStop chan struct{}
-	retryDone chan struct{}
-	mu        sync.Mutex
+	exporter       prwExporterInterface
+	queue          []*prwQueueEntry
+	maxSize        int
+	baseDelay      time.Duration
+	maxDelay       time.Duration
+	circuitBreaker *CircuitBreaker
+	retryStop      chan struct{}
+	retryDone      chan struct{}
+	mu             sync.Mutex
 }
 
 // NewPRWQueued creates a new queued PRW exporter.
@@ -83,6 +92,23 @@ func NewPRWQueued(exporter prwExporterInterface, cfg PRWQueueConfig) (*PRWQueued
 		maxDelay:  maxDelay,
 		retryStop: make(chan struct{}),
 		retryDone: make(chan struct{}),
+	}
+
+	// Initialize circuit breaker if enabled
+	if cfg.CircuitBreakerEnabled {
+		threshold := cfg.CircuitFailureThreshold
+		if threshold == 0 {
+			threshold = 10
+		}
+		resetTimeout := cfg.CircuitResetTimeout
+		if resetTimeout == 0 {
+			resetTimeout = 30 * time.Second
+		}
+		qe.circuitBreaker = NewCircuitBreaker(threshold, resetTimeout)
+		logging.Info("PRW circuit breaker initialized", logging.F(
+			"failure_threshold", threshold,
+			"reset_timeout", resetTimeout.String(),
+		))
 	}
 
 	// Start retry loop
@@ -151,12 +177,37 @@ func (qe *PRWQueuedExporter) retryLoop() {
 			qe.drainQueue()
 			return
 		case <-timer.C:
+			// Check circuit breaker before processing
+			if qe.circuitBreaker != nil && !qe.circuitBreaker.AllowRequest() {
+				// PRW circuit breaker is open, skip retry
+				queue.IncrementCircuitRejected()
+				timer.Reset(delay)
+				continue
+			}
+
 			if qe.processQueue() {
 				// Success, reset delay
-				delay = qe.baseDelay
+				if delay != qe.baseDelay {
+					delay = qe.baseDelay
+					logging.Info("PRW backoff reset to base delay", logging.F(
+						"delay", delay.String(),
+					))
+				}
 			} else {
-				// Failure, increase delay
-				delay = minDuration(delay*2, qe.maxDelay)
+				// Failure, increase delay (only if queue has items)
+				qe.mu.Lock()
+				hasItems := len(qe.queue) > 0
+				qe.mu.Unlock()
+				if hasItems {
+					newDelay := minDuration(delay*2, qe.maxDelay)
+					if newDelay != delay {
+						delay = newDelay
+						logging.Info("PRW exponential backoff increased", logging.F(
+							"delay", delay.String(),
+							"max_delay", qe.maxDelay.String(),
+						))
+					}
+				}
 			}
 			timer.Reset(delay)
 		}
@@ -174,10 +225,21 @@ func (qe *PRWQueuedExporter) processQueue() bool {
 	entry := qe.queue[0]
 	qe.mu.Unlock()
 
+	prwRetryTotal.Inc()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := qe.exporter.Export(ctx, entry.req); err != nil {
+		// Record failure with circuit breaker
+		if qe.circuitBreaker != nil {
+			qe.circuitBreaker.RecordFailure()
+		}
+
+		// Classify error for metrics
+		errType := classifyPRWError(err)
+		prwRetryFailureTotal.WithLabelValues(string(errType)).Inc()
+
 		if !IsPRWRetryableError(err) {
 			// Non-retryable error, remove from queue
 			qe.mu.Lock()
@@ -187,6 +249,7 @@ func (qe *PRWQueuedExporter) processQueue() bool {
 			qe.mu.Unlock()
 			logging.Error("PRW retry failed with non-retryable error, removing from queue", logging.F(
 				"error", err.Error(),
+				"error_type", string(errType),
 				"timeseries", len(entry.req.Timeseries),
 			))
 			return false
@@ -197,11 +260,26 @@ func (qe *PRWQueuedExporter) processQueue() bool {
 		if len(qe.queue) > 0 {
 			qe.queue[0].retries++
 		}
+		queueSize := len(qe.queue)
 		qe.mu.Unlock()
+
+		logging.Info("PRW retry failed", logging.F(
+			"error", err.Error(),
+			"error_type", string(errType),
+			"timeseries", len(entry.req.Timeseries),
+			"queue_size", queueSize,
+			"circuit_state", qe.getCircuitState(),
+		))
 		return false
 	}
 
-	// Success, remove from queue
+	// Success - record with circuit breaker and metrics
+	if qe.circuitBreaker != nil {
+		qe.circuitBreaker.RecordSuccess()
+	}
+	prwRetrySuccessTotal.Inc()
+
+	// Remove from queue
 	qe.mu.Lock()
 	if len(qe.queue) > 0 {
 		qe.queue = qe.queue[1:]
@@ -213,6 +291,61 @@ func (qe *PRWQueuedExporter) processQueue() bool {
 		"retries", entry.retries,
 	))
 	return true
+}
+
+// classifyPRWError categorizes a PRW error for metrics.
+func classifyPRWError(err error) ErrorType {
+	if err == nil {
+		return ErrorTypeUnknown
+	}
+
+	// Check for PRW-specific error types
+	if clientErr, ok := err.(*PRWClientError); ok {
+		return classifyHTTPStatusCode(clientErr.StatusCode)
+	}
+	if serverErr, ok := err.(*PRWServerError); ok {
+		return classifyHTTPStatusCode(serverErr.StatusCode)
+	}
+
+	// Fall back to generic error classification
+	errStr := err.Error()
+
+	// Check for timeout patterns
+	if containsStr(errStr, "timeout") ||
+		containsStr(errStr, "deadline exceeded") ||
+		containsStr(errStr, "context deadline") {
+		return ErrorTypeTimeout
+	}
+
+	// Check for network patterns
+	if containsStr(errStr, "connection refused") ||
+		containsStr(errStr, "no such host") ||
+		containsStr(errStr, "network is unreachable") ||
+		containsStr(errStr, "connection reset") ||
+		containsStr(errStr, "broken pipe") ||
+		containsStr(errStr, "EOF") ||
+		containsStr(errStr, "i/o timeout") {
+		return ErrorTypeNetwork
+	}
+
+	return ErrorTypeUnknown
+}
+
+// getCircuitState returns the current circuit breaker state as a string.
+func (qe *PRWQueuedExporter) getCircuitState() string {
+	if qe.circuitBreaker == nil {
+		return "disabled"
+	}
+	switch qe.circuitBreaker.State() {
+	case CircuitClosed:
+		return "closed"
+	case CircuitOpen:
+		return "open"
+	case CircuitHalfOpen:
+		return "half_open"
+	default:
+		return "unknown"
+	}
 }
 
 // drainQueue attempts to export all remaining queued items.

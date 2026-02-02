@@ -1,6 +1,10 @@
 package queue
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 var (
 	queueSize = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -63,6 +67,11 @@ var (
 		Help: "Total number of successful retries",
 	})
 
+	queueRetryFailureTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "metrics_governor_queue_retry_failure_total",
+		Help: "Total number of failed retries by error type",
+	}, []string{"error_type"})
+
 	queueDiskFullTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "metrics_governor_queue_disk_full_total",
 		Help: "Total number of disk full events",
@@ -93,6 +102,28 @@ var (
 		Name: "metrics_governor_fastqueue_inmemory_flushes",
 		Help: "Total number of in-memory channel flushes to disk",
 	})
+
+	// Circuit breaker metrics
+	circuitBreakerState = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "metrics_governor_circuit_breaker_state",
+		Help: "Current circuit breaker state (1 = active state): closed, open, half_open",
+	}, []string{"state"})
+
+	circuitBreakerOpenTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_circuit_breaker_open_total",
+		Help: "Total number of times the circuit breaker opened",
+	})
+
+	circuitBreakerRejectedTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_circuit_breaker_rejected_total",
+		Help: "Total number of requests rejected by open circuit breaker",
+	})
+
+	// Backoff metrics
+	currentBackoffSeconds = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_queue_backoff_seconds",
+		Help: "Current exponential backoff delay in seconds",
+	})
 )
 
 func init() {
@@ -108,6 +139,7 @@ func init() {
 	prometheus.MustRegister(queueDroppedTotal)
 	prometheus.MustRegister(queueRetryTotal)
 	prometheus.MustRegister(queueRetrySuccessTotal)
+	prometheus.MustRegister(queueRetryFailureTotal)
 	prometheus.MustRegister(queueDiskFullTotal)
 	// FastQueue metrics
 	prometheus.MustRegister(fastqueueInmemoryBlocks)
@@ -115,6 +147,11 @@ func init() {
 	prometheus.MustRegister(fastqueueMetaSyncTotal)
 	prometheus.MustRegister(fastqueueChunkRotations)
 	prometheus.MustRegister(fastqueueInmemoryFlushes)
+	// Circuit breaker metrics
+	prometheus.MustRegister(circuitBreakerState)
+	prometheus.MustRegister(circuitBreakerOpenTotal)
+	prometheus.MustRegister(circuitBreakerRejectedTotal)
+	prometheus.MustRegister(currentBackoffSeconds)
 
 	// Initialize gauges to 0 so they appear in Prometheus immediately
 	// (before queue is created or used)
@@ -128,6 +165,35 @@ func init() {
 	queueDiskAvailableBytes.Set(0)
 	fastqueueInmemoryBlocks.Set(0)
 	fastqueueDiskBytes.Set(0)
+	currentBackoffSeconds.Set(0)
+
+	// Initialize counters to 0
+	queuePushTotal.Add(0)
+	queueRetryTotal.Add(0)
+	queueRetrySuccessTotal.Add(0)
+	queueDiskFullTotal.Add(0)
+	fastqueueMetaSyncTotal.Add(0)
+	fastqueueChunkRotations.Add(0)
+	fastqueueInmemoryFlushes.Add(0)
+	circuitBreakerOpenTotal.Add(0)
+	circuitBreakerRejectedTotal.Add(0)
+
+	// Initialize counter vectors with known label values
+	queueDroppedTotal.WithLabelValues("full").Add(0)
+	queueDroppedTotal.WithLabelValues("disk_full").Add(0)
+	queueDroppedTotal.WithLabelValues("error").Add(0)
+	queueRetryFailureTotal.WithLabelValues("network").Add(0)
+	queueRetryFailureTotal.WithLabelValues("timeout").Add(0)
+	queueRetryFailureTotal.WithLabelValues("server_error").Add(0)
+	queueRetryFailureTotal.WithLabelValues("client_error").Add(0)
+	queueRetryFailureTotal.WithLabelValues("auth").Add(0)
+	queueRetryFailureTotal.WithLabelValues("rate_limit").Add(0)
+	queueRetryFailureTotal.WithLabelValues("unknown").Add(0)
+
+	// Initialize circuit breaker states
+	circuitBreakerState.WithLabelValues("closed").Set(1) // Start in closed state
+	circuitBreakerState.WithLabelValues("open").Set(0)
+	circuitBreakerState.WithLabelValues("half_open").Set(0)
 }
 
 // IncrementRetryTotal increments the retry counter.
@@ -138,6 +204,11 @@ func IncrementRetryTotal() {
 // IncrementRetrySuccessTotal increments the successful retry counter.
 func IncrementRetrySuccessTotal() {
 	queueRetrySuccessTotal.Inc()
+}
+
+// IncrementRetryFailure increments the failed retry counter by error type.
+func IncrementRetryFailure(errorType string) {
+	queueRetryFailureTotal.WithLabelValues(errorType).Inc()
 }
 
 // SetCapacityMetrics sets the configured capacity metrics.
@@ -194,4 +265,29 @@ func IncrementChunkRotation() {
 // IncrementInmemoryFlush increments the in-memory flush counter.
 func IncrementInmemoryFlush() {
 	fastqueueInmemoryFlushes.Inc()
+}
+
+// SetCircuitState sets the circuit breaker state metric.
+func SetCircuitState(state string) {
+	// Reset all states
+	circuitBreakerState.WithLabelValues("closed").Set(0)
+	circuitBreakerState.WithLabelValues("open").Set(0)
+	circuitBreakerState.WithLabelValues("half_open").Set(0)
+	// Set the active state
+	circuitBreakerState.WithLabelValues(state).Set(1)
+}
+
+// IncrementCircuitOpen increments the circuit breaker open counter.
+func IncrementCircuitOpen() {
+	circuitBreakerOpenTotal.Inc()
+}
+
+// IncrementCircuitRejected increments the circuit breaker rejected counter.
+func IncrementCircuitRejected() {
+	circuitBreakerRejectedTotal.Inc()
+}
+
+// SetCurrentBackoff sets the current backoff delay metric.
+func SetCurrentBackoff(d time.Duration) {
+	currentBackoffSeconds.Set(d.Seconds())
 }

@@ -21,8 +21,9 @@ var version = "dev"
 // Config holds the application configuration.
 type Config struct {
 	// Receiver settings
-	GRPCListenAddr string
-	HTTPListenAddr string
+	GRPCListenAddr   string
+	HTTPListenAddr   string
+	HTTPReceiverPath string // Custom path for OTLP HTTP receiver (default: /v1/metrics)
 
 	// Receiver TLS settings
 	ReceiverTLSEnabled    bool
@@ -38,10 +39,11 @@ type Config struct {
 	ReceiverAuthBasicPassword string
 
 	// Exporter settings
-	ExporterEndpoint string
-	ExporterProtocol string
-	ExporterInsecure bool
-	ExporterTimeout  time.Duration
+	ExporterEndpoint    string
+	ExporterProtocol    string
+	ExporterInsecure    bool
+	ExporterTimeout     time.Duration
+	ExporterDefaultPath string // Default path for OTLP HTTP exporter when not in endpoint (default: /v1/metrics)
 
 	// Exporter TLS settings
 	ExporterTLSEnabled            bool
@@ -108,6 +110,16 @@ type Config struct {
 	QueueChunkSize          int64         // Chunk file size (default: 512MB)
 	QueueMetaSyncInterval   time.Duration // Metadata sync interval (default: 1s)
 	QueueStaleFlushInterval time.Duration // Stale flush interval (default: 5s)
+	// Backoff settings
+	QueueBackoffEnabled    bool    // Enable exponential backoff (default: true)
+	QueueBackoffMultiplier float64 // Backoff multiplier (default: 2.0)
+	// Circuit breaker settings
+	QueueCircuitBreakerEnabled      bool          // Enable circuit breaker (default: true)
+	QueueCircuitBreakerThreshold    int           // Failures before opening (default: 10)
+	QueueCircuitBreakerResetTimeout time.Duration // Time to wait before half-open (default: 30s)
+
+	// Memory limit settings
+	MemoryLimitRatio float64 // Ratio of container memory to use for GOMEMLIMIT (default: 0.9)
 
 	// Sharding settings
 	ShardingEnabled            bool
@@ -120,6 +132,7 @@ type Config struct {
 
 	// PRW Receiver settings
 	PRWListenAddr                 string
+	PRWReceiverPath               string // Custom path for PRW receiver (default: /api/v1/write)
 	PRWReceiverVersion            string
 	PRWReceiverTLSEnabled         bool
 	PRWReceiverTLSCertFile        string
@@ -134,6 +147,7 @@ type Config struct {
 
 	// PRW Exporter settings
 	PRWExporterEndpoint        string
+	PRWExporterDefaultPath     string // Default path for PRW exporter when not in endpoint (default: /api/v1/write)
 	PRWExporterVersion         string
 	PRWExporterTimeout         time.Duration
 	PRWExporterTLSEnabled      bool
@@ -191,6 +205,7 @@ func ParseFlags() *Config {
 	// Receiver flags
 	flag.StringVar(&cfg.GRPCListenAddr, "grpc-listen", ":4317", "gRPC receiver listen address")
 	flag.StringVar(&cfg.HTTPListenAddr, "http-listen", ":4318", "HTTP receiver listen address")
+	flag.StringVar(&cfg.HTTPReceiverPath, "http-receiver-path", "/v1/metrics", "HTTP receiver path for OTLP metrics")
 
 	// Receiver TLS flags
 	flag.BoolVar(&cfg.ReceiverTLSEnabled, "receiver-tls-enabled", false, "Enable TLS for receivers")
@@ -205,11 +220,12 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.ReceiverAuthBasicUsername, "receiver-auth-basic-username", "", "Basic auth username for receivers")
 	flag.StringVar(&cfg.ReceiverAuthBasicPassword, "receiver-auth-basic-password", "", "Basic auth password for receivers")
 
-	// Exporter flags
-	flag.StringVar(&cfg.ExporterEndpoint, "exporter-endpoint", "localhost:4317", "OTLP exporter endpoint")
-	flag.StringVar(&cfg.ExporterProtocol, "exporter-protocol", "grpc", "Exporter protocol: grpc or http")
-	flag.BoolVar(&cfg.ExporterInsecure, "exporter-insecure", true, "Use insecure connection for exporter")
+	// Exporter flags (supports OTLP gRPC/HTTP to any backend: otel-collector, Prometheus, Mimir, VictoriaMetrics, etc.)
+	flag.StringVar(&cfg.ExporterEndpoint, "exporter-endpoint", "localhost:4317", "OTLP exporter endpoint (host:port or URL)")
+	flag.StringVar(&cfg.ExporterProtocol, "exporter-protocol", "grpc", "Exporter protocol: grpc (default, most backends) or http (OTLP/HTTP)")
+	flag.BoolVar(&cfg.ExporterInsecure, "exporter-insecure", true, "Use insecure connection (no TLS) for exporter")
 	flag.DurationVar(&cfg.ExporterTimeout, "exporter-timeout", 30*time.Second, "Exporter request timeout")
+	flag.StringVar(&cfg.ExporterDefaultPath, "exporter-default-path", "/v1/metrics", "Default HTTP path when endpoint has no path (e.g., /v1/metrics for standard OTLP, /opentelemetry/v1/metrics for VictoriaMetrics)")
 
 	// Exporter TLS flags
 	flag.BoolVar(&cfg.ExporterTLSEnabled, "exporter-tls-enabled", false, "Enable custom TLS config for exporter")
@@ -225,8 +241,8 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.ExporterAuthBasicPassword, "exporter-auth-basic-password", "", "Basic auth password for exporter")
 	flag.StringVar(&cfg.ExporterAuthHeaders, "exporter-auth-headers", "", "Custom headers for exporter (format: key1=value1,key2=value2)")
 
-	// Exporter Compression flags
-	flag.StringVar(&cfg.ExporterCompression, "exporter-compression", "none", "Compression type for HTTP exporter: none, gzip, zstd, snappy, zlib, deflate, lz4")
+	// Exporter Compression flags (gRPC uses built-in compression, HTTP uses Content-Encoding)
+	flag.StringVar(&cfg.ExporterCompression, "exporter-compression", "none", "Compression: none, gzip (widely supported), zstd (high perf), snappy, zlib, deflate, lz4")
 	flag.IntVar(&cfg.ExporterCompressionLevel, "exporter-compression-level", 0, "Compression level (algorithm-specific, 0 for default)")
 
 	// Exporter HTTP client flags
@@ -276,6 +292,16 @@ func ParseFlags() *Config {
 	flag.Int64Var(&cfg.QueueChunkSize, "queue-chunk-size", 536870912, "Chunk file size in bytes (512MB default)")
 	flag.DurationVar(&cfg.QueueMetaSyncInterval, "queue-meta-sync", 1*time.Second, "Metadata sync interval (max data loss window)")
 	flag.DurationVar(&cfg.QueueStaleFlushInterval, "queue-stale-flush", 5*time.Second, "Interval to flush stale in-memory blocks to disk")
+	// Backoff flags
+	flag.BoolVar(&cfg.QueueBackoffEnabled, "queue-backoff-enabled", true, "Enable exponential backoff for retries")
+	flag.Float64Var(&cfg.QueueBackoffMultiplier, "queue-backoff-multiplier", 2.0, "Backoff delay multiplier on each failure")
+	// Circuit breaker flags
+	flag.BoolVar(&cfg.QueueCircuitBreakerEnabled, "queue-circuit-breaker-enabled", true, "Enable circuit breaker pattern for retries")
+	flag.IntVar(&cfg.QueueCircuitBreakerThreshold, "queue-circuit-breaker-threshold", 10, "Consecutive failures before opening circuit")
+	flag.DurationVar(&cfg.QueueCircuitBreakerResetTimeout, "queue-circuit-breaker-reset-timeout", 30*time.Second, "Time to wait before half-open state")
+
+	// Memory limit flags
+	flag.Float64Var(&cfg.MemoryLimitRatio, "memory-limit-ratio", 0.9, "Ratio of container memory to use for GOMEMLIMIT (0.0-1.0)")
 
 	// Sharding flags
 	flag.BoolVar(&cfg.ShardingEnabled, "sharding-enabled", false, "Enable consistent sharding")
@@ -288,6 +314,7 @@ func ParseFlags() *Config {
 
 	// PRW Receiver flags
 	flag.StringVar(&cfg.PRWListenAddr, "prw-listen", "", "PRW receiver listen address (empty = disabled)")
+	flag.StringVar(&cfg.PRWReceiverPath, "prw-receiver-path", "/api/v1/write", "PRW receiver path")
 	flag.StringVar(&cfg.PRWReceiverVersion, "prw-receiver-version", "auto", "PRW protocol version: 1.0, 2.0, or auto")
 	flag.BoolVar(&cfg.PRWReceiverTLSEnabled, "prw-receiver-tls-enabled", false, "Enable TLS for PRW receiver")
 	flag.StringVar(&cfg.PRWReceiverTLSCertFile, "prw-receiver-tls-cert", "", "Path to PRW receiver TLS certificate file")
@@ -300,9 +327,10 @@ func ParseFlags() *Config {
 	flag.DurationVar(&cfg.PRWReceiverReadTimeout, "prw-receiver-read-timeout", 1*time.Minute, "PRW receiver read timeout")
 	flag.DurationVar(&cfg.PRWReceiverWriteTimeout, "prw-receiver-write-timeout", 30*time.Second, "PRW receiver write timeout")
 
-	// PRW Exporter flags
-	flag.StringVar(&cfg.PRWExporterEndpoint, "prw-exporter-endpoint", "", "PRW exporter endpoint (empty = disabled)")
-	flag.StringVar(&cfg.PRWExporterVersion, "prw-exporter-version", "auto", "PRW protocol version: 1.0, 2.0, or auto")
+	// PRW Exporter flags (supports Prometheus Remote Write to any backend: Prometheus, Mimir, Cortex, Thanos, VictoriaMetrics, etc.)
+	flag.StringVar(&cfg.PRWExporterEndpoint, "prw-exporter-endpoint", "", "PRW exporter endpoint URL (empty = disabled)")
+	flag.StringVar(&cfg.PRWExporterDefaultPath, "prw-exporter-default-path", "/api/v1/write", "Default PRW path when endpoint has no path (/api/v1/write standard, /write for VM short)")
+	flag.StringVar(&cfg.PRWExporterVersion, "prw-exporter-version", "auto", "PRW protocol version: 1.0 (standard), 2.0 (native histograms), or auto")
 	flag.DurationVar(&cfg.PRWExporterTimeout, "prw-exporter-timeout", 30*time.Second, "PRW exporter request timeout")
 	flag.BoolVar(&cfg.PRWExporterTLSEnabled, "prw-exporter-tls-enabled", false, "Enable TLS for PRW exporter")
 	flag.StringVar(&cfg.PRWExporterTLSCertFile, "prw-exporter-tls-cert", "", "Path to PRW client certificate (mTLS)")
@@ -310,10 +338,10 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.PRWExporterTLSCAFile, "prw-exporter-tls-ca", "", "Path to CA certificate for PRW server verification")
 	flag.BoolVar(&cfg.PRWExporterTLSSkipVerify, "prw-exporter-tls-skip-verify", false, "Skip TLS certificate verification for PRW")
 	flag.StringVar(&cfg.PRWExporterAuthBearerToken, "prw-exporter-auth-bearer-token", "", "Bearer token for PRW exporter authentication")
-	flag.BoolVar(&cfg.PRWExporterVMMode, "prw-exporter-vm-mode", false, "Enable VictoriaMetrics mode for PRW exporter")
-	flag.StringVar(&cfg.PRWExporterVMCompression, "prw-exporter-vm-compression", "snappy", "PRW compression: snappy or zstd")
-	flag.BoolVar(&cfg.PRWExporterVMShortEndpoint, "prw-exporter-vm-short-endpoint", false, "Use /write instead of /api/v1/write")
-	flag.StringVar(&cfg.PRWExporterVMExtraLabels, "prw-exporter-vm-extra-labels", "", "Extra labels for VM (format: key1=val1,key2=val2)")
+	flag.BoolVar(&cfg.PRWExporterVMMode, "prw-exporter-vm-mode", false, "Enable VictoriaMetrics-specific optimizations (zstd, extra labels)")
+	flag.StringVar(&cfg.PRWExporterVMCompression, "prw-exporter-vm-compression", "snappy", "PRW compression: snappy (standard) or zstd (VM optimized)")
+	flag.BoolVar(&cfg.PRWExporterVMShortEndpoint, "prw-exporter-vm-short-endpoint", false, "Use /write shorthand instead of /api/v1/write")
+	flag.StringVar(&cfg.PRWExporterVMExtraLabels, "prw-exporter-vm-extra-labels", "", "Extra labels to add to all metrics (format: key1=val1,key2=val2)")
 
 	// PRW Buffer flags
 	flag.IntVar(&cfg.PRWBufferSize, "prw-buffer-size", 10000, "Maximum PRW requests to buffer")
@@ -575,6 +603,32 @@ func applyFlagOverrides(cfg *Config) {
 			if d, err := time.ParseDuration(f.Value.String()); err == nil {
 				cfg.QueueStaleFlushInterval = d
 			}
+		case "queue-backoff-enabled":
+			cfg.QueueBackoffEnabled = f.Value.String() == "true"
+		case "queue-backoff-multiplier":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if fv, ok := v.Get().(float64); ok {
+					cfg.QueueBackoffMultiplier = fv
+				}
+			}
+		case "queue-circuit-breaker-enabled":
+			cfg.QueueCircuitBreakerEnabled = f.Value.String() == "true"
+		case "queue-circuit-breaker-threshold":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.QueueCircuitBreakerThreshold = i
+				}
+			}
+		case "queue-circuit-breaker-reset-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.QueueCircuitBreakerResetTimeout = d
+			}
+		case "memory-limit-ratio":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if fv, ok := v.Get().(float64); ok {
+					cfg.MemoryLimitRatio = fv
+				}
+			}
 		case "sharding-enabled":
 			cfg.ShardingEnabled = f.Value.String() == "true"
 		case "sharding-headless-service":
@@ -773,6 +827,7 @@ func (c *Config) GRPCReceiverConfig() receiver.GRPCConfig {
 func (c *Config) HTTPReceiverConfig() receiver.HTTPConfig {
 	return receiver.HTTPConfig{
 		Addr: c.HTTPListenAddr,
+		Path: c.HTTPReceiverPath,
 		TLS:  c.ReceiverTLSConfig(),
 		Auth: c.ReceiverAuthConfig(),
 		Server: receiver.HTTPServerConfig{
@@ -849,6 +904,7 @@ func (c *Config) ExporterConfig() exporter.Config {
 		Protocol:    exporter.Protocol(c.ExporterProtocol),
 		Insecure:    c.ExporterInsecure,
 		Timeout:     c.ExporterTimeout,
+		DefaultPath: c.ExporterDefaultPath,
 		TLS:         c.ExporterTLSConfig(),
 		Auth:        c.ExporterAuthConfig(),
 		Compression: c.ExporterCompressionConfig(),
@@ -959,6 +1015,7 @@ func (c *Config) PRWReceiverConfig() receiver.PRWConfig {
 	version, _ := prw.ParseVersion(c.PRWReceiverVersion)
 	return receiver.PRWConfig{
 		Addr:    c.PRWListenAddr,
+		Path:    c.PRWReceiverPath,
 		Version: version,
 		TLS: tlspkg.ServerConfig{
 			Enabled:    c.PRWReceiverTLSEnabled,
@@ -999,9 +1056,10 @@ func (c *Config) PRWExporterConfig() exporter.PRWExporterConfig {
 	}
 
 	return exporter.PRWExporterConfig{
-		Endpoint: c.PRWExporterEndpoint,
-		Version:  version,
-		Timeout:  c.PRWExporterTimeout,
+		Endpoint:    c.PRWExporterEndpoint,
+		DefaultPath: c.PRWExporterDefaultPath,
+		Version:     version,
+		Timeout:     c.PRWExporterTimeout,
 		TLS: tlspkg.ClientConfig{
 			Enabled:            c.PRWExporterTLSEnabled,
 			CertFile:           c.PRWExporterTLSCertFile,
@@ -1151,6 +1209,17 @@ OPTIONS:
         -queue-meta-sync <dur>           Metadata sync interval / max data loss window (default: 1s)
         -queue-stale-flush <dur>         Interval to flush stale in-memory blocks to disk (default: 5s)
 
+    Queue Resilience (Backoff & Circuit Breaker):
+        -queue-backoff-enabled           Enable exponential backoff for retries (default: true)
+        -queue-backoff-multiplier <n>    Backoff delay multiplier on each failure (default: 2.0)
+        -queue-circuit-breaker-enabled   Enable circuit breaker pattern (default: true)
+        -queue-circuit-breaker-threshold <n>      Consecutive failures before opening circuit (default: 10)
+        -queue-circuit-breaker-reset-timeout <dur> Time to wait before half-open state (default: 30s)
+
+    Memory:
+        -memory-limit-ratio <ratio>      Ratio of container memory for GOMEMLIMIT (0.0-1.0) (default: 0.9)
+                                         Auto-detects container limits via cgroups (Docker/K8s)
+
     Sharding (Consistent Hash Distribution):
         -sharding-enabled                Enable consistent sharding (default: false)
         -sharding-headless-service       K8s headless service DNS name (e.g., vminsert-headless.monitoring.svc:8428)
@@ -1255,58 +1324,68 @@ func PrintVersion() {
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
-		GRPCListenAddr:              ":4317",
-		HTTPListenAddr:              ":4318",
-		ExporterEndpoint:            "localhost:4317",
-		ExporterProtocol:            "grpc",
-		ExporterInsecure:            true,
-		ExporterTimeout:             30 * time.Second,
-		ExporterCompression:         "none",
-		ExporterCompressionLevel:    0,
-		ExporterMaxIdleConns:        100,
-		ExporterMaxIdleConnsPerHost: 100,
-		ExporterMaxConnsPerHost:     0,
-		ExporterIdleConnTimeout:     90 * time.Second,
-		ExporterDisableKeepAlives:   false,
-		ExporterForceHTTP2:          false,
-		ReceiverMaxRequestBodySize:  0,
-		ReceiverReadTimeout:         0,
-		ReceiverReadHeaderTimeout:   1 * time.Minute,
-		ReceiverWriteTimeout:        30 * time.Second,
-		ReceiverIdleTimeout:         1 * time.Minute,
-		ReceiverKeepAlivesEnabled:   true,
-		BufferSize:                  10000,
-		FlushInterval:               5 * time.Second,
-		MaxBatchSize:                1000,
-		StatsAddr:                   ":9090",
-		StatsLabels:                 "",
-		LimitsConfig:                "",
-		LimitsDryRun:                true,
-		QueueEnabled:                false,
-		QueuePath:                   "./queue",
-		QueueMaxSize:                10000,
-		QueueMaxBytes:               1073741824, // 1GB
-		QueueRetryInterval:          5 * time.Second,
-		QueueMaxRetryDelay:          5 * time.Minute,
-		QueueFullBehavior:           "drop_oldest",
-		QueueTargetUtilization:      0.85,
-		QueueAdaptiveEnabled:        true,
-		QueueCompactThreshold:       0.5,
-		QueueInmemoryBlocks:         256,
-		QueueChunkSize:              536870912, // 512MB
-		QueueMetaSyncInterval:       1 * time.Second,
-		QueueStaleFlushInterval:     5 * time.Second,
-		ShardingEnabled:             false,
-		ShardingDNSRefreshInterval:  30 * time.Second,
-		ShardingDNSTimeout:          5 * time.Second,
-		ShardingVirtualNodes:        150,
-		ShardingFallbackOnEmpty:     true,
+		GRPCListenAddr:                  ":4317",
+		HTTPListenAddr:                  ":4318",
+		HTTPReceiverPath:                "/v1/metrics",
+		ExporterEndpoint:                "localhost:4317",
+		ExporterProtocol:                "grpc",
+		ExporterInsecure:                true,
+		ExporterTimeout:                 30 * time.Second,
+		ExporterDefaultPath:             "/v1/metrics",
+		ExporterCompression:             "none",
+		ExporterCompressionLevel:        0,
+		ExporterMaxIdleConns:            100,
+		ExporterMaxIdleConnsPerHost:     100,
+		ExporterMaxConnsPerHost:         0,
+		ExporterIdleConnTimeout:         90 * time.Second,
+		ExporterDisableKeepAlives:       false,
+		ExporterForceHTTP2:              false,
+		ReceiverMaxRequestBodySize:      0,
+		ReceiverReadTimeout:             0,
+		ReceiverReadHeaderTimeout:       1 * time.Minute,
+		ReceiverWriteTimeout:            30 * time.Second,
+		ReceiverIdleTimeout:             1 * time.Minute,
+		ReceiverKeepAlivesEnabled:       true,
+		BufferSize:                      10000,
+		FlushInterval:                   5 * time.Second,
+		MaxBatchSize:                    1000,
+		StatsAddr:                       ":9090",
+		StatsLabels:                     "",
+		LimitsConfig:                    "",
+		LimitsDryRun:                    true,
+		QueueEnabled:                    false,
+		QueuePath:                       "./queue",
+		QueueMaxSize:                    10000,
+		QueueMaxBytes:                   1073741824, // 1GB
+		QueueRetryInterval:              5 * time.Second,
+		QueueMaxRetryDelay:              5 * time.Minute,
+		QueueFullBehavior:               "drop_oldest",
+		QueueTargetUtilization:          0.85,
+		QueueAdaptiveEnabled:            true,
+		QueueCompactThreshold:           0.5,
+		QueueInmemoryBlocks:             256,
+		QueueChunkSize:                  536870912, // 512MB
+		QueueMetaSyncInterval:           1 * time.Second,
+		QueueStaleFlushInterval:         5 * time.Second,
+		QueueBackoffEnabled:             true,
+		QueueBackoffMultiplier:          2.0,
+		QueueCircuitBreakerEnabled:      true,
+		QueueCircuitBreakerThreshold:    10,
+		QueueCircuitBreakerResetTimeout: 30 * time.Second,
+		MemoryLimitRatio:                0.9,
+		ShardingEnabled:                 false,
+		ShardingDNSRefreshInterval:      30 * time.Second,
+		ShardingDNSTimeout:              5 * time.Second,
+		ShardingVirtualNodes:            150,
+		ShardingFallbackOnEmpty:         true,
 		// PRW defaults
 		PRWListenAddr:            "", // Disabled by default
+		PRWReceiverPath:          "/api/v1/write",
 		PRWReceiverVersion:       "auto",
 		PRWReceiverReadTimeout:   1 * time.Minute,
 		PRWReceiverWriteTimeout:  30 * time.Second,
 		PRWExporterEndpoint:      "", // Disabled by default
+		PRWExporterDefaultPath:   "/api/v1/write",
 		PRWExporterVersion:       "auto",
 		PRWExporterTimeout:       30 * time.Second,
 		PRWExporterVMCompression: "snappy",

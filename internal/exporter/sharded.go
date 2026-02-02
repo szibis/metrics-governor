@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -213,7 +214,11 @@ func (e *ShardedExporter) getOrCreateExporter(endpoint string) Exporter {
 
 	// Create base exporter for this endpoint
 	cfg := e.config.BaseConfig
-	cfg.Endpoint = endpoint
+
+	// Preserve path from base endpoint when constructing new endpoint
+	// DNS discovery returns "ip:port" but we need to preserve the path
+	// from the original endpoint (e.g., /opentelemetry/v1/metrics)
+	cfg.Endpoint = buildEndpointWithPath(endpoint, e.config.BaseConfig.Endpoint, e.config.BaseConfig.Insecure)
 
 	baseExp, err := New(e.ctx, cfg)
 	if err != nil {
@@ -277,6 +282,32 @@ func (e *ShardedExporter) cleanupStaleExporters(currentEndpoints []string) {
 func hashEndpoint(endpoint string) string {
 	h := sha256.Sum256([]byte(endpoint))
 	return hex.EncodeToString(h[:8]) // First 8 bytes = 16 hex chars
+}
+
+// buildEndpointWithPath constructs a full endpoint URL by combining a resolved
+// host:port from DNS discovery with the path from the original base endpoint.
+// This ensures VictoriaMetrics endpoints like /opentelemetry/v1/metrics are preserved.
+func buildEndpointWithPath(hostPort string, baseEndpoint string, insecure bool) string {
+	// Parse the base endpoint to extract path
+	basePath := ""
+	if baseURL, err := url.Parse(baseEndpoint); err == nil {
+		basePath = baseURL.Path
+	}
+
+	// If base path is empty or just "/", the exporter.go will add /v1/metrics
+	// which is the standard OTLP path
+	if basePath == "" || basePath == "/" {
+		return hostPort
+	}
+
+	// Determine scheme
+	scheme := "http"
+	if !insecure {
+		scheme = "https"
+	}
+
+	// Build full endpoint with path
+	return fmt.Sprintf("%s://%s%s", scheme, hostPort, basePath)
 }
 
 // collectErrors collects errors from a channel and returns a combined error.

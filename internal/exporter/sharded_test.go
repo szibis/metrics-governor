@@ -560,3 +560,65 @@ func BenchmarkHashEndpoint(b *testing.B) {
 		hashEndpoint(endpoint)
 	}
 }
+
+func TestBuildEndpointWithPath(t *testing.T) {
+	tests := []struct {
+		name         string
+		hostPort     string
+		baseEndpoint string
+		insecure     bool
+		want         string
+	}{
+		{
+			name:         "VictoriaMetrics OTLP path preserved",
+			hostPort:     "172.19.0.5:8428",
+			baseEndpoint: "http://victoriametrics:8428/opentelemetry/v1/metrics",
+			insecure:     true,
+			want:         "http://172.19.0.5:8428/opentelemetry/v1/metrics",
+		},
+		{
+			name:         "Standard OTLP path preserved",
+			hostPort:     "10.0.0.1:4318",
+			baseEndpoint: "http://collector:4318/v1/metrics",
+			insecure:     true,
+			want:         "http://10.0.0.1:4318/v1/metrics",
+		},
+		{
+			name:         "No path in base - returns hostPort for default handling",
+			hostPort:     "10.0.0.1:4318",
+			baseEndpoint: "http://collector:4318",
+			insecure:     true,
+			want:         "10.0.0.1:4318",
+		},
+		{
+			name:         "Root path only - returns hostPort for default handling",
+			hostPort:     "10.0.0.1:4318",
+			baseEndpoint: "http://collector:4318/",
+			insecure:     true,
+			want:         "10.0.0.1:4318",
+		},
+		{
+			name:         "HTTPS with path",
+			hostPort:     "10.0.0.1:443",
+			baseEndpoint: "https://secure-collector:443/api/v1/push",
+			insecure:     false,
+			want:         "https://10.0.0.1:443/api/v1/push",
+		},
+		{
+			name:         "Custom path with query string base",
+			hostPort:     "10.0.0.1:8080",
+			baseEndpoint: "http://backend:8080/custom/path",
+			insecure:     true,
+			want:         "http://10.0.0.1:8080/custom/path",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildEndpointWithPath(tt.hostPort, tt.baseEndpoint, tt.insecure)
+			if got != tt.want {
+				t.Errorf("buildEndpointWithPath() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

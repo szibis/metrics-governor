@@ -40,6 +40,14 @@ services:
       - "-queue-chunk-size=10485760"
       - "-queue-meta-sync=500ms"
       - "-queue-stale-flush=2s"
+      # Queue resilience (aggressive for testing)
+      - "-queue-backoff-enabled=true"
+      - "-queue-backoff-multiplier=1.5"
+      - "-queue-circuit-breaker-enabled=true"
+      - "-queue-circuit-breaker-threshold=5"
+      - "-queue-circuit-breaker-reset-timeout=10s"
+      # Memory limit
+      - "-memory-limit-ratio=0.9"
     volumes:
       - mg-queue-test-data:/data/queue
     healthcheck:

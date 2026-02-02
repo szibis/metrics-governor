@@ -4,6 +4,58 @@ Limits are configured via a YAML file specified with `-limits-config`. See [exam
 
 > **Dual Pipeline Support**: Limits work identically for both OTLP and PRW pipelines. The same configuration file applies to both - they are completely separate pipelines using the same rules.
 
+## Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph Input["Incoming Metrics"]
+        M[Metrics Batch]
+    end
+
+    subgraph Limits["Limits Enforcer"]
+        Match{Rule<br/>Matching}
+        Track[Track Stats<br/>per Group]
+        Check{Limit<br/>Exceeded?}
+        Action{Action<br/>Type}
+    end
+
+    subgraph Actions["Action Handlers"]
+        Log[LOG<br/>Pass + Log]
+        Adaptive[ADAPTIVE<br/>Smart Drop]
+        Drop[DROP<br/>Block All]
+    end
+
+    subgraph AdaptiveLogic["Adaptive Logic"]
+        Sort[Sort Groups<br/>by Contribution]
+        Identify[Identify<br/>Top Offenders]
+        MarkDrop[Mark for<br/>Dropping]
+    end
+
+    subgraph Output["Output"]
+        Pass[Pass Through]
+        Dropped[Dropped]
+    end
+
+    M --> Match
+    Match -->|No Rule| Pass
+    Match -->|Rule Found| Track
+    Track --> Check
+    Check -->|Within Limits| Pass
+    Check -->|Exceeded| Action
+
+    Action -->|log| Log --> Pass
+    Action -->|drop| Drop --> Dropped
+    Action -->|adaptive| Adaptive --> AdaptiveLogic
+
+    Sort --> Identify --> MarkDrop
+    MarkDrop -->|Keep| Pass
+    MarkDrop -->|Drop| Dropped
+
+    style Adaptive fill:#9cf,stroke:#333
+    style Pass fill:#9f9,stroke:#333
+    style Dropped fill:#f96,stroke:#333
+```
+
 ## Configuration Structure
 
 ```yaml

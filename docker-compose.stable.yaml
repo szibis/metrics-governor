@@ -48,6 +48,14 @@ services:
       - "-buffer-size=2000"
       # Performance tuning
       - "-string-interning=true"
+      # Queue resilience (standard settings)
+      - "-queue-backoff-enabled=true"
+      - "-queue-backoff-multiplier=2.0"
+      - "-queue-circuit-breaker-enabled=true"
+      - "-queue-circuit-breaker-threshold=10"
+      - "-queue-circuit-breaker-reset-timeout=30s"
+      # Memory limit
+      - "-memory-limit-ratio=0.9"
     volumes: []  # Clear all volumes (no limits config needed)
 
   victoriametrics:

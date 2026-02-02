@@ -29,6 +29,15 @@ var knownMetrics = []string{
 	"metrics_governor_prw_export_errors_total",
 	"metrics_governor_prw_bytes_total",
 
+	// PRW export metrics (exporter/prw_exporter.go)
+	"metrics_governor_prw_export_requests_total",
+	"metrics_governor_prw_export_timeseries_total",
+	"metrics_governor_prw_export_samples_total",
+	"metrics_governor_prw_export_bytes_total",
+	"metrics_governor_prw_retry_failure_total",
+	"metrics_governor_prw_retry_total",
+	"metrics_governor_prw_retry_success_total",
+
 	// OTLP stats (stats.go)
 	"metrics_governor_otlp_bytes_total",
 
@@ -36,6 +45,7 @@ var knownMetrics = []string{
 	"metrics_governor_otlp_export_bytes_total",
 	"metrics_governor_otlp_export_requests_total",
 	"metrics_governor_otlp_export_errors_total",
+	"metrics_governor_otlp_export_datapoints_total",
 
 	// gRPC receiver metrics (receiver/grpc.go)
 	"metrics_governor_grpc_received_bytes_total",
@@ -62,12 +72,18 @@ var knownMetrics = []string{
 	"metrics_governor_queue_dropped_total",
 	"metrics_governor_queue_retry_total",
 	"metrics_governor_queue_retry_success_total",
+	"metrics_governor_queue_retry_failure_total",
 	"metrics_governor_queue_disk_full_total",
 	"metrics_governor_fastqueue_inmemory_blocks",
 	"metrics_governor_fastqueue_disk_bytes",
 	"metrics_governor_fastqueue_meta_sync_total",
 	"metrics_governor_fastqueue_chunk_rotations",
 	"metrics_governor_fastqueue_inmemory_flushes",
+	// Circuit breaker and backoff metrics (queue/metrics.go)
+	"metrics_governor_circuit_breaker_state",
+	"metrics_governor_circuit_breaker_open_total",
+	"metrics_governor_circuit_breaker_rejected_total",
+	"metrics_governor_queue_backoff_seconds",
 
 	// Sharding metrics (sharding/metrics.go)
 	"metrics_governor_sharding_endpoints_total",
@@ -386,6 +402,7 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_label_",
 		"metrics_governor_queue",
 		"metrics_governor_fastqueue",
+		"metrics_governor_circuit_breaker",
 		"metrics_governor_sharding",
 		"metrics_governor_limit",
 		"metrics_governor_rule",

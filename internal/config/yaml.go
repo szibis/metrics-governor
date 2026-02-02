@@ -16,6 +16,13 @@ type YAMLConfig struct {
 	Stats       StatsYAMLConfig       `yaml:"stats"`
 	Limits      LimitsYAMLConfig      `yaml:"limits"`
 	Performance PerformanceYAMLConfig `yaml:"performance"`
+	Memory      MemoryYAMLConfig      `yaml:"memory"`
+}
+
+// MemoryYAMLConfig holds memory limit configuration.
+type MemoryYAMLConfig struct {
+	// LimitRatio is the ratio of container memory to use for GOMEMLIMIT (0.0-1.0)
+	LimitRatio float64 `yaml:"limit_ratio"`
 }
 
 // PerformanceYAMLConfig holds performance tuning configuration.
@@ -111,6 +118,28 @@ type QueueYAMLConfig struct {
 	TargetUtilization float64  `yaml:"target_utilization"`
 	AdaptiveEnabled   *bool    `yaml:"adaptive_enabled"`
 	CompactThreshold  float64  `yaml:"compact_threshold"`
+	// FastQueue settings
+	InmemoryBlocks     int      `yaml:"inmemory_blocks"`
+	ChunkSize          int64    `yaml:"chunk_size"`
+	MetaSyncInterval   Duration `yaml:"meta_sync_interval"`
+	StaleFlushInterval Duration `yaml:"stale_flush_interval"`
+	// Backoff settings
+	Backoff BackoffYAMLConfig `yaml:"backoff"`
+	// Circuit breaker settings
+	CircuitBreaker CircuitBreakerYAMLConfig `yaml:"circuit_breaker"`
+}
+
+// BackoffYAMLConfig holds exponential backoff configuration.
+type BackoffYAMLConfig struct {
+	Enabled    *bool   `yaml:"enabled"`
+	Multiplier float64 `yaml:"multiplier"`
+}
+
+// CircuitBreakerYAMLConfig holds circuit breaker configuration.
+type CircuitBreakerYAMLConfig struct {
+	Enabled      *bool    `yaml:"enabled"`
+	Threshold    int      `yaml:"threshold"`
+	ResetTimeout Duration `yaml:"reset_timeout"`
 }
 
 // TLSClientYAMLConfig holds TLS client configuration.
@@ -321,6 +350,38 @@ func (y *YAMLConfig) ApplyDefaults() {
 	if y.Exporter.Queue.CompactThreshold == 0 {
 		y.Exporter.Queue.CompactThreshold = 0.5
 	}
+	// FastQueue defaults
+	if y.Exporter.Queue.InmemoryBlocks == 0 {
+		y.Exporter.Queue.InmemoryBlocks = 256
+	}
+	if y.Exporter.Queue.ChunkSize == 0 {
+		y.Exporter.Queue.ChunkSize = 512 * 1024 * 1024 // 512MB
+	}
+	if y.Exporter.Queue.MetaSyncInterval == 0 {
+		y.Exporter.Queue.MetaSyncInterval = Duration(time.Second)
+	}
+	if y.Exporter.Queue.StaleFlushInterval == 0 {
+		y.Exporter.Queue.StaleFlushInterval = Duration(5 * time.Second)
+	}
+	// Backoff defaults
+	if y.Exporter.Queue.Backoff.Enabled == nil {
+		enabled := true
+		y.Exporter.Queue.Backoff.Enabled = &enabled
+	}
+	if y.Exporter.Queue.Backoff.Multiplier == 0 {
+		y.Exporter.Queue.Backoff.Multiplier = 2.0
+	}
+	// Circuit breaker defaults
+	if y.Exporter.Queue.CircuitBreaker.Enabled == nil {
+		enabled := true
+		y.Exporter.Queue.CircuitBreaker.Enabled = &enabled
+	}
+	if y.Exporter.Queue.CircuitBreaker.Threshold == 0 {
+		y.Exporter.Queue.CircuitBreaker.Threshold = 10
+	}
+	if y.Exporter.Queue.CircuitBreaker.ResetTimeout == 0 {
+		y.Exporter.Queue.CircuitBreaker.ResetTimeout = Duration(30 * time.Second)
+	}
 
 	// Sharding defaults
 	if y.Exporter.Sharding.Enabled == nil {
@@ -350,6 +411,11 @@ func (y *YAMLConfig) ApplyDefaults() {
 		y.Performance.InternMaxValueLength = 64
 	}
 	// ExportConcurrency defaults to 0 (which means NumCPU * 4 at runtime)
+
+	// Memory defaults
+	if y.Memory.LimitRatio == 0 {
+		y.Memory.LimitRatio = 0.9
+	}
 }
 
 // ToConfig converts YAMLConfig to the flat Config struct.
@@ -437,6 +503,18 @@ func (y *YAMLConfig) ToConfig() *Config {
 		QueueTargetUtilization: y.Exporter.Queue.TargetUtilization,
 		QueueAdaptiveEnabled:   *y.Exporter.Queue.AdaptiveEnabled,
 		QueueCompactThreshold:  y.Exporter.Queue.CompactThreshold,
+		// FastQueue settings
+		QueueInmemoryBlocks:     y.Exporter.Queue.InmemoryBlocks,
+		QueueChunkSize:          y.Exporter.Queue.ChunkSize,
+		QueueMetaSyncInterval:   time.Duration(y.Exporter.Queue.MetaSyncInterval),
+		QueueStaleFlushInterval: time.Duration(y.Exporter.Queue.StaleFlushInterval),
+		// Backoff settings
+		QueueBackoffEnabled:    *y.Exporter.Queue.Backoff.Enabled,
+		QueueBackoffMultiplier: y.Exporter.Queue.Backoff.Multiplier,
+		// Circuit breaker settings
+		QueueCircuitBreakerEnabled:      *y.Exporter.Queue.CircuitBreaker.Enabled,
+		QueueCircuitBreakerThreshold:    y.Exporter.Queue.CircuitBreaker.Threshold,
+		QueueCircuitBreakerResetTimeout: time.Duration(y.Exporter.Queue.CircuitBreaker.ResetTimeout),
 
 		// Sharding
 		ShardingEnabled:            *y.Exporter.Sharding.Enabled,
@@ -451,6 +529,9 @@ func (y *YAMLConfig) ToConfig() *Config {
 		ExportConcurrency:    y.Performance.ExportConcurrency,
 		StringInterning:      *y.Performance.StringInterning,
 		InternMaxValueLength: y.Performance.InternMaxValueLength,
+
+		// Memory
+		MemoryLimitRatio: y.Memory.LimitRatio,
 	}
 
 	return cfg
