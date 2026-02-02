@@ -69,9 +69,9 @@ flowchart LR
         end
     end
 
-    subgraph Backends["Backends"]
-        OTel["OTel Collector"]
-        VM["VictoriaMetrics<br/>Prometheus<br/>Thanos"]
+    subgraph Backends["Any Compatible Backend"]
+        OTLP_BE["OTLP Backends<br/>(gRPC/HTTP)<br/>OTel Collector • Mimir<br/>VictoriaMetrics • etc."]
+        PRW_BE["PRW Backends<br/>(HTTP)<br/>Prometheus • Thanos<br/>VictoriaMetrics • etc."]
     end
 
     App1 -->|"OTLP/gRPC"| GRPC
@@ -82,9 +82,9 @@ flowchart LR
     HTTP --> OBuf
     PRW --> PBuf --> PStats --> PLimits --> PExp
 
-    OExp -->|"Success"| OTel
+    OExp -->|"Success"| OTLP_BE
     OExp -.->|"Failure"| OQueue -.->|"Retry"| OExp
-    PExp -->|"Success"| VM
+    PExp -->|"Success"| PRW_BE
     PExp -.->|"Failure"| PQueue -.->|"Retry"| PExp
 ```
 
