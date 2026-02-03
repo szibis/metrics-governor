@@ -12,10 +12,10 @@ import (
 
 func TestResourceUsage_BufferFlush(t *testing.T) {
 	const (
-		flushCount       = 1000
-		metricsPerFlush  = 100
-		maxBatchSize     = 100
-		maxBufferSize    = 1000
+		flushCount      = 1000
+		metricsPerFlush = 100
+		maxBatchSize    = 100
+		maxBufferSize   = 1000
 	)
 
 	// Pre-create metrics to avoid measuring metric creation allocations

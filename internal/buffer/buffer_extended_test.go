@@ -331,16 +331,16 @@ func (d *datapointTrackingExporter) Export(ctx context.Context, req *colmetricsp
 // datapointTrackingStats captures each RecordExport and RecordExportError call
 // to verify datapointCount consistency.
 type datapointTrackingStats struct {
-	mu              sync.Mutex
-	exportCounts    []int // datapointCount passed to RecordExport on success
-	exportErrors    int
-	bytesSent       []int
-	bytesReceived   int
-	received        int
-	otlpBufferSize  int
+	mu             sync.Mutex
+	exportCounts   []int // datapointCount passed to RecordExport on success
+	exportErrors   int
+	bytesSent      []int
+	bytesReceived  int
+	received       int
+	otlpBufferSize int
 }
 
-func (d *datapointTrackingStats) Process(resourceMetrics []*metricspb.ResourceMetrics)    {}
+func (d *datapointTrackingStats) Process(resourceMetrics []*metricspb.ResourceMetrics) {}
 func (d *datapointTrackingStats) RecordReceived(count int) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
