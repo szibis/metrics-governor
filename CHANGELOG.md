@@ -12,7 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - fix(ci): use release PR strategy instead of direct push (#36)
 
-
 ## [0.9.6] - 2026-02-02
 
 ### Fixed
