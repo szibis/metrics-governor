@@ -162,12 +162,11 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 			ResourceMetrics: batch,
 		}
 
-		// Estimate bytes before sending (uncompressed size)
+		// Compute once, reuse in both error and success paths
 		byteSize := estimateResourceMetricsSize(batch)
+		datapointCount := countDatapoints(batch)
 
 		if err := b.exporter.Export(ctx, req); err != nil {
-			// Only count datapoints when needed for logging
-			datapointCount := countDatapoints(batch)
 			if b.logAggregator != nil {
 				// Use aggregated logging to reduce log noise at high throughput
 				logKey := "export_error"
@@ -188,9 +187,8 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 			continue
 		}
 
-		// Record successful export
+		// Record successful export using pre-computed values
 		if b.stats != nil {
-			datapointCount := countDatapoints(batch)
 			b.stats.RecordExport(datapointCount)
 			b.stats.RecordOTLPBytesSent(byteSize)
 		}

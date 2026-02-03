@@ -630,3 +630,164 @@ func TestGRPCClientInterceptorNoAuth(t *testing.T) {
 		t.Errorf("expected no authorization header, got %v", auth)
 	}
 }
+
+func TestBasicAuthPrecomputed_HTTPMiddleware(t *testing.T) {
+	cfg := ServerConfig{
+		Enabled:           true,
+		BasicAuthUsername: "admin",
+		BasicAuthPassword: "s3cret",
+	}
+
+	called := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := HTTPMiddleware(cfg, next)
+
+	// Test valid credentials
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.SetBasicAuth("admin", "s3cret")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if !called {
+		t.Error("expected handler to be called with valid pre-computed basic auth")
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+
+	// Test invalid credentials
+	called = false
+	req2 := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req2.SetBasicAuth("admin", "wrong")
+	rec2 := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec2, req2)
+
+	if called {
+		t.Error("handler should not be called with invalid basic auth")
+	}
+	if rec2.Code != http.StatusUnauthorized {
+		t.Errorf("expected status 401, got %d", rec2.Code)
+	}
+
+	// Test missing authorization header
+	called = false
+	req3 := httptest.NewRequest(http.MethodGet, "/test", nil)
+	rec3 := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec3, req3)
+
+	if called {
+		t.Error("handler should not be called without authorization header")
+	}
+	if rec3.Code != http.StatusUnauthorized {
+		t.Errorf("expected status 401, got %d", rec3.Code)
+	}
+
+	// Test that multiple requests work (verifying pre-computed value is reused)
+	for i := 0; i < 10; i++ {
+		called = false
+		reqN := httptest.NewRequest(http.MethodGet, "/test", nil)
+		reqN.SetBasicAuth("admin", "s3cret")
+		recN := httptest.NewRecorder()
+
+		handler.ServeHTTP(recN, reqN)
+
+		if !called {
+			t.Errorf("iteration %d: expected handler to be called", i)
+		}
+	}
+}
+
+func TestBasicAuthPrecomputed_GRPCInterceptor(t *testing.T) {
+	cfg := ServerConfig{
+		Enabled:           true,
+		BasicAuthUsername: "admin",
+		BasicAuthPassword: "s3cret",
+	}
+
+	interceptor := GRPCServerInterceptor(cfg)
+
+	// Test valid credentials
+	called := false
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		called = true
+		return "response", nil
+	}
+
+	md := metadata.New(map[string]string{
+		"authorization": "Basic " + basicAuthEncoded("admin", "s3cret"),
+	})
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	resp, err := interceptor(ctx, nil, nil, handler)
+
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Error("handler should be called with valid pre-computed basic auth")
+	}
+	if resp != "response" {
+		t.Errorf("expected 'response', got %v", resp)
+	}
+
+	// Test invalid credentials
+	called = false
+	handlerNoCall := func(ctx context.Context, req interface{}) (interface{}, error) {
+		called = true
+		return nil, nil
+	}
+
+	mdInvalid := metadata.New(map[string]string{
+		"authorization": "Basic " + basicAuthEncoded("admin", "wrong"),
+	})
+	ctxInvalid := metadata.NewIncomingContext(context.Background(), mdInvalid)
+
+	_, err = interceptor(ctxInvalid, nil, nil, handlerNoCall)
+
+	if err == nil {
+		t.Error("expected error for invalid basic auth credentials")
+	}
+	if called {
+		t.Error("handler should not be called with invalid basic auth")
+	}
+
+	// Test missing authorization header
+	called = false
+	mdEmpty := metadata.MD{}
+	ctxEmpty := metadata.NewIncomingContext(context.Background(), mdEmpty)
+
+	_, err = interceptor(ctxEmpty, nil, nil, handlerNoCall)
+
+	if err == nil {
+		t.Error("expected error for missing authorization header")
+	}
+	if called {
+		t.Error("handler should not be called without authorization header")
+	}
+
+	// Test that multiple requests work (verifying pre-computed value is reused)
+	for i := 0; i < 10; i++ {
+		called = false
+		handlerLoop := func(ctx context.Context, req interface{}) (interface{}, error) {
+			called = true
+			return "ok", nil
+		}
+		ctxLoop := metadata.NewIncomingContext(context.Background(), md)
+
+		_, err = interceptor(ctxLoop, nil, nil, handlerLoop)
+
+		if err != nil {
+			t.Errorf("iteration %d: unexpected error: %v", i, err)
+		}
+		if !called {
+			t.Errorf("iteration %d: expected handler to be called", i)
+		}
+	}
+}

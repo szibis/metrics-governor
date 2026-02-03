@@ -39,6 +39,12 @@ type ClientConfig struct {
 
 // GRPCServerInterceptor returns a unary interceptor for gRPC server authentication.
 func GRPCServerInterceptor(cfg ServerConfig) grpc.UnaryServerInterceptor {
+	// Pre-compute basic auth for comparison (avoids base64 encoding per-request)
+	var expectedBasicAuth string
+	if cfg.BasicAuthUsername != "" && cfg.BasicAuthPassword != "" {
+		expectedBasicAuth = "Basic " + basicAuthEncoded(cfg.BasicAuthUsername, cfg.BasicAuthPassword)
+	}
+
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if !cfg.Enabled {
 			return handler(ctx, req)
@@ -49,7 +55,7 @@ func GRPCServerInterceptor(cfg ServerConfig) grpc.UnaryServerInterceptor {
 			return nil, status.Error(codes.Unauthenticated, "missing metadata")
 		}
 
-		if err := validateAuth(md, cfg); err != nil {
+		if err := validateAuthPrecomputed(md, cfg, expectedBasicAuth); err != nil {
 			return nil, status.Error(codes.Unauthenticated, err.Error())
 		}
 
@@ -57,8 +63,9 @@ func GRPCServerInterceptor(cfg ServerConfig) grpc.UnaryServerInterceptor {
 	}
 }
 
-// validateAuth validates the authentication metadata.
-func validateAuth(md metadata.MD, cfg ServerConfig) error {
+// validateAuthPrecomputed validates the authentication metadata using a
+// pre-computed basic auth string to avoid base64 encoding on every request.
+func validateAuthPrecomputed(md metadata.MD, cfg ServerConfig, precomputedBasicAuth string) error {
 	// Check bearer token
 	if cfg.BearerToken != "" {
 		auth := md.Get("authorization")
@@ -84,9 +91,7 @@ func validateAuth(md metadata.MD, cfg ServerConfig) error {
 			return fmt.Errorf("missing authorization header")
 		}
 
-		// Basic auth is already base64 encoded in the header
-		expected := "Basic " + basicAuthEncoded(cfg.BasicAuthUsername, cfg.BasicAuthPassword)
-		if auth[0] != expected {
+		if auth[0] != precomputedBasicAuth {
 			return fmt.Errorf("invalid basic auth credentials")
 		}
 		return nil
@@ -95,8 +100,25 @@ func validateAuth(md metadata.MD, cfg ServerConfig) error {
 	return nil
 }
 
+// validateAuth validates the authentication metadata.
+// It computes the basic auth encoding on each call. For hot paths,
+// prefer validateAuthPrecomputed with a pre-computed value.
+func validateAuth(md metadata.MD, cfg ServerConfig) error {
+	var precomputed string
+	if cfg.BasicAuthUsername != "" && cfg.BasicAuthPassword != "" {
+		precomputed = "Basic " + basicAuthEncoded(cfg.BasicAuthUsername, cfg.BasicAuthPassword)
+	}
+	return validateAuthPrecomputed(md, cfg, precomputed)
+}
+
 // HTTPMiddleware returns an HTTP middleware for authentication.
 func HTTPMiddleware(cfg ServerConfig, next http.Handler) http.Handler {
+	// Pre-compute basic auth for comparison (avoids base64 encoding per-request)
+	var expectedBasicAuth string
+	if cfg.BasicAuthUsername != "" && cfg.BasicAuthPassword != "" {
+		expectedBasicAuth = "Basic " + basicAuthEncoded(cfg.BasicAuthUsername, cfg.BasicAuthPassword)
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !cfg.Enabled {
 			next.ServeHTTP(w, r)
@@ -124,10 +146,9 @@ func HTTPMiddleware(cfg ServerConfig, next http.Handler) http.Handler {
 			return
 		}
 
-		// Check basic auth
-		if cfg.BasicAuthUsername != "" && cfg.BasicAuthPassword != "" {
-			expected := "Basic " + basicAuthEncoded(cfg.BasicAuthUsername, cfg.BasicAuthPassword)
-			if auth != expected {
+		// Check basic auth using pre-computed value
+		if expectedBasicAuth != "" {
+			if auth != expectedBasicAuth {
 				http.Error(w, "invalid basic auth credentials", http.StatusUnauthorized)
 				return
 			}
@@ -141,17 +162,28 @@ func HTTPMiddleware(cfg ServerConfig, next http.Handler) http.Handler {
 
 // GRPCClientInterceptor returns a unary interceptor for gRPC client authentication.
 func GRPCClientInterceptor(cfg ClientConfig) grpc.UnaryClientInterceptor {
+	// Pre-compute auth header values (avoids base64 encoding and string concat per-request)
+	var precomputedBearerAuth string
+	if cfg.BearerToken != "" {
+		precomputedBearerAuth = "Bearer " + cfg.BearerToken
+	}
+
+	var precomputedBasicAuth string
+	if cfg.BasicAuthUsername != "" && cfg.BasicAuthPassword != "" {
+		precomputedBasicAuth = "Basic " + basicAuthEncoded(cfg.BasicAuthUsername, cfg.BasicAuthPassword)
+	}
+
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		md := metadata.MD{}
 
 		// Add bearer token
-		if cfg.BearerToken != "" {
-			md.Set("authorization", "Bearer "+cfg.BearerToken)
+		if precomputedBearerAuth != "" {
+			md.Set("authorization", precomputedBearerAuth)
 		}
 
 		// Add basic auth
-		if cfg.BasicAuthUsername != "" && cfg.BasicAuthPassword != "" {
-			md.Set("authorization", "Basic "+basicAuthEncoded(cfg.BasicAuthUsername, cfg.BasicAuthPassword))
+		if precomputedBasicAuth != "" {
+			md.Set("authorization", precomputedBasicAuth)
 		}
 
 		// Add custom headers
@@ -172,15 +204,24 @@ func HTTPTransport(cfg ClientConfig, base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}
+
+	// Pre-compute basic auth (avoids base64 encoding per-request)
+	var basicAuth string
+	if cfg.BasicAuthUsername != "" && cfg.BasicAuthPassword != "" {
+		basicAuth = "Basic " + basicAuthEncoded(cfg.BasicAuthUsername, cfg.BasicAuthPassword)
+	}
+
 	return &authTransport{
-		base: base,
-		cfg:  cfg,
+		base:      base,
+		cfg:       cfg,
+		basicAuth: basicAuth,
 	}
 }
 
 type authTransport struct {
-	base http.RoundTripper
-	cfg  ClientConfig
+	base      http.RoundTripper
+	cfg       ClientConfig
+	basicAuth string // pre-computed "Basic <base64>" header value
 }
 
 func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -192,9 +233,9 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		reqClone.Header.Set("Authorization", "Bearer "+t.cfg.BearerToken)
 	}
 
-	// Add basic auth
-	if t.cfg.BasicAuthUsername != "" && t.cfg.BasicAuthPassword != "" {
-		reqClone.SetBasicAuth(t.cfg.BasicAuthUsername, t.cfg.BasicAuthPassword)
+	// Add basic auth using pre-computed value
+	if t.basicAuth != "" {
+		reqClone.Header.Set("Authorization", t.basicAuth)
 	}
 
 	// Add custom headers

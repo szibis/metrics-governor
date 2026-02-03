@@ -48,6 +48,9 @@ type Enforcer struct {
 
 	// Log aggregator for batching similar log messages
 	logAggregator *LogAggregator
+
+	// LRU cache for metric-name-to-rule lookups
+	ruleMatchCache *ruleCache
 }
 
 // ViolationMetrics tracks limit violation counts.
@@ -63,7 +66,8 @@ type ViolationMetrics struct {
 }
 
 // NewEnforcer creates a new limits enforcer.
-func NewEnforcer(config *Config, dryRun bool) *Enforcer {
+// ruleCacheMaxSize controls the bounded LRU rule matching cache size (0 disables caching).
+func NewEnforcer(config *Config, dryRun bool, ruleCacheMaxSize int) *Enforcer {
 	return &Enforcer{
 		config:        config,
 		ruleStats:     make(map[string]*ruleStats),
@@ -75,8 +79,9 @@ func NewEnforcer(config *Config, dryRun bool) *Enforcer {
 			datapointsPassed:    make(map[string]*atomic.Int64),
 			groupsDropped:       make(map[string]*atomic.Int64),
 		},
-		dryRun:        dryRun,
-		logAggregator: NewLogAggregator(10 * time.Second), // Aggregate logs every 10s
+		dryRun:         dryRun,
+		logAggregator:  NewLogAggregator(10 * time.Second), // Aggregate logs every 10s
+		ruleMatchCache: newRuleCache(ruleCacheMaxSize),
 	}
 }
 
@@ -177,13 +182,35 @@ func (e *Enforcer) processMetric(m *metricspb.Metric, resourceAttrs map[string]s
 }
 
 func (e *Enforcer) findMatchingRule(metricName string, labels map[string]string) *Rule {
+	// Try cache first
+	if cached, ok := e.ruleMatchCache.Get(metricName); ok {
+		if cached == nil || cached.MatchesLabels(labels) {
+			return cached
+		}
+		// Cached rule doesn't match labels, fall through to full scan
+	}
+
 	for i := range e.config.Rules {
 		rule := &e.config.Rules[i]
 		if rule.Matches(metricName, labels) {
+			if !rule.HasLabelMatchers() {
+				e.ruleMatchCache.Put(metricName, rule)
+			}
 			return rule
 		}
 	}
+
+	// No rule matched
+	if !e.config.HasAnyLabelMatchers() {
+		e.ruleMatchCache.Put(metricName, nil)
+	}
 	return nil
+}
+
+// ClearRuleCache removes all entries from the rule matching cache.
+// This should be called after hot-reloading configuration.
+func (e *Enforcer) ClearRuleCache() {
+	e.ruleMatchCache.ClearCache()
 }
 
 func (e *Enforcer) buildGroupKey(rule *Rule, resourceAttrs map[string]string, m *metricspb.Metric) string {
@@ -656,6 +683,58 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# HELP metrics_governor_limits_cardinality_memory_bytes Total memory used by limits cardinality trackers\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_limits_cardinality_memory_bytes gauge\n")
 	fmt.Fprintf(w, "metrics_governor_limits_cardinality_memory_bytes %d\n", totalLimitsMemory)
+
+	// Rule cache metrics
+	if e.ruleMatchCache != nil {
+		hits := e.ruleMatchCache.hits.Load()
+		misses := e.ruleMatchCache.misses.Load()
+
+		fmt.Fprintf(w, "# HELP metrics_governor_rule_cache_hits_total Rule cache lookups that returned a cached result\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_rule_cache_hits_total counter\n")
+		fmt.Fprintf(w, "metrics_governor_rule_cache_hits_total %d\n", hits)
+
+		fmt.Fprintf(w, "# HELP metrics_governor_rule_cache_misses_total Rule cache lookups that required full rule scan\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_rule_cache_misses_total counter\n")
+		fmt.Fprintf(w, "metrics_governor_rule_cache_misses_total %d\n", misses)
+
+		fmt.Fprintf(w, "# HELP metrics_governor_rule_cache_evictions_total LRU evictions when cache is full\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_rule_cache_evictions_total counter\n")
+		fmt.Fprintf(w, "metrics_governor_rule_cache_evictions_total %d\n", e.ruleMatchCache.evictions.Load())
+
+		fmt.Fprintf(w, "# HELP metrics_governor_rule_cache_size Current number of entries in rule cache\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_rule_cache_size gauge\n")
+		fmt.Fprintf(w, "metrics_governor_rule_cache_size %d\n", e.ruleMatchCache.Size())
+
+		fmt.Fprintf(w, "# HELP metrics_governor_rule_cache_max_size Configured maximum cache size\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_rule_cache_max_size gauge\n")
+		fmt.Fprintf(w, "metrics_governor_rule_cache_max_size %d\n", e.ruleMatchCache.maxSize)
+
+		var hitRatio float64
+		total := hits + misses
+		if total > 0 {
+			hitRatio = float64(hits) / float64(total)
+		}
+		fmt.Fprintf(w, "# HELP metrics_governor_rule_cache_hit_ratio Hit ratio (hits / (hits + misses))\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_rule_cache_hit_ratio gauge\n")
+		fmt.Fprintf(w, "metrics_governor_rule_cache_hit_ratio %f\n", hitRatio)
+
+		fmt.Fprintf(w, "# HELP metrics_governor_rule_cache_negative_entries Cached no-match entries\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_rule_cache_negative_entries gauge\n")
+		fmt.Fprintf(w, "metrics_governor_rule_cache_negative_entries %d\n", e.ruleMatchCache.NegativeEntries())
+	}
+
+	// Series key pool metrics
+	fmt.Fprintf(w, "# HELP metrics_governor_serieskey_pool_gets_total Pool.Get() calls for series key slices\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_serieskey_pool_gets_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_serieskey_pool_gets_total %d\n", seriesKeyPoolGets.Load())
+
+	fmt.Fprintf(w, "# HELP metrics_governor_serieskey_pool_puts_total Pool.Put() calls for series key slices\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_serieskey_pool_puts_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_serieskey_pool_puts_total %d\n", seriesKeyPoolPuts.Load())
+
+	fmt.Fprintf(w, "# HELP metrics_governor_serieskey_pool_discards_total Series key slices discarded (too large for pool)\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_serieskey_pool_discards_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_serieskey_pool_discards_total %d\n", seriesKeyPoolDiscards.Load())
 }
 
 // Helper functions
@@ -771,19 +850,48 @@ func mergeAttrs(a, b map[string]string) map[string]string {
 	return result
 }
 
+// keysPool pools []string slices used for sorting attribute keys in buildSeriesKey.
+var keysPool = sync.Pool{New: func() any { s := make([]string, 0, 16); return &s }}
+
+var (
+	seriesKeyPoolGets     atomic.Int64
+	seriesKeyPoolPuts     atomic.Int64
+	seriesKeyPoolDiscards atomic.Int64
+)
+
 func buildSeriesKey(attrs map[string]string) string {
 	if len(attrs) == 0 {
 		return ""
 	}
-	keys := make([]string, 0, len(attrs))
+
+	keysp := keysPool.Get().(*[]string)
+	seriesKeyPoolGets.Add(1)
+	keys := (*keysp)[:0]
+
 	for k := range attrs {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
-	var parts []string
-	for _, k := range keys {
-		parts = append(parts, fmt.Sprintf("%s=%s", k, attrs[k]))
+	var sb strings.Builder
+	// Estimate capacity: average key=value is ~20 chars + comma
+	sb.Grow(len(keys) * 21)
+	for i, k := range keys {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteString(k)
+		sb.WriteByte('=')
+		sb.WriteString(attrs[k])
 	}
-	return strings.Join(parts, ",")
+
+	if cap(keys) > 64 {
+		seriesKeyPoolDiscards.Add(1)
+	} else {
+		*keysp = keys
+		keysPool.Put(keysp)
+		seriesKeyPoolPuts.Add(1)
+	}
+
+	return sb.String()
 }

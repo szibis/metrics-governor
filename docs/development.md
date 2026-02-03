@@ -170,6 +170,24 @@ Based on total lines changed (additions + deletions):
 | "help wanted" in body | `help wanted` | ![#008672](https://placehold.co/15x15/008672/008672) `#008672` | Extra attention needed |
 | "good first issue" in body | `good first issue` | ![#7057ff](https://placehold.co/15x15/7057ff/7057ff) `#7057ff` | Good for newcomers |
 
+## Running Before/After Benchmarks
+
+To measure the performance impact of a code change, run benchmarks before and after and compare with `benchstat`:
+
+1. Checkout baseline: `git stash`
+2. Run: `go test -bench=. -benchmem -count=5 ./... > old.txt`
+3. Apply changes: `git stash pop`
+4. Run: `go test -bench=. -benchmem -count=5 ./... > new.txt`
+5. Compare: `benchstat old.txt new.txt`
+
+Install `benchstat` if you do not have it:
+
+```bash
+go install golang.org/x/perf/cmd/benchstat@latest
+```
+
+The `-count=5` flag runs each benchmark five times so `benchstat` can compute statistical significance. Look for the `delta` column to see percentage changes and the `p` value to confirm results are statistically meaningful.
+
 ## Debugging
 
 ### Enable Verbose Logging

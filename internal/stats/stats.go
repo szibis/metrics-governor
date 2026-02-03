@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/cardinality"
@@ -611,6 +612,19 @@ func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# HELP metrics_governor_cardinality_config_fp_rate Configured false positive rate for Bloom filter\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_config_fp_rate gauge\n")
 	fmt.Fprintf(w, "metrics_governor_cardinality_config_fp_rate %f\n", cardinality.GlobalConfig.FalsePositiveRate)
+
+	// Series key pool metrics
+	fmt.Fprintf(w, "# HELP metrics_governor_serieskey_pool_gets_total Pool.Get() calls for series key slices\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_serieskey_pool_gets_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_serieskey_pool_gets_total %d\n", seriesKeyPoolGets.Load())
+
+	fmt.Fprintf(w, "# HELP metrics_governor_serieskey_pool_puts_total Pool.Put() calls for series key slices\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_serieskey_pool_puts_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_serieskey_pool_puts_total %d\n", seriesKeyPoolPuts.Load())
+
+	fmt.Fprintf(w, "# HELP metrics_governor_serieskey_pool_discards_total Series key slices discarded (too large for pool)\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_serieskey_pool_discards_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_serieskey_pool_discards_total %d\n", seriesKeyPoolDiscards.Load())
 }
 
 // formatLabels formats a label map as Prometheus label string.
@@ -664,11 +678,24 @@ func mergeAttrs(a, b map[string]string) map[string]string {
 	return result
 }
 
+// keysPool pools []string slices used for sorting attribute keys in buildSeriesKey.
+var keysPool = sync.Pool{New: func() any { s := make([]string, 0, 16); return &s }}
+
+var (
+	seriesKeyPoolGets     atomic.Int64
+	seriesKeyPoolPuts     atomic.Int64
+	seriesKeyPoolDiscards atomic.Int64
+)
+
 func buildSeriesKey(attrs map[string]string) string {
 	if len(attrs) == 0 {
 		return ""
 	}
-	keys := make([]string, 0, len(attrs))
+
+	keysp := keysPool.Get().(*[]string)
+	seriesKeyPoolGets.Add(1)
+	keys := (*keysp)[:0]
+
 	for k := range attrs {
 		keys = append(keys, k)
 	}
@@ -685,5 +712,14 @@ func buildSeriesKey(attrs map[string]string) string {
 		sb.WriteByte('=')
 		sb.WriteString(attrs[k])
 	}
+
+	if cap(keys) > 64 {
+		seriesKeyPoolDiscards.Add(1)
+	} else {
+		*keysp = keys
+		keysPool.Put(keysp)
+		seriesKeyPoolPuts.Add(1)
+	}
+
 	return sb.String()
 }

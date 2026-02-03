@@ -103,7 +103,7 @@ func TestEnforcer_ServeHTTP_Stats(t *testing.T) {
 		Rules: []Rule{},
 	}
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Test HTTP endpoint
@@ -127,7 +127,7 @@ func TestEnforcer_Stop(t *testing.T) {
 		Rules: []Rule{},
 	}
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 
 	// Stop should not panic
 	enforcer.Stop()
@@ -141,7 +141,7 @@ func TestEnforcer_DryRunMode(t *testing.T) {
 	}
 
 	// Create with dry run enabled
-	enforcer := NewEnforcer(cfg, true)
+	enforcer := NewEnforcer(cfg, true, 0)
 	defer enforcer.Stop()
 
 	if enforcer == nil {
@@ -164,7 +164,7 @@ func TestEnforcer_Process_AdaptiveAction(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Process many metrics to exceed limit
@@ -192,7 +192,7 @@ func TestEnforcer_Process_DropAction(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Process metrics to exceed limit
@@ -225,7 +225,7 @@ func TestEnforcer_Process_LogAction(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Process metrics - log action should pass through all
@@ -257,7 +257,7 @@ func TestEnforcer_Process_CardinalityLimit(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Process metrics with unique label values to create cardinality
@@ -290,7 +290,7 @@ func TestEnforcer_Process_MultipleRules(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Process metrics matching first rule
@@ -327,7 +327,7 @@ func TestEnforcer_Process_LabelMatch(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Process metrics with matching labels
@@ -355,7 +355,7 @@ func TestEnforcer_WindowReset(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Process metrics
@@ -387,7 +387,7 @@ func TestEnforcer_IsGroupDropped(t *testing.T) {
 		Rules: []Rule{},
 	}
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Manually add a dropped group
@@ -431,7 +431,7 @@ func TestEnforcer_DryRunDropAction(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, true) // Dry run enabled
+	enforcer := NewEnforcer(cfg, true, 0) // Dry run enabled
 	defer enforcer.Stop()
 
 	// Process metrics to exceed limit
@@ -462,7 +462,7 @@ func TestEnforcer_AdaptiveAction_NonDryRun(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false) // Not dry run
+	enforcer := NewEnforcer(cfg, false, 0) // Not dry run
 	defer enforcer.Stop()
 
 	// Process metrics from multiple services to build up groups
@@ -492,7 +492,7 @@ func TestEnforcer_AdaptiveAction_CardinalityReason(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Process metrics with different unique label values to create cardinality
@@ -519,7 +519,7 @@ func TestEnforcer_GroupDropped_Scenario(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Build up groups first with multiple batches
@@ -558,7 +558,7 @@ func TestEnforcer_MultipleGroups_Adaptive(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Process from multiple groups
@@ -596,7 +596,7 @@ func TestEnforcer_HandleViolation_DefaultAction(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Process metrics to exceed limit
@@ -629,7 +629,7 @@ func TestEnforcer_AdaptiveWithExcess(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Step 1: Add data from multiple groups to fill up to the limit
@@ -679,7 +679,7 @@ func TestEnforcer_AdaptiveCardinality_WithExcess(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Step 1: Add unique series from multiple groups
@@ -716,7 +716,7 @@ func TestEnforcer_RecordGroupsDropped_Direct(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Rapidly accumulate datapoints from multiple sources
@@ -757,7 +757,7 @@ func TestEnforcer_Adaptive_SortByDatapoints(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Create groups with different datapoint contributions
@@ -806,7 +806,7 @@ func TestEnforcer_Adaptive_DryRunWithExcess(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, true) // Dry run mode
+	enforcer := NewEnforcer(cfg, true, 0) // Dry run mode
 	defer enforcer.Stop()
 
 	// Exceed the limit

@@ -39,6 +39,7 @@ func BenchmarkCompress_Gzip(b *testing.B) {
 		cfg := Config{Type: TypeGzip, Level: LevelDefault}
 
 		b.Run(ts.name, func(b *testing.B) {
+			b.ReportAllocs()
 			b.SetBytes(int64(ts.size))
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -56,6 +57,7 @@ func BenchmarkDecompress_Gzip(b *testing.B) {
 		compressed, _ := Compress(data, cfg)
 
 		b.Run(ts.name, func(b *testing.B) {
+			b.ReportAllocs()
 			b.SetBytes(int64(len(compressed)))
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -72,6 +74,7 @@ func BenchmarkCompress_Zstd(b *testing.B) {
 		cfg := Config{Type: TypeZstd, Level: LevelDefault}
 
 		b.Run(ts.name, func(b *testing.B) {
+			b.ReportAllocs()
 			b.SetBytes(int64(ts.size))
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -89,6 +92,7 @@ func BenchmarkDecompress_Zstd(b *testing.B) {
 		compressed, _ := Compress(data, cfg)
 
 		b.Run(ts.name, func(b *testing.B) {
+			b.ReportAllocs()
 			b.SetBytes(int64(len(compressed)))
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -105,6 +109,7 @@ func BenchmarkCompress_Snappy(b *testing.B) {
 		cfg := Config{Type: TypeSnappy, Level: LevelDefault}
 
 		b.Run(ts.name, func(b *testing.B) {
+			b.ReportAllocs()
 			b.SetBytes(int64(ts.size))
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -122,6 +127,7 @@ func BenchmarkDecompress_Snappy(b *testing.B) {
 		compressed, _ := Compress(data, cfg)
 
 		b.Run(ts.name, func(b *testing.B) {
+			b.ReportAllocs()
 			b.SetBytes(int64(len(compressed)))
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -138,6 +144,7 @@ func BenchmarkCompress_LZ4(b *testing.B) {
 		cfg := Config{Type: TypeLZ4, Level: LevelDefault}
 
 		b.Run(ts.name, func(b *testing.B) {
+			b.ReportAllocs()
 			b.SetBytes(int64(ts.size))
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -155,6 +162,7 @@ func BenchmarkDecompress_LZ4(b *testing.B) {
 		compressed, _ := Compress(data, cfg)
 
 		b.Run(ts.name, func(b *testing.B) {
+			b.ReportAllocs()
 			b.SetBytes(int64(len(compressed)))
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -171,6 +179,7 @@ func BenchmarkCompress_Zlib(b *testing.B) {
 		cfg := Config{Type: TypeZlib, Level: LevelDefault}
 
 		b.Run(ts.name, func(b *testing.B) {
+			b.ReportAllocs()
 			b.SetBytes(int64(ts.size))
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -198,6 +207,7 @@ func BenchmarkCompress_AllAlgorithms(b *testing.B) {
 
 	for _, alg := range algorithms {
 		b.Run(alg.name, func(b *testing.B) {
+			b.ReportAllocs()
 			b.SetBytes(int64(len(data)))
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -223,6 +233,7 @@ func BenchmarkGzip_Levels(b *testing.B) {
 	for _, l := range levels {
 		cfg := Config{Type: TypeGzip, Level: l.level}
 		b.Run(l.name, func(b *testing.B) {
+			b.ReportAllocs()
 			b.SetBytes(int64(len(data)))
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -249,6 +260,7 @@ func BenchmarkZstd_Levels(b *testing.B) {
 	for _, l := range levels {
 		cfg := Config{Type: TypeZstd, Level: l.level}
 		b.Run(l.name, func(b *testing.B) {
+			b.ReportAllocs()
 			b.SetBytes(int64(len(data)))
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -275,6 +287,7 @@ func BenchmarkRoundTrip_AllAlgorithms(b *testing.B) {
 
 	for _, alg := range algorithms {
 		b.Run(alg.name, func(b *testing.B) {
+			b.ReportAllocs()
 			b.SetBytes(int64(len(data)))
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -282,5 +295,81 @@ func BenchmarkRoundTrip_AllAlgorithms(b *testing.B) {
 				_, _ = Decompress(compressed, alg.compTyp)
 			}
 		})
+	}
+}
+
+// -----------------------------------------------------------------------
+// Pooled concurrent benchmarks (Phase 3)
+// -----------------------------------------------------------------------
+
+// BenchmarkCompress_Pooled_Concurrent measures pooled compression throughput
+// under parallel goroutine pressure via b.RunParallel().
+func BenchmarkCompress_Pooled_Concurrent(b *testing.B) {
+	data := generateTestData(10 * 1024) // 10KB - representative size
+
+	algorithms := []struct {
+		name string
+		cfg  Config
+	}{
+		{"gzip", Config{Type: TypeGzip, Level: LevelDefault}},
+		{"zstd", Config{Type: TypeZstd, Level: LevelDefault}},
+		{"snappy", Config{Type: TypeSnappy}},
+		{"zlib", Config{Type: TypeZlib, Level: LevelDefault}},
+		{"deflate", Config{Type: TypeDeflate, Level: LevelDefault}},
+		{"lz4", Config{Type: TypeLZ4, Level: LevelDefault}},
+	}
+
+	for _, alg := range algorithms {
+		b.Run(alg.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(len(data)))
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					_, _ = Compress(data, alg.cfg)
+				}
+			})
+		})
+	}
+}
+
+// Sizes used for the pooled round-trip benchmarks.
+var pooledRoundTripSizes = []struct {
+	name string
+	size int
+}{
+	{"1KB", 1024},
+	{"10KB", 10 * 1024},
+	{"100KB", 100 * 1024},
+}
+
+// BenchmarkRoundTrip_Pooled benchmarks compress+decompress per type per size.
+func BenchmarkRoundTrip_Pooled(b *testing.B) {
+	algorithms := []struct {
+		name string
+		cfg  Config
+	}{
+		{"gzip", Config{Type: TypeGzip, Level: LevelDefault}},
+		{"zstd", Config{Type: TypeZstd, Level: LevelDefault}},
+		{"snappy", Config{Type: TypeSnappy}},
+		{"zlib", Config{Type: TypeZlib, Level: LevelDefault}},
+		{"deflate", Config{Type: TypeDeflate, Level: LevelDefault}},
+		{"lz4", Config{Type: TypeLZ4, Level: LevelDefault}},
+	}
+
+	for _, alg := range algorithms {
+		for _, sz := range pooledRoundTripSizes {
+			data := generateTestData(sz.size)
+
+			b.Run(alg.name+"/"+sz.name, func(b *testing.B) {
+				b.ReportAllocs()
+				b.SetBytes(int64(sz.size))
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					compressed, _ := Compress(data, alg.cfg)
+					_, _ = Decompress(compressed, alg.cfg.Type)
+				}
+			})
+		}
 	}
 }
