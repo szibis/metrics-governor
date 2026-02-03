@@ -277,6 +277,15 @@ jobs:
           echo "Generated changelog entry:"
           cat /tmp/changelog_entry.md
 
+      - name: Import GPG key
+        if: steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+
       - name: Create release branch and PR
         if: steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
         id: create_pr
@@ -287,9 +296,6 @@ jobs:
           VERSION_NUM="${{ steps.new_version.outputs.version_num }}"
           CHART_VERSION="${{ steps.new_version.outputs.chart_version }}"
           BRANCH="release/${VERSION}"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
 
           # Create release branch
           git checkout -b "$BRANCH"
@@ -311,9 +317,9 @@ jobs:
           } > CHANGELOG.md.tmp
           mv CHANGELOG.md.tmp CHANGELOG.md
 
-          # Commit changes
+          # Commit changes (GPG signing configured by import-gpg action)
           git add helm/metrics-governor/Chart.yaml CHANGELOG.md
-          git commit -m "chore(release): prepare ${VERSION}
+          git commit -S -m "chore(release): prepare ${VERSION}
 
           - Update appVersion to ${VERSION_NUM}
           - Update CHANGELOG.md"
@@ -405,16 +411,21 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "version_num=${VERSION#v}" >> $GITHUB_OUTPUT
 
+      - name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          git_user_signingkey: true
+          git_tag_gpgsign: true
+
       - name: Create and push tag
         id: release
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Create tag
-          git tag -a "$VERSION" -m "Release $VERSION"
+          # Create signed tag (GPG signing configured by import-gpg action)
+          git tag -s "$VERSION" -m "Release $VERSION"
           git push origin "$VERSION"
 
           echo "Created and pushed tag: $VERSION"
