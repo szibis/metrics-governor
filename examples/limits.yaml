@@ -10,6 +10,12 @@
 #   tracking and identifying top offenders. The system will track datapoints
 #   and cardinality per unique combination of these labels, and when limits
 #   are exceeded, it will drop the groups with the highest contribution first.
+#
+# Rule Cache:
+#   metrics-governor uses an LRU cache to map metric names to matching rules.
+#   This avoids expensive regex re-evaluation on every datapoint. Configure
+#   the cache size with the -rule-cache-max-size flag (default: 10000).
+#   For high-cardinality environments, increase to 50000 or more.
 
 defaults:
   max_datapoints_rate: 10000000  # per minute - very high for testing

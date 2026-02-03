@@ -58,7 +58,7 @@ func TestFunctional_Limits_NoRules(t *testing.T) {
 		Rules: []limits.Rule{},
 	}
 
-	enforcer := limits.NewEnforcer(cfg, false)
+	enforcer := limits.NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	metrics := createMetricsWithLabels("test_metric", map[string]string{"service": "api"}, 100)
@@ -87,7 +87,7 @@ func TestFunctional_Limits_DryRunMode(t *testing.T) {
 	}
 
 	// Dry run mode - should NOT drop
-	enforcer := limits.NewEnforcer(cfg, true)
+	enforcer := limits.NewEnforcer(cfg, true, 0)
 	defer enforcer.Stop()
 
 	// Send many metrics that would exceed limits
@@ -122,7 +122,7 @@ func TestFunctional_Limits_DropAction(t *testing.T) {
 		},
 	}
 
-	enforcer := limits.NewEnforcer(cfg, false)
+	enforcer := limits.NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Send many metrics to exceed limits (this will cause the group to be marked for dropping)
@@ -164,7 +164,7 @@ func TestFunctional_Limits_LogAction(t *testing.T) {
 		},
 	}
 
-	enforcer := limits.NewEnforcer(cfg, false)
+	enforcer := limits.NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Send metrics that exceed limits
@@ -199,7 +199,7 @@ func TestFunctional_Limits_AdaptiveAction(t *testing.T) {
 		},
 	}
 
-	enforcer := limits.NewEnforcer(cfg, false)
+	enforcer := limits.NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Send metrics from multiple services with different volumes
@@ -245,7 +245,7 @@ func TestFunctional_Limits_MetricNameMatch(t *testing.T) {
 		},
 	}
 
-	enforcer := limits.NewEnforcer(cfg, false)
+	enforcer := limits.NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Test matching metrics
@@ -282,7 +282,7 @@ func TestFunctional_Limits_LabelMatch(t *testing.T) {
 		},
 	}
 
-	enforcer := limits.NewEnforcer(cfg, false)
+	enforcer := limits.NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Test matching labels
@@ -325,7 +325,7 @@ func TestFunctional_Limits_MultipleRules(t *testing.T) {
 		},
 	}
 
-	enforcer := limits.NewEnforcer(cfg, false)
+	enforcer := limits.NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Exceed limits for dangerous metrics
@@ -364,7 +364,7 @@ func TestFunctional_Limits_HighVolume(t *testing.T) {
 		},
 	}
 
-	enforcer := limits.NewEnforcer(cfg, false)
+	enforcer := limits.NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	start := time.Now()
@@ -440,7 +440,7 @@ func TestFunctional_Limits_Labels_Passed(t *testing.T) {
 		},
 	}
 
-	enforcer := limits.NewEnforcer(cfg, false)
+	enforcer := limits.NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Send metrics that are within limits
@@ -479,7 +479,7 @@ func TestFunctional_Limits_Labels_Drop(t *testing.T) {
 		},
 	}
 
-	enforcer := limits.NewEnforcer(cfg, true) // dryRun = true
+	enforcer := limits.NewEnforcer(cfg, true, 0) // dryRun = true
 	defer enforcer.Stop()
 
 	// First metric - within limits
@@ -526,7 +526,7 @@ func TestFunctional_Limits_Labels_Adaptive(t *testing.T) {
 		},
 	}
 
-	enforcer := limits.NewEnforcer(cfg, true) // dryRun = true
+	enforcer := limits.NewEnforcer(cfg, true, 0) // dryRun = true
 	defer enforcer.Stop()
 
 	// Fill up to limit
@@ -569,7 +569,7 @@ func TestFunctional_Limits_Labels_Log(t *testing.T) {
 		},
 	}
 
-	enforcer := limits.NewEnforcer(cfg, false)
+	enforcer := limits.NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// First metric - within limits
@@ -611,7 +611,7 @@ func TestFunctional_Limits_Labels_NoRuleMatch(t *testing.T) {
 		},
 	}
 
-	enforcer := limits.NewEnforcer(cfg, false)
+	enforcer := limits.NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// Send metric that doesn't match any rule

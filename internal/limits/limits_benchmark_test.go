@@ -12,7 +12,7 @@ import (
 
 // BenchmarkEnforcer_Process benchmarks the enforcer with no rules
 func BenchmarkEnforcer_Process_NoRules(b *testing.B) {
-	enforcer := NewEnforcer(&Config{}, false)
+	enforcer := NewEnforcer(&Config{}, false, 0)
 	metrics := createBenchmarkMetrics(100, 10)
 
 	b.ResetTimer()
@@ -35,7 +35,7 @@ func BenchmarkEnforcer_Process_SimpleRule(b *testing.B) {
 			},
 		},
 	}
-	enforcer := NewEnforcer(config, false)
+	enforcer := NewEnforcer(config, false, 0)
 	metrics := createBenchmarkMetrics(100, 10)
 
 	b.ResetTimer()
@@ -74,7 +74,7 @@ func BenchmarkEnforcer_Process_MultipleRules(b *testing.B) {
 			},
 		},
 	}
-	enforcer := NewEnforcer(config, false)
+	enforcer := NewEnforcer(config, false, 0)
 	metrics := createBenchmarkMetrics(100, 10)
 
 	b.ResetTimer()
@@ -97,7 +97,7 @@ func BenchmarkEnforcer_Process_DryRun(b *testing.B) {
 			},
 		},
 	}
-	enforcer := NewEnforcer(config, true) // dry run
+	enforcer := NewEnforcer(config, true, 0) // dry run
 	metrics := createBenchmarkMetrics(100, 10)
 
 	b.ResetTimer()
@@ -120,7 +120,7 @@ func BenchmarkEnforcer_Process_HighCardinality(b *testing.B) {
 			},
 		},
 	}
-	enforcer := NewEnforcer(config, false)
+	enforcer := NewEnforcer(config, false, 0)
 	metrics := createHighCardinalityMetrics(1000, 10)
 
 	b.ResetTimer()
@@ -143,7 +143,7 @@ func BenchmarkEnforcer_Process_Concurrent(b *testing.B) {
 			},
 		},
 	}
-	enforcer := NewEnforcer(config, false)
+	enforcer := NewEnforcer(config, false, 0)
 	metrics := createBenchmarkMetrics(100, 10)
 
 	b.RunParallel(func(pb *testing.PB) {
@@ -181,7 +181,7 @@ func BenchmarkEnforcer_Process_Scale(b *testing.B) {
 
 	for _, scale := range scales {
 		b.Run(scale.name, func(b *testing.B) {
-			enforcer := NewEnforcer(config, false)
+			enforcer := NewEnforcer(config, false, 0)
 			metrics := createBenchmarkMetrics(scale.metrics, scale.datapoints)
 
 			b.ResetTimer()
@@ -206,7 +206,7 @@ func BenchmarkEnforcer_Process_RegexMatch(b *testing.B) {
 			},
 		},
 	}
-	enforcer := NewEnforcer(config, false)
+	enforcer := NewEnforcer(config, false, 0)
 	metrics := createBenchmarkMetrics(100, 10)
 
 	b.ResetTimer()
@@ -234,12 +234,52 @@ func BenchmarkEnforcer_Process_LabelMatch(b *testing.B) {
 			},
 		},
 	}
-	enforcer := NewEnforcer(config, false)
+	enforcer := NewEnforcer(config, false, 0)
 	metrics := createBenchmarkMetrics(100, 10)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = enforcer.Process(metrics)
+	}
+}
+
+// BenchmarkBuildSeriesKey benchmarks the pooled buildSeriesKey function.
+func BenchmarkBuildSeriesKey(b *testing.B) {
+	sizes := []int{1, 5, 10, 50}
+
+	for _, size := range sizes {
+		attrs := make(map[string]string, size)
+		for i := 0; i < size; i++ {
+			attrs[fmt.Sprintf("key_%03d", i)] = fmt.Sprintf("value_%03d", i)
+		}
+
+		b.Run(fmt.Sprintf("attrs_%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = buildSeriesKey(attrs)
+			}
+		})
+	}
+}
+
+// BenchmarkBuildSeriesKey_Parallel benchmarks buildSeriesKey under contention.
+func BenchmarkBuildSeriesKey_Parallel(b *testing.B) {
+	sizes := []int{1, 5, 10, 50}
+
+	for _, size := range sizes {
+		attrs := make(map[string]string, size)
+		for i := 0; i < size; i++ {
+			attrs[fmt.Sprintf("key_%03d", i)] = fmt.Sprintf("value_%03d", i)
+		}
+
+		b.Run(fmt.Sprintf("attrs_%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					_ = buildSeriesKey(attrs)
+				}
+			})
+		})
 	}
 }
 
@@ -283,6 +323,125 @@ func createBenchmarkMetrics(numMetrics, datapointsPerMetric int) []*metricspb.Re
 			},
 		},
 	}
+}
+
+// BenchmarkFindMatchingRule_CacheHit benchmarks cache hits with repeated metric names.
+func BenchmarkFindMatchingRule_CacheHit(b *testing.B) {
+	config := &Config{
+		Rules: []Rule{
+			{
+				Name:              "rule-1",
+				Match:             RuleMatch{MetricName: "benchmark_metric_.*"},
+				MaxDatapointsRate: 100000,
+				Action:            ActionDrop,
+			},
+			{
+				Name:              "rule-2",
+				Match:             RuleMatch{MetricName: "other_.*"},
+				MaxDatapointsRate: 50000,
+				Action:            ActionDrop,
+			},
+			{
+				Name:              "rule-3",
+				Match:             RuleMatch{MetricName: ".*_total$"},
+				MaxDatapointsRate: 200000,
+				Action:            ActionAdaptive,
+			},
+		},
+	}
+	LoadConfigFromStruct(config)
+
+	enforcer := NewEnforcer(config, false, 10000)
+
+	// Warm up cache with a fixed set of metric names
+	metricNames := make([]string, 100)
+	for i := 0; i < 100; i++ {
+		metricNames[i] = fmt.Sprintf("benchmark_metric_%d", i)
+		enforcer.findMatchingRule(metricNames[i], map[string]string{})
+	}
+
+	labels := map[string]string{"service": "bench"}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = enforcer.findMatchingRule(metricNames[i%100], labels)
+	}
+}
+
+// BenchmarkFindMatchingRule_CacheMiss benchmarks cache misses with unique metric names.
+func BenchmarkFindMatchingRule_CacheMiss(b *testing.B) {
+	config := &Config{
+		Rules: []Rule{
+			{
+				Name:              "rule-1",
+				Match:             RuleMatch{MetricName: "benchmark_metric_.*"},
+				MaxDatapointsRate: 100000,
+				Action:            ActionDrop,
+			},
+			{
+				Name:              "rule-2",
+				Match:             RuleMatch{MetricName: "other_.*"},
+				MaxDatapointsRate: 50000,
+				Action:            ActionDrop,
+			},
+		},
+	}
+	LoadConfigFromStruct(config)
+
+	enforcer := NewEnforcer(config, false, 100) // small cache to force evictions
+
+	labels := map[string]string{"service": "bench"}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		// Unique metric names cause cache misses
+		name := fmt.Sprintf("benchmark_metric_unique_%d", i)
+		_ = enforcer.findMatchingRule(name, labels)
+	}
+}
+
+// BenchmarkFindMatchingRule_Concurrent benchmarks concurrent rule matching with cache.
+func BenchmarkFindMatchingRule_Concurrent(b *testing.B) {
+	config := &Config{
+		Rules: []Rule{
+			{
+				Name:              "rule-1",
+				Match:             RuleMatch{MetricName: "benchmark_metric_.*"},
+				MaxDatapointsRate: 100000,
+				Action:            ActionDrop,
+			},
+			{
+				Name:              "rule-2",
+				Match:             RuleMatch{MetricName: "other_.*"},
+				MaxDatapointsRate: 50000,
+				Action:            ActionDrop,
+			},
+		},
+	}
+	LoadConfigFromStruct(config)
+
+	enforcer := NewEnforcer(config, false, 10000)
+
+	// Warm up
+	metricNames := make([]string, 200)
+	for i := 0; i < 200; i++ {
+		metricNames[i] = fmt.Sprintf("benchmark_metric_%d", i)
+		enforcer.findMatchingRule(metricNames[i], map[string]string{})
+	}
+
+	labels := map[string]string{"service": "bench"}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			_ = enforcer.findMatchingRule(metricNames[i%200], labels)
+			i++
+		}
+	})
 }
 
 func createHighCardinalityMetrics(uniqueUsers, datapointsPerUser int) []*metricspb.ResourceMetrics {

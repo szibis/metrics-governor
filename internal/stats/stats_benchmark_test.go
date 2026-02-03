@@ -103,6 +103,46 @@ func BenchmarkCollector_Scale(b *testing.B) {
 	}
 }
 
+// BenchmarkBuildSeriesKey benchmarks the pooled buildSeriesKey function.
+func BenchmarkBuildSeriesKey(b *testing.B) {
+	sizes := []int{1, 5, 10, 50}
+
+	for _, size := range sizes {
+		attrs := make(map[string]string, size)
+		for i := 0; i < size; i++ {
+			attrs[fmt.Sprintf("key_%03d", i)] = fmt.Sprintf("value_%03d", i)
+		}
+
+		b.Run(fmt.Sprintf("attrs_%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = buildSeriesKey(attrs)
+			}
+		})
+	}
+}
+
+// BenchmarkBuildSeriesKey_Parallel benchmarks buildSeriesKey under contention.
+func BenchmarkBuildSeriesKey_Parallel(b *testing.B) {
+	sizes := []int{1, 5, 10, 50}
+
+	for _, size := range sizes {
+		attrs := make(map[string]string, size)
+		for i := 0; i < size; i++ {
+			attrs[fmt.Sprintf("key_%03d", i)] = fmt.Sprintf("value_%03d", i)
+		}
+
+		b.Run(fmt.Sprintf("attrs_%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					_ = buildSeriesKey(attrs)
+				}
+			})
+		})
+	}
+}
+
 // Helper functions
 
 func createBenchmarkMetrics(numMetrics, datapointsPerMetric int) []*metricspb.ResourceMetrics {

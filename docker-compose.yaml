@@ -60,6 +60,8 @@ services:
       - "-queue-circuit-breaker-reset-timeout=30s"
       # Memory limit - auto-detect container limits
       - "-memory-limit-ratio=0.9"
+      # Rule cache - LRU cache for metric-to-rule matching
+      - "-rule-cache-max-size=10000"
       # Sharding configuration - consistent hashing across endpoints
       - "-sharding-enabled=true"
       - "-sharding-headless-service=victoriametrics:8428"

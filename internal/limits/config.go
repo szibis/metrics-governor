@@ -144,7 +144,22 @@ func (r *Rule) MatchesLabels(labels map[string]string) bool {
 	return true
 }
 
+// HasLabelMatchers returns true if the rule has label-based match criteria.
+func (r *Rule) HasLabelMatchers() bool {
+	return len(r.Match.Labels) > 0
+}
+
 // Matches checks if the rule matches a metric name and labels.
 func (r *Rule) Matches(metricName string, labels map[string]string) bool {
 	return r.MatchesMetric(metricName) && r.MatchesLabels(labels)
+}
+
+// HasAnyLabelMatchers returns true if any rule has label matchers.
+func (c *Config) HasAnyLabelMatchers() bool {
+	for i := range c.Rules {
+		if c.Rules[i].HasLabelMatchers() {
+			return true
+		}
+	}
+	return false
 }

@@ -156,3 +156,45 @@ No configuration is required - decompression is automatic.
 | **zstd** | Fast | Excellent | Best overall choice |
 
 **Recommendation**: Use `zstd` for the best balance of compression ratio and speed. Use `lz4` or `snappy` when latency is critical.
+
+---
+
+## Encoder Pooling
+
+Compression encoders are expensive to allocate and initialize. metrics-governor uses `sync.Pool` to reuse encoders across requests, eliminating approximately 80% of encoder-related allocations.
+
+### How It Works
+
+A separate `sync.Pool` is maintained for each compression type (gzip, zstd, snappy, zlib, deflate, lz4). When an export request needs to compress data:
+
+1. An encoder is retrieved from the pool for the configured compression type.
+2. The encoder is used to compress the payload.
+3. The encoder is `Reset()` to clear all internal buffers and state.
+4. The encoder is returned to the pool for reuse.
+
+### Reset() Safety and Cross-Contamination Prevention
+
+Each encoder is explicitly `Reset()` before being returned to the pool. This ensures:
+
+- **No data leakage**: Internal buffers from the previous request are cleared, so no partial data from one request can appear in another.
+- **No cross-contamination**: Even if encoders maintain internal dictionaries or state (as zstd does), the reset ensures a clean slate for the next caller.
+- **Deterministic output**: The compressed output for a given input is identical regardless of whether the encoder was freshly allocated or retrieved from the pool.
+
+### Pool Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_compression_pool_gets_total` | counter | Number of encoder acquisitions from the pool |
+| `metrics_governor_compression_pool_puts_total` | counter | Number of encoder returns to the pool |
+| `metrics_governor_compression_pool_misses_total` | counter | Number of pool misses (new encoder allocated) |
+
+**Monitoring pool reuse:**
+
+```promql
+# Pool hit ratio (higher is better, indicates good reuse)
+1 - (rate(metrics_governor_compression_pool_misses_total[5m]) / rate(metrics_governor_compression_pool_gets_total[5m]))
+```
+
+### Configuration
+
+Encoder pooling is always enabled and requires no configuration. The pool is managed by Go's `sync.Pool`, which automatically sizes itself based on GC pressure and usage patterns.

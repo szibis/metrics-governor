@@ -452,6 +452,306 @@ func TestE2E_LimitsEnforcement(t *testing.T) {
 	}
 }
 
+// TestE2E_CacheMetricsExposed verifies all caching metrics are registered and exposed on /metrics
+func TestE2E_CacheMetricsExposed(t *testing.T) {
+	expectedMetrics := []string{
+		// Rule Cache metrics
+		"metrics_governor_rule_cache_hits_total",
+		"metrics_governor_rule_cache_misses_total",
+		"metrics_governor_rule_cache_evictions_total",
+		"metrics_governor_rule_cache_size",
+		"metrics_governor_rule_cache_max_size",
+		"metrics_governor_rule_cache_hit_ratio",
+		"metrics_governor_rule_cache_negative_entries",
+		// Compression Pool metrics
+		"metrics_governor_compression_pool_gets_total",
+		"metrics_governor_compression_pool_puts_total",
+		"metrics_governor_compression_pool_discards_total",
+		"metrics_governor_compression_pool_new_total",
+		"metrics_governor_compression_buffer_pool_gets_total",
+		"metrics_governor_compression_buffer_pool_puts_total",
+		// String Intern Pool metrics
+		"metrics_governor_intern_hits_total",
+		"metrics_governor_intern_misses_total",
+		"metrics_governor_intern_pool_size",
+		// Series Key Pool metrics
+		"metrics_governor_serieskey_pool_gets_total",
+		"metrics_governor_serieskey_pool_puts_total",
+		"metrics_governor_serieskey_pool_discards_total",
+	}
+
+	deadline := time.Now().Add(testTimeout)
+
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(metricsGovernorEndpoint + "/metrics")
+		if err != nil {
+			t.Logf("Failed to get metrics: %v", err)
+			time.Sleep(pollInterval)
+			continue
+		}
+
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		metrics := string(body)
+
+		allFound := true
+		for _, metric := range expectedMetrics {
+			if !strings.Contains(metrics, metric) {
+				t.Logf("Metric %s not found yet", metric)
+				allFound = false
+				break
+			}
+		}
+
+		if allFound {
+			t.Log("All caching metrics are exposed on /metrics endpoint")
+			for _, metric := range expectedMetrics {
+				val := extractMetricValue(metrics, metric)
+				t.Logf("  %s = %d", metric, val)
+			}
+			return
+		}
+
+		time.Sleep(pollInterval)
+	}
+
+	// Final check: report which metrics are missing
+	resp, err := http.Get(metricsGovernorEndpoint + "/metrics")
+	if err != nil {
+		t.Fatalf("Failed to get metrics on final attempt: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	metrics := string(body)
+
+	for _, metric := range expectedMetrics {
+		if !strings.Contains(metrics, metric) {
+			t.Errorf("Caching metric not found: %s", metric)
+		}
+	}
+}
+
+// TestE2E_RuleCacheBehavior verifies the rule cache is populated and actively used
+func TestE2E_RuleCacheBehavior(t *testing.T) {
+	deadline := time.Now().Add(dataFlowTimeout)
+
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(metricsGovernorEndpoint + "/metrics")
+		if err != nil {
+			t.Logf("Failed to get metrics: %v", err)
+			time.Sleep(pollInterval)
+			continue
+		}
+
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		metrics := string(body)
+
+		cacheSize := extractMetricValue(metrics, "metrics_governor_rule_cache_size")
+		cacheHits := extractMetricValue(metrics, "metrics_governor_rule_cache_hits_total")
+		cacheMisses := extractMetricValue(metrics, "metrics_governor_rule_cache_misses_total")
+		cacheEvictions := extractMetricValue(metrics, "metrics_governor_rule_cache_evictions_total")
+		cacheMaxSize := extractMetricValue(metrics, "metrics_governor_rule_cache_max_size")
+		cacheHitRatio := extractMetricValueFloat64(metrics, "metrics_governor_rule_cache_hit_ratio")
+		negativeEntries := extractMetricValue(metrics, "metrics_governor_rule_cache_negative_entries")
+
+		totalLookups := cacheHits + cacheMisses
+
+		t.Logf("Rule cache stats: size=%d, hits=%d, misses=%d, evictions=%d, maxSize=%d, hitRatio=%.4f, negativeEntries=%d",
+			cacheSize, cacheHits, cacheMisses, cacheEvictions, cacheMaxSize, cacheHitRatio, negativeEntries)
+
+		if cacheSize > 0 && totalLookups > 0 {
+			if cacheMaxSize != 10000 {
+				t.Errorf("Expected rule_cache_max_size=10000 (from docker-compose config), got %d", cacheMaxSize)
+			}
+
+			if cacheHitRatio <= 0 {
+				t.Logf("Warning: cache hit ratio is %.4f, expected > 0", cacheHitRatio)
+			}
+
+			t.Logf("Rule cache is active: size=%d, total lookups=%d, hit ratio=%.4f", cacheSize, totalLookups, cacheHitRatio)
+			return
+		}
+
+		time.Sleep(pollInterval)
+	}
+
+	t.Fatal("Rule cache did not become active within timeout")
+}
+
+// TestE2E_CompressionPoolActive verifies compression pooling is operational
+func TestE2E_CompressionPoolActive(t *testing.T) {
+	deadline := time.Now().Add(dataFlowTimeout)
+
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(metricsGovernorEndpoint + "/metrics")
+		if err != nil {
+			t.Logf("Failed to get metrics: %v", err)
+			time.Sleep(pollInterval)
+			continue
+		}
+
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		metrics := string(body)
+
+		poolGets := extractMetricValue(metrics, "metrics_governor_compression_pool_gets_total")
+		poolPuts := extractMetricValue(metrics, "metrics_governor_compression_pool_puts_total")
+		poolDiscards := extractMetricValue(metrics, "metrics_governor_compression_pool_discards_total")
+		poolNew := extractMetricValue(metrics, "metrics_governor_compression_pool_new_total")
+		bufferGets := extractMetricValue(metrics, "metrics_governor_compression_buffer_pool_gets_total")
+		bufferPuts := extractMetricValue(metrics, "metrics_governor_compression_buffer_pool_puts_total")
+
+		t.Logf("Compression pool stats: gets=%d, puts=%d, discards=%d, new=%d, bufferGets=%d, bufferPuts=%d",
+			poolGets, poolPuts, poolDiscards, poolNew, bufferGets, bufferPuts)
+
+		if poolGets > 0 && poolPuts > 0 && bufferGets > 0 {
+			if poolGets > 0 {
+				reuseRatio := float64(poolPuts) / float64(poolGets) * 100
+				t.Logf("Compression pool reuse ratio: %.2f%% (puts/gets)", reuseRatio)
+			}
+			t.Logf("Compression pooling is operational")
+			return
+		}
+
+		time.Sleep(pollInterval)
+	}
+
+	t.Fatal("Compression pool did not become active within timeout")
+}
+
+// TestE2E_InternPoolActive verifies string interning is working
+func TestE2E_InternPoolActive(t *testing.T) {
+	deadline := time.Now().Add(dataFlowTimeout)
+
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(metricsGovernorEndpoint + "/metrics")
+		if err != nil {
+			t.Logf("Failed to get metrics: %v", err)
+			time.Sleep(pollInterval)
+			continue
+		}
+
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		metrics := string(body)
+
+		internHits := extractMetricValue(metrics, "metrics_governor_intern_hits_total")
+		internMisses := extractMetricValue(metrics, "metrics_governor_intern_misses_total")
+		internPoolSize := extractMetricValue(metrics, "metrics_governor_intern_pool_size")
+
+		t.Logf("Intern pool stats: hits=%d, misses=%d, poolSize=%d", internHits, internMisses, internPoolSize)
+
+		if internHits > 0 && internPoolSize > 0 {
+			totalLookups := internHits + internMisses
+			if totalLookups > 0 {
+				hitRatio := float64(internHits) / float64(totalLookups) * 100
+				t.Logf("Intern pool hit ratio: %.2f%% (%d/%d)", hitRatio, internHits, totalLookups)
+			}
+			t.Logf("String interning is active")
+			return
+		}
+
+		time.Sleep(pollInterval)
+	}
+
+	t.Fatal("Intern pool did not become active within timeout")
+}
+
+// TestE2E_SeriesKeyPoolActive verifies series key pooling is operational
+func TestE2E_SeriesKeyPoolActive(t *testing.T) {
+	deadline := time.Now().Add(dataFlowTimeout)
+
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(metricsGovernorEndpoint + "/metrics")
+		if err != nil {
+			t.Logf("Failed to get metrics: %v", err)
+			time.Sleep(pollInterval)
+			continue
+		}
+
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		metrics := string(body)
+
+		poolGets := extractMetricValue(metrics, "metrics_governor_serieskey_pool_gets_total")
+		poolPuts := extractMetricValue(metrics, "metrics_governor_serieskey_pool_puts_total")
+		poolDiscards := extractMetricValue(metrics, "metrics_governor_serieskey_pool_discards_total")
+
+		t.Logf("Series key pool stats: gets=%d, puts=%d, discards=%d", poolGets, poolPuts, poolDiscards)
+
+		if poolGets > 0 && poolPuts > 0 {
+			t.Logf("Series key pooling is operational (discards=%d)", poolDiscards)
+			return
+		}
+
+		time.Sleep(pollInterval)
+	}
+
+	t.Fatal("Series key pool did not become active within timeout")
+}
+
+// TestE2E_CacheMemoryBounded verifies caching does not cause unbounded memory growth
+func TestE2E_CacheMemoryBounded(t *testing.T) {
+	// First scrape
+	resp1, err := http.Get(metricsGovernorEndpoint + "/metrics")
+	if err != nil {
+		t.Fatalf("Failed to get metrics on first scrape: %v", err)
+	}
+	body1, _ := io.ReadAll(resp1.Body)
+	resp1.Body.Close()
+	metrics1 := string(body1)
+
+	cacheSize1 := extractMetricValue(metrics1, "metrics_governor_rule_cache_size")
+	cacheMaxSize1 := extractMetricValue(metrics1, "metrics_governor_rule_cache_max_size")
+	internPoolSize1 := extractMetricValue(metrics1, "metrics_governor_intern_pool_size")
+
+	t.Logf("First scrape: cacheSize=%d, cacheMaxSize=%d, internPoolSize=%d", cacheSize1, cacheMaxSize1, internPoolSize1)
+
+	// Verify cache size is within bounds on first scrape
+	if cacheMaxSize1 > 0 && cacheSize1 > cacheMaxSize1 {
+		t.Errorf("Rule cache size (%d) exceeds max size (%d) on first scrape", cacheSize1, cacheMaxSize1)
+	}
+
+	// Wait 10 seconds for more activity
+	t.Log("Waiting 10 seconds between scrapes...")
+	time.Sleep(10 * time.Second)
+
+	// Second scrape
+	resp2, err := http.Get(metricsGovernorEndpoint + "/metrics")
+	if err != nil {
+		t.Fatalf("Failed to get metrics on second scrape: %v", err)
+	}
+	body2, _ := io.ReadAll(resp2.Body)
+	resp2.Body.Close()
+	metrics2 := string(body2)
+
+	cacheSize2 := extractMetricValue(metrics2, "metrics_governor_rule_cache_size")
+	cacheMaxSize2 := extractMetricValue(metrics2, "metrics_governor_rule_cache_max_size")
+	internPoolSize2 := extractMetricValue(metrics2, "metrics_governor_intern_pool_size")
+
+	t.Logf("Second scrape: cacheSize=%d, cacheMaxSize=%d, internPoolSize=%d", cacheSize2, cacheMaxSize2, internPoolSize2)
+
+	// Verify cache size is within bounds on second scrape
+	if cacheMaxSize2 > 0 && cacheSize2 > cacheMaxSize2 {
+		t.Errorf("Rule cache size (%d) exceeds max size (%d) on second scrape", cacheSize2, cacheMaxSize2)
+	}
+
+	// Verify intern pool is not growing unboundedly
+	// In steady state, growth should be < 1000 entries between scrapes
+	internGrowth := internPoolSize2 - internPoolSize1
+	t.Logf("Intern pool growth between scrapes: %d entries", internGrowth)
+	if internGrowth > 1000 {
+		t.Errorf("Intern pool growing too fast: %d new entries in 10 seconds (threshold: 1000)", internGrowth)
+	} else {
+		t.Logf("Intern pool growth is bounded (%d entries in 10s)", internGrowth)
+	}
+
+	// Log overall cache memory health
+	t.Logf("Cache memory bounded check passed: rule cache %d/%d, intern pool growth %d",
+		cacheSize2, cacheMaxSize2, internGrowth)
+}
+
 // Helper function to extract metric value from Prometheus text format
 func extractMetricValue(metricsText, metricName string) int64 {
 	lines := strings.Split(metricsText, "\n")
@@ -470,6 +770,30 @@ func extractMetricValue(metricsText, metricName string) int64 {
 				var val float64
 				fmt.Sscanf(valueStr, "%f", &val)
 				total += int64(val)
+			}
+		}
+	}
+	return total
+}
+
+// Helper function to extract float64 metric value from Prometheus text format (for ratio/gauge metrics)
+func extractMetricValueFloat64(metricsText, metricName string) float64 {
+	lines := strings.Split(metricsText, "\n")
+	var total float64 = 0
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		if strings.HasPrefix(line, metricName) {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				valueStr := parts[len(parts)-1]
+				var val float64
+				fmt.Sscanf(valueStr, "%f", &val)
+				total += val
 			}
 		}
 	}

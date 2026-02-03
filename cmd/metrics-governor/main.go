@@ -226,7 +226,7 @@ func main() {
 		if err != nil {
 			logging.Fatal("failed to load limits config", logging.F("error", err.Error(), "path", cfg.LimitsConfig))
 		}
-		limitsEnforcer = limits.NewEnforcer(limitsCfg, cfg.LimitsDryRun)
+		limitsEnforcer = limits.NewEnforcer(limitsCfg, cfg.LimitsDryRun, cfg.RuleCacheMaxSize)
 		logging.Info("limits enforcer initialized", logging.F(
 			"config", cfg.LimitsConfig,
 			"dry_run", cfg.LimitsDryRun,

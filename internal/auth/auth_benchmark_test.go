@@ -25,6 +25,7 @@ func BenchmarkHTTPMiddleware_BearerToken(b *testing.B) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer test-token-12345")
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rec := httptest.NewRecorder()
@@ -49,6 +50,7 @@ func BenchmarkHTTPMiddleware_BasicAuth(b *testing.B) {
 	// "admin:password123" base64 encoded
 	req.Header.Set("Authorization", "Basic YWRtaW46cGFzc3dvcmQxMjM=")
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rec := httptest.NewRecorder()
@@ -69,6 +71,7 @@ func BenchmarkHTTPMiddleware_Disabled(b *testing.B) {
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rec := httptest.NewRecorder()
@@ -92,6 +95,7 @@ func BenchmarkHTTPTransport_BearerToken(b *testing.B) {
 
 	req, _ := http.NewRequest(http.MethodGet, server.URL, nil)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		resp, _ := client.Do(req)
@@ -121,6 +125,7 @@ func BenchmarkHTTPTransport_CustomHeaders(b *testing.B) {
 
 	req, _ := http.NewRequest(http.MethodGet, server.URL, nil)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		resp, _ := client.Do(req)
@@ -143,6 +148,7 @@ func BenchmarkGRPCClientInterceptor_BearerToken(b *testing.B) {
 		return nil
 	}
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = interceptor(ctx, "/test.Service/Method", nil, nil, nil, invoker)
@@ -171,6 +177,7 @@ func BenchmarkGRPCServerInterceptor_Enabled(b *testing.B) {
 		FullMethod: "/test.Service/Method",
 	}
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = interceptor(ctx, nil, info, handler)
@@ -194,6 +201,7 @@ func BenchmarkGRPCServerInterceptor_Disabled(b *testing.B) {
 		FullMethod: "/test.Service/Method",
 	}
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = interceptor(ctx, nil, info, handler)
@@ -222,6 +230,7 @@ func BenchmarkGRPCServerInterceptor_Concurrent(b *testing.B) {
 		FullMethod: "/test.Service/Method",
 	}
 
+	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			_, _ = interceptor(ctx, nil, info, handler)
@@ -241,6 +250,7 @@ func BenchmarkHTTPMiddleware_Concurrent(b *testing.B) {
 	})
 	middleware := HTTPMiddleware(cfg, handler)
 
+	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)

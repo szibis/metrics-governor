@@ -66,7 +66,7 @@ func TestNewEnforcer(t *testing.T) {
 		},
 	}
 
-	enforcer := NewEnforcer(cfg, true)
+	enforcer := NewEnforcer(cfg, true, 0)
 
 	if enforcer == nil {
 		t.Fatal("expected non-nil enforcer")
@@ -89,7 +89,7 @@ func TestNewEnforcer(t *testing.T) {
 }
 
 func TestProcessNoConfig(t *testing.T) {
-	enforcer := NewEnforcer(nil, false)
+	enforcer := NewEnforcer(nil, false, 0)
 
 	rm := createTestResourceMetrics(
 		map[string]string{"service": "api"},
@@ -116,7 +116,7 @@ func TestProcessNoMatchingRule(t *testing.T) {
 	// Compile regex
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 
 	rm := createTestResourceMetrics(
 		map[string]string{"service": "api"},
@@ -145,7 +145,7 @@ func TestProcessWithinLimits(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 
 	rm := createTestResourceMetrics(
 		map[string]string{"service": "api"},
@@ -173,7 +173,7 @@ func TestProcessDropAction(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 
 	// First metric - should pass
 	rm1 := createTestResourceMetrics(
@@ -210,7 +210,7 @@ func TestProcessDropActionDryRun(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, true) // dryRun = true
+	enforcer := NewEnforcer(cfg, true, 0) // dryRun = true
 
 	// First metric
 	rm1 := createTestResourceMetrics(
@@ -244,7 +244,7 @@ func TestProcessLogAction(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 
 	// First metric
 	rm1 := createTestResourceMetrics(
@@ -277,7 +277,7 @@ func TestBuildGroupKey(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 
 	metric := createTestMetric("test_metric", map[string]string{"env": "prod", "extra": "value"}, 1)
 	resourceAttrs := map[string]string{"service": "api"}
@@ -303,7 +303,7 @@ func TestBuildGroupKeyNoGroupBy(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 
 	metric := createTestMetric("test_metric", map[string]string{}, 1)
 	resourceAttrs := map[string]string{"service": "api"}
@@ -330,7 +330,7 @@ func TestServeHTTP(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 
 	// Process some metrics to generate stats
 	rm := createTestResourceMetrics(
@@ -503,7 +503,7 @@ func TestFindMatchingRule(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 
 	tests := []struct {
 		name         string
@@ -549,7 +549,7 @@ func TestDatapointsRateLimit(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 
 	// First batch - should pass (5 datapoints)
 	rm1 := createTestResourceMetrics(
@@ -598,7 +598,7 @@ func TestAdaptiveActionTracking(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 
 	// Service A sends 8 datapoints - should pass (under limit)
 	rmA := createTestResourceMetrics(
@@ -657,7 +657,7 @@ func TestAdaptiveActionDryRun(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, true) // dryRun = true
+	enforcer := NewEnforcer(cfg, true, 0) // dryRun = true
 
 	// Exceed limits
 	for i := 0; i < 3; i++ {
@@ -802,7 +802,7 @@ func TestProcessMultipleScopeMetrics(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 
 	// Create ResourceMetrics with multiple ScopeMetrics
 	rm := &metricspb.ResourceMetrics{
@@ -840,7 +840,7 @@ func TestProcessEmptyMetricsList(t *testing.T) {
 		Defaults: &DefaultLimits{Action: ActionLog},
 	}
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 
 	result := enforcer.Process([]*metricspb.ResourceMetrics{})
 	if len(result) != 0 {
@@ -853,7 +853,7 @@ func TestProcessNilResourceMetrics(t *testing.T) {
 		Defaults: &DefaultLimits{Action: ActionLog},
 	}
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 
 	result := enforcer.Process(nil)
 	if len(result) != 0 {
@@ -875,7 +875,7 @@ func TestServeHTTPWithViolations(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 
 	// Create violation by exceeding cardinality
 	rm1 := createTestResourceMetrics(
@@ -1045,7 +1045,7 @@ func TestProcessMetric_NoRule_NoLabels(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	rm := createTestResourceMetrics(
@@ -1080,7 +1080,7 @@ func TestProcessMetric_WithinLimits_PassedLabel(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	rm := createTestResourceMetrics(
@@ -1121,7 +1121,7 @@ func TestProcessMetric_LogAction_LogLabel(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false)
+	enforcer := NewEnforcer(cfg, false, 0)
 	defer enforcer.Stop()
 
 	// First metric - should get "passed" label
@@ -1175,7 +1175,7 @@ func TestProcessMetric_DropAction_DropLabel_DryRun(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, true) // dryRun = true
+	enforcer := NewEnforcer(cfg, true, 0) // dryRun = true
 	defer enforcer.Stop()
 
 	// First metric - should get "passed" label
@@ -1226,7 +1226,7 @@ func TestProcessMetric_AdaptiveAction_AdaptiveLabel(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, true) // dryRun = true
+	enforcer := NewEnforcer(cfg, true, 0) // dryRun = true
 	defer enforcer.Stop()
 
 	// First batch - should pass and get "passed" label
@@ -1291,7 +1291,7 @@ func TestProcessMetric_DroppedGroup_DropLabel_DryRun(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, true) // dryRun = true
+	enforcer := NewEnforcer(cfg, true, 0) // dryRun = true
 	defer enforcer.Stop()
 
 	// First batch to fill up
@@ -1427,7 +1427,7 @@ func TestProcessMetric_DropAction_NoLabel_WhenActuallyDropped(t *testing.T) {
 	}
 	LoadConfigFromStruct(cfg)
 
-	enforcer := NewEnforcer(cfg, false) // dryRun = false
+	enforcer := NewEnforcer(cfg, false, 0) // dryRun = false
 	defer enforcer.Stop()
 
 	// First metric - should pass
@@ -1475,7 +1475,7 @@ func TestRuleNameInLabel(t *testing.T) {
 			}
 			LoadConfigFromStruct(cfg)
 
-			enforcer := NewEnforcer(cfg, false)
+			enforcer := NewEnforcer(cfg, false, 0)
 			defer enforcer.Stop()
 
 			rm := createTestResourceMetrics(

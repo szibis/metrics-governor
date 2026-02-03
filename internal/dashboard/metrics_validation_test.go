@@ -123,6 +123,33 @@ var knownMetrics = []string{
 	"metrics_governor_cardinality_config_expected_items",
 	"metrics_governor_cardinality_config_fp_rate",
 
+	// Rule cache metrics (limits/enforcer.go)
+	"metrics_governor_rule_cache_evictions_total",
+	"metrics_governor_rule_cache_hit_ratio",
+	"metrics_governor_rule_cache_hits_total",
+	"metrics_governor_rule_cache_max_size",
+	"metrics_governor_rule_cache_misses_total",
+	"metrics_governor_rule_cache_negative_entries",
+	"metrics_governor_rule_cache_size",
+
+	// Compression pool metrics (compression/metrics.go)
+	"metrics_governor_compression_buffer_pool_gets_total",
+	"metrics_governor_compression_buffer_pool_puts_total",
+	"metrics_governor_compression_pool_discards_total",
+	"metrics_governor_compression_pool_gets_total",
+	"metrics_governor_compression_pool_new_total",
+	"metrics_governor_compression_pool_puts_total",
+
+	// String intern pool metrics (intern/metrics.go)
+	"metrics_governor_intern_hits_total",
+	"metrics_governor_intern_misses_total",
+	"metrics_governor_intern_pool_size",
+
+	// Series key pool metrics (stats.go, limits/enforcer.go)
+	"metrics_governor_serieskey_pool_discards_total",
+	"metrics_governor_serieskey_pool_gets_total",
+	"metrics_governor_serieskey_pool_puts_total",
+
 	// Runtime metrics (stats/runtime.go)
 	"metrics_governor_process_start_time_seconds",
 	"metrics_governor_process_uptime_seconds",
@@ -410,6 +437,10 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_rule",
 		"metrics_governor_limits",
 		"metrics_governor_cardinality",
+		// Caching & pool metrics prefixes
+		"metrics_governor_compression",
+		"metrics_governor_intern",
+		"metrics_governor_serieskey",
 		// Runtime metrics prefixes
 		"metrics_governor_process",
 		"metrics_governor_goroutines",

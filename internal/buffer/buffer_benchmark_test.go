@@ -161,6 +161,80 @@ func BenchmarkBuffer_FlushThroughput(b *testing.B) {
 	}
 }
 
+// BenchmarkFlush benchmarks flush at various batch sizes
+func BenchmarkFlush(b *testing.B) {
+	batchSizes := []int{10, 100, 1000}
+
+	for _, batchSize := range batchSizes {
+		b.Run(fmt.Sprintf("batch_%d", batchSize), func(b *testing.B) {
+			exp := &noopExporter{}
+			statsCollector := stats.NewCollector([]string{"service", "env"})
+			// Use maxBatchSize equal to batchSize so each flush sends one batch
+			buf := New(batchSize*2, batchSize, time.Hour, exp, statsCollector, nil, nil)
+
+			// Pre-create metrics matching the batch size (10 datapoints per metric)
+			metrics := createBenchmarkResourceMetrics(batchSize, 10)
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				// Add metrics directly (no Start loop needed since we call flush manually)
+				buf.mu.Lock()
+				buf.metrics = append(buf.metrics[:0], metrics...)
+				buf.mu.Unlock()
+
+				buf.flush(context.Background())
+			}
+		})
+	}
+}
+
+// BenchmarkFlush_WithStats benchmarks flush with stats collection enabled
+func BenchmarkFlush_WithStats(b *testing.B) {
+	batchSizes := []int{10, 100, 1000}
+
+	for _, batchSize := range batchSizes {
+		b.Run(fmt.Sprintf("batch_%d", batchSize), func(b *testing.B) {
+			exp := &noopExporter{}
+			statsCollector := stats.NewCollector([]string{"service", "env"})
+			buf := New(batchSize*2, batchSize, time.Hour, exp, statsCollector, nil, nil)
+
+			metrics := createBenchmarkResourceMetrics(batchSize, 10)
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				buf.mu.Lock()
+				buf.metrics = append(buf.metrics[:0], metrics...)
+				buf.mu.Unlock()
+
+				buf.flush(context.Background())
+			}
+		})
+	}
+}
+
+// BenchmarkFlush_NoStats benchmarks flush without stats collection
+func BenchmarkFlush_NoStats(b *testing.B) {
+	batchSizes := []int{10, 100, 1000}
+
+	for _, batchSize := range batchSizes {
+		b.Run(fmt.Sprintf("batch_%d", batchSize), func(b *testing.B) {
+			exp := &noopExporter{}
+			buf := New(batchSize*2, batchSize, time.Hour, exp, nil, nil, nil)
+
+			metrics := createBenchmarkResourceMetrics(batchSize, 10)
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				buf.mu.Lock()
+				buf.metrics = append(buf.metrics[:0], metrics...)
+				buf.mu.Unlock()
+
+				buf.flush(context.Background())
+			}
+		})
+	}
+}
+
 // Helper functions
 
 func createBenchmarkResourceMetrics(numMetrics, datapointsPerMetric int) []*metricspb.ResourceMetrics {

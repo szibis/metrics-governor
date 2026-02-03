@@ -52,7 +52,7 @@ func TestE2E_FullPipeline_GRPC(t *testing.T) {
 
 	// Create components
 	statsCollector := stats.NewCollector(nil)
-	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true) // dry run mode
+	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0) // dry run mode
 
 	// Create buffer
 	buf := buffer.New(1000, 10, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)
@@ -137,7 +137,7 @@ func TestE2E_FullPipeline_HTTP(t *testing.T) {
 
 	// Create components
 	statsCollector := stats.NewCollector(nil)
-	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true)
+	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer
 	buf := buffer.New(1000, 10, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)
@@ -212,7 +212,7 @@ func TestE2E_BufferFlushOnClose(t *testing.T) {
 
 	// Create components
 	statsCollector := stats.NewCollector(nil)
-	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true)
+	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer with a separate context so we can cancel it
 	bufCtx, bufCancel := context.WithCancel(ctx)
@@ -287,7 +287,7 @@ func TestE2E_ConcurrentClients(t *testing.T) {
 
 	// Create components
 	statsCollector := stats.NewCollector(nil)
-	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true)
+	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer
 	buf := buffer.New(10000, 100, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)
@@ -464,7 +464,7 @@ func TestE2E_HighCardinality(t *testing.T) {
 
 	// Create components with label tracking
 	statsCollector := stats.NewCollector([]string{"service", "user_id", "request_id"})
-	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true)
+	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer
 	buf := buffer.New(100000, 1000, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)
@@ -564,7 +564,7 @@ func TestE2E_ManyDatapoints(t *testing.T) {
 
 	// Create components
 	statsCollector := stats.NewCollector([]string{"service"})
-	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true)
+	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer
 	buf := buffer.New(100000, 1000, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)
@@ -1296,7 +1296,7 @@ func TestE2E_HTTPReceiver_CustomPath(t *testing.T) {
 
 	// Create components
 	statsCollector := stats.NewCollector(nil)
-	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true)
+	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer
 	buf := buffer.New(1000, 10, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)
@@ -1411,7 +1411,7 @@ func TestE2E_HTTPExporter_CustomDefaultPath(t *testing.T) {
 
 	// Create components
 	statsCollector := stats.NewCollector(nil)
-	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true)
+	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer
 	buf := buffer.New(1000, 10, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)
@@ -1503,7 +1503,7 @@ func TestE2E_BloomPersistence_RestartRecovery(t *testing.T) {
 
 	// Create stats collector with bloom persistence enabled
 	statsCollector := stats.NewCollector([]string{"service", "method"})
-	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true)
+	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer
 	buf := buffer.New(1000, 10, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)
@@ -1577,7 +1577,7 @@ func TestE2E_BloomPersistence_RestartRecovery(t *testing.T) {
 
 	// Create new stats collector
 	statsCollector2 := stats.NewCollector([]string{"service", "method"})
-	limitsEnforcer2 := limits.NewEnforcer(&limits.Config{}, true)
+	limitsEnforcer2 := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create new buffer
 	buf2 := buffer.New(1000, 10, 100*time.Millisecond, exp2, statsCollector2, limitsEnforcer2, nil)
@@ -1653,7 +1653,7 @@ func TestE2E_BloomPersistence_HighCardinalityTracking(t *testing.T) {
 
 	// Create stats collector with label tracking (uses bloom filters internally)
 	statsCollector := stats.NewCollector([]string{"service", "user_id", "session_id"})
-	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true)
+	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer
 	buf := buffer.New(100000, 1000, 100*time.Millisecond, exp, statsCollector, limitsEnforcer, nil)

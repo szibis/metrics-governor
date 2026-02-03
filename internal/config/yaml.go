@@ -193,7 +193,8 @@ type StatsYAMLConfig struct {
 
 // LimitsYAMLConfig holds limits configuration.
 type LimitsYAMLConfig struct {
-	DryRun *bool `yaml:"dry_run"`
+	DryRun           *bool `yaml:"dry_run"`
+	RuleCacheMaxSize int   `yaml:"rule_cache_max_size"`
 }
 
 // Duration is a wrapper for time.Duration that supports YAML unmarshaling.
@@ -315,6 +316,9 @@ func (y *YAMLConfig) ApplyDefaults() {
 	if y.Limits.DryRun == nil {
 		dryRun := true
 		y.Limits.DryRun = &dryRun
+	}
+	if y.Limits.RuleCacheMaxSize == 0 {
+		y.Limits.RuleCacheMaxSize = 10000
 	}
 
 	// Queue defaults
@@ -490,7 +494,8 @@ func (y *YAMLConfig) ToConfig() *Config {
 		StatsLabels: strings.Join(y.Stats.Labels, ","),
 
 		// Limits
-		LimitsDryRun: *y.Limits.DryRun,
+		LimitsDryRun:     *y.Limits.DryRun,
+		RuleCacheMaxSize: y.Limits.RuleCacheMaxSize,
 
 		// Queue
 		QueueEnabled:           *y.Exporter.Queue.Enabled,

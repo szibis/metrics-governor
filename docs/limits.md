@@ -256,6 +256,51 @@ rules:
     action: log
 ```
 
+## Rule Matching Cache
+
+The limits enforcer evaluates every incoming metric against the configured rules, which may involve regex matching on metric names and label comparisons. To avoid repeated regex evaluation for the same metric identity, a rule matching cache is used.
+
+### How It Works
+
+When a metric is evaluated, its name and label set are used to form a cache key. The cache stores the index of the matched rule (or a sentinel for "no match"). On subsequent evaluations of the same metric identity, the cached result is returned immediately, bypassing all regex and label matching logic.
+
+The cache uses an **LRU (Least Recently Used)** eviction policy. When the cache reaches its maximum size, the least-recently-accessed entry is evicted to make room for new entries. This ensures that frequently seen metrics stay cached while rare or one-off series do not consume cache space indefinitely.
+
+For rules that only use label matchers (no regex `metric_name` pattern), the cache bypasses regex entirely and uses direct map lookups on the label set, which is even faster than a cache hit on a regex result.
+
+### Configuration
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-rule-cache-max-size` | `10000` | Maximum number of entries in the rule matching LRU cache. Each entry is approximately 100 bytes, so the default uses roughly 1MB. |
+
+```bash
+# Increase cache size for high-cardinality workloads
+metrics-governor -limits-config limits.yaml -rule-cache-max-size=50000
+
+# Disable cache (not recommended)
+metrics-governor -limits-config limits.yaml -rule-cache-max-size=0
+```
+
+### Cache Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_rule_cache_hits_total` | counter | Number of rule match lookups served from cache |
+| `metrics_governor_rule_cache_misses_total` | counter | Number of rule match lookups that required full evaluation |
+| `metrics_governor_rule_cache_size` | gauge | Current number of entries in the cache |
+| `metrics_governor_rule_cache_evictions_total` | counter | Number of entries evicted due to LRU policy |
+
+**Monitoring cache effectiveness:**
+
+```promql
+# Cache hit ratio (should be > 90% for stable workloads)
+rate(metrics_governor_rule_cache_hits_total[5m]) /
+(rate(metrics_governor_rule_cache_hits_total[5m]) + rate(metrics_governor_rule_cache_misses_total[5m]))
+```
+
+---
+
 ## Prometheus Metrics
 
 When limits are enabled, additional metrics are exposed:

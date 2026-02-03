@@ -192,6 +192,46 @@ func TestDecompressInvalidData(t *testing.T) {
 	}
 }
 
+func TestPooledRoundTrip(t *testing.T) {
+	// Exercises the pooled code path by running multiple iterations so that
+	// writers/buffers are returned to the pool and reused on subsequent calls.
+	testData := []byte("Pooled round-trip test data. Repeated enough to be compressible: " +
+		"abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz")
+
+	types := []struct {
+		name string
+		cfg  Config
+	}{
+		{"gzip", Config{Type: TypeGzip, Level: LevelDefault}},
+		{"zstd", Config{Type: TypeZstd, Level: LevelDefault}},
+		{"snappy", Config{Type: TypeSnappy}},
+		{"zlib", Config{Type: TypeZlib, Level: LevelDefault}},
+		{"deflate", Config{Type: TypeDeflate, Level: LevelDefault}},
+		{"lz4", Config{Type: TypeLZ4, Level: LevelDefault}},
+	}
+
+	const iterations = 50
+
+	for _, tt := range types {
+		t.Run(tt.name, func(t *testing.T) {
+			for i := 0; i < iterations; i++ {
+				compressed, err := Compress(testData, tt.cfg)
+				if err != nil {
+					t.Fatalf("iteration %d: Compress() error = %v", i, err)
+				}
+				decompressed, err := Decompress(compressed, tt.cfg.Type)
+				if err != nil {
+					t.Fatalf("iteration %d: Decompress() error = %v", i, err)
+				}
+				if !bytes.Equal(decompressed, testData) {
+					t.Fatalf("iteration %d: decompressed data mismatch (got %d bytes, want %d)",
+						i, len(decompressed), len(testData))
+				}
+			}
+		})
+	}
+}
+
 func TestEmptyData(t *testing.T) {
 	emptyData := []byte{}
 

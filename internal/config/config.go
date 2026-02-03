@@ -91,8 +91,9 @@ type Config struct {
 	StatsLabels string
 
 	// Limits settings
-	LimitsConfig string
-	LimitsDryRun bool
+	LimitsConfig     string
+	LimitsDryRun     bool
+	RuleCacheMaxSize int
 
 	// Queue settings
 	QueueEnabled           bool
@@ -286,6 +287,7 @@ func ParseFlags() *Config {
 	// Limits flags
 	flag.StringVar(&cfg.LimitsConfig, "limits-config", "", "Path to limits configuration YAML file")
 	flag.BoolVar(&cfg.LimitsDryRun, "limits-dry-run", true, "Dry run mode: log violations but don't drop/sample")
+	flag.IntVar(&cfg.RuleCacheMaxSize, "rule-cache-max-size", 10000, "Maximum entries in the rule matching LRU cache (0 disables)")
 
 	// Queue flags
 	flag.BoolVar(&cfg.QueueEnabled, "queue-enabled", false, "Enable persistent queue for export retries")
@@ -565,6 +567,12 @@ func applyFlagOverrides(cfg *Config) {
 			cfg.LimitsConfig = f.Value.String()
 		case "limits-dry-run":
 			cfg.LimitsDryRun = f.Value.String() == "true"
+		case "rule-cache-max-size":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.RuleCacheMaxSize = i
+				}
+			}
 		case "queue-enabled":
 			cfg.QueueEnabled = f.Value.String() == "true"
 		case "queue-path":
@@ -1285,6 +1293,7 @@ OPTIONS:
     Limits:
         -limits-config <path>            Path to limits configuration YAML file
         -limits-dry-run                  Dry run mode: log only, don't drop/sample (default: true)
+        -rule-cache-max-size <n>         Maximum entries in the rule matching LRU cache (default: 10000, 0 disables)
 
     Cardinality Tracking:
         -cardinality-mode <mode>         Tracking mode: bloom (memory-efficient) or exact (100%% accurate) (default: bloom)
@@ -1459,6 +1468,7 @@ func DefaultConfig() *Config {
 		StatsLabels:                     "",
 		LimitsConfig:                    "",
 		LimitsDryRun:                    true,
+		RuleCacheMaxSize:                10000,
 		QueueEnabled:                    false,
 		QueuePath:                       "./queue",
 		QueueMaxSize:                    10000,

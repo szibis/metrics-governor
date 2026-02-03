@@ -54,6 +54,8 @@ services:
       - "-queue-circuit-breaker-enabled=true"
       - "-queue-circuit-breaker-threshold=20"  # Higher threshold for perf
       - "-queue-circuit-breaker-reset-timeout=15s"
+      # Rule cache - larger LRU cache for high-cardinality perf testing
+      - "-rule-cache-max-size=50000"
       # Memory limit (more headroom for perf testing)
       - "-memory-limit-ratio=0.85"
     deploy:
