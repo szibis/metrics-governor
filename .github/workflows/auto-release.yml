@@ -8,15 +8,18 @@ on:
 permissions:
   contents: write
   packages: write
+  pull-requests: write
 
 jobs:
-  auto-release:
-    if: github.event.pull_request.merged == true
+  # Job 1: When a feature/fix PR is merged, create a release PR
+  prepare-release:
+    if: |
+      github.event.pull_request.merged == true &&
+      !startsWith(github.event.pull_request.title, 'chore(release):')
     runs-on: ubuntu-latest
     outputs:
-      released: ${{ steps.release.outputs.released }}
-      version: ${{ steps.release.outputs.version }}
-      chart_bumped: ${{ steps.detect.outputs.chart_changed }}
+      release_pr_created: ${{ steps.create_pr.outputs.created }}
+      version: ${{ steps.new_version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -274,27 +277,30 @@ jobs:
           echo "Generated changelog entry:"
           cat /tmp/changelog_entry.md
 
-      - name: Update version files
+      - name: Create release branch and PR
         if: steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
+        id: create_pr
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
-          VERSION="${{ steps.new_version.outputs.version_num }}"
+          VERSION="${{ steps.new_version.outputs.version }}"
+          VERSION_NUM="${{ steps.new_version.outputs.version_num }}"
           CHART_VERSION="${{ steps.new_version.outputs.chart_version }}"
+          BRANCH="release/${VERSION}"
 
-          echo "Updating app version to $VERSION"
-          echo "Updating chart version to $CHART_VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Update Helm Chart.yaml - appVersion always updates, version only if chart changed
-          sed -i "s/^appVersion: .*/appVersion: \"$VERSION\"/" helm/metrics-governor/Chart.yaml
+          # Create release branch
+          git checkout -b "$BRANCH"
+
+          # Update Helm Chart.yaml
+          sed -i "s/^appVersion: .*/appVersion: \"$VERSION_NUM\"/" helm/metrics-governor/Chart.yaml
 
           if [ "${{ steps.detect.outputs.chart_changed }}" == "true" ]; then
             sed -i "s/^version: .*/version: $CHART_VERSION/" helm/metrics-governor/Chart.yaml
             echo "Chart version bumped to $CHART_VERSION"
-          else
-            echo "Chart version unchanged (no chart files modified)"
           fi
-
-          echo "Updated helm/metrics-governor/Chart.yaml:"
-          head -10 helm/metrics-governor/Chart.yaml
 
           # Update CHANGELOG.md
           {
@@ -305,40 +311,45 @@ jobs:
           } > CHANGELOG.md.tmp
           mv CHANGELOG.md.tmp CHANGELOG.md
 
-          echo "Updated CHANGELOG.md:"
-          head -30 CHANGELOG.md
+          # Commit changes
+          git add helm/metrics-governor/Chart.yaml CHANGELOG.md
+          git commit -m "chore(release): prepare ${VERSION}
 
-      - name: Commit version updates
-        if: steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
-        run: |
-          VERSION="${{ steps.new_version.outputs.version }}"
+          - Update appVersion to ${VERSION_NUM}
+          - Update CHANGELOG.md"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Push branch
+          git push origin "$BRANCH"
 
-          # Check if there are changes to commit
-          if git diff --quiet helm/metrics-governor/Chart.yaml CHANGELOG.md; then
-            echo "No changes to commit"
-          else
-            git add helm/metrics-governor/Chart.yaml CHANGELOG.md
-            git commit -m "chore: bump version to $VERSION [skip ci]"
-            git push origin main
-            echo "Version files committed and pushed"
-          fi
+          # Create PR with auto-merge
+          PR_URL=$(gh pr create \
+            --title "chore(release): ${VERSION}" \
+            --body "## Release ${VERSION}
 
-      - name: Create and push tag
-        if: steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
-        id: release
-        run: |
-          VERSION="${{ steps.new_version.outputs.version }}"
-          PR_TITLE="${{ github.event.pull_request.title }}"
+          This PR was automatically created to prepare release ${VERSION}.
 
-          git tag -a "$VERSION" -m "$PR_TITLE"
-          git push origin "$VERSION"
+          ### Changes
+          - Updated \`appVersion\` in Chart.yaml to \`${VERSION_NUM}\`
+          - Updated CHANGELOG.md with new entries
 
-          echo "Created and pushed tag: $VERSION"
-          echo "released=true" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          ### After Merge
+          - Tag \`${VERSION}\` will be created
+          - GitHub Release will be published
+          - Docker images will be pushed
+          - Helm chart will be packaged
+
+          ---
+          *This PR will be auto-merged when checks pass.*" \
+            --label "release:skip" \
+            --base main \
+            --head "$BRANCH")
+
+          echo "Created PR: $PR_URL"
+          echo "created=true" >> $GITHUB_OUTPUT
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+
+          # Enable auto-merge
+          gh pr merge "$BRANCH" --auto --squash
 
       - name: Summary
         if: always()
@@ -357,28 +368,76 @@ jobs:
             echo "**Status:** Skipped (tag exists)" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Tag ${{ steps.new_version.outputs.version }} already exists." >> $GITHUB_STEP_SUMMARY
-          elif [ "${{ steps.release.outputs.released }}" == "true" ]; then
-            echo "**Status:** Released" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.create_pr.outputs.created }}" == "true" ]; then
+            echo "**Status:** Release PR Created" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "| | |" >> $GITHUB_STEP_SUMMARY
             echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-            echo "| **App Version** | ${{ steps.release.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Version** | ${{ steps.new_version.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
             echo "| **Chart Version** | ${{ steps.new_version.outputs.chart_version }} |" >> $GITHUB_STEP_SUMMARY
             echo "| **Bump** | ${{ steps.bump.outputs.bump }} |" >> $GITHUB_STEP_SUMMARY
             echo "| **Previous** | ${{ steps.current.outputs.tag }} |" >> $GITHUB_STEP_SUMMARY
-            echo "| **Chart Changed** | ${{ steps.detect.outputs.chart_changed }} |" >> $GITHUB_STEP_SUMMARY
-            echo "| **PR** | #${{ github.event.pull_request.number }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Release PR** | ${{ steps.create_pr.outputs.pr_url }} |" >> $GITHUB_STEP_SUMMARY
           fi
 
-  # Build binaries and helm chart, upload to release
+  # Job 2: When a release PR is merged, create tag and release
+  create-release:
+    if: |
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.title, 'chore(release):')
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Extract version from PR title
+        id: version
+        run: |
+          # Extract version from PR title like "chore(release): v1.2.3"
+          TITLE="${{ github.event.pull_request.title }}"
+          VERSION=$(echo "$TITLE" | grep -oP 'v\d+\.\d+\.\d+')
+          echo "Version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_num=${VERSION#v}" >> $GITHUB_OUTPUT
+
+      - name: Create and push tag
+        id: release
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create tag
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "$VERSION"
+
+          echo "Created and pushed tag: $VERSION"
+          echo "released=true" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Summary
+        run: |
+          echo "## Release Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Tag created and pushed. Build jobs will now run." >> $GITHUB_STEP_SUMMARY
+
+  # Job 3: Build binaries and create GitHub release
   build-and-release:
-    needs: auto-release
-    if: needs.auto-release.outputs.released == 'true'
+    needs: create-release
+    if: needs.create-release.outputs.released == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.auto-release.outputs.version }}
+          ref: ${{ needs.create-release.outputs.version }}
           fetch-depth: 0
 
       - name: Set up Go
@@ -390,7 +449,7 @@ jobs:
       - name: Get version
         id: version
         run: |
-          VERSION="${{ needs.auto-release.outputs.version }}"
+          VERSION="${{ needs.create-release.outputs.version }}"
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "VERSION_NUM=${VERSION#v}" >> $GITHUB_OUTPUT
 
@@ -432,20 +491,20 @@ jobs:
             --notes "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details." \
             bin/metrics-governor-*.tar.gz bin/checksums.txt bin/metrics-governor-*.tgz
 
-  # Build and push Docker images
+  # Job 4: Build and push Docker images
   docker:
-    needs: [auto-release, build-and-release]
-    if: needs.auto-release.outputs.released == 'true'
+    needs: [create-release, build-and-release]
+    if: needs.create-release.outputs.released == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.auto-release.outputs.version }}
+          ref: ${{ needs.create-release.outputs.version }}
 
       - name: Get version
         id: version
         run: |
-          VERSION="${{ needs.auto-release.outputs.version }}"
+          VERSION="${{ needs.create-release.outputs.version }}"
           echo "VERSION=${VERSION#v}" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
