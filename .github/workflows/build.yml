@@ -195,13 +195,22 @@ jobs:
 
       - name: Count tests
         id: count
+        if: always()
         run: |
           # Count test results from package summaries
           # Note: grep -c returns exit code 1 when no matches, so we handle it separately
-          PASSED_PKGS=$(grep -c '^ok' unit-test-output.txt) || PASSED_PKGS=0
-          FAILED_PKGS=$(grep -c '^FAIL' unit-test-output.txt) || FAILED_PKGS=0
+          if [ -f unit-test-output.txt ]; then
+            PASSED_PKGS=$(grep -c '^ok' unit-test-output.txt) || PASSED_PKGS=0
+            FAILED_PKGS=$(grep -c '^FAIL' unit-test-output.txt) || FAILED_PKGS=0
+          else
+            echo "Warning: unit-test-output.txt not found"
+            PASSED_PKGS=0
+            FAILED_PKGS=0
+          fi
           # Determine success based on whether any packages failed
-          if [ "$FAILED_PKGS" = "0" ] && [ "$PASSED_PKGS" -gt "0" ]; then
+          # Also check the test step outcome
+          TEST_OUTCOME="${{ steps.unit_tests.outcome }}"
+          if [ "$TEST_OUTCOME" = "success" ] && [ "$FAILED_PKGS" = "0" ] && [ "$PASSED_PKGS" -gt "0" ]; then
             SUCCESS="true"
           else
             SUCCESS="false"
@@ -210,13 +219,16 @@ jobs:
           echo "passed=$PASSED_PKGS" >> $GITHUB_OUTPUT
           echo "failed=$FAILED_PKGS" >> $GITHUB_OUTPUT
           echo "success=$SUCCESS" >> $GITHUB_OUTPUT
-          echo "Test results: $PASSED_PKGS packages passed, $FAILED_PKGS failed"
+          echo "Test results: $PASSED_PKGS packages passed, $FAILED_PKGS failed (test outcome: $TEST_OUTCOME)"
 
       - name: Upload coverage artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-unit
-          path: coverage-unit.out
+          path: |
+            coverage-unit.out
+            unit-test-output.txt
           retention-days: 7
 
   test-functional:
@@ -242,10 +254,18 @@ jobs:
 
       - name: Count tests
         id: count
+        if: always()
         run: |
-          PASSED_PKGS=$(grep -c '^ok' functional-test-output.txt) || PASSED_PKGS=0
-          FAILED_PKGS=$(grep -c '^FAIL' functional-test-output.txt) || FAILED_PKGS=0
-          if [ "$FAILED_PKGS" = "0" ] && [ "$PASSED_PKGS" -gt "0" ]; then
+          if [ -f functional-test-output.txt ]; then
+            PASSED_PKGS=$(grep -c '^ok' functional-test-output.txt) || PASSED_PKGS=0
+            FAILED_PKGS=$(grep -c '^FAIL' functional-test-output.txt) || FAILED_PKGS=0
+          else
+            echo "Warning: functional-test-output.txt not found"
+            PASSED_PKGS=0
+            FAILED_PKGS=0
+          fi
+          TEST_OUTCOME="${{ steps.functional_tests.outcome }}"
+          if [ "$TEST_OUTCOME" = "success" ] && [ "$FAILED_PKGS" = "0" ] && [ "$PASSED_PKGS" -gt "0" ]; then
             SUCCESS="true"
           else
             SUCCESS="false"
@@ -253,6 +273,7 @@ jobs:
           echo "total=$PASSED_PKGS" >> $GITHUB_OUTPUT
           echo "passed=$PASSED_PKGS" >> $GITHUB_OUTPUT
           echo "success=$SUCCESS" >> $GITHUB_OUTPUT
+          echo "Test results: $PASSED_PKGS packages passed, $FAILED_PKGS failed (test outcome: $TEST_OUTCOME)"
 
   test-e2e:
     runs-on: ubuntu-latest
@@ -277,10 +298,21 @@ jobs:
 
       - name: Count tests
         id: count
+        if: always()
         run: |
-          PASSED_PKGS=$(grep -c '^ok' e2e-test-output.txt) || PASSED_PKGS=0
-          FAILED_PKGS=$(grep -c '^FAIL' e2e-test-output.txt) || FAILED_PKGS=0
-          if [ "$FAILED_PKGS" = "0" ] && [ "$PASSED_PKGS" -gt "0" ]; then
+          if [ -f e2e-test-output.txt ]; then
+            echo "=== E2E test output ==="
+            cat e2e-test-output.txt | tail -20
+            echo "======================="
+            PASSED_PKGS=$(grep -c '^ok' e2e-test-output.txt) || PASSED_PKGS=0
+            FAILED_PKGS=$(grep -c '^FAIL' e2e-test-output.txt) || FAILED_PKGS=0
+          else
+            echo "Warning: e2e-test-output.txt not found"
+            PASSED_PKGS=0
+            FAILED_PKGS=0
+          fi
+          TEST_OUTCOME="${{ steps.e2e_tests.outcome }}"
+          if [ "$TEST_OUTCOME" = "success" ] && [ "$FAILED_PKGS" = "0" ] && [ "$PASSED_PKGS" -gt "0" ]; then
             SUCCESS="true"
           else
             SUCCESS="false"
@@ -288,6 +320,7 @@ jobs:
           echo "total=$PASSED_PKGS" >> $GITHUB_OUTPUT
           echo "passed=$PASSED_PKGS" >> $GITHUB_OUTPUT
           echo "success=$SUCCESS" >> $GITHUB_OUTPUT
+          echo "Test results: $PASSED_PKGS packages passed, $FAILED_PKGS failed (test outcome: $TEST_OUTCOME)"
 
   lint:
     runs-on: ubuntu-latest
@@ -405,19 +438,36 @@ jobs:
       - name: Generate coverage report
         id: report
         run: |
+          # Get values with defaults for empty outputs
           UNIT_COVERAGE="${{ needs.test-unit.outputs.coverage }}"
+          UNIT_COVERAGE="${UNIT_COVERAGE:-0}"
           BASE_COVERAGE="${{ steps.base_coverage.outputs.coverage }}"
+          BASE_COVERAGE="${BASE_COVERAGE:-0}"
 
+          # Get test counts with defaults
           UNIT_TOTAL="${{ needs.test-unit.outputs.total_tests }}"
+          UNIT_TOTAL="${UNIT_TOTAL:-0}"
           UNIT_PASSED="${{ needs.test-unit.outputs.passed_tests }}"
+          UNIT_PASSED="${UNIT_PASSED:-0}"
           UNIT_SUCCESS="${{ needs.test-unit.outputs.success }}"
+          UNIT_SUCCESS="${UNIT_SUCCESS:-false}"
+
           FUNC_TOTAL="${{ needs.test-functional.outputs.total_tests }}"
+          FUNC_TOTAL="${FUNC_TOTAL:-0}"
           FUNC_PASSED="${{ needs.test-functional.outputs.passed_tests }}"
+          FUNC_PASSED="${FUNC_PASSED:-0}"
           FUNC_SUCCESS="${{ needs.test-functional.outputs.success }}"
+          FUNC_SUCCESS="${FUNC_SUCCESS:-false}"
+
           E2E_TOTAL="${{ needs.test-e2e.outputs.total_tests }}"
+          E2E_TOTAL="${E2E_TOTAL:-0}"
           E2E_PASSED="${{ needs.test-e2e.outputs.passed_tests }}"
+          E2E_PASSED="${E2E_PASSED:-0}"
           E2E_SUCCESS="${{ needs.test-e2e.outputs.success }}"
+          E2E_SUCCESS="${E2E_SUCCESS:-false}"
+
           E2E_DOCKER_SUCCESS="${{ needs.test-e2e-docker.outputs.success }}"
+          E2E_DOCKER_SUCCESS="${E2E_DOCKER_SUCCESS:-false}"
 
           echo "=== Coverage Report Debug ==="
           echo "Unit coverage: $UNIT_COVERAGE%"

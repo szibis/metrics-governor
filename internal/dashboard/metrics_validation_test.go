@@ -47,8 +47,9 @@ var knownMetrics = []string{
 	"metrics_governor_otlp_export_errors_total",
 	"metrics_governor_otlp_export_datapoints_total",
 
-	// gRPC receiver metrics (receiver/grpc.go)
+	// gRPC receiver metrics (receiver/grpc.go, receiver/metrics.go)
 	"metrics_governor_grpc_received_bytes_total",
+	"metrics_governor_receiver_errors_total",
 
 	// Buffer stats (stats.go)
 	"metrics_governor_buffer_size",
@@ -397,6 +398,7 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_prw",
 		"metrics_governor_otlp",
 		"metrics_governor_grpc",
+		"metrics_governor_receiver",
 		"metrics_governor_buffer",
 		"metrics_governor_metric_",
 		"metrics_governor_label_",

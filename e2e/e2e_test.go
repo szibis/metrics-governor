@@ -1373,10 +1373,13 @@ func TestE2E_HTTPExporter_CustomDefaultPath(t *testing.T) {
 	// Start mock HTTP backend that expects custom path
 	var receivedPath string
 	var receivedBody []byte
+	var mu sync.Mutex
 	mockServer := http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
 			receivedPath = r.URL.Path
 			receivedBody, _ = io.ReadAll(r.Body)
+			mu.Unlock()
 			resp := &colmetrics.ExportMetricsServiceResponse{}
 			respBytes, _ := proto.Marshal(resp)
 			w.Header().Set("Content-Type", "application/x-protobuf")
@@ -1441,11 +1444,16 @@ func TestE2E_HTTPExporter_CustomDefaultPath(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Verify the request was sent to the custom path
-	if receivedPath != "/opentelemetry/v1/metrics" {
-		t.Errorf("Expected request path '/opentelemetry/v1/metrics', got '%s'", receivedPath)
+	mu.Lock()
+	path := receivedPath
+	bodyLen := len(receivedBody)
+	mu.Unlock()
+
+	if path != "/opentelemetry/v1/metrics" {
+		t.Errorf("Expected request path '/opentelemetry/v1/metrics', got '%s'", path)
 	}
 
-	if len(receivedBody) == 0 {
+	if bodyLen == 0 {
 		t.Error("Backend did not receive any data")
 	}
 
