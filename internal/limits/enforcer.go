@@ -251,6 +251,21 @@ func (e *Enforcer) isGroupDropped(ruleName, groupKey string) bool {
 	return false
 }
 
+// cleanupExpiredDroppedGroups removes expired entries from droppedGroups.
+// Must be called with e.mu held.
+func (e *Enforcer) cleanupExpiredDroppedGroups(now time.Time) {
+	for ruleName, groups := range e.droppedGroups {
+		for groupKey, expiry := range groups {
+			if now.After(expiry) {
+				delete(groups, groupKey)
+			}
+		}
+		if len(groups) == 0 {
+			delete(e.droppedGroups, ruleName)
+		}
+	}
+}
+
 func (e *Enforcer) updateAndCheckLimits(rule *Rule, groupKey string, m *metricspb.Metric, resourceAttrs map[string]string) (exceeded bool, reason string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -273,12 +288,19 @@ func (e *Enforcer) updateAndCheckLimits(rule *Rule, groupKey string, m *metricsp
 		rs.totalDPs = 0
 		rs.totalCard = 0
 		rs.windowEnd = now.Add(time.Minute)
-		// Also clear dropped groups for this rule
+		// Clear dropped groups for this rule
 		delete(e.droppedGroups, rule.Name)
+		// Clean up expired entries in other rules' droppedGroups
+		e.cleanupExpiredDroppedGroups(now)
 	}
 
 	// Initialize group stats if needed
+	const maxGroupsPerRule = 100000
 	if _, ok := rs.groups[groupKey]; !ok {
+		// Cap groups to prevent unbounded growth within a window
+		if len(rs.groups) >= maxGroupsPerRule {
+			return false, ""
+		}
 		rs.groups[groupKey] = &groupStats{
 			cardinality: cardinality.NewTrackerFromGlobal(),
 			windowEnd:   rs.windowEnd,

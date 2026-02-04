@@ -84,6 +84,16 @@ func (p *Pool) Reset() {
 	p.misses.Store(0)
 }
 
+// ResetIfLarge clears the pool if it exceeds maxEntries.
+// Returns true if the pool was reset.
+func (p *Pool) ResetIfLarge(maxEntries int) bool {
+	if p.Size() > maxEntries {
+		p.Reset()
+		return true
+	}
+	return false
+}
+
 // cloneString creates a new string allocation to avoid
 // keeping references to larger underlying buffers.
 func cloneString(s string) string {

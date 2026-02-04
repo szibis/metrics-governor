@@ -112,12 +112,8 @@ func (q *MemoryQueue) Pop() *colmetricspb.ExportMetricsServiceRequest {
 		q.bytes = 0
 	}
 
-	// Compact the slice if capacity is more than 2x length to prevent unbounded growth
-	if cap(q.entries) > 2*len(q.entries)+16 {
-		compacted := make([]*colmetricspb.ExportMetricsServiceRequest, len(q.entries))
-		copy(compacted, q.entries)
-		q.entries = compacted
-	}
+	// Compact the slice to prevent unbounded capacity growth
+	q.maybeCompact()
 
 	memqueueSize.Set(float64(len(q.entries)))
 	memqueueBytes.Set(float64(q.bytes))
@@ -152,4 +148,15 @@ func (q *MemoryQueue) evictOldest() {
 		q.bytes = 0
 	}
 	memqueueEvictionsTotal.Inc()
+	q.maybeCompact()
+}
+
+// maybeCompact compacts the slice if capacity is significantly larger than length.
+// Must be called with q.mu held.
+func (q *MemoryQueue) maybeCompact() {
+	if cap(q.entries) > 256 && cap(q.entries) > len(q.entries)+64 {
+		compacted := make([]*colmetricspb.ExportMetricsServiceRequest, len(q.entries))
+		copy(compacted, q.entries)
+		q.entries = compacted
+	}
 }

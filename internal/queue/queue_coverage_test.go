@@ -338,8 +338,9 @@ func TestSendQueueRemoveCleansRetries(t *testing.T) {
 	}
 }
 
-// TestSendQueuePeekReturnsNewID tests that Peek returns new ID each time.
-func TestSendQueuePeekReturnsNewID(t *testing.T) {
+// TestSendQueuePeekReturnsStableID tests that Peek returns a stable ID
+// to prevent leaking entries in the retries map.
+func TestSendQueuePeekReturnsStableID(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := Config{
@@ -360,9 +361,9 @@ func TestSendQueuePeekReturnsNewID(t *testing.T) {
 	entry1, _ := q.Peek()
 	entry2, _ := q.Peek()
 
-	// IDs should be different (new UUID each time)
-	if entry1.ID == entry2.ID {
-		t.Error("Expected different IDs from Peek")
+	// IDs should be the same (stable ID to prevent retries map leak)
+	if entry1.ID != entry2.ID {
+		t.Errorf("Expected same IDs from Peek, got %q and %q", entry1.ID, entry2.ID)
 	}
 }
 

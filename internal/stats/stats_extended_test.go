@@ -135,16 +135,13 @@ func TestResetCardinality(t *testing.T) {
 	// Reset
 	c.ResetCardinality()
 
-	// Verify cardinality is reset but datapoints remain
-	datapoints, metrics, newCardinality := c.GetGlobalStats()
+	// Verify maps are fully cleared (unconditional reset to prevent memory leaks)
+	_, metrics, newCardinality := c.GetGlobalStats()
 	if newCardinality != 0 {
 		t.Errorf("expected cardinality=0 after reset, got %d", newCardinality)
 	}
-	if datapoints != 3 {
-		t.Errorf("expected datapoints=3 preserved, got %d", datapoints)
-	}
-	if metrics != 2 {
-		t.Errorf("expected metrics=2 preserved, got %d", metrics)
+	if metrics != 0 {
+		t.Errorf("expected metrics=0 after reset, got %d", metrics)
 	}
 }
 
