@@ -12,10 +12,15 @@ permissions:
   pull-requests: write
 
 jobs:
+  ci-filter:
+    uses: ./.github/workflows/ci-filter.yml
+
   govulncheck:
+    needs: [ci-filter]
     name: govulncheck
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_security != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
@@ -54,9 +59,11 @@ jobs:
           fi
 
   trivy-fs:
+    needs: [ci-filter]
     name: Trivy (filesystem)
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_security != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
@@ -112,9 +119,11 @@ jobs:
           fi
 
   trivy-image:
+    needs: [ci-filter]
     name: Trivy (container)
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_security != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
@@ -173,9 +182,11 @@ jobs:
           fi
 
   gitleaks:
+    needs: [ci-filter]
     name: gitleaks
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_security != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
@@ -217,9 +228,11 @@ jobs:
           fi
 
   checkov:
+    needs: [ci-filter]
     name: checkov
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_security != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
@@ -278,9 +291,11 @@ jobs:
           fi
 
   sbom:
+    needs: [ci-filter]
     name: SBOM (syft)
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_security != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
@@ -324,14 +339,15 @@ jobs:
           echo "details=Generated (SPDX + CycloneDX)" >> $GITHUB_OUTPUT
 
   security-gate:
+    needs: [ci-filter, govulncheck, trivy-fs, trivy-image, gitleaks, checkov, sbom]
     name: security-gate
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_security != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
       )
-    needs: [govulncheck, trivy-fs, trivy-image, gitleaks, checkov, sbom]
     steps:
       - name: Evaluate security results
         run: |
@@ -370,13 +386,14 @@ jobs:
           fi
 
   security-comment:
+    needs: [ci-filter, govulncheck, trivy-fs, trivy-image, gitleaks, checkov, sbom, security-gate]
     name: security-comment
     runs-on: ubuntu-latest
     if: >-
       always() &&
+      needs.ci-filter.outputs.skip_security != 'true' &&
       github.event_name == 'pull_request' &&
       !contains(github.event.pull_request.labels.*.name, 'release:skip')
-    needs: [govulncheck, trivy-fs, trivy-image, gitleaks, checkov, sbom, security-gate]
     steps:
       - name: Post security scan comment
         uses: actions/github-script@v8

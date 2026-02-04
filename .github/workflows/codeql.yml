@@ -13,13 +13,21 @@ permissions:
   security-events: write
 
 jobs:
+  ci-filter:
+    uses: ./.github/workflows/ci-filter.yml
+
   analyze:
+    needs: [ci-filter]
     name: Analyze Go
     runs-on: ubuntu-latest
     if: >-
-      !(
-        github.event_name == 'pull_request' &&
-        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      github.event_name == 'schedule' ||
+      (
+        needs.ci-filter.outputs.skip_codeql != 'true' &&
+        !(
+          github.event_name == 'pull_request' &&
+          contains(github.event.pull_request.labels.*.name, 'release:skip')
+        )
       )
     steps:
       - uses: actions/checkout@v4
