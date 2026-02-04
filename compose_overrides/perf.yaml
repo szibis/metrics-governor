@@ -27,19 +27,22 @@ services:
       - TARGET_DATAPOINTS_PER_SEC=200000
       - METRICS_PORT=9091
       # Spike scenario configuration (enabled for stress testing)
+      # Note: OTel SDK stores cumulative metrics, so high cardinality = high memory
       - ENABLE_SPIKE_SCENARIOS=true
       - SPIKE_MODE=realistic
-      - SPIKE_CARDINALITY=1000
-      - SPIKE_DURATION_SEC=45
-      - SPIKE_INTERVAL_MIN_SEC=5
-      - SPIKE_INTERVAL_MAX_SEC=15
-      - MISTAKE_DELAY_SEC=10
-      - MISTAKE_DURATION_SEC=180
-      - MISTAKE_CARDINALITY_RATE=100
+      - SPIKE_CARDINALITY=500
+      - SPIKE_DURATION_SEC=30
+      - SPIKE_INTERVAL_MIN_SEC=10
+      - SPIKE_INTERVAL_MAX_SEC=30
+      - MISTAKE_DELAY_SEC=15
+      - MISTAKE_DURATION_SEC=60
+      - MISTAKE_CARDINALITY_RATE=50
     deploy:
       resources:
         limits:
-          memory: 2G
+          # OTel SDK uses cumulative aggregation - stores all unique series in memory
+          # With spike scenarios + high throughput, memory grows significantly
+          memory: 6G
           cpus: "2"
 
   metrics-governor:

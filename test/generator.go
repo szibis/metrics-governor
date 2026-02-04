@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -23,6 +24,140 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+// Pre-allocated string pools for commonly used label values (reduces allocations)
+var (
+	// User ID pool - pre-generated strings
+	userIDPool      []string
+	sessionIDPool   []string
+	requestPathPool []string
+	regionPool      []string
+	instancePool    []string
+	eventTypePool   []string
+	apiPathPool     []string
+	queryHashPool   []string
+	cacheKeyPool    []string
+	httpPathPool    []string
+	dbPool          []string
+	dbOpsPool       []string
+	cacheOpsPool    []string
+	seriesPool      []string
+	reqIDPool       []string
+
+	// UUID byte pool for generateUUID
+	uuidBytePool = sync.Pool{
+		New: func() any {
+			return make([]byte, 16)
+		},
+	}
+)
+
+// initStringPools pre-allocates string pools to avoid repeated allocations
+func initStringPools() {
+	// User IDs (0-999)
+	userIDPool = make([]string, 1000)
+	for i := 0; i < 1000; i++ {
+		userIDPool[i] = fmt.Sprintf("user_%d", i)
+	}
+
+	// Session IDs (0-99)
+	sessionIDPool = make([]string, 100)
+	for i := 0; i < 100; i++ {
+		sessionIDPool[i] = fmt.Sprintf("sess_%d", i)
+	}
+
+	// Request paths
+	requestPathPool = make([]string, 50)
+	for i := 0; i < 50; i++ {
+		requestPathPool[i] = fmt.Sprintf("/api/v%d/resource/%d", (i%2)+1, i%10)
+	}
+
+	// Regions (0-9)
+	regionPool = make([]string, 10)
+	for i := 0; i < 10; i++ {
+		regionPool[i] = fmt.Sprintf("region_%d", i)
+	}
+
+	// Instances (0-9)
+	instancePool = make([]string, 10)
+	for i := 0; i < 10; i++ {
+		instancePool[i] = fmt.Sprintf("instance_%d", i)
+	}
+
+	// Event types (0-9)
+	eventTypePool = make([]string, 10)
+	for i := 0; i < 10; i++ {
+		eventTypePool[i] = fmt.Sprintf("event_%d", i)
+	}
+
+	// API paths (pre-generate combinations)
+	apiPathPool = make([]string, 1500) // 3 versions * 50 entities * 10 actions
+	idx := 0
+	for v := 1; v <= 3; v++ {
+		for e := 0; e < 50; e++ {
+			for a := 0; a < 10; a++ {
+				apiPathPool[idx] = fmt.Sprintf("/api/v%d/entity/%d/action/%d", v, e, a)
+				idx++
+			}
+		}
+	}
+
+	// Query hashes (0-499)
+	queryHashPool = make([]string, 500)
+	for i := 0; i < 500; i++ {
+		queryHashPool[i] = fmt.Sprintf("qh_%08x", i)
+	}
+
+	// Cache keys
+	prefixes := []string{"user", "session", "product", "order", "inventory"}
+	cacheKeyPool = make([]string, 2000)
+	for i := 0; i < 2000; i++ {
+		cacheKeyPool[i] = fmt.Sprintf("key:%s:%d", prefixes[i%len(prefixes)], i%400)
+	}
+
+	// HTTP paths for histograms
+	endpoints := []string{"users", "orders", "products", "inventory", "payments"}
+	httpPathPool = make([]string, 200) // 2 versions * 5 endpoints * 20 IDs
+	idx = 0
+	for v := 1; v <= 2; v++ {
+		for _, e := range endpoints {
+			for id := 0; id < 20; id++ {
+				httpPathPool[idx] = fmt.Sprintf("/v%d/%s/%d", v, e, id)
+				idx++
+				if idx >= 200 {
+					break
+				}
+			}
+			if idx >= 200 {
+				break
+			}
+		}
+		if idx >= 200 {
+			break
+		}
+	}
+
+	// Database names
+	dbPool = []string{"db_0", "db_1", "db_2"}
+
+	// Database operations
+	dbOpsPool = []string{"SELECT", "INSERT", "UPDATE", "DELETE"}
+
+	// Cache operations
+	cacheOpsPool = []string{"get", "set", "delete"}
+
+	// Series labels for stable mode (0-99)
+	seriesPool = make([]string, 100)
+	for i := 0; i < 100; i++ {
+		seriesPool[i] = fmt.Sprintf("s%02d", i)
+	}
+
+	// Request IDs for legacy app (0-999)
+	reqIDPool = make([]string, 1000)
+	for i := 0; i < 1000; i++ {
+		reqIDPool[i] = fmt.Sprintf("req-%d", i)
+	}
+}
 
 // GeneratorStats tracks metrics generation statistics
 type GeneratorStats struct {
@@ -63,6 +198,9 @@ var stats = &GeneratorStats{}
 var spikeStats = &SpikeScenarioStats{}
 
 func main() {
+	// Initialize string pools for memory efficiency
+	initStringPools()
+
 	endpoint := getEnv("OTLP_ENDPOINT", "localhost:4317")
 	intervalStr := getEnv("METRICS_INTERVAL", "100ms")
 	servicesStr := getEnv("SERVICES", "payment-api,order-api,inventory-api,user-api,auth-api,legacy-app")
@@ -490,12 +628,11 @@ func main() {
 							numLegacy := rand.Intn(50) + 10
 							for i := 0; i < numLegacy; i++ {
 								// Use bounded request_id pool to prevent unbounded cardinality
-								reqID := fmt.Sprintf("req-%s-%d", service, rand.Intn(1000))
 								legacyAppRequestCount.Add(ctx, 1,
 									metric.WithAttributes(
 										attribute.String("service", service),
 										attribute.String("env", env),
-										attribute.String("request_id", reqID),
+										attribute.String("request_id", reqIDPool[rand.Intn(1000)]),
 									))
 								batchDatapoints++
 							}
@@ -541,15 +678,16 @@ func main() {
 			// High cardinality metrics
 			if enableHighCardinality {
 				for i := 0; i < highCardinalityCount; i++ {
+					// Use pre-allocated string pools to avoid allocations
 					highCardinalityMetric.Add(ctx, 1,
 						metric.WithAttributes(
 							// Use very small bounded pools so cardinality stabilizes quickly
 							// Max combinations: 10 * 20 * 5 * 5 * 5 = 2,500 (stabilizes in seconds)
-							attribute.String("user_id", fmt.Sprintf("user_%d", rand.Intn(10))),
-							attribute.String("session_id", fmt.Sprintf("sess_%d", rand.Intn(20))),
-							attribute.String("request_path", fmt.Sprintf("/api/v%d/resource/%d", rand.Intn(1)+1, rand.Intn(5))),
-							attribute.String("region", fmt.Sprintf("region_%d", rand.Intn(5))),
-							attribute.String("instance", fmt.Sprintf("instance_%d", rand.Intn(5))),
+							attribute.String("user_id", userIDPool[rand.Intn(10)]),
+							attribute.String("session_id", sessionIDPool[rand.Intn(20)]),
+							attribute.String("request_path", requestPathPool[rand.Intn(10)]),
+							attribute.String("region", regionPool[rand.Intn(5)]),
+							attribute.String("instance", instancePool[rand.Intn(5)]),
 						))
 					batchDatapoints++
 				}
@@ -565,8 +703,8 @@ func main() {
 					highCardUserEvents.Add(ctx, 1,
 						metric.WithAttributes(
 							attribute.String("service", services[rand.Intn(len(services))]),
-							attribute.String("user_id", fmt.Sprintf("uid_%d", rand.Intn(1000))),
-							attribute.String("event_type", fmt.Sprintf("event_%d", rand.Intn(5))),
+							attribute.String("user_id", userIDPool[rand.Intn(1000)]),
+							attribute.String("event_type", eventTypePool[rand.Intn(5)]),
 						))
 					batchDatapoints++
 				}
@@ -577,7 +715,7 @@ func main() {
 					highCardAPIRequests.Add(ctx, 1,
 						metric.WithAttributes(
 							attribute.String("service", services[rand.Intn(len(services))]),
-							attribute.String("path", fmt.Sprintf("/api/v%d/entity/%d/action/%d", rand.Intn(3)+1, rand.Intn(50), rand.Intn(10))),
+							attribute.String("path", apiPathPool[rand.Intn(len(apiPathPool))]),
 							attribute.String("method", methods[rand.Intn(len(methods))]),
 							attribute.String("status", statuses[rand.Intn(len(statuses))]),
 						))
@@ -590,9 +728,9 @@ func main() {
 					highCardDBQueries.Add(ctx, 1,
 						metric.WithAttributes(
 							attribute.String("service", services[rand.Intn(len(services))]),
-							attribute.String("query_hash", fmt.Sprintf("qh_%08x", rand.Intn(500))),
-							attribute.String("database", fmt.Sprintf("db_%d", rand.Intn(3))),
-							attribute.String("operation", []string{"SELECT", "INSERT", "UPDATE", "DELETE"}[rand.Intn(4)]),
+							attribute.String("query_hash", queryHashPool[rand.Intn(500)]),
+							attribute.String("database", dbPool[rand.Intn(3)]),
+							attribute.String("operation", dbOpsPool[rand.Intn(4)]),
 						))
 					batchDatapoints++
 				}
@@ -603,8 +741,8 @@ func main() {
 					highCardCacheOps.Add(ctx, 1,
 						metric.WithAttributes(
 							attribute.String("service", services[rand.Intn(len(services))]),
-							attribute.String("cache_key", fmt.Sprintf("key:%s:%d", []string{"user", "session", "product", "order", "inventory"}[rand.Intn(5)], rand.Intn(400))),
-							attribute.String("operation", []string{"get", "set", "delete"}[rand.Intn(3)]),
+							attribute.String("cache_key", cacheKeyPool[rand.Intn(len(cacheKeyPool))]),
+							attribute.String("operation", cacheOpsPool[rand.Intn(3)]),
 							attribute.Bool("hit", rand.Float64() > 0.3),
 						))
 					batchDatapoints++
@@ -616,7 +754,7 @@ func main() {
 					highCardHTTPPaths.Record(ctx, rand.Float64()*2.0,
 						metric.WithAttributes(
 							attribute.String("service", services[rand.Intn(len(services))]),
-							attribute.String("path", fmt.Sprintf("/v%d/%s/%d", rand.Intn(2)+1, []string{"users", "orders", "products", "inventory", "payments"}[rand.Intn(5)], rand.Intn(20))),
+							attribute.String("path", httpPathPool[rand.Intn(len(httpPathPool))]),
 							attribute.String("method", methods[rand.Intn(len(methods))]),
 						))
 					batchDatapoints++
@@ -633,7 +771,7 @@ func main() {
 						for k := 0; k < stableDatapointsPerInterval; k++ {
 							c.Add(ctx, 1,
 								metric.WithAttributes(
-									attribute.String("series", fmt.Sprintf("s%02d", j)),
+									attribute.String("series", seriesPool[j%len(seriesPool)]),
 									attribute.Int("metric_id", i),
 								))
 							batchDatapoints++
@@ -1012,13 +1150,16 @@ func startMetricsServer(port string) {
 }
 
 // generateUUID creates a simple unique ID using hex encoding
+// Uses sync.Pool to reduce allocations in hot paths
 func generateUUID() string {
-	b := make([]byte, 16)
+	b := uuidBytePool.Get().([]byte)
 	for i := range b {
 		b[i] = byte(rand.Intn(256))
 	}
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%12x",
+	result := fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+	uuidBytePool.Put(b)
+	return result
 }
 
 // createSpikeMeterProvider creates a new MeterProvider for spike/mistake scenarios

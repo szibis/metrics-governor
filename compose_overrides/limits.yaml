@@ -41,12 +41,14 @@ services:
       - SPIKE_INTERVAL_MIN_SEC=5
       - SPIKE_INTERVAL_MAX_SEC=15
       - MISTAKE_DELAY_SEC=10
-      - MISTAKE_DURATION_SEC=180
-      - MISTAKE_CARDINALITY_RATE=100
+      - MISTAKE_DURATION_SEC=60
+      - MISTAKE_CARDINALITY_RATE=50
     deploy:
       resources:
         limits:
-          memory: 1G
+          # OTel SDK uses cumulative aggregation - stores all unique series in memory
+          # With spike scenarios enabled, memory grows significantly
+          memory: 3G
 
   metrics-governor:
     command:
