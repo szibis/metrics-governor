@@ -331,30 +331,11 @@ jobs:
           echo "Generated changelog entry:"
           cat /tmp/changelog_entry.md
 
-      - name: Import GPG key and configure git identity and signing
+      - name: Configure git identity
         if: steps.find_pr.outputs.skip != 'true' && steps.find_pr.outputs.is_release_pr != 'true' && steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
-          GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format long | grep sec | head -1 | awk '{print $2}' | cut -d'/' -f2)
-          echo "GPG Key ID: $GPG_KEY_ID"
-          # Extract user name and email from GPG key
-          GPG_USER_NAME=$(gpg --list-secret-keys --keyid-format long "$GPG_KEY_ID" | grep uid | head -1 | sed 's/.*uid.*\] //' | sed 's/ <.*//')
-          GPG_USER_EMAIL=$(gpg --list-secret-keys --keyid-format long "$GPG_KEY_ID" | grep uid | head -1 | grep -oE '<[^>]+>' | tr -d '<>')
-          echo "Git identity: ${GPG_USER_NAME} <${GPG_USER_EMAIL}>"
-          git config --global user.name "$GPG_USER_NAME"
-          git config --global user.email "$GPG_USER_EMAIL"
-          git config --global user.signingkey "$GPG_KEY_ID"
-          git config --global commit.gpgsign true
-          git config --global gpg.program gpg
-          # Allow non-interactive signing
-          echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
-          gpg-connect-agent reloadagent /bye 2>/dev/null || true
-          # Cache the passphrase
-          KEYGRIP=$(gpg --with-keygrip --list-secret-keys "$GPG_KEY_ID" | grep Keygrip | head -1 | awk '{print $3}')
-          echo "$GPG_PASSPHRASE" | /usr/lib/gnupg/gpg-preset-passphrase --preset "$KEYGRIP"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Create release branch and PR
         if: steps.find_pr.outputs.skip != 'true' && steps.find_pr.outputs.is_release_pr != 'true' && steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
@@ -387,9 +368,9 @@ jobs:
           } > CHANGELOG.md.tmp
           mv CHANGELOG.md.tmp CHANGELOG.md
 
-          # Commit changes (GPG signing configured by import-gpg action)
+          # Commit changes
           git add helm/metrics-governor/Chart.yaml CHANGELOG.md
-          git commit -S -m "chore(release): prepare ${VERSION}
+          git commit -m "chore(release): prepare ${VERSION}
 
           - Update appVersion to ${VERSION_NUM}
           - Update CHANGELOG.md"
@@ -542,30 +523,11 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "version_num=${VERSION#v}" >> $GITHUB_OUTPUT
 
-      - name: Import GPG key and configure git identity and signing
+      - name: Configure git identity
         if: steps.find_pr.outputs.is_release_pr == 'true'
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
-          GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format long | grep sec | head -1 | awk '{print $2}' | cut -d'/' -f2)
-          echo "GPG Key ID: $GPG_KEY_ID"
-          # Extract user name and email from GPG key
-          GPG_USER_NAME=$(gpg --list-secret-keys --keyid-format long "$GPG_KEY_ID" | grep uid | head -1 | sed 's/.*uid.*\] //' | sed 's/ <.*//')
-          GPG_USER_EMAIL=$(gpg --list-secret-keys --keyid-format long "$GPG_KEY_ID" | grep uid | head -1 | grep -oE '<[^>]+>' | tr -d '<>')
-          echo "Git identity: ${GPG_USER_NAME} <${GPG_USER_EMAIL}>"
-          git config --global user.name "$GPG_USER_NAME"
-          git config --global user.email "$GPG_USER_EMAIL"
-          git config --global user.signingkey "$GPG_KEY_ID"
-          git config --global tag.gpgsign true
-          git config --global gpg.program gpg
-          # Allow non-interactive signing
-          echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
-          gpg-connect-agent reloadagent /bye 2>/dev/null || true
-          # Cache the passphrase
-          KEYGRIP=$(gpg --with-keygrip --list-secret-keys "$GPG_KEY_ID" | grep Keygrip | head -1 | awk '{print $3}')
-          echo "$GPG_PASSPHRASE" | /usr/lib/gnupg/gpg-preset-passphrase --preset "$KEYGRIP"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Create and push tag
         if: steps.find_pr.outputs.is_release_pr == 'true'
@@ -580,8 +542,8 @@ jobs:
             exit 0
           fi
 
-          # Create signed tag (GPG signing configured by import-gpg action)
-          git tag -s "$VERSION" -m "Release $VERSION"
+          # Create annotated tag
+          git tag -a "$VERSION" -m "Release $VERSION"
           git push origin "$VERSION"
 
           echo "Created and pushed tag: $VERSION"
