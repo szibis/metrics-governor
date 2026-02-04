@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -29,6 +30,9 @@ const (
 
 	// Block header size: 8-byte length prefix
 	blockHeaderSize = 8
+
+	// Recovery timeout for legacy metadata (prevents blocking startup)
+	recoveryTimeout = 10 * time.Second
 )
 
 var (
@@ -63,6 +67,9 @@ type fastqueueMeta struct {
 	ReaderOffset int64  `json:"reader_offset"`
 	WriterOffset int64  `json:"writer_offset"`
 	Version      int    `json:"version"`
+	// V2 fields - stored to avoid expensive recovery scan
+	EntryCount int64 `json:"entry_count,omitempty"`
+	TotalBytes int64 `json:"total_bytes,omitempty"`
 }
 
 // FastQueue implements a high-performance persistent queue inspired by VictoriaMetrics.
@@ -370,13 +377,49 @@ func (fq *FastQueue) recover() error {
 		fq.pendingBytes = fq.writerOffset - fq.readerOffset
 		fq.diskBytes.Store(fq.pendingBytes)
 
-		// Count entries by scanning
-		count, totalDataBytes, err := fq.countEntriesOnDisk()
-		if err != nil {
-			return fmt.Errorf("failed to count entries: %w", err)
+		// Use stored count if available (V2 metadata), otherwise scan
+		if meta.EntryCount > 0 && meta.TotalBytes > 0 {
+			// Fast path: use persisted counts (O(1) recovery)
+			fq.activeCount.Store(meta.EntryCount)
+			fq.totalBytes.Store(meta.TotalBytes)
+			log.Printf("[fastqueue] recovered %d entries (%d bytes) from metadata", meta.EntryCount, meta.TotalBytes)
+		} else {
+			// Slow path: count entries by scanning (legacy metadata)
+			// Use timeout to prevent blocking startup indefinitely
+			log.Printf("[fastqueue] legacy metadata detected, scanning queue (this may take a while)...")
+			start := time.Now()
+
+			done := make(chan struct{})
+			var count int
+			var totalDataBytes int64
+			var scanErr error
+
+			go func() {
+				count, totalDataBytes, scanErr = fq.countEntriesOnDisk()
+				close(done)
+			}()
+
+			select {
+			case <-done:
+				if scanErr != nil {
+					return fmt.Errorf("failed to count entries: %w", scanErr)
+				}
+				fq.activeCount.Store(int64(count))
+				fq.totalBytes.Store(totalDataBytes)
+				log.Printf("[fastqueue] recovered %d entries (%d bytes) in %v", count, totalDataBytes, time.Since(start))
+			case <-time.After(recoveryTimeout):
+				// Timeout - discard queue data to allow startup
+				log.Printf("[fastqueue] recovery timeout after %v, discarding queue data", recoveryTimeout)
+				fq.readerOffset = 0
+				fq.writerOffset = 0
+				fq.pendingBytes = 0
+				fq.diskBytes.Store(0)
+				fq.activeCount.Store(0)
+				fq.totalBytes.Store(0)
+				// Clean up all queue files
+				fq.cleanupAllChunks()
+			}
 		}
-		fq.activeCount.Store(int64(count))
-		fq.totalBytes.Store(totalDataBytes)
 	}
 
 	// Open chunk files if we have data
@@ -736,6 +779,28 @@ func (fq *FastQueue) cleanupConsumedChunksLocked() {
 	}
 }
 
+// cleanupAllChunks removes all chunk files (used when recovery times out).
+func (fq *FastQueue) cleanupAllChunks() {
+	entries, err := os.ReadDir(fq.cfg.Path)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Name() == metaFileName || strings.HasSuffix(entry.Name(), ".tmp") {
+			continue
+		}
+		if len(entry.Name()) == 16 {
+			chunkPath := filepath.Join(fq.cfg.Path, entry.Name())
+			os.Remove(chunkPath)
+		}
+	}
+
+	// Remove stale metadata
+	metaPath := filepath.Join(fq.cfg.Path, metaFileName)
+	os.Remove(metaPath)
+}
+
 // cleanupOrphanedChunks removes chunk files outside the valid range.
 func (fq *FastQueue) cleanupOrphanedChunks() {
 	entries, err := os.ReadDir(fq.cfg.Path)
@@ -775,7 +840,10 @@ func (fq *FastQueue) syncMetadataLocked() error {
 		Name:         "fastqueue",
 		ReaderOffset: fq.readerOffset,
 		WriterOffset: fq.writerOffset,
-		Version:      1,
+		Version:      2,
+		// V2: persist counts to avoid expensive recovery scan
+		EntryCount: fq.activeCount.Load(),
+		TotalBytes: fq.totalBytes.Load(),
 	}
 
 	data, err := json.MarshalIndent(meta, "", "  ")

@@ -403,21 +403,39 @@ func main() {
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
+	sig := <-sigChan
 
-	logging.Info("shutting down")
+	logging.Info("shutting down", logging.F("signal", sig.String(), "timeout", cfg.ShutdownTimeout.String()))
 
-	// Graceful shutdown
+	// Create shutdown context with configurable timeout
+	// Note: K8s terminationGracePeriodSeconds should be > this timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer shutdownCancel()
+
+	// Graceful shutdown - stop receivers first (stop accepting new data)
 	grpcReceiver.Stop()
-	_ = httpReceiver.Stop(ctx)
+	_ = httpReceiver.Stop(shutdownCtx)
 	if prwReceiver != nil {
-		_ = prwReceiver.Stop(ctx)
+		_ = prwReceiver.Stop(shutdownCtx)
 	}
-	_ = statsServer.Shutdown(ctx)
+	_ = statsServer.Shutdown(shutdownCtx)
 	cancel()
-	buf.Wait()
-	if prwBuffer != nil {
-		prwBuffer.Wait()
+
+	// Wait for buffers to drain (uses shutdown timeout)
+	bufDone := make(chan struct{})
+	go func() {
+		buf.Wait()
+		if prwBuffer != nil {
+			prwBuffer.Wait()
+		}
+		close(bufDone)
+	}()
+
+	select {
+	case <-bufDone:
+		logging.Info("buffers drained successfully")
+	case <-shutdownCtx.Done():
+		logging.Warn("buffer drain timeout, some data may be lost")
 	}
 
 	// Close PRW exporter
