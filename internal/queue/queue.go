@@ -335,11 +335,15 @@ func (q *SendQueue) Pop() (*QueueEntry, error) {
 	q.spaceCond.Broadcast()
 
 	id := uuid.New().String()
+
+	// Periodically clean stale retry entries to prevent unbounded growth
+	q.cleanRetries()
+
 	return &QueueEntry{
 		ID:        id,
 		Timestamp: time.Now(),
 		Data:      data,
-		Retries:   q.getRetries(id),
+		Retries:   0,
 	}, nil
 }
 
@@ -360,7 +364,9 @@ func (q *SendQueue) Peek() (*QueueEntry, error) {
 		return nil, nil
 	}
 
-	id := uuid.New().String()
+	// Reuse a stable ID for the peeked entry based on queue position
+	// to avoid generating new UUIDs that leak in the retries map
+	id := "peek-head"
 	return &QueueEntry{
 		ID:        id,
 		Timestamp: time.Now(),
@@ -402,6 +408,16 @@ func (q *SendQueue) getRetries(id string) int {
 	q.retriesMu.RLock()
 	defer q.retriesMu.RUnlock()
 	return q.retries[id]
+}
+
+// cleanRetries removes stale entries from the retries map when it grows too large.
+func (q *SendQueue) cleanRetries() {
+	const maxRetryEntries = 10000
+	q.retriesMu.Lock()
+	defer q.retriesMu.Unlock()
+	if len(q.retries) > maxRetryEntries {
+		q.retries = make(map[string]int)
+	}
 }
 
 // Len returns the number of entries in the queue.

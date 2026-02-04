@@ -7,10 +7,14 @@ import (
 	"github.com/szibis/metrics-governor/internal/logging"
 )
 
+// maxLogAggregatorEntries caps the number of unique log entries to prevent unbounded growth.
+const maxLogAggregatorEntries = 10000
+
 // LogAggregator aggregates similar log messages and outputs them periodically.
 type LogAggregator struct {
 	mu            sync.Mutex
 	entries       map[string]*aggregatedEntry
+	dropped       int64
 	flushInterval time.Duration
 	stopCh        chan struct{}
 	wg            sync.WaitGroup
@@ -74,6 +78,11 @@ func (la *LogAggregator) add(level, key, message string, fields map[string]inter
 		entry.lastSeen = now
 		entry.totalDPs += datapoints
 	} else {
+		// Cap entries to prevent unbounded growth between flushes
+		if len(la.entries) >= maxLogAggregatorEntries {
+			la.dropped++
+			return
+		}
 		la.entries[key] = &aggregatedEntry{
 			level:     level,
 			message:   message,
@@ -104,8 +113,17 @@ func (la *LogAggregator) flushLoop() {
 func (la *LogAggregator) flush() {
 	la.mu.Lock()
 	entries := la.entries
+	dropped := la.dropped
 	la.entries = make(map[string]*aggregatedEntry)
+	la.dropped = 0
 	la.mu.Unlock()
+
+	if dropped > 0 {
+		logging.Warn("log aggregator dropped entries due to size cap", map[string]interface{}{
+			"dropped": dropped,
+			"max":     maxLogAggregatorEntries,
+		})
+	}
 
 	for _, entry := range entries {
 		// Create a copy of fields with aggregation info

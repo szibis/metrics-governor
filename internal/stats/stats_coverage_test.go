@@ -207,9 +207,9 @@ func TestResetCardinalityBothMapsLarge(t *testing.T) {
 	}
 }
 
-// TestResetCardinalitySmallMapsPreserved tests that small maps are preserved
-// but their cardinality trackers are reset.
-func TestResetCardinalitySmallMapsPreserved(t *testing.T) {
+// TestResetCardinalityMapsCleared tests that maps are always cleared on reset
+// to prevent unbounded memory growth from stale entries.
+func TestResetCardinalityMapsCleared(t *testing.T) {
 	c := NewCollector([]string{"service"})
 
 	rm := createTestResourceMetricsForCoverage(
@@ -233,24 +233,12 @@ func TestResetCardinalitySmallMapsPreserved(t *testing.T) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	// Maps should be preserved
-	if len(c.metricStats) != metricCount {
-		t.Errorf("expected metric stats preserved (%d), got %d", metricCount, len(c.metricStats))
+	// Maps should be cleared to prevent unbounded growth
+	if len(c.metricStats) != 0 {
+		t.Errorf("expected metric stats cleared, got %d", len(c.metricStats))
 	}
-	if len(c.labelStats) != labelCount {
-		t.Errorf("expected label stats preserved (%d), got %d", labelCount, len(c.labelStats))
-	}
-
-	// Cardinality trackers should be reset to 0
-	for name, ms := range c.metricStats {
-		if ms.cardinality.Count() != 0 {
-			t.Errorf("expected cardinality 0 for metric %s, got %d", name, ms.cardinality.Count())
-		}
-	}
-	for key, ls := range c.labelStats {
-		if ls.cardinality.Count() != 0 {
-			t.Errorf("expected cardinality 0 for label %s, got %d", key, ls.cardinality.Count())
-		}
+	if len(c.labelStats) != 0 {
+		t.Errorf("expected label stats cleared, got %d", len(c.labelStats))
 	}
 }
 

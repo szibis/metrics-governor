@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/cardinality"
+	"github.com/szibis/metrics-governor/internal/intern"
 	"github.com/szibis/metrics-governor/internal/logging"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
@@ -405,35 +406,29 @@ func (c *Collector) StartPeriodicLogging(ctx context.Context, interval time.Dura
 }
 
 // ResetCardinality resets the cardinality tracking to prevent unbounded memory growth.
-// This keeps counters intact but clears the per-metric and per-label cardinality tracking.
+// Maps are always replaced to prevent slow accumulation of stale entries.
 func (c *Collector) ResetCardinality() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// If maps are too large, recreate them entirely to release memory
-	const maxMetrics = 10000
-	const maxLabels = 5000
+	prevMetrics := len(c.metricStats)
+	prevLabels := len(c.labelStats)
 
-	if len(c.metricStats) > maxMetrics {
-		c.metricStats = make(map[string]*MetricStats)
-		c.totalMetrics = 0
-		logging.Info("metric stats map reset due to size", logging.F("previous_size", len(c.metricStats)))
-	} else {
-		// Reset per-metric cardinality (keep datapoint counts, clear series tracking)
-		for _, ms := range c.metricStats {
-			ms.cardinality.Reset()
-		}
+	c.metricStats = make(map[string]*MetricStats)
+	c.totalMetrics = 0
+	c.labelStats = make(map[string]*LabelStats)
+
+	if prevMetrics > 0 || prevLabels > 0 {
+		logging.Info("stats maps reset", logging.F(
+			"previous_metrics", prevMetrics,
+			"previous_labels", prevLabels,
+		))
 	}
 
-	if len(c.labelStats) > maxLabels {
-		c.labelStats = make(map[string]*LabelStats)
-		logging.Info("label stats map reset due to size", logging.F("previous_size", len(c.labelStats)))
-	} else {
-		// Reset per-label cardinality
-		for _, ls := range c.labelStats {
-			ls.cardinality.Reset()
-		}
-	}
+	// Reset intern pools if they've grown too large
+	const maxInternEntries = 100000
+	intern.LabelNames.ResetIfLarge(maxInternEntries)
+	intern.MetricNames.ResetIfLarge(maxInternEntries)
 }
 
 // buildLabelKey builds a key from tracked labels.

@@ -3,6 +3,7 @@ module github.com/szibis/metrics-governor
 go 1.25.6
 
 require (
+	github.com/KimMachineGun/automemlimit v0.7.5
 	github.com/bits-and-blooms/bloom/v3 v3.7.1
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/golang/snappy v0.0.4
@@ -10,7 +11,9 @@ require (
 	github.com/klauspost/compress v1.18.0
 	github.com/pierrec/lz4/v4 v4.1.22
 	github.com/prometheus/client_golang v1.23.2
+	github.com/prometheus/client_model v0.6.2
 	go.opentelemetry.io/proto/otlp v1.3.1
+	go.uber.org/goleak v1.3.0
 	golang.org/x/net v0.43.0
 	google.golang.org/grpc v1.71.0
 	google.golang.org/protobuf v1.36.11
@@ -18,14 +21,12 @@ require (
 )
 
 require (
-	github.com/KimMachineGun/automemlimit v0.7.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.24.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
-	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect

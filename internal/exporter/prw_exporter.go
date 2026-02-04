@@ -340,8 +340,8 @@ func (e *PRWExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 	}
 	defer resp.Body.Close()
 
-	// Read response body for error detection
-	bodyBytes, _ := io.ReadAll(resp.Body)
+	// Read response body for error detection (bounded to prevent memory exhaustion)
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	bodyStr := string(bodyBytes)
 
 	// Check response status

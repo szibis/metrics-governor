@@ -90,6 +90,94 @@ Full system tests with complete pipeline.
 | `TestE2E_BurstTraffic` | Traffic burst handling |
 | `TestE2E_EdgeCaseValues` | Extreme float values |
 
+### Memory Leak Tests
+
+Memory leak detection tests run automatically on every PR via the `memory-check.yml` workflow. They are organized into three categories:
+
+#### Resource Tests (`*_resource_test.go`)
+
+Verify that components release memory after shutdown. These tests measure `runtime.MemStats.HeapAlloc` before and after component lifecycle operations.
+
+| File | Tests | What It Checks |
+|------|:-----:|----------------|
+| `buffer/buffer_resource_test.go` | 1 | Buffer memory released after flush and stop |
+| `compression/compression_resource_test.go` | 1 | Compressor memory bounded across many operations |
+| `limits/limits_resource_test.go` | 1 | Enforcer memory released after stop |
+
+Run:
+```bash
+go test -run Resource -count=1 -timeout=5m ./internal/...
+```
+
+#### Goroutine Leak Tests (`*_leak_test.go`)
+
+Use [`go.uber.org/goleak`](https://github.com/uber-go/goleak) to verify no goroutines are leaked after components are created, used, and shut down.
+
+| File | Tests | What It Checks |
+|------|:-----:|----------------|
+| `buffer/leak_test.go` | 2 | `MetricsBuffer` and `MemoryQueue` goroutine cleanup |
+| `exporter/leak_test.go` | 2 | `QueuedExporter` and `PRWQueuedExporter` goroutine cleanup |
+| `queue/leak_test.go` | 2 | `SendQueue` and `FastQueue` goroutine cleanup |
+| `stats/leak_test.go` | 1 | `StatsCollector` goroutine cleanup |
+
+Pattern:
+```go
+func TestLeakCheck_Component(t *testing.T) {
+    defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+    // create component, use it, close/stop it
+}
+```
+
+Run:
+```bash
+go test -run TestLeak -count=1 -timeout=5m ./internal/...
+```
+
+#### Memory Stress Tests (`*_stress_test.go`)
+
+Sustained-load tests that verify memory growth stays bounded over many iterations. Each test measures `HeapAlloc` before and after a workload, asserts growth stays under a threshold (typically 50 MB).
+
+| File | Tests | What It Checks |
+|------|:-----:|----------------|
+| `intern/stress_test.go` | 2 | Intern pool growth capped by `ResetIfLarge()` |
+| `stats/stress_test.go` | 1 | Stats map growth bounded across window resets |
+| `limits/stress_test.go` | 1 | Enforcer group/dropped maps bounded across windows |
+| `exporter/stress_test.go` | 1 | PRW response body reads bounded by `io.LimitReader` |
+
+Pattern:
+```go
+func TestStress_ComponentGrowth(t *testing.T) {
+    var mBefore, mAfter runtime.MemStats
+    runtime.GC()
+    runtime.ReadMemStats(&mBefore)
+    // ... sustained load ...
+    runtime.GC()
+    runtime.ReadMemStats(&mAfter)
+    if mAfter.HeapAlloc > mBefore.HeapAlloc {
+        growth := mAfter.HeapAlloc - mBefore.HeapAlloc
+        if growth > 50*1024*1024 {
+            t.Fatalf("memory growth too high: %d bytes", growth)
+        }
+    }
+}
+```
+
+Run:
+```bash
+go test -run Stress -count=1 -timeout=10m ./internal/...
+```
+
+#### CI Workflow: Memory Check
+
+The `.github/workflows/memory-check.yml` workflow runs on every PR to `main` with four parallel jobs:
+
+| Job | Description | Timeout |
+|-----|-------------|---------|
+| `resource-tests` | Runs `*_resource_test.go` tests | 5m |
+| `goroutine-leak-check` | Runs `*_leak_test.go` tests with goleak | 5m |
+| `memory-stress-test` | Runs `*_stress_test.go` sustained-load tests | 10m |
+| `benchmark-alloc-compare` | Compares `allocs/op` between PR and base branch using `benchstat`; posts a PR comment if regressions exceed 10% | 10m |
+
 ### Benchmarks
 
 Performance tests measuring throughput, latency, and memory usage.
