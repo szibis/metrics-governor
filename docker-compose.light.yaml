@@ -44,13 +44,19 @@ services:
       - "-buffer-size=1000"           # Smaller buffer
       # Performance tuning (defaults for development)
       - "-string-interning=true"
-      # Queue - memory mode for lightweight development
+      # Disk queue - persistent failover (5GB)
       - "-queue-enabled=true"
-      - "-queue-type=memory"
-      - "-queue-max-size=1000"
-      - "-queue-max-bytes=268435456"       # 256MB in-memory queue
+      - "-queue-type=disk"
+      - "-queue-path=/data/queue"
+      - "-queue-max-size=10000"
+      - "-queue-max-bytes=5368709120"      # 5GB disk queue
       - "-queue-retry-interval=5s"
       - "-queue-full-behavior=drop_oldest"
+      - "-queue-adaptive-enabled=true"
+      - "-queue-inmemory-blocks=256"
+      - "-queue-chunk-size=134217728"
+      - "-queue-meta-sync=1s"
+      - "-queue-stale-flush=5s"
       # Queue resilience (conservative for light testing)
       - "-queue-backoff-enabled=true"
       - "-queue-backoff-multiplier=2.0"
@@ -59,6 +65,8 @@ services:
       - "-queue-circuit-breaker-reset-timeout=30s"
       # Memory limit
       - "-memory-limit-ratio=0.9"
+    volumes:
+      - mg-queue-light-data:/data/queue
 
   victoriametrics:
     deploy:
@@ -87,3 +95,7 @@ services:
       - VERIFICATION_METRIC=generator_verification_counter
       - PASS_THRESHOLD=90.0           # Lower threshold for light testing
       - METRICS_PORT=9092
+
+volumes:
+  mg-queue-light-data:
+    driver: local

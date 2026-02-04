@@ -1,14 +1,14 @@
-# Queue persistence testing configuration
+# Queue memory testing configuration
 # Usage: docker compose -f docker-compose.yaml -f docker-compose.queue.yaml up -d
 #
-# This override enables queue persistence testing:
-# - FastQueue with aggressive settings for testing
+# This override enables in-memory queue testing:
+# - Memory queue with aggressive settings for testing
 # - Smaller intervals for faster testing
-# - Volume mount for persistent queue data
+# - No disk persistence (data lost on restart)
 #
 # Test scenarios:
-# 1. Normal flow with queue enabled
-# 2. Container restart recovers queue data
+# 1. Normal flow with memory queue enabled
+# 2. Queue eviction behavior under pressure
 # 3. Queue metrics exposed correctly
 
 services:
@@ -26,21 +26,15 @@ services:
       # Performance tuning
       - "-string-interning=true"
       - "-intern-max-value-length=64"
-      # FastQueue configuration for testing
+      # Memory queue for queue behavior testing
       - "-queue-enabled=true"
-      - "-queue-path=/data/queue"
+      - "-queue-type=memory"
       - "-queue-max-size=1000"
-      - "-queue-type=disk"
-      - "-queue-max-bytes=5368709120"
+      - "-queue-max-bytes=268435456"       # 256MB in-memory queue
       - "-queue-retry-interval=2s"
       - "-queue-max-retry-delay=30s"
       - "-queue-full-behavior=drop_oldest"
       - "-queue-adaptive-enabled=true"
-      # FastQueue-specific settings (aggressive for testing)
-      - "-queue-inmemory-blocks=32"
-      - "-queue-chunk-size=10485760"
-      - "-queue-meta-sync=500ms"
-      - "-queue-stale-flush=2s"
       # Queue resilience (aggressive for testing)
       - "-queue-backoff-enabled=true"
       - "-queue-backoff-multiplier=1.5"
@@ -49,8 +43,6 @@ services:
       - "-queue-circuit-breaker-reset-timeout=10s"
       # Memory limit
       - "-memory-limit-ratio=0.9"
-    volumes:
-      - mg-queue-test-data:/data/queue
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/metrics"]
       interval: 5s
@@ -93,6 +85,3 @@ services:
       - "--opentelemetry.convertMetricNamesToPrometheus"
       - "--memory.allowedPercent=70"
 
-volumes:
-  mg-queue-test-data:
-    driver: local
