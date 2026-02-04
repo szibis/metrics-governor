@@ -67,23 +67,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'json'
-          output: 'trivy-fs-results.json'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+      - name: Install Trivy
+        run: |
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
 
-      - name: Upload Trivy SARIF
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-fs.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+      - name: Run Trivy filesystem scan (JSON)
+        run: trivy fs --format json --output trivy-fs-results.json --severity CRITICAL,HIGH,MEDIUM,LOW .
+
+      - name: Run Trivy filesystem scan (SARIF)
+        run: trivy fs --format sarif --output trivy-fs.sarif --severity CRITICAL,HIGH,MEDIUM,LOW .
 
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
@@ -129,27 +125,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Install Trivy
+        run: |
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
 
       - name: Build Docker image
         run: docker build -t metrics-governor:scan .
 
-      - name: Run Trivy image scan
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: 'metrics-governor:scan'
-          format: 'json'
-          output: 'trivy-image-results.json'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+      - name: Run Trivy image scan (JSON)
+        run: trivy image --format json --output trivy-image-results.json --severity CRITICAL,HIGH,MEDIUM,LOW metrics-governor:scan
 
-      - name: Upload Trivy image SARIF
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: 'metrics-governor:scan'
-          format: 'sarif'
-          output: 'trivy-image.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+      - name: Run Trivy image scan (SARIF)
+        run: trivy image --format sarif --output trivy-image.sarif --severity CRITICAL,HIGH,MEDIUM,LOW metrics-governor:scan
 
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
@@ -197,22 +188,31 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION="8.21.2"
+          wget -qO- "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar xz
+          sudo mv gitleaks /usr/local/bin/
+
       - name: Run gitleaks
         id: gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          gitleaks detect --source . --verbose --redact --report-format json --report-path gitleaks-report.json 2>&1
+          EXIT_CODE=$?
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          exit 0
 
       - name: Set result
         id: result
         run: |
-          if [ "${{ steps.gitleaks.outcome }}" = "success" ]; then
+          if [ "${{ steps.gitleaks.outputs.exit_code }}" = "0" ]; then
             echo "result=pass" >> $GITHUB_OUTPUT
             echo "details=No secrets detected" >> $GITHUB_OUTPUT
           else
             echo "result=fail" >> $GITHUB_OUTPUT
-            echo "details=Secrets detected in repository" >> $GITHUB_OUTPUT
+            LEAK_COUNT=$(jq 'length' gitleaks-report.json 2>/dev/null || echo "unknown")
+            echo "details=Found ${LEAK_COUNT} secret(s) in repository" >> $GITHUB_OUTPUT
             exit 1
           fi
 
@@ -230,35 +230,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install checkov
+        run: pip3 install checkov
+
       - name: Run checkov on Helm chart
         id: checkov_helm
-        uses: bridgecrewio/checkov-action@v12
-        continue-on-error: true
-        with:
-          directory: helm/metrics-governor
-          framework: helm
-          config_file: .github/checkov-config.yml
-          output_format: json
-          output_file_path: checkov-helm.json
-          quiet: true
+        run: |
+          set +e
+          checkov -d helm/metrics-governor --framework helm \
+            --config-file .github/checkov-config.yml \
+            --output json --output-file-path checkov-helm.json \
+            --quiet 2>&1
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+          exit 0
 
       - name: Run checkov on Dockerfile
         id: checkov_docker
-        uses: bridgecrewio/checkov-action@v12
-        continue-on-error: true
-        with:
-          file: Dockerfile
-          framework: dockerfile
-          output_format: json
-          output_file_path: checkov-docker.json
-          quiet: true
+        run: |
+          set +e
+          checkov -f Dockerfile --framework dockerfile \
+            --output json --output-file-path checkov-docker.json \
+            --quiet 2>&1
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+          exit 0
 
       - name: Evaluate results
         id: evaluate
         run: |
-          HELM_OUTCOME="${{ steps.checkov_helm.outcome }}"
-          DOCKER_OUTCOME="${{ steps.checkov_docker.outcome }}"
-
           HELM_FAILED=0
           DOCKER_FAILED=0
 
@@ -293,19 +291,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install syft
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
       - name: Generate SBOM (SPDX)
-        uses: anchore/sbom-action@v0
-        with:
-          path: .
-          format: spdx-json
-          output-file: sbom-spdx.json
+        run: syft dir:. -o spdx-json=sbom-spdx.json
 
       - name: Generate SBOM (CycloneDX)
-        uses: anchore/sbom-action@v0
-        with:
-          path: .
-          format: cyclonedx-json
-          output-file: sbom-cyclonedx.json
+        run: syft dir:. -o cyclonedx-json=sbom-cyclonedx.json
 
       - name: Upload SBOM artifacts
         uses: actions/upload-artifact@v4
