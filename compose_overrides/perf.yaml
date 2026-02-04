@@ -11,6 +11,8 @@ services:
   metrics-generator:
     environment:
       - OTLP_ENDPOINT=otel-collector:4317
+      # Use low-memory temporality: delta for counters/histograms (reduces memory)
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=lowmemory
       - METRICS_INTERVAL=50ms         # Fast generation
       - SERVICES=payment-api,order-api,inventory-api,user-api,auth-api,legacy-app,billing-api,notification-api,search-api,analytics-api
       - ENVIRONMENTS=prod,staging,dev,qa
@@ -26,10 +28,23 @@ services:
       - TARGET_METRICS_PER_SEC=100000
       - TARGET_DATAPOINTS_PER_SEC=200000
       - METRICS_PORT=9091
+      # Spike scenario configuration (enabled for stress testing)
+      # Note: OTel SDK stores cumulative metrics, so high cardinality = high memory
+      - ENABLE_SPIKE_SCENARIOS=true
+      - SPIKE_MODE=realistic
+      - SPIKE_CARDINALITY=500
+      - SPIKE_DURATION_SEC=30
+      - SPIKE_INTERVAL_MIN_SEC=10
+      - SPIKE_INTERVAL_MAX_SEC=30
+      - MISTAKE_DELAY_SEC=15
+      - MISTAKE_DURATION_SEC=60
+      - MISTAKE_CARDINALITY_RATE=50
     deploy:
       resources:
         limits:
-          memory: 2G
+          # OTel SDK uses cumulative aggregation - stores all unique series in memory
+          # With spike scenarios + high throughput, memory grows significantly
+          memory: 6G
           cpus: "2"
 
   metrics-governor:

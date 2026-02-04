@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -23,6 +24,140 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+// Pre-allocated string pools for commonly used label values (reduces allocations)
+var (
+	// User ID pool - pre-generated strings
+	userIDPool      []string
+	sessionIDPool   []string
+	requestPathPool []string
+	regionPool      []string
+	instancePool    []string
+	eventTypePool   []string
+	apiPathPool     []string
+	queryHashPool   []string
+	cacheKeyPool    []string
+	httpPathPool    []string
+	dbPool          []string
+	dbOpsPool       []string
+	cacheOpsPool    []string
+	seriesPool      []string
+	reqIDPool       []string
+
+	// UUID byte pool for generateUUID
+	uuidBytePool = sync.Pool{
+		New: func() any {
+			return make([]byte, 16)
+		},
+	}
+)
+
+// initStringPools pre-allocates string pools to avoid repeated allocations
+func initStringPools() {
+	// User IDs (0-999)
+	userIDPool = make([]string, 1000)
+	for i := 0; i < 1000; i++ {
+		userIDPool[i] = fmt.Sprintf("user_%d", i)
+	}
+
+	// Session IDs (0-99)
+	sessionIDPool = make([]string, 100)
+	for i := 0; i < 100; i++ {
+		sessionIDPool[i] = fmt.Sprintf("sess_%d", i)
+	}
+
+	// Request paths
+	requestPathPool = make([]string, 50)
+	for i := 0; i < 50; i++ {
+		requestPathPool[i] = fmt.Sprintf("/api/v%d/resource/%d", (i%2)+1, i%10)
+	}
+
+	// Regions (0-9)
+	regionPool = make([]string, 10)
+	for i := 0; i < 10; i++ {
+		regionPool[i] = fmt.Sprintf("region_%d", i)
+	}
+
+	// Instances (0-9)
+	instancePool = make([]string, 10)
+	for i := 0; i < 10; i++ {
+		instancePool[i] = fmt.Sprintf("instance_%d", i)
+	}
+
+	// Event types (0-9)
+	eventTypePool = make([]string, 10)
+	for i := 0; i < 10; i++ {
+		eventTypePool[i] = fmt.Sprintf("event_%d", i)
+	}
+
+	// API paths (pre-generate combinations)
+	apiPathPool = make([]string, 1500) // 3 versions * 50 entities * 10 actions
+	idx := 0
+	for v := 1; v <= 3; v++ {
+		for e := 0; e < 50; e++ {
+			for a := 0; a < 10; a++ {
+				apiPathPool[idx] = fmt.Sprintf("/api/v%d/entity/%d/action/%d", v, e, a)
+				idx++
+			}
+		}
+	}
+
+	// Query hashes (0-499)
+	queryHashPool = make([]string, 500)
+	for i := 0; i < 500; i++ {
+		queryHashPool[i] = fmt.Sprintf("qh_%08x", i)
+	}
+
+	// Cache keys
+	prefixes := []string{"user", "session", "product", "order", "inventory"}
+	cacheKeyPool = make([]string, 2000)
+	for i := 0; i < 2000; i++ {
+		cacheKeyPool[i] = fmt.Sprintf("key:%s:%d", prefixes[i%len(prefixes)], i%400)
+	}
+
+	// HTTP paths for histograms
+	endpoints := []string{"users", "orders", "products", "inventory", "payments"}
+	httpPathPool = make([]string, 200) // 2 versions * 5 endpoints * 20 IDs
+	idx = 0
+	for v := 1; v <= 2; v++ {
+		for _, e := range endpoints {
+			for id := 0; id < 20; id++ {
+				httpPathPool[idx] = fmt.Sprintf("/v%d/%s/%d", v, e, id)
+				idx++
+				if idx >= 200 {
+					break
+				}
+			}
+			if idx >= 200 {
+				break
+			}
+		}
+		if idx >= 200 {
+			break
+		}
+	}
+
+	// Database names
+	dbPool = []string{"db_0", "db_1", "db_2"}
+
+	// Database operations
+	dbOpsPool = []string{"SELECT", "INSERT", "UPDATE", "DELETE"}
+
+	// Cache operations
+	cacheOpsPool = []string{"get", "set", "delete"}
+
+	// Series labels for stable mode (0-99)
+	seriesPool = make([]string, 100)
+	for i := 0; i < 100; i++ {
+		seriesPool[i] = fmt.Sprintf("s%02d", i)
+	}
+
+	// Request IDs for legacy app (0-999)
+	reqIDPool = make([]string, 1000)
+	for i := 0; i < 1000; i++ {
+		reqIDPool[i] = fmt.Sprintf("req-%d", i)
+	}
+}
 
 // GeneratorStats tracks metrics generation statistics
 type GeneratorStats struct {
@@ -46,9 +181,26 @@ type GeneratorStats struct {
 	BurstMetricsSent atomic.Int64
 }
 
+// SpikeScenarioStats tracks spike and mistake scenario statistics
+type SpikeScenarioStats struct {
+	SpikesStarted    atomic.Int64
+	SpikesEnded      atomic.Int64
+	SpikeSeriesTotal atomic.Int64
+	ActiveSpike      atomic.Bool
+
+	MistakeStarted      atomic.Int64
+	MistakeEnded        atomic.Int64
+	MistakeSeriesTotal  atomic.Int64
+	ActiveMistake       atomic.Bool
+}
+
 var stats = &GeneratorStats{}
+var spikeStats = &SpikeScenarioStats{}
 
 func main() {
+	// Initialize string pools for memory efficiency
+	initStringPools()
+
 	endpoint := getEnv("OTLP_ENDPOINT", "localhost:4317")
 	intervalStr := getEnv("METRICS_INTERVAL", "100ms")
 	servicesStr := getEnv("SERVICES", "payment-api,order-api,inventory-api,user-api,auth-api,legacy-app")
@@ -71,6 +223,17 @@ func main() {
 	stableMetricCount := getEnvInt("STABLE_METRIC_COUNT", 100)        // Number of stable metrics
 	stableCardinalityPerMetric := getEnvInt("STABLE_CARDINALITY", 10) // Series per metric
 	stableDatapointsPerInterval := getEnvInt("STABLE_DATAPOINTS", 1)  // Datapoints per series per interval
+
+	// Spike scenario configuration - for limits enforcement testing
+	enableSpikeScenarios := getEnvBool("ENABLE_SPIKE_SCENARIOS", false)
+	spikeMode := getEnv("SPIKE_MODE", "realistic")                    // "random", "mistake", or "realistic"
+	spikeCardinality := getEnvInt("SPIKE_CARDINALITY", 1000)          // Unique series per spike
+	spikeDurationSec := getEnvInt("SPIKE_DURATION_SEC", 20)           // How long each spike lasts
+	spikeIntervalMinSec := getEnvInt("SPIKE_INTERVAL_MIN_SEC", 30)    // Min seconds between spikes
+	spikeIntervalMaxSec := getEnvInt("SPIKE_INTERVAL_MAX_SEC", 120)   // Max seconds between spikes
+	mistakeDelaySec := getEnvInt("MISTAKE_DELAY_SEC", 90)             // Base delay before mistake (±50% jitter)
+	mistakeDurationSec := getEnvInt("MISTAKE_DURATION_SEC", 120)      // How long mistake scenario lasts
+	mistakeCardinalityRate := getEnvInt("MISTAKE_CARDINALITY_RATE", 100) // New unique series/sec during mistake
 
 	interval, err := time.ParseDuration(intervalStr)
 	if err != nil {
@@ -104,6 +267,16 @@ func main() {
 		log.Printf("    Total unique series: %d", totalSeries)
 		log.Printf("    NOTE: OTel SDK uses cumulative aggregation")
 		log.Printf("    Expected OTLP datapoints/export: %d (1 per series)", totalSeries)
+	}
+	if enableSpikeScenarios {
+		log.Printf("  SPIKE SCENARIOS ENABLED:")
+		log.Printf("    Mode: %s", spikeMode)
+		log.Printf("    Spike cardinality: %d series", spikeCardinality)
+		log.Printf("    Spike duration: %ds", spikeDurationSec)
+		log.Printf("    Spike interval: %d-%ds", spikeIntervalMinSec, spikeIntervalMaxSec)
+		log.Printf("    Mistake delay: %ds (±50%% jitter)", mistakeDelaySec)
+		log.Printf("    Mistake duration: %ds", mistakeDurationSec)
+		log.Printf("    Mistake rate: %d new series/sec", mistakeCardinalityRate)
 	}
 	log.Printf("========================================")
 
@@ -150,6 +323,8 @@ func main() {
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(interval))),
 		sdkmetric.WithResource(res),
 	)
+	// Note: For low-memory temporality, set OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=lowmemory
+	// This uses delta temporality for counters/histograms (most memory efficient)
 	defer meterProvider.Shutdown(ctx)
 
 	otel.SetMeterProvider(meterProvider)
@@ -387,6 +562,24 @@ func main() {
 	metricsPort := getEnv("METRICS_PORT", "9091")
 	go startMetricsServer(metricsPort)
 
+	// Launch spike scenarios if enabled
+	if enableSpikeScenarios {
+		log.Println("[SPIKE] Starting spike scenario goroutines...")
+		switch spikeMode {
+		case "random":
+			go runRandomSpikeScenario(ctx, conn, res, interval, spikeCardinality, spikeDurationSec, spikeIntervalMinSec, spikeIntervalMaxSec)
+		case "mistake":
+			go runMistakeScenario(ctx, conn, res, interval, mistakeDelaySec, mistakeDurationSec, mistakeCardinalityRate)
+		case "realistic":
+			go runRandomSpikeScenario(ctx, conn, res, interval, spikeCardinality, spikeDurationSec, spikeIntervalMinSec, spikeIntervalMaxSec)
+			go runMistakeScenario(ctx, conn, res, interval, mistakeDelaySec, mistakeDurationSec, mistakeCardinalityRate)
+		default:
+			log.Printf("[SPIKE] Unknown spike mode: %s, using realistic", spikeMode)
+			go runRandomSpikeScenario(ctx, conn, res, interval, spikeCardinality, spikeDurationSec, spikeIntervalMinSec, spikeIntervalMaxSec)
+			go runMistakeScenario(ctx, conn, res, interval, mistakeDelaySec, mistakeDurationSec, mistakeCardinalityRate)
+		}
+	}
+
 	iteration := 0
 	verificationID := int64(0)
 
@@ -437,12 +630,11 @@ func main() {
 							numLegacy := rand.Intn(50) + 10
 							for i := 0; i < numLegacy; i++ {
 								// Use bounded request_id pool to prevent unbounded cardinality
-								reqID := fmt.Sprintf("req-%s-%d", service, rand.Intn(1000))
 								legacyAppRequestCount.Add(ctx, 1,
 									metric.WithAttributes(
 										attribute.String("service", service),
 										attribute.String("env", env),
-										attribute.String("request_id", reqID),
+										attribute.String("request_id", reqIDPool[rand.Intn(1000)]),
 									))
 								batchDatapoints++
 							}
@@ -488,15 +680,16 @@ func main() {
 			// High cardinality metrics
 			if enableHighCardinality {
 				for i := 0; i < highCardinalityCount; i++ {
+					// Use pre-allocated string pools to avoid allocations
 					highCardinalityMetric.Add(ctx, 1,
 						metric.WithAttributes(
 							// Use very small bounded pools so cardinality stabilizes quickly
 							// Max combinations: 10 * 20 * 5 * 5 * 5 = 2,500 (stabilizes in seconds)
-							attribute.String("user_id", fmt.Sprintf("user_%d", rand.Intn(10))),
-							attribute.String("session_id", fmt.Sprintf("sess_%d", rand.Intn(20))),
-							attribute.String("request_path", fmt.Sprintf("/api/v%d/resource/%d", rand.Intn(1)+1, rand.Intn(5))),
-							attribute.String("region", fmt.Sprintf("region_%d", rand.Intn(5))),
-							attribute.String("instance", fmt.Sprintf("instance_%d", rand.Intn(5))),
+							attribute.String("user_id", userIDPool[rand.Intn(10)]),
+							attribute.String("session_id", sessionIDPool[rand.Intn(20)]),
+							attribute.String("request_path", requestPathPool[rand.Intn(10)]),
+							attribute.String("region", regionPool[rand.Intn(5)]),
+							attribute.String("instance", instancePool[rand.Intn(5)]),
 						))
 					batchDatapoints++
 				}
@@ -512,8 +705,8 @@ func main() {
 					highCardUserEvents.Add(ctx, 1,
 						metric.WithAttributes(
 							attribute.String("service", services[rand.Intn(len(services))]),
-							attribute.String("user_id", fmt.Sprintf("uid_%d", rand.Intn(1000))),
-							attribute.String("event_type", fmt.Sprintf("event_%d", rand.Intn(5))),
+							attribute.String("user_id", userIDPool[rand.Intn(1000)]),
+							attribute.String("event_type", eventTypePool[rand.Intn(5)]),
 						))
 					batchDatapoints++
 				}
@@ -524,7 +717,7 @@ func main() {
 					highCardAPIRequests.Add(ctx, 1,
 						metric.WithAttributes(
 							attribute.String("service", services[rand.Intn(len(services))]),
-							attribute.String("path", fmt.Sprintf("/api/v%d/entity/%d/action/%d", rand.Intn(3)+1, rand.Intn(50), rand.Intn(10))),
+							attribute.String("path", apiPathPool[rand.Intn(len(apiPathPool))]),
 							attribute.String("method", methods[rand.Intn(len(methods))]),
 							attribute.String("status", statuses[rand.Intn(len(statuses))]),
 						))
@@ -537,9 +730,9 @@ func main() {
 					highCardDBQueries.Add(ctx, 1,
 						metric.WithAttributes(
 							attribute.String("service", services[rand.Intn(len(services))]),
-							attribute.String("query_hash", fmt.Sprintf("qh_%08x", rand.Intn(500))),
-							attribute.String("database", fmt.Sprintf("db_%d", rand.Intn(3))),
-							attribute.String("operation", []string{"SELECT", "INSERT", "UPDATE", "DELETE"}[rand.Intn(4)]),
+							attribute.String("query_hash", queryHashPool[rand.Intn(500)]),
+							attribute.String("database", dbPool[rand.Intn(3)]),
+							attribute.String("operation", dbOpsPool[rand.Intn(4)]),
 						))
 					batchDatapoints++
 				}
@@ -550,8 +743,8 @@ func main() {
 					highCardCacheOps.Add(ctx, 1,
 						metric.WithAttributes(
 							attribute.String("service", services[rand.Intn(len(services))]),
-							attribute.String("cache_key", fmt.Sprintf("key:%s:%d", []string{"user", "session", "product", "order", "inventory"}[rand.Intn(5)], rand.Intn(400))),
-							attribute.String("operation", []string{"get", "set", "delete"}[rand.Intn(3)]),
+							attribute.String("cache_key", cacheKeyPool[rand.Intn(len(cacheKeyPool))]),
+							attribute.String("operation", cacheOpsPool[rand.Intn(3)]),
 							attribute.Bool("hit", rand.Float64() > 0.3),
 						))
 					batchDatapoints++
@@ -563,7 +756,7 @@ func main() {
 					highCardHTTPPaths.Record(ctx, rand.Float64()*2.0,
 						metric.WithAttributes(
 							attribute.String("service", services[rand.Intn(len(services))]),
-							attribute.String("path", fmt.Sprintf("/v%d/%s/%d", rand.Intn(2)+1, []string{"users", "orders", "products", "inventory", "payments"}[rand.Intn(5)], rand.Intn(20))),
+							attribute.String("path", httpPathPool[rand.Intn(len(httpPathPool))]),
 							attribute.String("method", methods[rand.Intn(len(methods))]),
 						))
 					batchDatapoints++
@@ -580,7 +773,7 @@ func main() {
 						for k := 0; k < stableDatapointsPerInterval; k++ {
 							c.Add(ctx, 1,
 								metric.WithAttributes(
-									attribute.String("series", fmt.Sprintf("s%02d", j)),
+									attribute.String("series", seriesPool[j%len(seriesPool)]),
 									attribute.Int("metric_id", i),
 								))
 							batchDatapoints++
@@ -793,6 +986,16 @@ func printStats() {
 	log.Printf("  Bursts sent:            %d", bursts)
 	log.Printf("  Burst metrics total:    %d", burstMetrics)
 	log.Printf("")
+	log.Printf("SPIKE SCENARIOS:")
+	log.Printf("  Spikes started:         %d", spikeStats.SpikesStarted.Load())
+	log.Printf("  Spikes ended:           %d", spikeStats.SpikesEnded.Load())
+	log.Printf("  Spike active:           %v", spikeStats.ActiveSpike.Load())
+	log.Printf("  Spike series total:     %d", spikeStats.SpikeSeriesTotal.Load())
+	log.Printf("  Mistake started:        %d", spikeStats.MistakeStarted.Load())
+	log.Printf("  Mistake ended:          %d", spikeStats.MistakeEnded.Load())
+	log.Printf("  Mistake active:         %v", spikeStats.ActiveMistake.Load())
+	log.Printf("  Mistake series total:   %d", spikeStats.MistakeSeriesTotal.Load())
+	log.Printf("")
 	log.Printf("ERRORS:")
 	log.Printf("  Total errors:           %d", totalErrors)
 	log.Printf("  Error rate:             %.4f%%", float64(totalErrors)/float64(totalBatches)*100)
@@ -911,10 +1114,222 @@ func startMetricsServer(port string) {
 			fmt.Fprintf(w, "# TYPE generator_datapoints_per_second gauge\n")
 			fmt.Fprintf(w, "generator_datapoints_per_second %.2f\n", float64(totalDatapoints)/elapsed)
 		}
+
+		// Spike scenario metrics
+		fmt.Fprintf(w, "# HELP generator_spikes_started_total Total number of spike scenarios started\n")
+		fmt.Fprintf(w, "# TYPE generator_spikes_started_total counter\n")
+		fmt.Fprintf(w, "generator_spikes_started_total %d\n", spikeStats.SpikesStarted.Load())
+
+		fmt.Fprintf(w, "# HELP generator_spike_active Whether a spike is currently active (0/1)\n")
+		fmt.Fprintf(w, "# TYPE generator_spike_active gauge\n")
+		spikeActive := 0
+		if spikeStats.ActiveSpike.Load() {
+			spikeActive = 1
+		}
+		fmt.Fprintf(w, "generator_spike_active %d\n", spikeActive)
+
+		fmt.Fprintf(w, "# HELP generator_spike_series_total Total series created by spike scenarios\n")
+		fmt.Fprintf(w, "# TYPE generator_spike_series_total counter\n")
+		fmt.Fprintf(w, "generator_spike_series_total %d\n", spikeStats.SpikeSeriesTotal.Load())
+
+		fmt.Fprintf(w, "# HELP generator_mistake_active Whether a mistake scenario is active (0/1)\n")
+		fmt.Fprintf(w, "# TYPE generator_mistake_active gauge\n")
+		mistakeActive := 0
+		if spikeStats.ActiveMistake.Load() {
+			mistakeActive = 1
+		}
+		fmt.Fprintf(w, "generator_mistake_active %d\n", mistakeActive)
+
+		fmt.Fprintf(w, "# HELP generator_mistake_series_total Total series created by mistake scenarios\n")
+		fmt.Fprintf(w, "# TYPE generator_mistake_series_total counter\n")
+		fmt.Fprintf(w, "generator_mistake_series_total %d\n", spikeStats.MistakeSeriesTotal.Load())
 	})
 
 	log.Printf("Starting metrics server on :%s/metrics", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Printf("Metrics server error: %v", err)
+	}
+}
+
+// generateUUID creates a simple unique ID using hex encoding
+// Uses sync.Pool to reduce allocations in hot paths
+func generateUUID() string {
+	b := uuidBytePool.Get().([]byte)
+	for i := range b {
+		b[i] = byte(rand.Intn(256))
+	}
+	result := fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+	uuidBytePool.Put(b)
+	return result
+}
+
+// createSpikeMeterProvider creates a new MeterProvider for spike/mistake scenarios
+// Each scenario gets its own provider that can be shut down independently,
+// causing its series to disappear from exports (enabling recovery testing)
+func createSpikeMeterProvider(ctx context.Context, conn *grpc.ClientConn, res *resource.Resource, interval time.Duration) (*sdkmetric.MeterProvider, error) {
+	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithGRPCConn(conn))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create spike exporter: %w", err)
+	}
+
+	provider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(interval))),
+		sdkmetric.WithResource(res),
+	)
+	return provider, nil
+}
+
+// runRandomSpikeScenario runs infinite random cardinality spikes
+// Each spike creates a dedicated MeterProvider, generates many unique series,
+// then shuts down the provider (series disappear, enabling recovery testing)
+func runRandomSpikeScenario(ctx context.Context, conn *grpc.ClientConn, res *resource.Resource, interval time.Duration,
+	spikeCardinality, spikeDurationSec, spikeIntervalMinSec, spikeIntervalMaxSec int) {
+
+	spikeNum := 0
+	for {
+		// Wait random interval between spikes
+		waitSec := spikeIntervalMinSec + rand.Intn(spikeIntervalMaxSec-spikeIntervalMinSec+1)
+		log.Printf("[SPIKE] Waiting %ds before next spike...", waitSec)
+		time.Sleep(time.Duration(waitSec) * time.Second)
+
+		spikeNum++
+		log.Printf("[SPIKE] Starting spike #%d: creating %d unique series over %ds",
+			spikeNum, spikeCardinality, spikeDurationSec)
+
+		spikeStats.SpikesStarted.Add(1)
+		spikeStats.ActiveSpike.Store(true)
+
+		// Create dedicated MeterProvider for this spike
+		spikeProvider, err := createSpikeMeterProvider(ctx, conn, res, interval)
+		if err != nil {
+			log.Printf("[SPIKE] Error creating provider for spike #%d: %v", spikeNum, err)
+			spikeStats.ActiveSpike.Store(false)
+			continue
+		}
+
+		spikeMeter := spikeProvider.Meter("spike-generator")
+		spikeCounter, _ := spikeMeter.Int64Counter(fmt.Sprintf("spike_cardinality_event_%d", spikeNum),
+			metric.WithDescription(fmt.Sprintf("Spike cardinality event %d", spikeNum)))
+
+		// Generate unique series over the spike duration
+		seriesPerSecond := spikeCardinality / spikeDurationSec
+		if seriesPerSecond < 1 {
+			seriesPerSecond = 1
+		}
+
+		services := []string{"spike-service-0", "spike-service-1", "spike-service-2"}
+		seriesCreated := 0
+
+		for sec := 0; sec < spikeDurationSec && seriesCreated < spikeCardinality; sec++ {
+			for i := 0; i < seriesPerSecond && seriesCreated < spikeCardinality; i++ {
+				spikeCounter.Add(ctx, 1,
+					metric.WithAttributes(
+						attribute.String("spike_id", fmt.Sprintf("spike_%d", spikeNum)),
+						attribute.String("unique_key", fmt.Sprintf("sk_%d_%d", spikeNum, seriesCreated)),
+						attribute.String("service", services[seriesCreated%len(services)]),
+					))
+				seriesCreated++
+			}
+			time.Sleep(1 * time.Second)
+		}
+
+		spikeStats.SpikeSeriesTotal.Add(int64(seriesCreated))
+		log.Printf("[SPIKE] Spike #%d complete: created %d series, shutting down provider...", spikeNum, seriesCreated)
+
+		// Shutdown the provider - series disappear from exports
+		shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		if err := spikeProvider.Shutdown(shutdownCtx); err != nil {
+			log.Printf("[SPIKE] Error shutting down spike #%d provider: %v", spikeNum, err)
+		}
+		cancel()
+
+		spikeStats.SpikesEnded.Add(1)
+		spikeStats.ActiveSpike.Store(false)
+		log.Printf("[SPIKE] Spike #%d provider shutdown, recovery period begins", spikeNum)
+	}
+}
+
+// runMistakeScenario simulates bad deployments that flood with high-cardinality metrics
+// Each mistake creates a dedicated MeterProvider, floods with unique request_id/trace_id,
+// then shuts down the provider (enabling recovery testing)
+func runMistakeScenario(ctx context.Context, conn *grpc.ClientConn, res *resource.Resource, interval time.Duration,
+	mistakeDelaySec, mistakeDurationSec, mistakeCardinalityRate int) {
+
+	mistakeNum := 0
+	for {
+		// Wait with jitter (±50%)
+		jitter := float64(mistakeDelaySec) * 0.5
+		waitSec := float64(mistakeDelaySec) + (rand.Float64()*2-1)*jitter
+		if waitSec < 10 {
+			waitSec = 10
+		}
+		log.Printf("[MISTAKE] Waiting %.0fs before next mistake scenario...", waitSec)
+		time.Sleep(time.Duration(waitSec) * time.Second)
+
+		mistakeNum++
+		log.Printf("[MISTAKE] Bad deployment #%d started: %d new series/sec for %ds",
+			mistakeNum, mistakeCardinalityRate, mistakeDurationSec)
+
+		spikeStats.MistakeStarted.Add(1)
+		spikeStats.ActiveMistake.Store(true)
+
+		// Create dedicated MeterProvider for this mistake
+		mistakeProvider, err := createSpikeMeterProvider(ctx, conn, res, interval)
+		if err != nil {
+			log.Printf("[MISTAKE] Error creating provider for mistake #%d: %v", mistakeNum, err)
+			spikeStats.ActiveMistake.Store(false)
+			continue
+		}
+
+		mistakeMeter := mistakeProvider.Meter("mistake-generator")
+		mistakeCounter, _ := mistakeMeter.Int64Counter("mistake_bad_deployment_requests",
+			metric.WithDescription("Bad deployment with unique request_ids"))
+		mistakeHistogram, _ := mistakeMeter.Float64Histogram("mistake_bad_deployment_duration",
+			metric.WithDescription("Bad deployment request duration"))
+
+		seriesCreated := 0
+		for sec := 0; sec < mistakeDurationSec; sec++ {
+			for i := 0; i < mistakeCardinalityRate; i++ {
+				requestID := generateUUID()
+				traceID := generateUUID()
+
+				mistakeCounter.Add(ctx, 1,
+					metric.WithAttributes(
+						attribute.String("request_id", requestID),
+						attribute.String("trace_id", traceID),
+						attribute.String("service", "buggy-service"),
+						attribute.String("env", "prod"),
+					))
+
+				mistakeHistogram.Record(ctx, rand.Float64()*2.0,
+					metric.WithAttributes(
+						attribute.String("request_id", requestID),
+						attribute.String("service", "buggy-service"),
+					))
+
+				seriesCreated += 2 // counter + histogram
+			}
+			time.Sleep(1 * time.Second)
+		}
+
+		spikeStats.MistakeSeriesTotal.Add(int64(seriesCreated))
+		log.Printf("[MISTAKE] Bad deployment #%d fixed: created %d series, shutting down provider...",
+			mistakeNum, seriesCreated)
+
+		// Shutdown the provider - series disappear from exports
+		shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		if err := mistakeProvider.Shutdown(shutdownCtx); err != nil {
+			log.Printf("[MISTAKE] Error shutting down mistake #%d provider: %v", mistakeNum, err)
+		}
+		cancel()
+
+		spikeStats.MistakeEnded.Add(1)
+		spikeStats.ActiveMistake.Store(false)
+		log.Printf("[MISTAKE] Mistake #%d provider shutdown, recovery period (60s) begins", mistakeNum)
+
+		// Wait for recovery period
+		log.Printf("[MISTAKE] Waiting 60s for recovery confirmation...")
+		time.Sleep(60 * time.Second)
 	}
 }

@@ -203,6 +203,9 @@ type Config struct {
 	BloomPersistenceCompression      bool
 	BloomPersistenceCompressionLevel int
 
+	// Shutdown settings
+	ShutdownTimeout time.Duration // Graceful shutdown timeout (default: 30s)
+
 	// Flags
 	ShowHelp    bool
 	ShowVersion bool
@@ -400,6 +403,9 @@ func ParseFlags() *Config {
 	flag.IntVar(&cfg.BloomPersistenceCompressionLevel, "bloom-persistence-compression-level", 1, "Gzip compression level (1=fast, 9=best)")
 
 	// Help and version
+	// Shutdown flags
+	flag.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", 30*time.Second, "Graceful shutdown timeout (should be less than K8s terminationGracePeriodSeconds)")
+
 	flag.BoolVar(&cfg.ShowHelp, "help", false, "Show help message")
 	flag.BoolVar(&cfg.ShowHelp, "h", false, "Show help message (shorthand)")
 	flag.BoolVar(&cfg.ShowVersion, "version", false, "Show version")
@@ -1557,5 +1563,7 @@ func DefaultConfig() *Config {
 		BloomPersistenceMaxMemory:        268435456, // 256MB
 		BloomPersistenceCompression:      true,
 		BloomPersistenceCompressionLevel: 1,
+		// Shutdown defaults
+		ShutdownTimeout: 30 * time.Second,
 	}
 }

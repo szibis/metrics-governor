@@ -709,3 +709,253 @@ func TestFastQueueEmptyPeek(t *testing.T) {
 		t.Error("Expected nil data from empty queue peek")
 	}
 }
+
+// TestFastQueueRecoverWithV2Metadata tests O(1) recovery with V2 metadata format
+func TestFastQueueRecoverWithV2Metadata(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := FastQueueConfig{
+		Path:              tmpDir,
+		MaxInmemoryBlocks: 2, // Small to force disk writes
+		ChunkFileSize:     1024 * 1024,
+		MetaSyncInterval:  10 * time.Millisecond,
+		MaxSize:           1000,
+		MaxBytes:          10 * 1024 * 1024,
+	}
+
+	// Create queue and add data
+	fq, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create FastQueue: %v", err)
+	}
+
+	// Push enough data to flush to disk
+	for i := 0; i < 10; i++ {
+		data := []byte("test-data-for-v2-recovery-" + string(rune('0'+i)))
+		if err := fq.Push(data); err != nil {
+			t.Fatalf("Failed to push data: %v", err)
+		}
+	}
+
+	// Force metadata sync
+	time.Sleep(50 * time.Millisecond)
+	fq.mu.Lock()
+	_ = fq.syncMetadataLocked()
+	fq.mu.Unlock()
+
+	expectedLen := fq.Len()
+	expectedSize := fq.Size()
+
+	// Close and reopen
+	if err := fq.Close(); err != nil {
+		t.Fatalf("Failed to close queue: %v", err)
+	}
+
+	// Reopen - should use V2 metadata for fast recovery
+	fq2, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to reopen FastQueue: %v", err)
+	}
+	defer fq2.Close()
+
+	// Verify counts match (recovered from V2 metadata)
+	if fq2.Len() != expectedLen {
+		t.Errorf("Expected %d entries after recovery, got %d", expectedLen, fq2.Len())
+	}
+	if fq2.Size() != expectedSize {
+		t.Errorf("Expected %d bytes after recovery, got %d", expectedSize, fq2.Size())
+	}
+}
+
+// TestFastQueueCleanupAllChunks tests the cleanupAllChunks function
+func TestFastQueueCleanupAllChunks(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := FastQueueConfig{
+		Path:              tmpDir,
+		MaxInmemoryBlocks: 2,
+		ChunkFileSize:     1024,          // Small chunks
+		MetaSyncInterval:  1 * time.Hour, // Long interval to avoid interference
+		MaxSize:           1000,
+	}
+
+	fq, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create FastQueue: %v", err)
+	}
+
+	// Push data to create chunk files
+	for i := 0; i < 20; i++ {
+		data := make([]byte, 200) // Large enough to create multiple chunks
+		if err := fq.Push(data); err != nil {
+			t.Fatalf("Failed to push data: %v", err)
+		}
+	}
+
+	// Force flush to disk
+	fq.mu.Lock()
+	_ = fq.flushInmemoryBlocksLocked()
+	_ = fq.syncMetadataLocked()
+	fq.mu.Unlock()
+
+	// Close the queue first to stop background goroutines
+	if err := fq.Close(); err != nil {
+		t.Fatalf("Failed to close queue: %v", err)
+	}
+
+	// Verify chunk files exist before cleanup
+	entries, _ := os.ReadDir(tmpDir)
+	chunkCountBefore := 0
+	hasMetaBefore := false
+	for _, e := range entries {
+		if len(e.Name()) == 16 {
+			chunkCountBefore++
+		}
+		if e.Name() == metaFileName {
+			hasMetaBefore = true
+		}
+	}
+	if chunkCountBefore == 0 {
+		t.Fatal("Expected chunk files to exist before cleanup")
+	}
+	if !hasMetaBefore {
+		t.Fatal("Expected metadata file to exist before cleanup")
+	}
+
+	// Create a minimal queue instance just to call cleanupAllChunks
+	fq2 := &FastQueue{cfg: cfg}
+	fq2.cleanupAllChunks()
+
+	// Verify all chunks and metadata are removed
+	entries, _ = os.ReadDir(tmpDir)
+	for _, e := range entries {
+		if len(e.Name()) == 16 {
+			t.Errorf("Chunk file %s should have been removed", e.Name())
+		}
+		if e.Name() == metaFileName {
+			t.Error("Metadata file should have been removed")
+		}
+	}
+}
+
+// TestFastQueueRecoverWithLegacyMetadata tests recovery with old metadata (no counts)
+func TestFastQueueRecoverWithLegacyMetadata(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := FastQueueConfig{
+		Path:              tmpDir,
+		MaxInmemoryBlocks: 2,
+		ChunkFileSize:     1024 * 1024,
+		MetaSyncInterval:  10 * time.Millisecond,
+		MaxSize:           1000,
+		MaxBytes:          10 * 1024 * 1024,
+	}
+
+	// Create queue and add data
+	fq, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create FastQueue: %v", err)
+	}
+
+	// Push data
+	for i := 0; i < 5; i++ {
+		data := []byte("legacy-test-data-" + string(rune('0'+i)))
+		if err := fq.Push(data); err != nil {
+			t.Fatalf("Failed to push data: %v", err)
+		}
+	}
+
+	// Force flush and sync
+	fq.mu.Lock()
+	_ = fq.flushInmemoryBlocksLocked()
+	_ = fq.syncMetadataLocked()
+	fq.mu.Unlock()
+
+	expectedLen := fq.Len()
+
+	if err := fq.Close(); err != nil {
+		t.Fatalf("Failed to close queue: %v", err)
+	}
+
+	// Manually write legacy metadata (without counts)
+	metaPath := filepath.Join(tmpDir, metaFileName)
+	legacyMeta := `{"name":"fastqueue","reader_offset":0,"writer_offset":115,"version":1}`
+	if err := os.WriteFile(metaPath, []byte(legacyMeta), 0600); err != nil {
+		t.Fatalf("Failed to write legacy metadata: %v", err)
+	}
+
+	// Reopen - should trigger legacy scan path
+	fq2, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to reopen FastQueue: %v", err)
+	}
+	defer fq2.Close()
+
+	// Verify data was recovered via scan
+	if fq2.Len() != expectedLen {
+		t.Errorf("Expected %d entries after legacy recovery, got %d", expectedLen, fq2.Len())
+	}
+}
+
+// TestFastQueueMetadataV2Format tests that V2 metadata includes counts
+func TestFastQueueMetadataV2Format(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := FastQueueConfig{
+		Path:              tmpDir,
+		MaxInmemoryBlocks: 5,
+		ChunkFileSize:     1024 * 1024,
+		MetaSyncInterval:  10 * time.Millisecond,
+		MaxSize:           1000,
+	}
+
+	fq, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create FastQueue: %v", err)
+	}
+
+	// Push some data
+	for i := 0; i < 3; i++ {
+		if err := fq.Push([]byte("test")); err != nil {
+			t.Fatalf("Failed to push: %v", err)
+		}
+	}
+
+	// Force metadata sync
+	fq.mu.Lock()
+	_ = fq.syncMetadataLocked()
+	fq.mu.Unlock()
+
+	fq.Close()
+
+	// Read and verify metadata contains V2 fields
+	metaPath := filepath.Join(tmpDir, metaFileName)
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatalf("Failed to read metadata: %v", err)
+	}
+
+	metaStr := string(data)
+	if !contains(metaStr, "entry_count") {
+		t.Error("V2 metadata should contain entry_count field")
+	}
+	if !contains(metaStr, "total_bytes") {
+		t.Error("V2 metadata should contain total_bytes field")
+	}
+	if !contains(metaStr, `"version": 2`) && !contains(metaStr, `"version":2`) {
+		t.Error("V2 metadata should have version 2")
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

@@ -1,0 +1,132 @@
+# Limits enforcement testing configuration
+# Usage: docker compose -f docker-compose.yaml -f compose_overrides/limits.yaml up -d --build
+#
+# This override enables real limits enforcement with spike scenarios:
+# - Generator: spike scenarios enabled (random + mistake)
+# - metrics-governor: limits-dry-run=false (real enforcement)
+# - Tight limits calibrated to trigger violations
+# - Verifier: threshold lowered (data will be intentionally dropped)
+#
+# Expected timeline (continuous, repeating):
+# - Warm-up (0-30s): Cardinality building, normal limits start triggering
+# - Steady state: Normal traffic continuously exceeds tight limits
+# - Random spikes: Every 30-120s, 1000 series spike, gets hard-dropped
+# - Mistake cycles: After random delay, 100 series/sec for 2min, adaptive drops
+# - Recovery: After each event ends, violations clear within 60s
+
+services:
+  metrics-generator:
+    environment:
+      - OTLP_ENDPOINT=otel-collector:4317
+      # Use low-memory temporality: delta for counters/histograms (reduces memory)
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=lowmemory
+      - METRICS_INTERVAL=200ms
+      - SERVICES=payment-api,order-api,inventory-api,user-api,auth-api,legacy-app
+      - ENVIRONMENTS=prod,staging,dev,qa
+      - ENABLE_EDGE_CASES=false
+      - ENABLE_HIGH_CARDINALITY=true
+      - ENABLE_BURST_TRAFFIC=true
+      - ENABLE_DIVERSE_METRICS=true
+      - HIGH_CARDINALITY_COUNT=100
+      - DIVERSE_METRIC_COUNT=100
+      - BURST_SIZE=1000
+      - BURST_INTERVAL_SEC=30
+      - STATS_INTERVAL_SEC=10
+      - TARGET_METRICS_PER_SEC=5000
+      - TARGET_DATAPOINTS_PER_SEC=10000
+      - METRICS_PORT=9091
+      # Spike scenario configuration (enabled for limits testing)
+      - ENABLE_SPIKE_SCENARIOS=true
+      - SPIKE_MODE=realistic
+      - SPIKE_CARDINALITY=1000
+      - SPIKE_DURATION_SEC=45
+      - SPIKE_INTERVAL_MIN_SEC=5
+      - SPIKE_INTERVAL_MAX_SEC=15
+      - MISTAKE_DELAY_SEC=10
+      - MISTAKE_DURATION_SEC=60
+      - MISTAKE_CARDINALITY_RATE=50
+    deploy:
+      resources:
+        limits:
+          # OTel SDK uses cumulative aggregation - stores all unique series in memory
+          # With spike scenarios enabled, memory grows significantly
+          memory: 3G
+
+  metrics-governor:
+    command:
+      - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
+      - "-exporter-protocol=http"
+      - "-exporter-insecure=true"
+      - "-exporter-compression=zstd"
+      - "-stats-labels=service,env"
+      - "-limits-config=/etc/metrics-governor/limits-testing.yaml"
+      - "-limits-dry-run=false"      # Real enforcement!
+      - "-flush-interval=100ms"
+      - "-batch-size=200"
+      - "-max-batch-bytes=8388608"   # 8MB
+      - "-buffer-size=10000"
+      # Performance tuning
+      - "-string-interning=true"
+      - "-intern-max-value-length=64"
+      # Disk queue - persistent failover
+      - "-queue-enabled=true"
+      - "-queue-type=disk"
+      - "-queue-path=/data/queue"
+      - "-queue-max-size=10000"
+      - "-queue-max-bytes=5368709120"      # 5GB
+      - "-queue-retry-interval=5s"
+      - "-queue-full-behavior=drop_oldest"
+      - "-queue-adaptive-enabled=true"
+      - "-queue-inmemory-blocks=256"
+      - "-queue-chunk-size=134217728"
+      - "-queue-meta-sync=1s"
+      - "-queue-stale-flush=5s"
+      # Queue resilience
+      - "-queue-backoff-enabled=true"
+      - "-queue-backoff-multiplier=2.0"
+      - "-queue-circuit-breaker-enabled=true"
+      - "-queue-circuit-breaker-threshold=10"
+      - "-queue-circuit-breaker-reset-timeout=30s"
+      # Rule cache
+      - "-rule-cache-max-size=20000"
+      # Memory limit
+      - "-memory-limit-ratio=0.9"
+    volumes:
+      - mg-queue-limits-data:/data/queue
+      - ./examples/limits-testing.yaml:/etc/metrics-governor/limits-testing.yaml:ro
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  victoriametrics:
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    command:
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=1d"
+      - "--search.latencyOffset=0s"
+      - "--promscrape.config=/etc/victoriametrics/scrape.yaml"
+      - "--maxInsertRequestSize=64MB"
+      - "--opentelemetry.maxRequestSize=64MB"
+      - "--opentelemetry.convertMetricNamesToPrometheus"
+      - "--memory.allowedPercent=75"
+      - "--search.maxUniqueTimeseries=500000"
+      - "--search.maxConcurrentRequests=16"
+      - "--search.maxQueryDuration=10s"
+
+  verifier:
+    environment:
+      - VM_ENDPOINT=http://victoriametrics:8428
+      - MG_ENDPOINT=http://metrics-governor:9090
+      - CHECK_INTERVAL=30s
+      - VERIFICATION_METRIC=generator_verification_counter
+      - PASS_THRESHOLD=80.0          # Lower threshold - data will be dropped
+      - METRICS_PORT=9092
+
+volumes:
+  mg-queue-limits-data:
+    driver: local

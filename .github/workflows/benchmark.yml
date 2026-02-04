@@ -222,7 +222,8 @@ jobs:
 
       - name: Run full benchmarks
         run: |
-          go test -bench=. -benchmem -count=5 ./internal/... 2>&1 | tee benchmark-results-full.txt
+          # Use count=3 instead of 5 and shorter benchtime for faster CI
+          go test -bench=. -benchmem -count=3 -benchtime=500ms ./internal/... 2>&1 | tee benchmark-results-full.txt
           # Truncate output for benchmark-action (max 65536 chars for comments)
           # Keep only summary lines (goos, goarch, pkg, Benchmark lines, ok lines)
           grep -E '^(goos:|goarch:|pkg:|Benchmark|ok\s)' benchmark-results-full.txt > benchmark-results.txt || true
