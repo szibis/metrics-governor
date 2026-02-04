@@ -201,7 +201,7 @@ jobs:
 
       - name: Post benchmark comment
         if: steps.benchstat.outputs.has_regressions == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');
@@ -331,7 +331,7 @@ jobs:
           cat memory-comment.md
 
       - name: Post memory check comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');

@@ -371,7 +371,7 @@ jobs:
     needs: [govulncheck, trivy-fs, trivy-image, gitleaks, checkov, sbom, security-gate]
     steps:
       - name: Post security scan comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             // Collect results
