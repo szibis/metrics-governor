@@ -290,17 +290,18 @@ func BenchmarkFastQueue_RecoverV2Metadata(b *testing.B) {
 
 	cfg := FastQueueConfig{
 		Path:              tmpDir,
-		MaxInmemoryBlocks: 10,
+		MaxInmemoryBlocks: 5,
 		ChunkFileSize:     1024 * 1024,
 		MetaSyncInterval:  1 * time.Hour,
-		MaxSize:           10000,
-		MaxBytes:          100 * 1024 * 1024,
+		StaleFlushInterval: 1 * time.Hour,
+		MaxSize:           1000,
+		MaxBytes:          10 * 1024 * 1024,
 	}
 
-	// Setup: create queue with data
+	// Setup: create queue with minimal data (fast setup)
 	fq, _ := NewFastQueue(cfg)
-	for i := 0; i < 100; i++ {
-		fq.Push([]byte("benchmark-recovery-test-data"))
+	for i := 0; i < 20; i++ {
+		fq.Push([]byte("bench-data"))
 	}
 	fq.mu.Lock()
 	fq.flushInmemoryBlocksLocked()
@@ -321,17 +322,18 @@ func BenchmarkFastQueue_RecoverLegacyMetadata(b *testing.B) {
 
 	cfg := FastQueueConfig{
 		Path:              tmpDir,
-		MaxInmemoryBlocks: 10,
+		MaxInmemoryBlocks: 5,
 		ChunkFileSize:     1024 * 1024,
 		MetaSyncInterval:  1 * time.Hour,
-		MaxSize:           10000,
-		MaxBytes:          100 * 1024 * 1024,
+		StaleFlushInterval: 1 * time.Hour,
+		MaxSize:           1000,
+		MaxBytes:          10 * 1024 * 1024,
 	}
 
-	// Setup: create queue with data
+	// Setup: create queue with minimal data
 	fq, _ := NewFastQueue(cfg)
-	for i := 0; i < 100; i++ {
-		fq.Push([]byte("benchmark-recovery-test-data"))
+	for i := 0; i < 20; i++ {
+		fq.Push([]byte("bench-data"))
 	}
 	fq.mu.Lock()
 	fq.flushInmemoryBlocksLocked()
@@ -342,7 +344,6 @@ func BenchmarkFastQueue_RecoverLegacyMetadata(b *testing.B) {
 	// Convert to legacy metadata (remove counts)
 	metaPath := tmpDir + "/fastqueue.meta"
 	data, _ := os.ReadFile(metaPath)
-	// Parse and rewrite without counts
 	var meta fastqueueMeta
 	json.Unmarshal(data, &meta)
 	legacyMeta := fmt.Sprintf(`{"name":"fastqueue","reader_offset":%d,"writer_offset":%d,"version":1}`,
@@ -351,8 +352,10 @@ func BenchmarkFastQueue_RecoverLegacyMetadata(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		b.StopTimer()
 		// Rewrite legacy meta each iteration since recovery updates it
 		os.WriteFile(metaPath, []byte(legacyMeta), 0600)
+		b.StartTimer()
 		fq2, _ := NewFastQueue(cfg)
 		fq2.Close()
 	}
