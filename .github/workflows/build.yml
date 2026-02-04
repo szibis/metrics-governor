@@ -11,6 +11,9 @@ permissions:
   pull-requests: write
 
 jobs:
+  ci-filter:
+    uses: ./.github/workflows/ci-filter.yml
+
   build:
     runs-on: ubuntu-latest
     outputs:
@@ -152,8 +155,10 @@ jobs:
           echo "| **Current Tag** | ${{ steps.next_release.outputs.current }} |" >> $GITHUB_STEP_SUMMARY
 
   test-unit:
+    needs: [ci-filter]
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_tests != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
@@ -237,8 +242,10 @@ jobs:
           retention-days: 7
 
   test-functional:
+    needs: [ci-filter]
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_tests != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
@@ -286,8 +293,10 @@ jobs:
           echo "Test results: $PASSED_PKGS packages passed, $FAILED_PKGS failed (test outcome: $TEST_OUTCOME)"
 
   test-e2e:
+    needs: [ci-filter]
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_tests != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
@@ -402,12 +411,13 @@ jobs:
 
   # Post test coverage comment on PR
   coverage-comment:
+    needs: [ci-filter, build, test-unit, test-functional, test-e2e, test-e2e-docker]
     runs-on: ubuntu-latest
     if: >-
       always() &&
+      needs.ci-filter.outputs.skip_tests != 'true' &&
       github.event_name == 'pull_request' &&
       !contains(github.event.pull_request.labels.*.name, 'release:skip')
-    needs: [build, test-unit, test-functional, test-e2e, test-e2e-docker]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -634,13 +644,14 @@ jobs:
 
   # Docker Compose E2E test - full stack verification
   test-e2e-docker:
+    needs: [ci-filter, build]
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_tests != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
       )
-    needs: [build]  # Only need build to pass first
     outputs:
       success: ${{ steps.result.outputs.success }}
     steps:
@@ -688,13 +699,14 @@ jobs:
         run: docker compose down -v --remove-orphans 2>/dev/null || true
 
   build-binaries:
+    needs: [ci-filter, build, test-unit, test-functional, test-e2e, test-e2e-docker, lint, lint-dockerfile, lint-yaml, lint-helm]
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_tests != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
       )
-    needs: [build, test-unit, test-functional, test-e2e, test-e2e-docker, lint, lint-dockerfile, lint-yaml, lint-helm]
     steps:
       - uses: actions/checkout@v4
         with:

@@ -1,0 +1,128 @@
+name: CI Filter
+
+on:
+  workflow_call:
+    outputs:
+      skip_tests:
+        description: "Whether to skip Go tests"
+        value: ${{ jobs.detect.outputs.skip_tests }}
+      skip_security:
+        description: "Whether to skip security scans"
+        value: ${{ jobs.detect.outputs.skip_security }}
+      skip_memory:
+        description: "Whether to skip memory checks"
+        value: ${{ jobs.detect.outputs.skip_memory }}
+      skip_codeql:
+        description: "Whether to skip CodeQL analysis"
+        value: ${{ jobs.detect.outputs.skip_codeql }}
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      skip_tests: ${{ steps.classify.outputs.skip_tests }}
+      skip_security: ${{ steps.classify.outputs.skip_security }}
+      skip_memory: ${{ steps.classify.outputs.skip_memory }}
+      skip_codeql: ${{ steps.classify.outputs.skip_codeql }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed files
+        id: classify
+        run: |
+          # Push to main — always run everything
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "Push to main detected — running all checks"
+            echo "skip_tests=false" >> $GITHUB_OUTPUT
+            echo "skip_security=false" >> $GITHUB_OUTPUT
+            echo "skip_memory=false" >> $GITHUB_OUTPUT
+            echo "skip_codeql=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # For PRs, get the list of changed files
+          CHANGED_FILES=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # Classify each file
+          has_docs=false
+          has_ci=false
+          has_go=false
+          has_docker=false
+          has_helm=false
+          has_other=false
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              *.md|docs/*|LICENSE|SECURITY.md|CHANGELOG.md)
+                has_docs=true ;;
+              .github/workflows/*|.github/dependabot.yml|.github/checkov-config.yml|.yamllint.yml)
+                has_ci=true ;;
+              *.go|go.mod|go.sum)
+                has_go=true ;;
+              Dockerfile|docker-compose.yaml|compose_overrides/*|test/Dockerfile.*)
+                has_docker=true ;;
+              helm/*)
+                has_helm=true ;;
+              *)
+                has_other=true ;;
+            esac
+          done <<< "$CHANGED_FILES"
+
+          echo "Classification: docs=$has_docs ci=$has_ci go=$has_go docker=$has_docker helm=$has_helm other=$has_other"
+
+          # Determine skip flags
+          docs_only=false
+          ci_only=false
+
+          if [ "$has_docs" = "true" ] && \
+             [ "$has_ci" = "false" ] && \
+             [ "$has_go" = "false" ] && \
+             [ "$has_docker" = "false" ] && \
+             [ "$has_helm" = "false" ] && \
+             [ "$has_other" = "false" ]; then
+            docs_only=true
+          fi
+
+          if [ "$has_ci" = "true" ] && \
+             [ "$has_go" = "false" ] && \
+             [ "$has_docker" = "false" ] && \
+             [ "$has_helm" = "false" ] && \
+             [ "$has_other" = "false" ] && \
+             [ "$has_docs" = "false" ]; then
+            ci_only=true
+          fi
+
+          # Also handle docs+ci only (no code changes)
+          if [ "$has_ci" = "true" ] && \
+             [ "$has_docs" = "true" ] && \
+             [ "$has_go" = "false" ] && \
+             [ "$has_docker" = "false" ] && \
+             [ "$has_helm" = "false" ] && \
+             [ "$has_other" = "false" ]; then
+            ci_only=true
+          fi
+
+          if [ "$docs_only" = "true" ]; then
+            echo "Docs-only PR detected"
+            echo "skip_tests=true" >> $GITHUB_OUTPUT
+            echo "skip_security=true" >> $GITHUB_OUTPUT
+            echo "skip_memory=true" >> $GITHUB_OUTPUT
+            echo "skip_codeql=true" >> $GITHUB_OUTPUT
+          elif [ "$ci_only" = "true" ]; then
+            echo "CI-only PR detected"
+            echo "skip_tests=true" >> $GITHUB_OUTPUT
+            echo "skip_security=false" >> $GITHUB_OUTPUT
+            echo "skip_memory=true" >> $GITHUB_OUTPUT
+            echo "skip_codeql=true" >> $GITHUB_OUTPUT
+          else
+            echo "Code changes detected — running all checks"
+            echo "skip_tests=false" >> $GITHUB_OUTPUT
+            echo "skip_security=false" >> $GITHUB_OUTPUT
+            echo "skip_memory=false" >> $GITHUB_OUTPUT
+            echo "skip_codeql=false" >> $GITHUB_OUTPUT
+          fi

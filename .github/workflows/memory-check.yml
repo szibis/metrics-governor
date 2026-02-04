@@ -11,9 +11,14 @@ permissions:
   pull-requests: write
 
 jobs:
+  ci-filter:
+    uses: ./.github/workflows/ci-filter.yml
+
   resource-tests:
+    needs: [ci-filter]
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_memory != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
@@ -55,8 +60,10 @@ jobs:
           exit $EXIT_CODE
 
   goroutine-leak-check:
+    needs: [ci-filter]
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_memory != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
@@ -98,8 +105,10 @@ jobs:
           exit $EXIT_CODE
 
   memory-stress-test:
+    needs: [ci-filter]
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_memory != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
@@ -141,8 +150,10 @@ jobs:
           exit $EXIT_CODE
 
   benchmark-alloc-compare:
+    needs: [ci-filter]
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_memory != 'true' &&
       !(
         github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'release:skip')
@@ -242,12 +253,13 @@ jobs:
             }
 
   memory-check-comment:
+    needs: [ci-filter, resource-tests, goroutine-leak-check, memory-stress-test]
     runs-on: ubuntu-latest
     if: >-
       always() &&
+      needs.ci-filter.outputs.skip_memory != 'true' &&
       github.event_name == 'pull_request' &&
       !contains(github.event.pull_request.labels.*.name, 'release:skip')
-    needs: [resource-tests, goroutine-leak-check, memory-stress-test]
     steps:
       - name: Generate memory check report
         id: report
