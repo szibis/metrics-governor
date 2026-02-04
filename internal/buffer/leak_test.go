@@ -47,4 +47,3 @@ func TestLeakCheck_MemoryQueue(t *testing.T) {
 		q.Pop()
 	}
 }
-
