@@ -239,7 +239,6 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 
 	var wg sync.WaitGroup
 	for _, batch := range allBatches {
-		batch := batch
 		wg.Add(1)
 		b.concurrency.Acquire()
 		exportConcurrentWorkers.Inc()
