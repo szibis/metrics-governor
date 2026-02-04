@@ -1524,23 +1524,23 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"}[1m])))",
-          "legendFormat": "Received (uncompressed)"
+          "expr": "(sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[1m])))",
+          "legendFormat": "gRPC Received (decompressed)"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"}[1m])))",
-          "legendFormat": "Received (compressed)"
+          "expr": "(sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[1m])))",
+          "legendFormat": "gRPC Received (wire/compressed)"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m])))",
+          "expr": "(sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[1m])))",
           "legendFormat": "Sent (uncompressed)"
         },
         {
@@ -1548,8 +1548,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[1m])))",
-          "legendFormat": "Sent (compressed)"
+          "expr": "(sum(rate(metrics_governor_otlp_export_bytes_total{compression!=\"uncompressed\",compression!=\"none\"}[1m])))",
+          "legendFormat": "Sent (compressed/on wire)"
         }
       ]
     },
@@ -1721,15 +1721,15 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m])))",
-          "legendFormat": "OTLP Receive"
+          "expr": "(sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[5m])))",
+          "legendFormat": "OTLP/gRPC Receive"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m])))",
+          "expr": "(sum(rate(metrics_governor_otlp_export_bytes_total{compression!=\"uncompressed\",compression!=\"none\"}[5m])) / sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[5m])))",
           "legendFormat": "OTLP Send"
         }
       ]

@@ -40,10 +40,10 @@ flowchart LR
 
 ```mermaid
 xychart-beta
-    title "Compression Performance (lower is better)"
+    title "Compression Savings (higher is better)"
     x-axis [lz4, snappy, gzip-1, gzip-6, gzip-9, zstd-1, zstd-6, zstd-11]
-    y-axis "Relative Size %" 0 --> 100
-    bar [85, 75, 45, 35, 30, 40, 28, 22]
+    y-axis "Space Savings %" 0 --> 100
+    bar [15, 25, 55, 65, 70, 60, 72, 78]
 ```
 
 ## Supported Algorithms

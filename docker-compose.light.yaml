@@ -34,7 +34,7 @@ services:
       - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
       - "-exporter-protocol=http"
       - "-exporter-insecure=true"
-      - "-exporter-compression=gzip"  # Lighter compression
+      - "-exporter-compression=zstd"
       - "-stats-labels=service,env"
       - "-limits-config=/etc/metrics-governor/limits.yaml"
       - "-limits-dry-run=true"

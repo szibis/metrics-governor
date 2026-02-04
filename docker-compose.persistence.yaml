@@ -18,7 +18,7 @@ services:
       - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
       - "-exporter-protocol=http"
       - "-exporter-insecure=true"
-      - "-exporter-compression=gzip"
+      - "-exporter-compression=zstd"
       - "-exporter-timeout=5s"
       - "-stats-labels=service,env"
       - "-flush-interval=500ms"
