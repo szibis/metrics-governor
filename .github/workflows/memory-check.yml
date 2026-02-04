@@ -11,6 +11,11 @@ permissions:
 jobs:
   resource-tests:
     runs-on: ubuntu-latest
+    outputs:
+      success: ${{ steps.run.outputs.success }}
+      total: ${{ steps.run.outputs.total }}
+      passed: ${{ steps.run.outputs.passed }}
+      failed: ${{ steps.run.outputs.failed }}
     steps:
       - uses: actions/checkout@v4
 
@@ -21,10 +26,37 @@ jobs:
           cache: true
 
       - name: Run resource tests
-        run: go test -run Resource -count=1 -timeout=5m -v ./internal/...
+        id: run
+        run: |
+          set +e
+          OUTPUT=$(go test -run Resource -count=1 -timeout=5m -v -json ./internal/... 2>&1)
+          EXIT_CODE=$?
+
+          TOTAL=$(echo "$OUTPUT" | jq -r 'select(.Action=="run" and .Test != null) | .Test' 2>/dev/null | wc -l | tr -d ' ')
+          PASSED=$(echo "$OUTPUT" | jq -r 'select(.Action=="pass" and .Test != null) | .Test' 2>/dev/null | wc -l | tr -d ' ')
+          FAILED=$(echo "$OUTPUT" | jq -r 'select(.Action=="fail" and .Test != null) | .Test' 2>/dev/null | wc -l | tr -d ' ')
+
+          echo "total=${TOTAL}" >> $GITHUB_OUTPUT
+          echo "passed=${PASSED}" >> $GITHUB_OUTPUT
+          echo "failed=${FAILED}" >> $GITHUB_OUTPUT
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Print human-readable output too
+          echo "$OUTPUT" | jq -r 'select(.Action=="output") | .Output // empty' 2>/dev/null || echo "$OUTPUT"
+          exit $EXIT_CODE
 
   goroutine-leak-check:
     runs-on: ubuntu-latest
+    outputs:
+      success: ${{ steps.run.outputs.success }}
+      total: ${{ steps.run.outputs.total }}
+      passed: ${{ steps.run.outputs.passed }}
+      failed: ${{ steps.run.outputs.failed }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,10 +67,36 @@ jobs:
           cache: true
 
       - name: Run goroutine leak tests
-        run: go test -run TestLeak -count=1 -timeout=5m -v ./internal/...
+        id: run
+        run: |
+          set +e
+          OUTPUT=$(go test -run TestLeak -count=1 -timeout=5m -v -json ./internal/... 2>&1)
+          EXIT_CODE=$?
+
+          TOTAL=$(echo "$OUTPUT" | jq -r 'select(.Action=="run" and .Test != null) | .Test' 2>/dev/null | wc -l | tr -d ' ')
+          PASSED=$(echo "$OUTPUT" | jq -r 'select(.Action=="pass" and .Test != null) | .Test' 2>/dev/null | wc -l | tr -d ' ')
+          FAILED=$(echo "$OUTPUT" | jq -r 'select(.Action=="fail" and .Test != null) | .Test' 2>/dev/null | wc -l | tr -d ' ')
+
+          echo "total=${TOTAL}" >> $GITHUB_OUTPUT
+          echo "passed=${PASSED}" >> $GITHUB_OUTPUT
+          echo "failed=${FAILED}" >> $GITHUB_OUTPUT
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+          fi
+
+          echo "$OUTPUT" | jq -r 'select(.Action=="output") | .Output // empty' 2>/dev/null || echo "$OUTPUT"
+          exit $EXIT_CODE
 
   memory-stress-test:
     runs-on: ubuntu-latest
+    outputs:
+      success: ${{ steps.run.outputs.success }}
+      total: ${{ steps.run.outputs.total }}
+      passed: ${{ steps.run.outputs.passed }}
+      failed: ${{ steps.run.outputs.failed }}
     steps:
       - uses: actions/checkout@v4
 
@@ -49,10 +107,34 @@ jobs:
           cache: true
 
       - name: Run memory stress tests
-        run: go test -run Stress -count=1 -timeout=10m -v ./internal/...
+        id: run
+        run: |
+          set +e
+          OUTPUT=$(go test -run Stress -count=1 -timeout=10m -v -json ./internal/... 2>&1)
+          EXIT_CODE=$?
+
+          TOTAL=$(echo "$OUTPUT" | jq -r 'select(.Action=="run" and .Test != null) | .Test' 2>/dev/null | wc -l | tr -d ' ')
+          PASSED=$(echo "$OUTPUT" | jq -r 'select(.Action=="pass" and .Test != null) | .Test' 2>/dev/null | wc -l | tr -d ' ')
+          FAILED=$(echo "$OUTPUT" | jq -r 'select(.Action=="fail" and .Test != null) | .Test' 2>/dev/null | wc -l | tr -d ' ')
+
+          echo "total=${TOTAL}" >> $GITHUB_OUTPUT
+          echo "passed=${PASSED}" >> $GITHUB_OUTPUT
+          echo "failed=${FAILED}" >> $GITHUB_OUTPUT
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+          fi
+
+          echo "$OUTPUT" | jq -r 'select(.Action=="output") | .Output // empty' 2>/dev/null || echo "$OUTPUT"
+          exit $EXIT_CODE
 
   benchmark-alloc-compare:
     runs-on: ubuntu-latest
+    outputs:
+      success: ${{ steps.benchstat.outputs.success }}
+      has_regressions: ${{ steps.benchstat.outputs.has_regressions }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -105,22 +187,162 @@ jobs:
             echo "has_regressions=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Post benchmark comment
-        if: steps.benchstat.outputs.has_regressions == 'true'
+          echo "success=true" >> $GITHUB_OUTPUT
+
+      - name: Upload benchstat results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchstat-results
+          path: |
+            benchstat.txt
+            regression-summary.txt
+          if-no-files-found: ignore
+
+  memory-check-comment:
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [resource-tests, goroutine-leak-check, memory-stress-test, benchmark-alloc-compare]
+    steps:
+      - name: Download benchstat results
+        uses: actions/download-artifact@v4
+        with:
+          name: benchstat-results
+          path: ./benchstat
+        continue-on-error: true
+
+      - name: Generate memory check report
+        id: report
+        run: |
+          # Collect results with defaults
+          RESOURCE_SUCCESS="${{ needs.resource-tests.outputs.success }}"
+          RESOURCE_SUCCESS="${RESOURCE_SUCCESS:-false}"
+          RESOURCE_TOTAL="${{ needs.resource-tests.outputs.total }}"
+          RESOURCE_TOTAL="${RESOURCE_TOTAL:-0}"
+          RESOURCE_PASSED="${{ needs.resource-tests.outputs.passed }}"
+          RESOURCE_PASSED="${RESOURCE_PASSED:-0}"
+          RESOURCE_FAILED="${{ needs.resource-tests.outputs.failed }}"
+          RESOURCE_FAILED="${RESOURCE_FAILED:-0}"
+
+          LEAK_SUCCESS="${{ needs.goroutine-leak-check.outputs.success }}"
+          LEAK_SUCCESS="${LEAK_SUCCESS:-false}"
+          LEAK_TOTAL="${{ needs.goroutine-leak-check.outputs.total }}"
+          LEAK_TOTAL="${LEAK_TOTAL:-0}"
+          LEAK_PASSED="${{ needs.goroutine-leak-check.outputs.passed }}"
+          LEAK_PASSED="${LEAK_PASSED:-0}"
+          LEAK_FAILED="${{ needs.goroutine-leak-check.outputs.failed }}"
+          LEAK_FAILED="${LEAK_FAILED:-0}"
+
+          STRESS_SUCCESS="${{ needs.memory-stress-test.outputs.success }}"
+          STRESS_SUCCESS="${STRESS_SUCCESS:-false}"
+          STRESS_TOTAL="${{ needs.memory-stress-test.outputs.total }}"
+          STRESS_TOTAL="${STRESS_TOTAL:-0}"
+          STRESS_PASSED="${{ needs.memory-stress-test.outputs.passed }}"
+          STRESS_PASSED="${STRESS_PASSED:-0}"
+          STRESS_FAILED="${{ needs.memory-stress-test.outputs.failed }}"
+          STRESS_FAILED="${STRESS_FAILED:-0}"
+
+          BENCH_SUCCESS="${{ needs.benchmark-alloc-compare.outputs.success }}"
+          BENCH_SUCCESS="${BENCH_SUCCESS:-false}"
+          HAS_REGRESSIONS="${{ needs.benchmark-alloc-compare.outputs.has_regressions }}"
+          HAS_REGRESSIONS="${HAS_REGRESSIONS:-false}"
+
+          # Compute totals
+          TOTAL_TESTS=$((RESOURCE_TOTAL + LEAK_TOTAL + STRESS_TOTAL))
+          TOTAL_PASSED=$((RESOURCE_PASSED + LEAK_PASSED + STRESS_PASSED))
+          TOTAL_FAILED=$((RESOURCE_FAILED + LEAK_FAILED + STRESS_FAILED))
+
+          # Overall status
+          if [ "$RESOURCE_SUCCESS" = "true" ] && [ "$LEAK_SUCCESS" = "true" ] && [ "$STRESS_SUCCESS" = "true" ] && [ "$BENCH_SUCCESS" = "true" ]; then
+            OVERALL_STATUS="PASS"
+            OVERALL_ICON="✅"
+          else
+            OVERALL_STATUS="FAIL"
+            OVERALL_ICON="❌"
+          fi
+
+          # Status helpers
+          status_icon() {
+            if [ "$1" = "true" ]; then echo "✅ Passed"; else echo "❌ Failed"; fi
+          }
+
+          # Benchmark allocation status
+          if [ "$BENCH_SUCCESS" != "true" ]; then
+            ALLOC_STATUS="❌ Failed"
+          elif [ "$HAS_REGRESSIONS" = "true" ]; then
+            ALLOC_STATUS="⚠️ Regressions detected"
+          else
+            ALLOC_STATUS="✅ No regressions"
+          fi
+
+          # Build regression details if available
+          REGRESSION_SECTION=""
+          if [ -f ./benchstat/regression-summary.txt ]; then
+            REGRESSION_SECTION=$(cat ./benchstat/regression-summary.txt)
+          fi
+
+          BENCHSTAT_SECTION=""
+          if [ -f ./benchstat/benchstat.txt ]; then
+            BENCHSTAT_CONTENT=$(cat ./benchstat/benchstat.txt)
+            BENCHSTAT_SECTION="
+          <details>
+          <summary>Full benchstat output</summary>
+
+          \`\`\`
+          ${BENCHSTAT_CONTENT}
+          \`\`\`
+
+          </details>"
+          fi
+
+          cat > memory-comment.md << EOF
+          ## 🧠 Memory Check Report
+
+          | Status | Result |
+          |--------|--------|
+          | **Overall** | ${OVERALL_ICON} **${OVERALL_STATUS}** |
+          | **Total Memory Tests** | ${TOTAL_TESTS} |
+          | **Passed** | ${TOTAL_PASSED} |
+          | **Failed** | ${TOTAL_FAILED} |
+
+          ### Test Results
+
+          | Suite | Tests | Passed | Failed | Status |
+          |-------|:-----:|:------:|:------:|--------|
+          | Resource Tests | ${RESOURCE_TOTAL} | ${RESOURCE_PASSED} | ${RESOURCE_FAILED} | $(status_icon "$RESOURCE_SUCCESS") |
+          | Goroutine Leak Tests | ${LEAK_TOTAL} | ${LEAK_PASSED} | ${LEAK_FAILED} | $(status_icon "$LEAK_SUCCESS") |
+          | Memory Stress Tests | ${STRESS_TOTAL} | ${STRESS_PASSED} | ${STRESS_FAILED} | $(status_icon "$STRESS_SUCCESS") |
+          | Allocation Comparison | - | - | - | ${ALLOC_STATUS} |
+          | **Total** | **${TOTAL_TESTS}** | **${TOTAL_PASSED}** | **${TOTAL_FAILED}** | ${OVERALL_ICON} |
+
+          ${REGRESSION_SECTION}
+
+          ${BENCHSTAT_SECTION}
+
+          <details>
+          <summary>What these tests check</summary>
+
+          - **Resource Tests**: Verify components release memory after shutdown
+          - **Goroutine Leak Tests**: Verify no goroutines leaked after component lifecycle (using goleak)
+          - **Memory Stress Tests**: Verify memory growth stays bounded under sustained load
+          - **Allocation Comparison**: Compare allocs/op between PR and base branch using benchstat
+
+          </details>
+          EOF
+
+          cat memory-comment.md
+
+      - name: Post memory check comment
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            let summary = '';
-            try {
-              summary = fs.readFileSync('regression-summary.txt', 'utf8');
-            } catch (e) {
-              summary = 'Could not read regression summary.';
-            }
+            let comment = fs.readFileSync('memory-comment.md', 'utf8');
 
-            const body = `## Benchmark Allocation Regressions\n\n${summary}\n\n<details>\n<summary>Full benchstat output</summary>\n\n\`\`\`\n${fs.readFileSync('benchstat.txt', 'utf8')}\n\`\`\`\n</details>`;
+            // Add timestamp
+            const timestamp = new Date().toISOString();
+            comment += `\n\n_Last updated: ${timestamp}_`;
 
-            // Find existing comment
+            // Find existing memory check comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -128,22 +350,24 @@ jobs:
             });
 
             const botComment = comments.find(c =>
-              (c.user.login === 'github-actions[bot]') &&
-              c.body.includes('Benchmark Allocation Regressions')
+              (c.user.login === 'github-actions[bot]' || c.user.login === 'github-actions') &&
+              c.body.includes('Memory Check Report')
             );
 
             if (botComment) {
+              console.log(`Updating existing comment ${botComment.id}`);
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 comment_id: botComment.id,
-                body: body
+                body: comment
               });
             } else {
+              console.log('Creating new memory check comment');
               await github.rest.issues.createComment({
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: body
+                body: comment
               });
             }
