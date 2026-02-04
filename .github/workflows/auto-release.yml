@@ -331,7 +331,7 @@ jobs:
           echo "Generated changelog entry:"
           cat /tmp/changelog_entry.md
 
-      - name: Import GPG key and configure git signing
+      - name: Import GPG key and configure git identity and signing
         if: steps.find_pr.outputs.skip != 'true' && steps.find_pr.outputs.is_release_pr != 'true' && steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -340,6 +340,12 @@ jobs:
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
           GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format long | grep sec | head -1 | awk '{print $2}' | cut -d'/' -f2)
           echo "GPG Key ID: $GPG_KEY_ID"
+          # Extract user name and email from GPG key
+          GPG_USER_NAME=$(gpg --list-secret-keys --keyid-format long "$GPG_KEY_ID" | grep uid | head -1 | sed 's/.*uid.*\] //' | sed 's/ <.*//')
+          GPG_USER_EMAIL=$(gpg --list-secret-keys --keyid-format long "$GPG_KEY_ID" | grep uid | head -1 | grep -oE '<[^>]+>' | tr -d '<>')
+          echo "Git identity: ${GPG_USER_NAME} <${GPG_USER_EMAIL}>"
+          git config --global user.name "$GPG_USER_NAME"
+          git config --global user.email "$GPG_USER_EMAIL"
           git config --global user.signingkey "$GPG_KEY_ID"
           git config --global commit.gpgsign true
           git config --global gpg.program gpg
@@ -536,7 +542,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "version_num=${VERSION#v}" >> $GITHUB_OUTPUT
 
-      - name: Import GPG key and configure git signing
+      - name: Import GPG key and configure git identity and signing
         if: steps.find_pr.outputs.is_release_pr == 'true'
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -545,6 +551,12 @@ jobs:
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
           GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format long | grep sec | head -1 | awk '{print $2}' | cut -d'/' -f2)
           echo "GPG Key ID: $GPG_KEY_ID"
+          # Extract user name and email from GPG key
+          GPG_USER_NAME=$(gpg --list-secret-keys --keyid-format long "$GPG_KEY_ID" | grep uid | head -1 | sed 's/.*uid.*\] //' | sed 's/ <.*//')
+          GPG_USER_EMAIL=$(gpg --list-secret-keys --keyid-format long "$GPG_KEY_ID" | grep uid | head -1 | grep -oE '<[^>]+>' | tr -d '<>')
+          echo "Git identity: ${GPG_USER_NAME} <${GPG_USER_EMAIL}>"
+          git config --global user.name "$GPG_USER_NAME"
+          git config --global user.email "$GPG_USER_EMAIL"
           git config --global user.signingkey "$GPG_KEY_ID"
           git config --global tag.gpgsign true
           git config --global gpg.program gpg
