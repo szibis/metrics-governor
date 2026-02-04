@@ -3,7 +3,7 @@
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Build](https://github.com/szibis/metrics-governor/actions/workflows/build.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
-[![Tests](https://img.shields.io/badge/Tests-855+-success?style=flat&logo=go)](docs/testing.md#test-coverage-by-component)
+[![Tests](https://img.shields.io/badge/Tests-880+-success?style=flat&logo=go)](docs/testing.md#test-coverage-by-component)
 [![Coverage](https://img.shields.io/badge/Coverage-85%25-brightgreen.svg)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
 
 ---
@@ -27,6 +27,7 @@
 - **Dual Protocol Support** - Native OTLP (gRPC/HTTP) and Prometheus Remote Write (PRW 1.0/2.0) pipelines, each running independently with zero conversion overhead
 - **Intelligent Limiting** - Unlike simple rate limiters that drop everything, metrics-governor identifies and drops only the top offenders while preserving data from well-behaved services
 - **Consistent Sharding** - Automatic endpoint discovery from Kubernetes headless services with consistent hashing ensures the same time-series always route to the same backend (works for both OTLP and PRW)
+- **Pipeline Parity** - OTLP and PRW pipelines have identical resilience: persistent disk queue, split-on-error, circuit breaker, exponential backoff, and failover drain
 - **Production-Ready** - Byte-aware batch splitting, concurrent exports, failover queue, FastQueue durable persistence with circuit breaker and exponential backoff, auto memory limits, TLS/mTLS, authentication, compression (gzip/zstd/snappy/lz4), and Helm chart included
 - **High-Performance Optimizations** - String interning reduces allocations by 76%, concurrency limiting prevents goroutine explosion, Bloom filters reduce cardinality tracking memory by 98% (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
 - **Zero Configuration Start** - Works out of the box with sensible defaults; add limits and sharding when needed
@@ -59,9 +60,9 @@ flowchart LR
             P_RX["Receiver<br/>HTTP :9091"]
             P_PROC["Stats → Limits"]
             P_EXP["Exporter"]
-            P_Q["FastQueue"]
+            P_Q["Persistent Queue<br/>disk-backed"]
             P_RX --> P_PROC --> P_EXP
-            P_EXP -.->|retry| P_Q -.-> P_EXP
+            P_EXP -.->|"retry / split-on-error"| P_Q -.-> P_EXP
         end
     end
 
@@ -148,8 +149,9 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
 | **Real-time Statistics** | Per-metric cardinality, datapoints, and limit violation tracking |
 | **Prometheus Integration** | Native `/metrics` endpoint for monitoring the proxy itself |
 | **Consistent Sharding** | Distribute metrics across multiple backends via DNS discovery (OTLP and PRW) |
-| **Persistent Queue** | FastQueue with circuit breaker, exponential backoff, automatic retry, and split-on-error (OTLP and PRW) |
-| **Failover Queue** | Memory or disk-backed safety net catches all export failures — data is never silently dropped |
+| **Persistent Queue** | FastQueue disk-backed queue with circuit breaker, exponential backoff, automatic retry, and split-on-error — identical for both OTLP and PRW pipelines |
+| **Failover Queue** | Memory or disk-backed safety net catches all export failures with automatic drain loop — data is never silently dropped |
+| **Split-on-Error** | Oversized batches automatically split in half and retry on HTTP 413 and "too big" errors from backends like VictoriaMetrics, Thanos, Mimir, and Cortex |
 | **Memory Optimized** | Bloom filter cardinality tracking uses 98% less memory (1.2MB vs 75MB per 1M series) |
 | **Performance Optimized** | String interning and concurrency limiting for high-throughput workloads |
 | **Production Ready** | Helm chart, multi-arch Docker images, graceful shutdown |

@@ -2,6 +2,8 @@ package exporter
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -22,6 +24,10 @@ type PRWQueueConfig struct {
 	RetryInterval time.Duration
 	// MaxRetryDelay is the maximum retry backoff delay.
 	MaxRetryDelay time.Duration
+	// BackoffEnabled enables exponential backoff for retries.
+	BackoffEnabled bool
+	// BackoffMultiplier is the factor to multiply delay by on each failure (default: 2.0).
+	BackoffMultiplier float64
 	// Circuit breaker settings
 	CircuitBreakerEnabled   bool          // Enable circuit breaker (default: true)
 	CircuitFailureThreshold int           // Failures before opening (default: 10)
@@ -42,38 +48,33 @@ func DefaultPRWQueueConfig() PRWQueueConfig {
 	}
 }
 
-// prwQueueEntry represents an entry in the PRW retry queue.
-type prwQueueEntry struct {
-	req     *prw.WriteRequest
-	retries int
-}
-
 // prwExporterInterface is an interface for PRW exporters to enable testing.
 type prwExporterInterface interface {
 	Export(ctx context.Context, req *prw.WriteRequest) error
 	Close() error
 }
 
-// PRWQueuedExporter wraps a PRWExporter with an in-memory retry queue.
+// PRWQueuedExporter wraps a PRWExporter with a persistent disk-backed retry queue.
 type PRWQueuedExporter struct {
 	exporter       prwExporterInterface
-	queue          []*prwQueueEntry
-	maxSize        int
+	queue          *queue.SendQueue
 	baseDelay      time.Duration
 	maxDelay       time.Duration
 	circuitBreaker *CircuitBreaker
-	retryStop      chan struct{}
-	retryDone      chan struct{}
-	mu             sync.Mutex
+
+	// Backoff configuration
+	backoffEnabled    bool
+	backoffMultiplier float64
+
+	retryStop  chan struct{}
+	retryDone  chan struct{}
+	mu         sync.Mutex
+	closed     bool
+	closedOnce sync.Once
 }
 
 // NewPRWQueued creates a new queued PRW exporter.
 func NewPRWQueued(exporter prwExporterInterface, cfg PRWQueueConfig) (*PRWQueuedExporter, error) {
-	maxSize := cfg.MaxSize
-	if maxSize == 0 {
-		maxSize = 10000
-	}
-
 	baseDelay := cfg.RetryInterval
 	if baseDelay == 0 {
 		baseDelay = 5 * time.Second
@@ -84,14 +85,46 @@ func NewPRWQueued(exporter prwExporterInterface, cfg PRWQueueConfig) (*PRWQueued
 		maxDelay = 5 * time.Minute
 	}
 
+	// Build queue.Config from PRWQueueConfig
+	queuePath := cfg.Path
+	if queuePath == "" {
+		queuePath = "./prw-queue"
+	}
+	maxSize := cfg.MaxSize
+	if maxSize == 0 {
+		maxSize = 10000
+	}
+	maxBytes := cfg.MaxBytes
+	if maxBytes == 0 {
+		maxBytes = 1073741824 // 1GB
+	}
+	backoffMultiplier := cfg.BackoffMultiplier
+	if backoffMultiplier <= 0 {
+		backoffMultiplier = 2.0
+	}
+
+	qCfg := queue.Config{
+		Path:          queuePath,
+		MaxSize:       maxSize,
+		MaxBytes:      maxBytes,
+		RetryInterval: baseDelay,
+		MaxRetryDelay: maxDelay,
+	}
+
+	q, err := queue.New(qCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PRW queue: %w", err)
+	}
+
 	qe := &PRWQueuedExporter{
-		exporter:  exporter,
-		queue:     make([]*prwQueueEntry, 0, maxSize),
-		maxSize:   maxSize,
-		baseDelay: baseDelay,
-		maxDelay:  maxDelay,
-		retryStop: make(chan struct{}),
-		retryDone: make(chan struct{}),
+		exporter:          exporter,
+		queue:             q,
+		baseDelay:         baseDelay,
+		maxDelay:          maxDelay,
+		backoffEnabled:    cfg.BackoffEnabled,
+		backoffMultiplier: backoffMultiplier,
+		retryStop:         make(chan struct{}),
+		retryDone:         make(chan struct{}),
 	}
 
 	// Initialize circuit breaker if enabled
@@ -129,8 +162,10 @@ func (qe *PRWQueuedExporter) Export(ctx context.Context, req *prw.WriteRequest) 
 		return nil
 	}
 
-	// Check if error is retryable
-	if !IsPRWRetryableError(err) {
+	// Check if error is retryable or splittable
+	var exportErr *ExportError
+	isSplittable := errors.As(err, &exportErr) && exportErr.IsSplittable()
+	if !IsPRWRetryableError(err) && !isSplittable {
 		logging.Error("PRW export failed with non-retryable error", logging.F(
 			"error", err.Error(),
 			"timeseries", len(req.Timeseries),
@@ -138,25 +173,26 @@ func (qe *PRWQueuedExporter) Export(ctx context.Context, req *prw.WriteRequest) 
 		return err
 	}
 
-	// Queue for retry
-	qe.mu.Lock()
-	defer qe.mu.Unlock()
-
-	if len(qe.queue) >= qe.maxSize {
-		// Drop oldest entry
-		qe.queue = qe.queue[1:]
-		logging.Warn("PRW queue full, dropping oldest entry")
+	// Serialize and queue for retry
+	data, marshalErr := req.Marshal()
+	if marshalErr != nil {
+		logging.Error("PRW failed to marshal request for queue", logging.F(
+			"error", marshalErr.Error(),
+		))
+		return err
 	}
 
-	// Clone the request before queueing
-	qe.queue = append(qe.queue, &prwQueueEntry{
-		req:     req.Clone(),
-		retries: 0,
-	})
+	if pushErr := qe.queue.PushData(data); pushErr != nil {
+		logging.Error("PRW failed to push to queue", logging.F(
+			"error", pushErr.Error(),
+			"timeseries", len(req.Timeseries),
+		))
+		return err
+	}
 
 	logging.Info("PRW request queued for retry", logging.F(
 		"timeseries", len(req.Timeseries),
-		"queue_size", len(qe.queue),
+		"queue_size", qe.queue.Len(),
 	))
 
 	return nil
@@ -166,9 +202,12 @@ func (qe *PRWQueuedExporter) Export(ctx context.Context, req *prw.WriteRequest) 
 func (qe *PRWQueuedExporter) retryLoop() {
 	defer close(qe.retryDone)
 
-	delay := qe.baseDelay
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
+	currentDelay := qe.baseDelay
+	if currentDelay <= 0 {
+		currentDelay = 5 * time.Second
+	}
+	ticker := time.NewTicker(currentDelay)
+	defer ticker.Stop()
 
 	for {
 		select {
@@ -176,121 +215,152 @@ func (qe *PRWQueuedExporter) retryLoop() {
 			// Drain remaining items best-effort
 			qe.drainQueue()
 			return
-		case <-timer.C:
+		case <-ticker.C:
 			// Check circuit breaker before processing
 			if qe.circuitBreaker != nil && !qe.circuitBreaker.AllowRequest() {
 				// PRW circuit breaker is open, skip retry
 				queue.IncrementCircuitRejected()
-				timer.Reset(delay)
 				continue
 			}
 
-			if qe.processQueue() {
-				// Success, reset delay
-				if delay != qe.baseDelay {
-					delay = qe.baseDelay
+			success := qe.processQueue()
+
+			if success {
+				// Reset to base delay on success
+				baseDelay := qe.baseDelay
+				if baseDelay <= 0 {
+					baseDelay = 5 * time.Second
+				}
+				if currentDelay != baseDelay {
+					currentDelay = baseDelay
+					ticker.Reset(currentDelay)
 					logging.Info("PRW backoff reset to base delay", logging.F(
-						"delay", delay.String(),
+						"delay", currentDelay.String(),
 					))
 				}
 			} else {
-				// Failure, increase delay (only if queue has items)
-				qe.mu.Lock()
-				hasItems := len(qe.queue) > 0
-				qe.mu.Unlock()
-				if hasItems {
-					newDelay := minDuration(delay*2, qe.maxDelay)
-					if newDelay != delay {
-						delay = newDelay
+				// Exponential backoff on failure (only if enabled and we actually tried)
+				if qe.backoffEnabled && qe.queue.Len() > 0 {
+					newDelay := time.Duration(float64(currentDelay) * qe.backoffMultiplier)
+					if newDelay > qe.maxDelay && qe.maxDelay > 0 {
+						newDelay = qe.maxDelay
+					}
+					if newDelay <= 0 {
+						newDelay = 5 * time.Second
+					}
+					if newDelay != currentDelay {
+						currentDelay = newDelay
+						ticker.Reset(currentDelay)
 						logging.Info("PRW exponential backoff increased", logging.F(
-							"delay", delay.String(),
+							"delay", currentDelay.String(),
+							"max_delay", qe.maxDelay.String(),
+							"multiplier", qe.backoffMultiplier,
+						))
+					}
+				} else if !qe.backoffEnabled && qe.queue.Len() > 0 {
+					// Legacy behavior: double delay without multiplier config
+					newDelay := minDuration(currentDelay*2, qe.maxDelay)
+					if newDelay != currentDelay {
+						currentDelay = newDelay
+						ticker.Reset(currentDelay)
+						logging.Info("PRW exponential backoff increased", logging.F(
+							"delay", currentDelay.String(),
 							"max_delay", qe.maxDelay.String(),
 						))
 					}
 				}
 			}
-			timer.Reset(delay)
 		}
 	}
 }
 
 // processQueue processes one item from the queue.
 func (qe *PRWQueuedExporter) processQueue() bool {
-	qe.mu.Lock()
-	if len(qe.queue) == 0 {
-		qe.mu.Unlock()
+	entry, err := qe.queue.Pop()
+	if err != nil {
+		logging.Error("PRW failed to pop queue", logging.F("error", err.Error()))
+		return false
+	}
+	if entry == nil {
 		return true // Queue is empty
 	}
 
-	entry := qe.queue[0]
-	qe.mu.Unlock()
+	req, err := prw.UnmarshalWriteRequest(entry.Data)
+	if err != nil {
+		logging.Error("PRW failed to deserialize queued request", logging.F("error", err.Error()))
+		return false
+	}
 
 	prwRetryTotal.Inc()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	exportErr := qe.exporter.Export(ctx, req)
+	cancel()
 
-	if err := qe.exporter.Export(ctx, entry.req); err != nil {
-		// Record failure with circuit breaker
+	if exportErr == nil {
+		// Success
 		if qe.circuitBreaker != nil {
-			qe.circuitBreaker.RecordFailure()
+			qe.circuitBreaker.RecordSuccess()
 		}
+		prwRetrySuccessTotal.Inc()
 
-		// Classify error for metrics
-		errType := classifyPRWError(err)
-		prwRetryFailureTotal.WithLabelValues(string(errType)).Inc()
+		logging.Info("PRW queued request exported successfully", logging.F(
+			"timeseries", len(req.Timeseries),
+			"queue_size", qe.queue.Len(),
+		))
+		return true
+	}
 
-		if !IsPRWRetryableError(err) {
-			// Non-retryable error, remove from queue
-			qe.mu.Lock()
-			if len(qe.queue) > 0 {
-				qe.queue = qe.queue[1:]
-			}
-			qe.mu.Unlock()
-			logging.Error("PRW retry failed with non-retryable error, removing from queue", logging.F(
-				"error", err.Error(),
-				"error_type", string(errType),
-				"timeseries", len(entry.req.Timeseries),
+	// Failure - record with circuit breaker
+	if qe.circuitBreaker != nil {
+		qe.circuitBreaker.RecordFailure()
+	}
+
+	// Classify error for metrics
+	errType := classifyPRWError(exportErr)
+	prwRetryFailureTotal.WithLabelValues(string(errType)).Inc()
+
+	// Check if error is splittable (payload too large) -- split and re-queue halves
+	var expErr *ExportError
+	if errors.As(exportErr, &expErr) {
+		if expErr.IsSplittable() && len(req.Timeseries) > 1 {
+			mid := len(req.Timeseries) / 2
+			req1 := &prw.WriteRequest{Timeseries: req.Timeseries[:mid], Metadata: req.Metadata}
+			req2 := &prw.WriteRequest{Timeseries: req.Timeseries[mid:], Metadata: req.Metadata}
+			data1, _ := req1.Marshal()
+			data2, _ := req2.Marshal()
+			_ = qe.queue.PushData(data1)
+			_ = qe.queue.PushData(data2)
+			logging.Info("PRW retry failed with splittable error, split and re-queued", logging.F(
+				"original_timeseries", len(req.Timeseries),
+				"queue_size", qe.queue.Len(),
 			))
 			return false
 		}
-
-		// Increment retry count
-		qe.mu.Lock()
-		if len(qe.queue) > 0 {
-			qe.queue[0].retries++
+		if !expErr.IsRetryable() {
+			// Drop non-retryable errors
+			logging.Warn("PRW dropping non-retryable queued entry", logging.F(
+				"error", exportErr.Error(),
+				"error_type", string(expErr.Type),
+				"timeseries", len(req.Timeseries),
+			))
+			return false
 		}
-		queueSize := len(qe.queue)
-		qe.mu.Unlock()
-
-		logging.Info("PRW retry failed", logging.F(
-			"error", err.Error(),
-			"error_type", string(errType),
-			"timeseries", len(entry.req.Timeseries),
-			"queue_size", queueSize,
-			"circuit_state", qe.getCircuitState(),
-		))
-		return false
 	}
 
-	// Success - record with circuit breaker and metrics
-	if qe.circuitBreaker != nil {
-		qe.circuitBreaker.RecordSuccess()
+	// Re-push to queue for later retry
+	if pushErr := qe.queue.PushData(entry.Data); pushErr != nil {
+		logging.Error("PRW failed to re-queue failed entry", logging.F("error", pushErr.Error()))
 	}
-	prwRetrySuccessTotal.Inc()
 
-	// Remove from queue
-	qe.mu.Lock()
-	if len(qe.queue) > 0 {
-		qe.queue = qe.queue[1:]
-	}
-	qe.mu.Unlock()
-
-	logging.Info("PRW queued request exported successfully", logging.F(
-		"timeseries", len(entry.req.Timeseries),
-		"retries", entry.retries,
+	logging.Info("PRW retry failed", logging.F(
+		"error", exportErr.Error(),
+		"error_type", string(errType),
+		"timeseries", len(req.Timeseries),
+		"queue_size", qe.queue.Len(),
+		"circuit_state", qe.getCircuitState(),
 	))
-	return true
+	return false
 }
 
 // classifyPRWError categorizes a PRW error for metrics.
@@ -350,42 +420,87 @@ func (qe *PRWQueuedExporter) getCircuitState() string {
 
 // drainQueue attempts to export all remaining queued items.
 func (qe *PRWQueuedExporter) drainQueue() {
-	for {
-		qe.mu.Lock()
-		if len(qe.queue) == 0 {
-			qe.mu.Unlock()
-			return
-		}
-		entry := qe.queue[0]
-		qe.queue = qe.queue[1:]
-		qe.mu.Unlock()
+	logging.Info("PRW draining queue", logging.F("queue_size", qe.queue.Len()))
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err := qe.exporter.Export(ctx, entry.req)
-		cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var failedEntries [][]byte
+
+	for {
+		select {
+		case <-ctx.Done():
+			logging.Warn("PRW timeout draining queue", logging.F("remaining", qe.queue.Len()))
+			for _, data := range failedEntries {
+				_ = qe.queue.PushData(data)
+			}
+			return
+		default:
+		}
+
+		entry, err := qe.queue.Pop()
+		if err != nil || entry == nil {
+			break
+		}
+
+		req, err := prw.UnmarshalWriteRequest(entry.Data)
+		if err != nil {
+			continue // Skip corrupted entries
+		}
+
+		exportCtx, exportCancel := context.WithTimeout(ctx, 5*time.Second)
+		err = qe.exporter.Export(exportCtx, req)
+		exportCancel()
 
 		if err != nil {
-			// Best effort, just log and continue
-			logging.Warn("PRW drain failed", logging.F(
+			failedEntries = append(failedEntries, entry.Data)
+			logging.Warn("PRW drain failed, will persist for recovery", logging.F(
 				"error", err.Error(),
-				"timeseries", len(entry.req.Timeseries),
+				"timeseries", len(req.Timeseries),
 			))
+		} else {
+			prwRetrySuccessTotal.Inc()
 		}
+	}
+
+	// Re-push failed entries for persistence
+	for _, data := range failedEntries {
+		_ = qe.queue.PushData(data)
 	}
 }
 
 // Close stops the retry loop and closes the underlying exporter.
 func (qe *PRWQueuedExporter) Close() error {
-	close(qe.retryStop)
-	<-qe.retryDone
-	return qe.exporter.Close()
+	var closeErr error
+	qe.closedOnce.Do(func() {
+		qe.mu.Lock()
+		qe.closed = true
+		qe.mu.Unlock()
+
+		// Signal retry loop to stop
+		close(qe.retryStop)
+
+		// Wait for retry loop to finish (with timeout)
+		select {
+		case <-qe.retryDone:
+		case <-time.After(30 * time.Second):
+			logging.Warn("PRW timeout waiting for retry loop to finish")
+		}
+
+		// Close the queue
+		if err := qe.queue.Close(); err != nil {
+			logging.Error("PRW failed to close queue", logging.F("error", err.Error()))
+		}
+
+		// Close underlying exporter
+		closeErr = qe.exporter.Close()
+	})
+	return closeErr
 }
 
 // QueueSize returns the current number of items in the queue.
 func (qe *PRWQueuedExporter) QueueSize() int {
-	qe.mu.Lock()
-	defer qe.mu.Unlock()
-	return len(qe.queue)
+	return qe.queue.Len()
 }
 
 // minDuration returns the smaller of two durations.
