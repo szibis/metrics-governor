@@ -342,7 +342,7 @@ func buildKnownMetricsSet() map[string]bool {
 	for _, m := range knownMetrics {
 		knownSet[m] = true
 		// Add histogram suffixes for histogram metrics
-		if strings.Contains(m, "latency") || strings.Contains(m, "duration") || strings.Contains(m, "seconds") {
+		if strings.Contains(m, "latency") || strings.Contains(m, "duration") || strings.Contains(m, "seconds") || strings.HasSuffix(m, "batch_bytes") {
 			for _, suffix := range histogramSuffixes {
 				knownSet[m+suffix] = true
 			}
