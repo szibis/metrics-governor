@@ -11,9 +11,11 @@ metrics-governor includes several high-performance optimizations for production 
 | Bloom Filters | Yes | Yes | -98% for cardinality tracking | Minimal |
 | String Interning | Yes | Yes | -76% allocations | -12% CPU |
 | Byte-Aware Batch Splitting | Yes | No | Minimal | Minimal |
+| Split-on-Error | Yes | Yes | Minimal | Minimal |
 | Concurrent Export Workers | Yes | No | Bounded goroutines | Controlled parallelism |
 | Concurrency Limiting | Yes | Yes | Bounded goroutines | Controlled parallelism |
 | Queue I/O Optimization | Yes | Yes | -40-60% disk (compression) | 10x throughput |
+| Persistent Disk Queue | Yes | Yes | Bounded by max_bytes | Disk I/O |
 | Memory Limit Auto-Detection | Yes | Yes | Prevents OOM kills | More predictable GC |
 
 ### Architecture Overview
@@ -211,7 +213,9 @@ Batches are split by serialized byte size before export, preventing backend reje
 - **Split-on-error** - If backend returns HTTP 400/413 "too large", the batch is split in half and both halves retried automatically
 - **Zero data loss** - Failed batches go to failover queue instead of being dropped
 
-**Applies to:** OTLP buffer flush
+**Applies to:** OTLP buffer flush, PRW retry queue
+
+> **Pipeline Parity**: Split-on-error works identically for both OTLP and PRW pipelines. OTLP splits at the ResourceMetrics level, PRW splits at the Timeseries level. Both detect HTTP 413 and "too big"/"too large"/"exceeding" patterns in response bodies.
 
 ### How It Works
 

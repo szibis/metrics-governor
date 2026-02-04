@@ -249,12 +249,21 @@ The Prometheus Remote Write exporter supports any PRW-compatible backend: Promet
 
 ### PRW Queue Options
 
+The PRW queue uses the same high-performance disk-backed `SendQueue` as the OTLP pipeline, providing persistent storage, circuit breaker, exponential backoff, and split-on-error. See [resilience.md](./resilience.md) for detailed resilience documentation.
+
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-prw-queue-enabled` | `false` | Enable persistent retry queue |
-| `-prw-queue-path` | `./prw-queue` | Queue directory |
+| `-prw-queue-path` | `./prw-queue` | Queue directory (disk-backed, survives restarts) |
 | `-prw-queue-max-size` | `10000` | Max queue entries |
+| `-prw-queue-max-bytes` | `1073741824` | Max queue size in bytes (1GB) |
 | `-prw-queue-retry-interval` | `5s` | Initial retry interval |
+| `-prw-queue-max-retry-delay` | `5m` | Maximum retry backoff delay |
+| `-prw-queue-backoff-enabled` | `true` | Enable exponential backoff for retries |
+| `-prw-queue-backoff-multiplier` | `2.0` | Multiply delay by this on each failure |
+| `-prw-queue-circuit-breaker-enabled` | `true` | Enable circuit breaker pattern |
+| `-prw-queue-circuit-breaker-threshold` | `10` | Consecutive failures before opening circuit |
+| `-prw-queue-circuit-breaker-reset-timeout` | `30s` | Time before half-open state |
 
 ### PRW Sharding Options
 

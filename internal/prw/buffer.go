@@ -37,6 +37,10 @@ type LogAggregator interface {
 	Stop()
 }
 
+// MaxMetadataEntries is the maximum number of unique metric families tracked in metadata.
+// This prevents unbounded memory growth from continuously-arriving new metric families.
+const MaxMetadataEntries = 10000
+
 // BufferConfig holds PRW buffer configuration.
 type BufferConfig struct {
 	// MaxSize is the maximum number of WriteRequests to buffer.
@@ -132,6 +136,13 @@ func (b *Buffer) Add(req *WriteRequest) {
 			}
 		}
 		if !found {
+			if len(b.metadata) >= MaxMetadataEntries {
+				logging.Warn("PRW metadata cap reached, ignoring new metric family", logging.F(
+					"metric_family", md.MetricFamilyName,
+					"cap", MaxMetadataEntries,
+				))
+				continue
+			}
 			b.metadata = append(b.metadata, md)
 		}
 	}

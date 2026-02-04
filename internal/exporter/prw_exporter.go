@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -339,25 +340,43 @@ func (e *PRWExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 	}
 	defer resp.Body.Close()
 
-	// Read and discard body to allow connection reuse
-	_, _ = io.Copy(io.Discard, resp.Body)
+	// Read response body for error detection
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	bodyStr := string(bodyBytes)
 
 	// Check response status
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errType := classifyHTTPStatusCode(resp.StatusCode)
 		prwExportErrorsTotal.WithLabelValues(string(errType)).Inc()
 
-		// 4xx errors should not be retried
+		msg := bodyStr
+		if msg == "" {
+			msg = fmt.Sprintf("PRW endpoint returned status %d", resp.StatusCode)
+		}
+
+		// 4xx errors
 		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
-			return &PRWClientError{
+			innerErr := &PRWClientError{
 				StatusCode: resp.StatusCode,
-				Message:    fmt.Sprintf("client error from PRW endpoint: %d", resp.StatusCode),
+				Message:    msg,
+			}
+			return &ExportError{
+				Err:        innerErr,
+				Type:       errType,
+				StatusCode: resp.StatusCode,
+				Message:    msg,
 			}
 		}
 		// 5xx errors can be retried
-		return &PRWServerError{
+		innerErr := &PRWServerError{
 			StatusCode: resp.StatusCode,
-			Message:    fmt.Sprintf("server error from PRW endpoint: %d", resp.StatusCode),
+			Message:    msg,
+		}
+		return &ExportError{
+			Err:        innerErr,
+			Type:       errType,
+			StatusCode: resp.StatusCode,
+			Message:    msg,
 		}
 	}
 
@@ -449,6 +468,10 @@ func (e *PRWServerError) IsRetryable() bool {
 func IsPRWRetryableError(err error) bool {
 	if err == nil {
 		return false
+	}
+	var exportErr *ExportError
+	if errors.As(err, &exportErr) {
+		return exportErr.IsRetryable()
 	}
 	if se, ok := err.(*PRWServerError); ok {
 		return se.IsRetryable()

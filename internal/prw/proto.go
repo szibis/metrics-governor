@@ -103,6 +103,15 @@ var (
 	InternEnabled = true
 )
 
+// UnmarshalWriteRequest deserializes a WriteRequest from protobuf wire format bytes.
+func UnmarshalWriteRequest(data []byte) (*WriteRequest, error) {
+	var req WriteRequest
+	if err := req.Unmarshal(data); err != nil {
+		return nil, err
+	}
+	return &req, nil
+}
+
 // Marshal encodes a WriteRequest to protobuf wire format.
 func (req *WriteRequest) Marshal() ([]byte, error) {
 	// Estimate size
