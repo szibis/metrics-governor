@@ -1539,7 +1539,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 10
+        "y": 14
       },
       "id": 11,
       "options": {
@@ -1634,7 +1634,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 10
+        "y": 14
       },
       "id": 12,
       "options": {
@@ -1668,12 +1668,572 @@
       ]
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "network"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "timeout"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "server_error"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "auth"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "purple",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rate_limit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "id": 10017,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "title": "OTLP Export Errors by Type",
+      "description": "Breakdown of OTLP export errors by error type (stacked). Error types help identify root cause:\n\n- **network**: Connection refused, DNS failures, connection reset - check network connectivity and backend availability\n- **timeout**: Request timeouts - increase exporter timeout or check backend latency\n- **server_error**: 5xx HTTP status - backend is overloaded or failing\n- **auth**: 401/403 status - check credentials and permissions\n- **rate_limit**: 429 status - backend is rate limiting, reduce send rate\n- **client_error**: 4xx status (except auth/rate_limit) - check request format\n- **unknown**: Unclassified errors - check logs for details",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "(sum by (error_type) (rate(metrics_governor_otlp_export_errors_total[5m])))",
+          "legendFormat": "{{error_type}}"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "network"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "timeout"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "server_error"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "auth"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "purple",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rate_limit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "id": 10018,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "title": "OTLP Retry Failures by Type",
+      "description": "Breakdown of OTLP queue retry failures by error type (stacked). These are errors that occurred during retry attempts from the OTLP queue.\n\nHigh values indicate the backend is consistently failing. Combined with circuit breaker state, this helps understand:\n- If retries are being attempted (circuit closed/half-open)\n- What types of errors are causing failures\n- Whether the backend is recovering or still unhealthy",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "(sum by (error_type) (rate(metrics_governor_queue_retry_failure_total[5m])))",
+          "legendFormat": "{{error_type}}"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 30
+      },
+      "id": 10019,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "title": "OTLP Datapoints Exported/s",
+      "description": "Rate of OTLP datapoints successfully exported to the backend. This metric tracks actual datapoints (not batches) that were accepted by the backend without errors.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_otlp_export_datapoints_total[1m])))",
+          "legendFormat": "Datapoints/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 30
+      },
+      "id": 10020,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "title": "OTLP Export Errors/s",
+      "description": "Total OTLP export error rate across all error types. High values indicate export failures. Check 'OTLP Export Errors by Type' panel for breakdown of error causes.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_otlp_export_errors_total[1m])))",
+          "legendFormat": "Errors/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 30
+      },
+      "id": 10021,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "title": "OTLP Retry Success Rate",
+      "description": "Percentage of OTLP queue retries that succeed. Formula: retries_success / (retries_success + retries_failure) * 100.\n\nValues:\n- Green (>90%): Backend is healthy, occasional failures are expected\n- Yellow (50-90%): Backend is struggling, check for issues\n- Red (<50%): Backend is unhealthy, most retries fail",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(100 * sum(rate(metrics_governor_queue_retry_success_total[5m])) / clamp_min(sum(rate(metrics_governor_queue_retry_success_total[5m])) + sum(rate(metrics_governor_queue_retry_failure_total[5m])), 1))",
+          "legendFormat": "Success Rate"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 30
+      },
+      "id": 10022,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "title": "OTLP Export Requests/s",
+      "description": "Rate of OTLP export requests sent to the backend. Each request contains one batch of datapoints.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(rate(metrics_governor_otlp_export_requests_total[1m])))",
+          "legendFormat": "Requests/s"
+        }
+      ]
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 34
       },
       "id": 100,
       "panels": [],
@@ -1738,7 +2298,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 19
+        "y": 35
       },
       "id": 101,
       "options": {
@@ -1829,7 +2389,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 19
+        "y": 35
       },
       "id": 102,
       "options": {
@@ -2005,7 +2565,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 27
+        "y": 43
       },
       "id": 115,
       "options": {
@@ -2139,7 +2699,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 27
+        "y": 43
       },
       "id": 116,
       "options": {
@@ -2195,7 +2755,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 35
+        "y": 51
       },
       "id": 117,
       "options": {
@@ -2257,7 +2817,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 35
+        "y": 51
       },
       "id": 118,
       "options": {
@@ -2319,7 +2879,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 35
+        "y": 51
       },
       "id": 119,
       "options": {
@@ -2373,7 +2933,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 35
+        "y": 51
       },
       "id": 120,
       "options": {
@@ -2406,7 +2966,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 55
       },
       "id": 110,
       "panels": [],
@@ -2471,7 +3031,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 28
+        "y": 56
       },
       "id": 111,
       "options": {
@@ -2570,7 +3130,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 28
+        "y": 56
       },
       "id": 112,
       "options": {
@@ -2602,12 +3162,12 @@
           "legendFormat": "gRPC Received (wire/compressed)"
         },
         {
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m])))",
+          "expr": "(sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[1m])))",
           "legendFormat": "Sent (uncompressed)"
         },
         {
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[1m])))",
-          "legendFormat": "Sent (compressed)"
+          "expr": "(sum(rate(metrics_governor_otlp_export_bytes_total{compression!=\"uncompressed\",compression!=\"none\"}[1m])))",
+          "legendFormat": "Sent (compressed/on wire)"
         }
       ]
     },
@@ -2669,7 +3229,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 36
+        "y": 64
       },
       "id": 113,
       "options": {
@@ -2687,24 +3247,24 @@
           "sort": "desc"
         }
       },
-      "title": "Compression Ratio",
-      "description": "Ratio of compressed to uncompressed bytes (lower is better compression)",
+      "title": "Compression Savings",
+      "description": "Percentage of bytes saved by compression (higher is better)",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m])))",
+          "expr": "1 - (sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m])))",
           "legendFormat": "PRW Receive"
         },
         {
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m])))",
+          "expr": "1 - (sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m])))",
           "legendFormat": "PRW Send"
         },
         {
-          "expr": "(sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[5m])))",
+          "expr": "1 - (sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[5m])))",
           "legendFormat": "OTLP/gRPC Receive"
         },
         {
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m])))",
+          "expr": "1 - (sum(rate(metrics_governor_otlp_export_bytes_total{compression!=\"uncompressed\",compression!=\"none\"}[5m])) / sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[5m])))",
           "legendFormat": "OTLP Send"
         }
       ]
@@ -2767,7 +3327,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 36
+        "y": 64
       },
       "id": 114,
       "options": {
@@ -2806,7 +3366,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 72
       },
       "id": 20,
       "panels": [],
@@ -2871,7 +3431,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 45
+        "y": 73
       },
       "id": 21,
       "options": {
@@ -2961,7 +3521,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 45
+        "y": 73
       },
       "id": 22,
       "options": {
@@ -3051,7 +3611,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 53
+        "y": 81
       },
       "id": 10003,
       "options": {
@@ -3142,7 +3702,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 53
+        "y": 81
       },
       "id": 10004,
       "options": {
@@ -3232,7 +3792,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 61
+        "y": 89
       },
       "id": 23,
       "options": {
@@ -3317,7 +3877,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 53
+        "y": 81
       },
       "id": 24,
       "options": {
@@ -3354,7 +3914,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 61
+        "y": 89
       },
       "id": 30,
       "panels": [],
@@ -3419,7 +3979,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 62
+        "y": 90
       },
       "id": 31,
       "options": {
@@ -3504,7 +4064,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 62
+        "y": 90
       },
       "id": 32,
       "options": {
@@ -3537,7 +4097,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 70
+        "y": 98
       },
       "id": 80,
       "panels": [],
@@ -3594,7 +4154,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 71
+        "y": 99
       },
       "id": 81,
       "options": {
@@ -3656,7 +4216,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 71
+        "y": 99
       },
       "id": 82,
       "options": {
@@ -3720,7 +4280,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 71
+        "y": 99
       },
       "id": 83,
       "options": {
@@ -3774,7 +4334,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 71
+        "y": 99
       },
       "id": 84,
       "options": {
@@ -3859,7 +4419,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 75
+        "y": 103
       },
       "id": 85,
       "options": {
@@ -3946,7 +4506,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 75
+        "y": 103
       },
       "id": 86,
       "options": {
@@ -3983,7 +4543,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 83
+        "y": 111
       },
       "id": 40,
       "panels": [],
@@ -4048,7 +4608,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 84
+        "y": 112
       },
       "id": 41,
       "options": {
@@ -4139,7 +4699,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 84
+        "y": 112
       },
       "id": 42,
       "options": {
@@ -4233,7 +4793,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 92
+        "y": 120
       },
       "id": 43,
       "options": {
@@ -4332,7 +4892,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 92
+        "y": 120
       },
       "id": 44,
       "options": {
@@ -4434,7 +4994,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 100
+        "y": 128
       },
       "id": 45,
       "options": {
@@ -4521,7 +5081,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 100
+        "y": 128
       },
       "id": 46,
       "options": {
@@ -4611,7 +5171,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 92
+        "y": 120
       },
       "id": 60,
       "options": {
@@ -4706,7 +5266,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 100
+        "y": 128
       },
       "id": 47,
       "options": {
@@ -4878,7 +5438,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 108
+        "y": 136
       },
       "id": 48,
       "options": {
@@ -5012,7 +5572,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 108
+        "y": 136
       },
       "id": 49,
       "options": {
@@ -5049,6 +5609,192 @@
       "fieldConfig": {
         "defaults": {
           "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 144
+      },
+      "id": 10005,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "title": "Batch Splits & Retry Rate",
+      "description": "Rate of batch splits during export. Batch splits occur when the export payload is too large and must be divided. High rates may indicate batch_max_size is set too high relative to backend limits.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "(rate(metrics_governor_batch_splits_total[1m]))",
+          "legendFormat": "Batch Splits/s"
+        },
+        {
+          "expr": "(rate(metrics_governor_export_retry_split_total[1m]))",
+          "legendFormat": "Retry Splits/s"
+        },
+        {
+          "expr": "(rate(metrics_governor_failover_queue_push_total[1m]))",
+          "legendFormat": "Failover Pushes/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 144
+      },
+      "id": 10006,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "title": "Batch Size Distribution",
+      "description": "Average batch size in bytes and rate of oversized batches. Use this to tune batch_max_size configuration. If 'Too Large' rate is high, reduce batch_max_size.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "(rate(metrics_governor_batch_bytes_sum[5m]) / rate(metrics_governor_batch_bytes_count[5m]))",
+          "legendFormat": "Avg Batch Size"
+        },
+        {
+          "expr": "(rate(metrics_governor_batch_too_large_total[1m]))",
+          "legendFormat": "Too Large/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
             "mode": "thresholds"
           },
           "mappings": [],
@@ -5068,7 +5814,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 116
+        "y": 152
       },
       "id": 50,
       "options": {
@@ -5130,7 +5876,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 116
+        "y": 152
       },
       "id": 51,
       "options": {
@@ -5192,7 +5938,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 116
+        "y": 152
       },
       "id": 52,
       "options": {
@@ -5254,7 +6000,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 116
+        "y": 152
       },
       "id": 53,
       "options": {
@@ -5287,7 +6033,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 120
+        "y": 156
       },
       "id": 200,
       "panels": [],
@@ -5352,7 +6098,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 109
+        "y": 157
       },
       "id": 201,
       "options": {
@@ -5439,7 +6185,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 109
+        "y": 157
       },
       "id": 202,
       "options": {
@@ -5525,7 +6271,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 109
+        "y": 157
       },
       "id": 203,
       "options": {
@@ -5619,7 +6365,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 117
+        "y": 165
       },
       "id": 204,
       "options": {
@@ -5690,7 +6436,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 117
+        "y": 165
       },
       "id": 205,
       "options": {
@@ -5723,7 +6469,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 125
+        "y": 173
       },
       "id": 300,
       "panels": [],
@@ -5793,7 +6539,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 126
+        "y": 174
       },
       "id": 301,
       "options": {
@@ -5855,7 +6601,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 126
+        "y": 174
       },
       "id": 302,
       "options": {
@@ -5917,7 +6663,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 126
+        "y": 174
       },
       "id": 303,
       "options": {
@@ -5979,7 +6725,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 126
+        "y": 174
       },
       "id": 304,
       "options": {
@@ -6064,7 +6810,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 126
+        "y": 174
       },
       "id": 305,
       "options": {
@@ -6149,7 +6895,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 130
+        "y": 178
       },
       "id": 306,
       "options": {
@@ -6235,7 +6981,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 130
+        "y": 178
       },
       "id": 307,
       "options": {
@@ -6325,7 +7071,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 130
+        "y": 178
       },
       "id": 308,
       "options": {
@@ -6363,7 +7109,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 138
+        "y": 186
       },
       "id": 50,
       "panels": [],
@@ -6428,7 +7174,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 139
+        "y": 187
       },
       "id": 51,
       "options": {
@@ -6513,7 +7259,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 139
+        "y": 187
       },
       "id": 52,
       "options": {
@@ -6599,7 +7345,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 139
+        "y": 187
       },
       "id": 53,
       "options": {
@@ -6693,7 +7439,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 147
+        "y": 195
       },
       "id": 54,
       "options": {
@@ -6788,7 +7534,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 147
+        "y": 195
       },
       "id": 55,
       "options": {
@@ -6879,7 +7625,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 147
+        "y": 195
       },
       "id": 56,
       "options": {
@@ -6913,11 +7659,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 155
+        "y": 203
       },
       "id": 70,
       "panels": [],
-      "title": "Runtime",
+      "title": "Pressure Stall Information (PSI)",
       "type": "row"
     },
     {
@@ -6978,7 +7724,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 159
+        "y": 207
       },
       "id": 71,
       "options": {
@@ -7073,7 +7819,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 159
+        "y": 207
       },
       "id": 72,
       "options": {
@@ -7112,7 +7858,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 167
+        "y": 215
       },
       "id": 73,
       "panels": [],
@@ -7177,7 +7923,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 168
+        "y": 216
       },
       "id": 74,
       "options": {
@@ -7268,7 +8014,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 168
+        "y": 216
       },
       "id": 75,
       "options": {
@@ -7307,7 +8053,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 176
+        "y": 224
       },
       "id": 76,
       "panels": [],
@@ -7372,7 +8118,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 177
+        "y": 225
       },
       "id": 77,
       "options": {
@@ -7463,7 +8209,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 177
+        "y": 225
       },
       "id": 78,
       "options": {
@@ -7554,7 +8300,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 185
+        "y": 233
       },
       "id": 79,
       "options": {
@@ -7594,6 +8340,19 @@
           "legendFormat": "Tx Dropped/s"
         }
       ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 237
+      },
+      "id": 10007,
+      "panels": [],
+      "title": "Goroutines & Memory",
+      "type": "row"
     },
     {
       "datasource": {
@@ -7646,16 +8405,16 @@
               }
             ]
           },
-          "unit": "percent"
+          "unit": "short"
         }
       },
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 194
+        "y": 238
       },
-      "id": 81,
+      "id": 10008,
       "options": {
         "legend": {
           "calcs": [
@@ -7672,21 +8431,17 @@
           "sort": "desc"
         }
       },
-      "title": "Process CPU Usage %",
-      "description": "CPU usage percentage (100% = 1 core fully utilized)",
+      "title": "Goroutines",
+      "description": "Active goroutines and OS threads in the metrics-governor process",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(rate(metrics_governor_process_cpu_user_seconds{job=~\".*metrics-governor.*\"}[1m]) * 100)",
-          "legendFormat": "User %"
+          "expr": "(metrics_governor_goroutines{job=~\".*metrics-governor.*\"})",
+          "legendFormat": "Goroutines"
         },
         {
-          "expr": "(rate(metrics_governor_process_cpu_system_seconds{job=~\".*metrics-governor.*\"}[1m]) * 100)",
-          "legendFormat": "System %"
-        },
-        {
-          "expr": "(rate(metrics_governor_process_cpu_total_seconds{job=~\".*metrics-governor.*\"}[1m]) * 100)",
-          "legendFormat": "Total %"
+          "expr": "(metrics_governor_go_threads{job=~\".*metrics-governor.*\"})",
+          "legendFormat": "OS Threads"
         }
       ]
     },
@@ -7748,9 +8503,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 194
+        "y": 238
       },
-      "id": 82,
+      "id": 10009,
       "options": {
         "legend": {
           "calcs": [
@@ -7767,8 +8522,8 @@
           "sort": "desc"
         }
       },
-      "title": "Memory Usage",
-      "description": "Memory metrics from metrics-governor runtime",
+      "title": "Heap Memory",
+      "description": "Detailed heap memory breakdown: allocated, in-use, system reserved, idle, and released back to OS",
       "type": "timeseries",
       "targets": [
         {
@@ -7780,12 +8535,16 @@
           "legendFormat": "Heap In Use"
         },
         {
-          "expr": "(metrics_governor_memory_stack_inuse_bytes{job=~\".*metrics-governor.*\"})",
-          "legendFormat": "Stack In Use"
+          "expr": "(metrics_governor_memory_heap_sys_bytes{job=~\".*metrics-governor.*\"})",
+          "legendFormat": "Heap Sys"
         },
         {
-          "expr": "(metrics_governor_memory_sys_bytes{job=~\".*metrics-governor.*\"})",
-          "legendFormat": "Sys Total"
+          "expr": "(metrics_governor_memory_heap_idle_bytes{job=~\".*metrics-governor.*\"})",
+          "legendFormat": "Heap Idle"
+        },
+        {
+          "expr": "(metrics_governor_memory_heap_released_bytes{job=~\".*metrics-governor.*\"})",
+          "legendFormat": "Heap Released"
         }
       ]
     },
@@ -7840,16 +8599,16 @@
               }
             ]
           },
-          "unit": "percent"
+          "unit": "bytes"
         }
       },
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 202
+        "y": 246
       },
-      "id": 83,
+      "id": 10010,
       "options": {
         "legend": {
           "calcs": [
@@ -7866,13 +8625,21 @@
           "sort": "desc"
         }
       },
-      "title": "GC CPU Usage",
-      "description": "Percentage of CPU time spent in garbage collection",
+      "title": "Memory Overview",
+      "description": "High-level memory usage: total allocated, system memory, and stack usage",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_gc_cpu_percent{job=~\".*metrics-governor.*\"})",
-          "legendFormat": "GC CPU %"
+          "expr": "(metrics_governor_memory_alloc_bytes{job=~\".*metrics-governor.*\"})",
+          "legendFormat": "Alloc"
+        },
+        {
+          "expr": "(metrics_governor_memory_sys_bytes{job=~\".*metrics-governor.*\"})",
+          "legendFormat": "Sys Total"
+        },
+        {
+          "expr": "(metrics_governor_memory_stack_inuse_bytes{job=~\".*metrics-governor.*\"})",
+          "legendFormat": "Stack In Use"
         }
       ]
     },
@@ -7934,9 +8701,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 202
+        "y": 246
       },
-      "id": 84,
+      "id": 10011,
       "options": {
         "legend": {
           "calcs": [
@@ -7953,17 +8720,21 @@
           "sort": "desc"
         }
       },
-      "title": "Goroutines & File Descriptors",
-      "description": "Goroutines and file descriptors from metrics-governor runtime",
+      "title": "Heap Objects & Allocations",
+      "description": "Heap object count and allocation/free rates. High churn (mallocs - frees) creates GC pressure.",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(metrics_governor_goroutines{job=~\".*metrics-governor.*\"})",
-          "legendFormat": "Goroutines"
+          "expr": "(metrics_governor_memory_heap_objects{job=~\".*metrics-governor.*\"})",
+          "legendFormat": "Heap Objects"
         },
         {
-          "expr": "(metrics_governor_process_open_fds{job=~\".*metrics-governor.*\"})",
-          "legendFormat": "Open FDs"
+          "expr": "(rate(metrics_governor_memory_mallocs_total{job=~\".*metrics-governor.*\"}[1m]))",
+          "legendFormat": "Mallocs/s"
+        },
+        {
+          "expr": "(rate(metrics_governor_memory_frees_total{job=~\".*metrics-governor.*\"}[1m]))",
+          "legendFormat": "Frees/s"
         }
       ]
     },
@@ -7973,7 +8744,380 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 210
+        "y": 254
+      },
+      "id": 10012,
+      "panels": [],
+      "title": "Garbage Collection",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 255
+      },
+      "id": 10013,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "title": "GC Cycles",
+      "description": "Rate of garbage collection cycles per second",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "(rate(metrics_governor_gc_cycles_total{job=~\".*metrics-governor.*\"}[1m]))",
+          "legendFormat": "GC Cycles/s"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 255
+      },
+      "id": 10014,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "title": "GC Pause Time",
+      "description": "GC pause duration: total pause rate and last individual pause duration",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "(rate(metrics_governor_gc_pause_total_seconds{job=~\".*metrics-governor.*\"}[1m]))",
+          "legendFormat": "Pause Rate (s/s)"
+        },
+        {
+          "expr": "(metrics_governor_gc_last_pause_seconds{job=~\".*metrics-governor.*\"})",
+          "legendFormat": "Last Pause"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 263
+      },
+      "id": 10015,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "title": "GC CPU %",
+      "description": "Percentage of CPU time spent in garbage collection. High values (>5%) indicate GC pressure.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "(metrics_governor_gc_cpu_percent{job=~\".*metrics-governor.*\"})",
+          "legendFormat": "GC CPU %"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 263
+      },
+      "id": 10016,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "title": "Process CPU Usage",
+      "description": "CPU usage percentage (100% = 1 core fully utilized)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "(rate(metrics_governor_process_cpu_user_seconds{job=~\".*metrics-governor.*\"}[1m]) * 100)",
+          "legendFormat": "User %"
+        },
+        {
+          "expr": "(rate(metrics_governor_process_cpu_system_seconds{job=~\".*metrics-governor.*\"}[1m]) * 100)",
+          "legendFormat": "System %"
+        },
+        {
+          "expr": "(rate(metrics_governor_process_cpu_total_seconds{job=~\".*metrics-governor.*\"}[1m]) * 100)",
+          "legendFormat": "Total %"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 271
       },
       "id": 600,
       "panels": [],
@@ -8017,7 +9161,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 211
+        "y": 272
       },
       "id": 601,
       "options": {
@@ -8077,7 +9221,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 211
+        "y": 272
       },
       "id": 602,
       "options": {
@@ -8146,7 +9290,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 211
+        "y": 272
       },
       "id": 603,
       "options": {
@@ -8236,7 +9380,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 211
+        "y": 272
       },
       "id": 604,
       "options": {
@@ -8345,7 +9489,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 219
+        "y": 280
       },
       "id": 605,
       "options": {
@@ -8471,7 +9615,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 219
+        "y": 280
       },
       "id": 606,
       "options": {
@@ -8562,7 +9706,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 227
+        "y": 288
       },
       "id": 607,
       "options": {
@@ -8632,7 +9776,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 227
+        "y": 288
       },
       "id": 608,
       "options": {
@@ -8722,7 +9866,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 227
+        "y": 288
       },
       "id": 609,
       "options": {
@@ -8801,7 +9945,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 231
+        "y": 292
       },
       "id": 610,
       "options": {

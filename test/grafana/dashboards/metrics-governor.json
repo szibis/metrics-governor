@@ -1524,23 +1524,23 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"}[1m])))",
-          "legendFormat": "Received (uncompressed)"
+          "expr": "(sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[1m])))",
+          "legendFormat": "gRPC Received (decompressed)"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"}[1m])))",
-          "legendFormat": "Received (compressed)"
+          "expr": "(sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[1m])))",
+          "legendFormat": "gRPC Received (wire/compressed)"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[1m])))",
+          "expr": "(sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[1m])))",
           "legendFormat": "Sent (uncompressed)"
         },
         {
@@ -1548,8 +1548,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[1m])))",
-          "legendFormat": "Sent (compressed)"
+          "expr": "(sum(rate(metrics_governor_otlp_export_bytes_total{compression!=\"uncompressed\",compression!=\"none\"}[1m])))",
+          "legendFormat": "Sent (compressed/on wire)"
         }
       ]
     },
@@ -1697,7 +1697,7 @@
           "sort": "desc"
         }
       },
-      "title": "Compression Ratio",
+      "title": "Compression Savings",
       "type": "timeseries",
       "targets": [
         {
@@ -1705,7 +1705,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m])))",
+          "expr": "1 - (sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m])))",
           "legendFormat": "PRW Receive"
         },
         {
@@ -1713,7 +1713,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m])))",
+          "expr": "1 - (sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m])))",
           "legendFormat": "PRW Send"
         },
         {
@@ -1721,15 +1721,15 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m])))",
-          "legendFormat": "OTLP Receive"
+          "expr": "1 - (sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[5m])))",
+          "legendFormat": "OTLP/gRPC Receive"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m])))",
+          "expr": "1 - (sum(rate(metrics_governor_otlp_export_bytes_total{compression!=\"uncompressed\",compression!=\"none\"}[5m])) / sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[5m])))",
           "legendFormat": "OTLP Send"
         }
       ]
@@ -1806,7 +1806,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 18
+        "y": 35
       },
       "id": 30,
       "options": {
@@ -1921,7 +1921,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 18
+        "y": 35
       },
       "id": 31,
       "options": {
@@ -2046,7 +2046,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 26
+        "y": 43
       },
       "id": 32,
       "options": {
@@ -2171,7 +2171,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 26
+        "y": 43
       },
       "id": 33,
       "options": {
@@ -2247,7 +2247,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 34
+        "y": 51
       },
       "id": 34,
       "options": {
@@ -2314,7 +2314,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 34
+        "y": 51
       },
       "id": 35,
       "options": {
@@ -2381,7 +2381,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 34
+        "y": 51
       },
       "id": 36,
       "options": {
@@ -2448,7 +2448,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 34
+        "y": 51
       },
       "id": 37,
       "options": {
@@ -2538,7 +2538,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 38
+        "y": 55
       },
       "id": 38,
       "options": {
@@ -2628,7 +2628,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 38
+        "y": 55
       },
       "id": 39,
       "options": {
@@ -2665,7 +2665,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 46
+        "y": 63
       },
       "id": 104,
       "panels": [],
@@ -2731,7 +2731,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 47
+        "y": 64
       },
       "id": 40,
       "options": {
@@ -2821,7 +2821,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 47
+        "y": 64
       },
       "id": 41,
       "options": {
@@ -2911,7 +2911,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 55
+        "y": 72
       },
       "id": 42,
       "options": {
@@ -3001,7 +3001,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 55
+        "y": 72
       },
       "id": 43,
       "options": {
@@ -3038,7 +3038,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 63
+        "y": 80
       },
       "id": 105,
       "panels": [],
@@ -3104,7 +3104,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 64
+        "y": 81
       },
       "id": 50,
       "options": {
@@ -3221,7 +3221,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 64
+        "y": 81
       },
       "id": 51,
       "options": {
@@ -3320,7 +3320,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 72
+        "y": 89
       },
       "id": 52,
       "options": {
@@ -3419,7 +3419,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 72
+        "y": 89
       },
       "id": 53,
       "options": {
@@ -3487,7 +3487,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 80
+        "y": 97
       },
       "id": 54,
       "options": {
@@ -3546,7 +3546,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 80
+        "y": 97
       },
       "id": 55,
       "options": {
@@ -3605,7 +3605,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 80
+        "y": 97
       },
       "id": 56,
       "options": {
@@ -3664,7 +3664,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 80
+        "y": 97
       },
       "id": 57,
       "options": {
@@ -3754,7 +3754,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 84
+        "y": 101
       },
       "id": 58,
       "options": {
@@ -3853,7 +3853,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 84
+        "y": 101
       },
       "id": 59,
       "options": {
@@ -3952,7 +3952,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 92
+        "y": 109
       },
       "id": 60,
       "options": {
@@ -4051,7 +4051,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 92
+        "y": 109
       },
       "id": 61,
       "options": {
@@ -4119,7 +4119,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 100
+        "y": 117
       },
       "id": 62,
       "options": {
@@ -4178,7 +4178,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 100
+        "y": 117
       },
       "id": 63,
       "options": {
@@ -4237,7 +4237,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 100
+        "y": 117
       },
       "id": 64,
       "options": {
@@ -4296,7 +4296,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 100
+        "y": 117
       },
       "id": 65,
       "options": {
@@ -4394,7 +4394,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 104
+        "y": 121
       },
       "id": 66,
       "options": {
@@ -4510,7 +4510,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 104
+        "y": 121
       },
       "id": 67,
       "options": {
@@ -4556,7 +4556,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 112
+        "y": 129
       },
       "id": 106,
       "panels": [],
@@ -4595,7 +4595,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 113
+        "y": 130
       },
       "id": 107,
       "options": {
@@ -4654,7 +4654,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 113
+        "y": 130
       },
       "id": 108,
       "options": {
@@ -4721,7 +4721,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 113
+        "y": 130
       },
       "id": 109,
       "options": {
@@ -4780,7 +4780,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 113
+        "y": 130
       },
       "id": 110,
       "options": {
@@ -4870,7 +4870,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 117
+        "y": 134
       },
       "id": 111,
       "options": {
@@ -4965,7 +4965,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 117
+        "y": 134
       },
       "id": 112,
       "options": {
@@ -5056,7 +5056,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 125
+        "y": 142
       },
       "id": 113,
       "options": {
@@ -5156,7 +5156,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 125
+        "y": 142
       },
       "id": 114,
       "options": {
@@ -5223,7 +5223,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 133
+        "y": 150
       },
       "id": 115,
       "options": {
@@ -5273,7 +5273,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 141
+        "y": 158
       },
       "id": 101,
       "panels": [],
@@ -5339,7 +5339,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 142
+        "y": 159
       },
       "id": 10,
       "options": {
@@ -5438,7 +5438,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 142
+        "y": 159
       },
       "id": 11,
       "options": {
@@ -5515,7 +5515,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 150
+        "y": 167
       },
       "id": 12,
       "options": {
@@ -5574,7 +5574,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 150
+        "y": 167
       },
       "id": 13,
       "options": {
@@ -5633,7 +5633,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 150
+        "y": 167
       },
       "id": 14,
       "options": {
@@ -5700,7 +5700,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 150
+        "y": 167
       },
       "id": 15,
       "options": {
@@ -5737,7 +5737,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 154
+        "y": 171
       },
       "id": 102,
       "panels": [],
@@ -5803,7 +5803,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 155
+        "y": 172
       },
       "id": 20,
       "options": {
@@ -5902,7 +5902,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 155
+        "y": 172
       },
       "id": 21,
       "options": {
@@ -5970,7 +5970,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 163
+        "y": 180
       },
       "id": 22,
       "options": {
@@ -6029,7 +6029,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 163
+        "y": 180
       },
       "id": 23,
       "options": {
@@ -6096,7 +6096,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 163
+        "y": 180
       },
       "id": 24,
       "options": {
@@ -6175,7 +6175,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 163
+        "y": 180
       },
       "id": 25,
       "options": {
@@ -6212,7 +6212,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 167
+        "y": 184
       },
       "id": 534,
       "panels": [],
@@ -6256,7 +6256,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 168
+        "y": 185
       },
       "id": 535,
       "options": {
@@ -6316,7 +6316,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 168
+        "y": 185
       },
       "id": 536,
       "options": {
@@ -6415,7 +6415,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 168
+        "y": 185
       },
       "id": 537,
       "options": {
@@ -6524,7 +6524,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 176
+        "y": 193
       },
       "id": 538,
       "options": {
@@ -6642,7 +6642,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 176
+        "y": 193
       },
       "id": 539,
       "options": {

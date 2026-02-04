@@ -237,8 +237,28 @@ func main() {
 	// Create log aggregator for buffer (aggregates logs per 10s interval)
 	bufferLogAggregator := limits.NewLogAggregator(10 * time.Second)
 
+	// Build buffer options
+	var bufOpts []buffer.BufferOption
+	if cfg.MaxBatchBytes > 0 {
+		bufOpts = append(bufOpts, buffer.WithMaxBatchBytes(cfg.MaxBatchBytes))
+	}
+	if cfg.ExportConcurrency != 0 || !cfg.ShardingEnabled {
+		// Wire export concurrency to buffer (default: NumCPU*4)
+		bufOpts = append(bufOpts, buffer.WithConcurrency(cfg.ExportConcurrency))
+	}
+
+	// Set up failover queue (safety net for export failures)
+	if cfg.QueueEnabled && cfg.QueueType == "memory" {
+		failoverQ := buffer.NewMemoryQueue(cfg.QueueMaxSize, cfg.QueueMaxBytes)
+		bufOpts = append(bufOpts, buffer.WithFailoverQueue(failoverQ))
+		logging.Info("memory failover queue enabled", logging.F(
+			"max_size", cfg.QueueMaxSize,
+			"max_bytes", cfg.QueueMaxBytes,
+		))
+	}
+
 	// Create buffer with stats collector, limits enforcer, and log aggregator
-	buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, finalExporter, statsCollector, limitsEnforcer, bufferLogAggregator)
+	buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, finalExporter, statsCollector, limitsEnforcer, bufferLogAggregator, bufOpts...)
 
 	// Start buffer flush routine
 	go buf.Start(ctx)

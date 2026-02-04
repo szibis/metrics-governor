@@ -78,6 +78,7 @@ exporter:
 buffer:
   size: 50000
   batch_size: 2000
+  max_batch_bytes: 8388608  # 8MB byte-aware batch splitting
   flush_interval: 10s
 
 stats:
@@ -164,7 +165,8 @@ The OTLP exporter supports any OTLP-compatible backend via gRPC or HTTP protocol
 |------|---------|-------------|
 | `-buffer-size` | `10000` | Maximum number of metrics to buffer |
 | `-flush-interval` | `5s` | Buffer flush interval |
-| `-batch-size` | `1000` | Maximum batch size for export |
+| `-batch-size` | `1000` | Maximum batch size for export (by count) |
+| `-max-batch-bytes` | `8388608` | Maximum batch size in bytes (8MB). Batches exceeding this are recursively split. Set below backend limit. 0 disables byte splitting. |
 
 ### Stats Options
 
@@ -186,19 +188,20 @@ The queue uses a high-performance FastQueue implementation inspired by VictoriaM
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-queue-enabled` | `false` | Enable persistent queue for export retries |
-| `-queue-path` | `./queue` | Queue storage directory |
+| `-queue-enabled` | `true` | Enable failover queue (safety net for export failures) |
+| `-queue-type` | `memory` | Queue type: `memory` (bounded in-memory, fast) or `disk` (FastQueue, durable, survives restarts) |
+| `-queue-path` | `./queue` | Queue storage directory (disk mode only) |
 | `-queue-max-size` | `10000` | Maximum number of batches in queue |
 | `-queue-max-bytes` | `1073741824` | Maximum total queue size in bytes (1GB) |
 | `-queue-retry-interval` | `5s` | Initial retry interval |
 | `-queue-max-retry-delay` | `5m` | Maximum retry backoff delay |
 | `-queue-full-behavior` | `drop_oldest` | Queue full behavior: `drop_oldest`, `drop_newest`, or `block` |
-| `-queue-adaptive-enabled` | `true` | Enable adaptive queue sizing |
-| `-queue-target-utilization` | `0.85` | Target disk utilization (0.0-1.0) |
-| `-queue-inmemory-blocks` | `256` | In-memory channel size for fast path |
-| `-queue-chunk-size` | `536870912` | Chunk file size in bytes (512MB) |
-| `-queue-meta-sync` | `1s` | Metadata sync interval (max data loss window) |
-| `-queue-stale-flush` | `5s` | Interval to flush stale in-memory blocks to disk |
+| `-queue-adaptive-enabled` | `true` | Enable adaptive queue sizing (disk mode only) |
+| `-queue-target-utilization` | `0.85` | Target disk utilization (0.0-1.0, disk mode only) |
+| `-queue-inmemory-blocks` | `256` | In-memory channel size for fast path (disk mode only) |
+| `-queue-chunk-size` | `536870912` | Chunk file size in bytes (512MB, disk mode only) |
+| `-queue-meta-sync` | `1s` | Metadata sync interval (max data loss window, disk mode only) |
+| `-queue-stale-flush` | `5s` | Interval to flush stale in-memory blocks to disk (disk mode only) |
 | `-queue-backoff-enabled` | `true` | Enable exponential backoff for retries |
 | `-queue-backoff-multiplier` | `2.0` | Backoff delay multiplier on each failure |
 | `-queue-circuit-breaker-enabled` | `true` | Enable circuit breaker pattern |
@@ -265,23 +268,24 @@ The Prometheus Remote Write exporter supports any PRW-compatible backend: Promet
 
 ### OTLP Queue Options
 
-The queue provides durability for export failures with a high-performance FastQueue implementation. See [resilience.md](./resilience.md) for detailed information on circuit breaker and backoff behavior.
+The queue provides durability for export failures with memory or disk-backed storage. Memory mode (default) is fast with bounded in-memory queue. Disk mode uses a high-performance FastQueue implementation. See [resilience.md](./resilience.md) for detailed information on circuit breaker, backoff, failover queue, and split-on-error behavior.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-queue-enabled` | `false` | Enable persistent retry queue |
-| `-queue-path` | `./queue` | Queue directory path |
+| `-queue-enabled` | `true` | Enable failover queue (safety net for export failures) |
+| `-queue-type` | `memory` | Queue type: `memory` (bounded, fast) or `disk` (FastQueue, durable) |
+| `-queue-path` | `./queue` | Queue directory path (disk mode only) |
 | `-queue-max-size` | `10000` | Max queue entries |
 | `-queue-max-bytes` | `1073741824` | Max queue size in bytes (1GB) |
 | `-queue-retry-interval` | `5s` | Initial retry interval |
 | `-queue-max-retry-delay` | `5m` | Maximum retry backoff delay |
 | `-queue-full-behavior` | `drop_oldest` | Behavior when full: `drop_oldest`, `drop_newest`, `block` |
-| `-queue-adaptive-enabled` | `true` | Enable adaptive queue sizing |
-| `-queue-target-utilization` | `0.85` | Target disk utilization (0.0-1.0) |
-| `-queue-inmemory-blocks` | `256` | In-memory channel size for fast path |
-| `-queue-chunk-size` | `536870912` | Chunk file size in bytes (512MB) |
-| `-queue-meta-sync` | `1s` | Metadata sync interval (max data loss window) |
-| `-queue-stale-flush` | `5s` | Flush stale in-memory blocks to disk |
+| `-queue-adaptive-enabled` | `true` | Enable adaptive queue sizing (disk mode only) |
+| `-queue-target-utilization` | `0.85` | Target disk utilization (disk mode only) |
+| `-queue-inmemory-blocks` | `256` | In-memory channel size (disk mode only) |
+| `-queue-chunk-size` | `536870912` | Chunk file size in bytes (disk mode only) |
+| `-queue-meta-sync` | `1s` | Metadata sync interval (disk mode only) |
+| `-queue-stale-flush` | `5s` | Flush stale in-memory blocks to disk (disk mode only) |
 
 ### Queue Resilience Options
 
@@ -447,14 +451,17 @@ metrics-governor \
 # Adjust buffering for high throughput
 metrics-governor -buffer-size 50000 -flush-interval 10s -batch-size 2000
 
+# Byte-aware batch splitting (default 8MB, set below backend limit)
+metrics-governor -max-batch-bytes 8388608
+
 # Enable stats tracking by service, environment and cluster
 metrics-governor -stats-labels service,env,cluster
 
 # Performance tuning: limit concurrent exports
 metrics-governor -export-concurrency 32
 
-# High-load environment
-metrics-governor -export-concurrency 64 -buffer-size 100000 -batch-size 5000
+# High-load environment with byte splitting
+metrics-governor -export-concurrency 64 -buffer-size 100000 -batch-size 5000 -max-batch-bytes 8388608
 ```
 
 ### Limits Enforcement

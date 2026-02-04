@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/szibis/metrics-governor/internal/exporter"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
@@ -519,4 +520,218 @@ func TestFlush_DatapointCountConsistency(t *testing.T) {
 			t.Errorf("expected total 15 datapoints across all batches, got %d", total)
 		}
 	})
+}
+
+// splittableExporter returns a splittable ExportError on batches larger than maxElements.
+type splittableExporter struct {
+	mu          sync.Mutex
+	maxElements int
+	requests    []*colmetricspb.ExportMetricsServiceRequest
+}
+
+func (s *splittableExporter) Export(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(req.ResourceMetrics) > s.maxElements {
+		return &exporter.ExportError{
+			Err:        fmt.Errorf("unexpected status code: 400: too big data size exceeding opentelemetry.maxRequestSize=16000000"),
+			Type:       exporter.ErrorTypeClientError,
+			StatusCode: 400,
+			Message:    "too big data size exceeding opentelemetry.maxRequestSize=16000000",
+		}
+	}
+	s.requests = append(s.requests, req)
+	return nil
+}
+
+func (s *splittableExporter) getRequestCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.requests)
+}
+
+func (s *splittableExporter) getTotalResourceMetrics() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	total := 0
+	for _, req := range s.requests {
+		total += len(req.ResourceMetrics)
+	}
+	return total
+}
+
+func TestBuffer_ByteAwareSplitting(t *testing.T) {
+	// Test that count + byte splitting work together
+	exp := &datapointTrackingExporter{}
+	stats := &datapointTrackingStats{}
+
+	// Use a very small maxBatchBytes to force byte splits
+	buf := New(100, 50, time.Hour, exp, stats, nil, nil,
+		WithMaxBatchBytes(100)) // 100 bytes -- very small, will split
+
+	// Add 10 ResourceMetrics
+	for i := 0; i < 10; i++ {
+		rm := createTestMetricsWithDatapoints(1, 1)
+		buf.Add(rm)
+	}
+
+	buf.flush(context.Background())
+
+	// All data should be exported (check via stats)
+	exportCounts := stats.getExportCounts()
+	total := 0
+	for _, c := range exportCounts {
+		total += c
+	}
+	if total != 10 {
+		t.Errorf("expected 10 total datapoints, got %d", total)
+	}
+}
+
+func TestBuffer_ConcurrentFlush(t *testing.T) {
+	// Verify concurrent workers with race detector
+	exp := &datapointTrackingExporter{}
+	stats := &datapointTrackingStats{}
+
+	buf := New(100, 5, time.Hour, exp, stats, nil, nil,
+		WithConcurrency(4))
+
+	// Add 20 ResourceMetrics
+	for i := 0; i < 20; i++ {
+		rm := createTestMetricsWithDatapoints(1, 1)
+		buf.Add(rm)
+	}
+
+	buf.flush(context.Background())
+
+	// All data should be exported
+	exportCounts := stats.getExportCounts()
+	total := 0
+	for _, c := range exportCounts {
+		total += c
+	}
+	if total != 20 {
+		t.Errorf("expected 20 total datapoints, got %d", total)
+	}
+}
+
+func TestBuffer_SplitOnError(t *testing.T) {
+	// Backend rejects batches with more than 2 elements
+	exp := &splittableExporter{maxElements: 2}
+
+	buf := New(100, 100, time.Hour, exp, nil, nil, nil)
+
+	// Add 8 ResourceMetrics in one batch
+	rm := createTestResourceMetrics(8)
+	buf.Add(rm)
+
+	buf.flush(context.Background())
+
+	// The batch of 8 should be recursively split until each is <= 2 elements
+	totalRM := exp.getTotalResourceMetrics()
+	if totalRM != 8 {
+		t.Errorf("expected 8 total ResourceMetrics delivered, got %d", totalRM)
+	}
+
+	// Should have at least 4 requests (8 elements / 2 max)
+	if exp.getRequestCount() < 4 {
+		t.Errorf("expected at least 4 requests, got %d", exp.getRequestCount())
+	}
+}
+
+func TestBuffer_FailoverQueueOnError(t *testing.T) {
+	// Export always fails, verify data goes to failover queue
+	exp := &datapointTrackingExporter{failOn: map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true}}
+	stats := &datapointTrackingStats{}
+	failoverQ := NewMemoryQueue(100, 100*1024*1024)
+
+	buf := New(100, 100, time.Hour, exp, stats, nil, nil,
+		WithFailoverQueue(failoverQ))
+
+	rm := createTestMetricsWithDatapoints(3, 2) // 3 metrics * 2 dp = 6 dp
+	buf.Add(rm)
+
+	buf.flush(context.Background())
+
+	// Data should be in failover queue, not lost
+	if failoverQ.Len() != 1 {
+		t.Errorf("expected 1 entry in failover queue, got %d", failoverQ.Len())
+	}
+
+	// Verify stats recorded error
+	if stats.getExportErrors() != 1 {
+		t.Errorf("expected 1 export error, got %d", stats.getExportErrors())
+	}
+}
+
+func TestBuffer_FailoverQueue_PushFails(t *testing.T) {
+	// Export fails AND failover queue push fails (queue too small)
+	exp := &datapointTrackingExporter{failOn: map[int]bool{0: true}}
+	failoverQ := NewMemoryQueue(100, 1) // 1 byte max -- will reject
+
+	buf := New(100, 100, time.Hour, exp, nil, nil, nil,
+		WithFailoverQueue(failoverQ))
+
+	rm := createTestMetricsWithDatapoints(3, 2)
+	buf.Add(rm)
+
+	buf.flush(context.Background())
+
+	// Queue push should have failed -- data is truly lost (logged as CRITICAL)
+	if failoverQ.Len() != 0 {
+		t.Errorf("expected 0 entries in failover queue (push should fail), got %d", failoverQ.Len())
+	}
+}
+
+func TestBuffer_NoFailoverQueue_LegacyBehavior(t *testing.T) {
+	// No failover queue -- errors just log and drop (legacy)
+	exp := &datapointTrackingExporter{failOn: map[int]bool{0: true}}
+	stats := &datapointTrackingStats{}
+
+	buf := New(100, 100, time.Hour, exp, stats, nil, nil)
+
+	rm := createTestMetricsWithDatapoints(3, 2)
+	buf.Add(rm)
+
+	buf.flush(context.Background())
+
+	// Should have logged error and dropped
+	if stats.getExportErrors() != 1 {
+		t.Errorf("expected 1 export error, got %d", stats.getExportErrors())
+	}
+}
+
+func TestBuffer_WithOptions(t *testing.T) {
+	exp := &mockExporter{}
+
+	buf := New(100, 10, time.Second, exp, nil, nil, nil,
+		WithMaxBatchBytes(8*1024*1024),
+		WithConcurrency(4))
+
+	if buf.maxBatchBytes != 8*1024*1024 {
+		t.Errorf("expected maxBatchBytes=8MB, got %d", buf.maxBatchBytes)
+	}
+	if buf.concurrency == nil {
+		t.Error("expected concurrency to be set")
+	}
+}
+
+func TestBuffer_SplitOnError_SingleElement(t *testing.T) {
+	// Backend rejects even single elements -- should go to failover queue
+	exp := &splittableExporter{maxElements: 0} // Rejects everything
+	failoverQ := NewMemoryQueue(100, 100*1024*1024)
+
+	buf := New(100, 1, time.Hour, exp, nil, nil, nil,
+		WithFailoverQueue(failoverQ))
+
+	rm := createTestResourceMetrics(1)
+	buf.Add(rm)
+
+	buf.flush(context.Background())
+
+	// Single element can't be split further -- should go to failover queue
+	if failoverQ.Len() != 1 {
+		t.Errorf("expected 1 entry in failover queue, got %d", failoverQ.Len())
+	}
 }

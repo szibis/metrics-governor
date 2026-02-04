@@ -2,6 +2,7 @@ package exporter
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -398,7 +399,33 @@ func (e *QueuedExporter) processQueue() bool {
 	errType := classifyExportError(err)
 	queue.IncrementRetryFailure(string(errType))
 
-	// Re-push to queue for later retry
+	// Check if error is splittable (payload too large) -- split and re-queue halves
+	var exportErr *ExportError
+	if errors.As(err, &exportErr) {
+		if exportErr.IsSplittable() && len(req.ResourceMetrics) > 1 {
+			mid := len(req.ResourceMetrics) / 2
+			req1 := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: req.ResourceMetrics[:mid]}
+			req2 := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: req.ResourceMetrics[mid:]}
+			_ = e.queue.Push(req1)
+			_ = e.queue.Push(req2)
+			logging.Info("retry failed with splittable error, split and re-queued", logging.F(
+				"original_size", len(req.ResourceMetrics),
+				"queue_size", e.queue.Len(),
+			))
+			return false
+		}
+		if !exportErr.IsRetryable() {
+			// Drop non-retryable errors (e.g. auth) instead of infinite retry
+			logging.Warn("dropping non-retryable queued entry", logging.F(
+				"error", err.Error(),
+				"error_type", string(exportErr.Type),
+				"batch_size", len(req.ResourceMetrics),
+			))
+			return false
+		}
+	}
+
+	// Re-push to queue for later retry (retryable errors)
 	// Note: This puts it at the back of the queue
 	if pushErr := e.queue.Push(req); pushErr != nil {
 		logging.Error("failed to re-queue failed entry", logging.F("error", pushErr.Error()))

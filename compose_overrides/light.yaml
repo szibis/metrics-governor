@@ -1,5 +1,5 @@
 # Light testing configuration - moderate volume for development
-# Usage: docker compose -f docker-compose.yaml -f docker-compose.light.yaml up -d
+# Usage: docker compose -f docker-compose.yaml -f compose_overrides/light.yaml up -d
 #
 # This override provides moderate data volume for:
 # - Quick functional testing
@@ -34,29 +34,52 @@ services:
       - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
       - "-exporter-protocol=http"
       - "-exporter-insecure=true"
-      - "-exporter-compression=gzip"  # Lighter compression
+      - "-exporter-compression=zstd"
       - "-stats-labels=service,env"
       - "-limits-config=/etc/metrics-governor/limits.yaml"
       - "-limits-dry-run=true"
       - "-flush-interval=1s"          # Slower flushing
       - "-batch-size=50"              # Smaller batches
+      - "-max-batch-bytes=4194304"    # 4MB conservative byte splitting
       - "-buffer-size=1000"           # Smaller buffer
       # Performance tuning (defaults for development)
       - "-string-interning=true"
+      # Disk queue - persistent failover (5GB)
+      - "-queue-enabled=true"
+      - "-queue-type=disk"
+      - "-queue-path=/data/queue"
+      - "-queue-max-size=10000"
+      - "-queue-max-bytes=5368709120"      # 5GB disk queue
+      - "-queue-retry-interval=5s"
+      - "-queue-full-behavior=drop_oldest"
+      - "-queue-adaptive-enabled=true"
+      - "-queue-inmemory-blocks=256"
+      - "-queue-chunk-size=134217728"
+      - "-queue-meta-sync=1s"
+      - "-queue-stale-flush=5s"
       # Queue resilience (conservative for light testing)
       - "-queue-backoff-enabled=true"
       - "-queue-backoff-multiplier=2.0"
       - "-queue-circuit-breaker-enabled=true"
       - "-queue-circuit-breaker-threshold=10"
       - "-queue-circuit-breaker-reset-timeout=30s"
+      # Sharding configuration
+      - "-sharding-enabled=true"
+      - "-sharding-headless-service=victoriametrics:8428"
+      - "-sharding-labels=service,env"
+      - "-sharding-virtual-nodes=150"
+      - "-sharding-fallback-on-empty=true"
+      - "-sharding-dns-refresh-interval=30s"
       # Memory limit
       - "-memory-limit-ratio=0.9"
+    volumes:
+      - mg-queue-light-data:/data/queue
 
   victoriametrics:
     deploy:
       resources:
         limits:
-          memory: 1G                  # Reduced memory
+          memory: 2G                  # Reduced memory
     command:
       - "--storageDataPath=/victoria-metrics-data"
       - "--httpListenAddr=:8428"
@@ -79,3 +102,7 @@ services:
       - VERIFICATION_METRIC=generator_verification_counter
       - PASS_THRESHOLD=90.0           # Lower threshold for light testing
       - METRICS_PORT=9092
+
+volumes:
+  mg-queue-light-data:
+    driver: local

@@ -25,7 +25,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 cleanup() {
     log_info "Cleaning up..."
-    docker compose -f docker-compose.yaml -f docker-compose.queue.yaml down -v --remove-orphans 2>/dev/null || true
+    docker compose -f docker-compose.yaml -f compose_overrides/queue.yaml down -v --remove-orphans 2>/dev/null || true
 }
 
 trap cleanup EXIT
@@ -33,7 +33,7 @@ trap cleanup EXIT
 # Start stack with queue configuration
 start_queue_stack() {
     log_info "Starting stack with FastQueue configuration..."
-    docker compose -f docker-compose.yaml -f docker-compose.queue.yaml up -d --build
+    docker compose -f docker-compose.yaml -f compose_overrides/queue.yaml up -d --build
     if [ $? -ne 0 ]; then
         log_error "Failed to start stack"
         exit 1
@@ -49,7 +49,7 @@ wait_for_services() {
         local elapsed=$(($(date +%s) - start_time))
         if [ $elapsed -gt $STARTUP_TIMEOUT ]; then
             log_error "Timeout waiting for services"
-            docker compose -f docker-compose.yaml -f docker-compose.queue.yaml logs --tail=50
+            docker compose -f docker-compose.yaml -f compose_overrides/queue.yaml logs --tail=50
             exit 1
         fi
 
@@ -193,7 +193,7 @@ print_summary() {
     echo ""
 
     log_info "Container status:"
-    docker compose -f docker-compose.yaml -f docker-compose.queue.yaml ps
+    docker compose -f docker-compose.yaml -f compose_overrides/queue.yaml ps
     echo ""
 
     log_info "FastQueue metrics:"

@@ -108,6 +108,7 @@ type ShardingYAMLConfig struct {
 
 // QueueYAMLConfig holds queue configuration.
 type QueueYAMLConfig struct {
+	Type              string   `yaml:"type"`
 	Enabled           *bool    `yaml:"enabled"`
 	Path              string   `yaml:"path"`
 	MaxSize           int      `yaml:"max_size"`
@@ -182,6 +183,7 @@ type HTTPClientYAMLConfig struct {
 type BufferYAMLConfig struct {
 	Size          int      `yaml:"size"`
 	BatchSize     int      `yaml:"batch_size"`
+	MaxBatchBytes int      `yaml:"max_batch_bytes"`
 	FlushInterval Duration `yaml:"flush_interval"`
 }
 
@@ -303,6 +305,9 @@ func (y *YAMLConfig) ApplyDefaults() {
 	if y.Buffer.BatchSize == 0 {
 		y.Buffer.BatchSize = 1000
 	}
+	if y.Buffer.MaxBatchBytes == 0 {
+		y.Buffer.MaxBatchBytes = 8388608 // 8MB
+	}
 	if y.Buffer.FlushInterval == 0 {
 		y.Buffer.FlushInterval = Duration(5 * time.Second)
 	}
@@ -322,8 +327,11 @@ func (y *YAMLConfig) ApplyDefaults() {
 	}
 
 	// Queue defaults
+	if y.Exporter.Queue.Type == "" {
+		y.Exporter.Queue.Type = "memory"
+	}
 	if y.Exporter.Queue.Enabled == nil {
-		enabled := false
+		enabled := true
 		y.Exporter.Queue.Enabled = &enabled
 	}
 	if y.Exporter.Queue.Path == "" {
@@ -488,6 +496,7 @@ func (y *YAMLConfig) ToConfig() *Config {
 		BufferSize:    y.Buffer.Size,
 		FlushInterval: time.Duration(y.Buffer.FlushInterval),
 		MaxBatchSize:  y.Buffer.BatchSize,
+		MaxBatchBytes: y.Buffer.MaxBatchBytes,
 
 		// Stats
 		StatsAddr:   y.Stats.Address,
@@ -498,6 +507,7 @@ func (y *YAMLConfig) ToConfig() *Config {
 		RuleCacheMaxSize: y.Limits.RuleCacheMaxSize,
 
 		// Queue
+		QueueType:              y.Exporter.Queue.Type,
 		QueueEnabled:           *y.Exporter.Queue.Enabled,
 		QueuePath:              y.Exporter.Queue.Path,
 		QueueMaxSize:           y.Exporter.Queue.MaxSize,

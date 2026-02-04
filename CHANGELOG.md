@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Fixed
+
+- fix(memqueue): fix memory leak from unbounded slice growth in MemoryQueue causing OOM crash-loop after sustained traffic
+
 ## [0.9.6] - 2026-02-02
 
 ### Fixed
@@ -139,7 +145,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   | `metrics_governor_fastqueue_inmemory_flushes` | counter | Stale flushes to disk |
 
 - **E2E Queue Testing** - New test infrastructure for queue persistence:
-  - `docker-compose.queue.yaml` - Queue testing overlay with aggressive settings
+  - `compose_overrides/queue.yaml` - Queue testing overlay with aggressive settings
   - `test/e2e-queue-test.sh` - E2E script for persistence and recovery testing
 
 ### Changed

@@ -27,7 +27,7 @@
 - **Dual Protocol Support** - Native OTLP (gRPC/HTTP) and Prometheus Remote Write (PRW 1.0/2.0) pipelines, each running independently with zero conversion overhead
 - **Intelligent Limiting** - Unlike simple rate limiters that drop everything, metrics-governor identifies and drops only the top offenders while preserving data from well-behaved services
 - **Consistent Sharding** - Automatic endpoint discovery from Kubernetes headless services with consistent hashing ensures the same time-series always route to the same backend (works for both OTLP and PRW)
-- **Production-Ready** - FastQueue durable persistence with circuit breaker and exponential backoff, auto memory limits, TLS/mTLS, authentication, compression (gzip/zstd/snappy/lz4), and Helm chart included
+- **Production-Ready** - Byte-aware batch splitting, concurrent exports, failover queue, FastQueue durable persistence with circuit breaker and exponential backoff, auto memory limits, TLS/mTLS, authentication, compression (gzip/zstd/snappy/lz4), and Helm chart included
 - **High-Performance Optimizations** - String interning reduces allocations by 76%, concurrency limiting prevents goroutine explosion, Bloom filters reduce cardinality tracking memory by 98% (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
 - **Zero Configuration Start** - Works out of the box with sensible defaults; add limits and sharding when needed
 
@@ -47,10 +47,11 @@ flowchart LR
             direction LR
             O_RX["Receiver<br/>gRPC :4317<br/>HTTP :4318"]
             O_PROC["Stats → Limits"]
-            O_EXP["Exporter"]
-            O_Q["FastQueue"]
-            O_RX --> O_PROC --> O_EXP
-            O_EXP -.->|retry| O_Q -.-> O_EXP
+            O_SPLIT["Byte-Aware<br/>Splitting"]
+            O_EXP["Concurrent<br/>Export Workers"]
+            O_Q["Failover Queue<br/>memory / disk"]
+            O_RX --> O_PROC --> O_SPLIT --> O_EXP
+            O_EXP -.->|"retry / split-on-error"| O_Q -.-> O_EXP
         end
 
         subgraph PRW["PRW Pipeline"]
@@ -78,7 +79,10 @@ flowchart LR
 **Pipeline Features:**
 - **Stats** - Real-time cardinality and datapoint tracking per metric/service
 - **Limits** - Adaptive limiting that drops only top offenders, preserving well-behaved services
-- **FastQueue** - Durable persistence with circuit breaker and exponential backoff
+- **Byte-Aware Splitting** - Recursive binary split ensures batches stay under backend size limits (default 8MB)
+- **Concurrent Export** - Parallel export workers maximize throughput during flush cycles
+- **Failover Queue** - Memory or disk-backed queue catches failed exports instead of dropping data
+- **Split-on-Error** - Oversized batches automatically split and retry on HTTP 400/413 responses
 
 ## Quick Start
 
@@ -139,12 +143,13 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
 |------------|-------------|
 | **OTLP Protocol** | Full gRPC and HTTP receiver/exporter with TLS and authentication |
 | **PRW Protocol** | Prometheus Remote Write 1.0/2.0 with native histograms, VictoriaMetrics mode |
-| **Intelligent Buffering** | Configurable buffer with batching for optimal throughput (both OTLP and PRW) |
+| **Intelligent Buffering** | Configurable buffer with byte-aware batch splitting, concurrent export workers, and failover queue (both OTLP and PRW) |
 | **Adaptive Limits** | Per-group tracking with smart dropping of top offenders only |
 | **Real-time Statistics** | Per-metric cardinality, datapoints, and limit violation tracking |
 | **Prometheus Integration** | Native `/metrics` endpoint for monitoring the proxy itself |
 | **Consistent Sharding** | Distribute metrics across multiple backends via DNS discovery (OTLP and PRW) |
-| **Persistent Queue** | FastQueue with circuit breaker, exponential backoff, and automatic retry (OTLP and PRW) |
+| **Persistent Queue** | FastQueue with circuit breaker, exponential backoff, automatic retry, and split-on-error (OTLP and PRW) |
+| **Failover Queue** | Memory or disk-backed safety net catches all export failures — data is never silently dropped |
 | **Memory Optimized** | Bloom filter cardinality tracking uses 98% less memory (1.2MB vs 75MB per 1M series) |
 | **Performance Optimized** | String interning and concurrency limiting for high-throughput workloads |
 | **Production Ready** | Helm chart, multi-arch Docker images, graceful shutdown |

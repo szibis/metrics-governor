@@ -1,5 +1,5 @@
 # Stable testing configuration - predictable metrics for verification
-# Usage: docker compose -f docker-compose.yaml -f docker-compose.stable.yaml up -d
+# Usage: docker compose -f docker-compose.yaml -f compose_overrides/stable.yaml up -d
 #
 # This override provides completely predictable metrics for:
 # - Rate calculation verification
@@ -41,13 +41,27 @@ services:
       - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
       - "-exporter-protocol=http"
       - "-exporter-insecure=true"
-      - "-exporter-compression=gzip"
+      - "-exporter-compression=zstd"
       - "-stats-labels=series,metric_id"
       - "-flush-interval=500ms"
       - "-batch-size=100"
+      - "-max-batch-bytes=8388608"    # 8MB byte-aware batch splitting
       - "-buffer-size=2000"
       # Performance tuning
       - "-string-interning=true"
+      # Disk queue - persistent failover (5GB)
+      - "-queue-enabled=true"
+      - "-queue-type=disk"
+      - "-queue-path=/data/queue"
+      - "-queue-max-size=10000"
+      - "-queue-max-bytes=5368709120"      # 5GB disk queue
+      - "-queue-retry-interval=5s"
+      - "-queue-full-behavior=drop_oldest"
+      - "-queue-adaptive-enabled=true"
+      - "-queue-inmemory-blocks=256"
+      - "-queue-chunk-size=134217728"
+      - "-queue-meta-sync=1s"
+      - "-queue-stale-flush=5s"
       # Queue resilience (standard settings)
       - "-queue-backoff-enabled=true"
       - "-queue-backoff-multiplier=2.0"
@@ -56,7 +70,8 @@ services:
       - "-queue-circuit-breaker-reset-timeout=30s"
       # Memory limit
       - "-memory-limit-ratio=0.9"
-    volumes: []  # Clear all volumes (no limits config needed)
+    volumes:
+      - mg-queue-stable-data:/data/queue
 
   victoriametrics:
     deploy:
@@ -85,3 +100,7 @@ services:
       - VERIFICATION_METRIC=generator_verification_counter
       - PASS_THRESHOLD=99.0              # High threshold for stable mode
       - METRICS_PORT=9092
+
+volumes:
+  mg-queue-stable-data:
+    driver: local
