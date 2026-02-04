@@ -1,0 +1,493 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
+    outputs:
+      result: ${{ steps.scan.outputs.result }}
+      details: ${{ steps.scan.outputs.details }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        id: scan
+        run: |
+          set +e
+          OUTPUT=$(govulncheck ./... 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "result=pass" >> $GITHUB_OUTPUT
+            echo "details=No vulnerabilities found" >> $GITHUB_OUTPUT
+          else
+            echo "result=fail" >> $GITHUB_OUTPUT
+            VULN_COUNT=$(echo "$OUTPUT" | grep -c 'Vulnerability #' || echo "unknown")
+            echo "details=Found ${VULN_COUNT} vulnerability(ies)" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+  trivy-fs:
+    name: Trivy (filesystem)
+    runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
+    outputs:
+      result: ${{ steps.evaluate.outputs.result }}
+      details: ${{ steps.evaluate.outputs.details }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'json'
+          output: 'trivy-fs-results.json'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+      - name: Upload Trivy SARIF
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-fs.sarif'
+          category: 'trivy-filesystem'
+
+      - name: Evaluate results
+        id: evaluate
+        run: |
+          if [ ! -f trivy-fs-results.json ]; then
+            echo "result=pass" >> $GITHUB_OUTPUT
+            echo "details=No findings" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' trivy-fs-results.json 2>/dev/null || echo 0)
+          HIGH=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' trivy-fs-results.json 2>/dev/null || echo 0)
+          MEDIUM=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM")] | length' trivy-fs-results.json 2>/dev/null || echo 0)
+          LOW=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="LOW")] | length' trivy-fs-results.json 2>/dev/null || echo 0)
+
+          echo "details=Critical: ${CRITICAL}, High: ${HIGH}, Medium: ${MEDIUM}, Low: ${LOW}" >> $GITHUB_OUTPUT
+
+          if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+            echo "result=fail" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "result=pass" >> $GITHUB_OUTPUT
+          fi
+
+  trivy-image:
+    name: Trivy (container)
+    runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
+    outputs:
+      result: ${{ steps.evaluate.outputs.result }}
+      details: ${{ steps.evaluate.outputs.details }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: docker build -t metrics-governor:scan .
+
+      - name: Run Trivy image scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: 'metrics-governor:scan'
+          format: 'json'
+          output: 'trivy-image-results.json'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+      - name: Upload Trivy image SARIF
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: 'metrics-governor:scan'
+          format: 'sarif'
+          output: 'trivy-image.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-image.sarif'
+          category: 'trivy-container'
+
+      - name: Evaluate results
+        id: evaluate
+        run: |
+          if [ ! -f trivy-image-results.json ]; then
+            echo "result=pass" >> $GITHUB_OUTPUT
+            echo "details=No findings" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' trivy-image-results.json 2>/dev/null || echo 0)
+          HIGH=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' trivy-image-results.json 2>/dev/null || echo 0)
+          MEDIUM=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM")] | length' trivy-image-results.json 2>/dev/null || echo 0)
+          LOW=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="LOW")] | length' trivy-image-results.json 2>/dev/null || echo 0)
+
+          echo "details=Critical: ${CRITICAL}, High: ${HIGH}, Medium: ${MEDIUM}, Low: ${LOW}" >> $GITHUB_OUTPUT
+
+          if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+            echo "result=fail" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "result=pass" >> $GITHUB_OUTPUT
+          fi
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
+    outputs:
+      result: ${{ steps.result.outputs.result }}
+      details: ${{ steps.result.outputs.details }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        id: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set result
+        id: result
+        run: |
+          if [ "${{ steps.gitleaks.outcome }}" = "success" ]; then
+            echo "result=pass" >> $GITHUB_OUTPUT
+            echo "details=No secrets detected" >> $GITHUB_OUTPUT
+          else
+            echo "result=fail" >> $GITHUB_OUTPUT
+            echo "details=Secrets detected in repository" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+  checkov:
+    name: checkov
+    runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
+    outputs:
+      result: ${{ steps.evaluate.outputs.result }}
+      details: ${{ steps.evaluate.outputs.details }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run checkov on Helm chart
+        id: checkov_helm
+        uses: bridgecrewio/checkov-action@v12
+        continue-on-error: true
+        with:
+          directory: helm/metrics-governor
+          framework: helm
+          config_file: .github/checkov-config.yml
+          output_format: json
+          output_file_path: checkov-helm.json
+          quiet: true
+
+      - name: Run checkov on Dockerfile
+        id: checkov_docker
+        uses: bridgecrewio/checkov-action@v12
+        continue-on-error: true
+        with:
+          file: Dockerfile
+          framework: dockerfile
+          output_format: json
+          output_file_path: checkov-docker.json
+          quiet: true
+
+      - name: Evaluate results
+        id: evaluate
+        run: |
+          HELM_OUTCOME="${{ steps.checkov_helm.outcome }}"
+          DOCKER_OUTCOME="${{ steps.checkov_docker.outcome }}"
+
+          HELM_FAILED=0
+          DOCKER_FAILED=0
+
+          if [ -f checkov-helm.json ]; then
+            HELM_FAILED=$(jq '[.results.failed_checks[]? | select(.severity == "CRITICAL" or .severity == "HIGH")] | length' checkov-helm.json 2>/dev/null || echo 0)
+          fi
+
+          if [ -f checkov-docker.json ]; then
+            DOCKER_FAILED=$(jq '[.results.failed_checks[]? | select(.severity == "CRITICAL" or .severity == "HIGH")] | length' checkov-docker.json 2>/dev/null || echo 0)
+          fi
+
+          echo "details=Helm: ${HELM_FAILED}, Dockerfile: ${DOCKER_FAILED}" >> $GITHUB_OUTPUT
+
+          if [ "$HELM_FAILED" -gt 0 ] || [ "$DOCKER_FAILED" -gt 0 ]; then
+            echo "result=fail" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "result=pass" >> $GITHUB_OUTPUT
+          fi
+
+  sbom:
+    name: SBOM (syft)
+    runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
+    outputs:
+      result: ${{ steps.result.outputs.result }}
+      details: ${{ steps.result.outputs.details }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate SBOM (SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom-spdx.json
+
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom-cyclonedx.json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            sbom-spdx.json
+            sbom-cyclonedx.json
+          retention-days: 30
+
+      - name: Set result
+        id: result
+        run: |
+          echo "result=pass" >> $GITHUB_OUTPUT
+          echo "details=Generated (SPDX + CycloneDX)" >> $GITHUB_OUTPUT
+
+  security-gate:
+    name: security-gate
+    runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
+    needs: [govulncheck, trivy-fs, trivy-image, gitleaks, checkov, sbom]
+    steps:
+      - name: Evaluate security results
+        run: |
+          echo "=== Security Gate Evaluation ==="
+
+          FAILED=0
+
+          check_result() {
+            local name="$1"
+            local result="$2"
+            local details="$3"
+            if [ "$result" = "fail" ]; then
+              echo "FAIL: ${name} - ${details}"
+              FAILED=$((FAILED + 1))
+            else
+              echo "PASS: ${name} - ${details}"
+            fi
+          }
+
+          check_result "govulncheck" "${{ needs.govulncheck.outputs.result }}" "${{ needs.govulncheck.outputs.details }}"
+          check_result "Trivy (filesystem)" "${{ needs.trivy-fs.outputs.result }}" "${{ needs.trivy-fs.outputs.details }}"
+          check_result "Trivy (container)" "${{ needs.trivy-image.outputs.result }}" "${{ needs.trivy-image.outputs.details }}"
+          check_result "gitleaks" "${{ needs.gitleaks.outputs.result }}" "${{ needs.gitleaks.outputs.details }}"
+          check_result "checkov" "${{ needs.checkov.outputs.result }}" "${{ needs.checkov.outputs.details }}"
+
+          echo ""
+          echo "SBOM: ${{ needs.sbom.outputs.details }} (informational)"
+
+          if [ "$FAILED" -gt 0 ]; then
+            echo ""
+            echo "SECURITY GATE: FAILED (${FAILED} scanner(s) reported critical/high findings)"
+            exit 1
+          else
+            echo ""
+            echo "SECURITY GATE: PASSED"
+          fi
+
+  security-comment:
+    name: security-comment
+    runs-on: ubuntu-latest
+    if: >-
+      always() &&
+      github.event_name == 'pull_request' &&
+      !contains(github.event.pull_request.labels.*.name, 'release:skip')
+    needs: [govulncheck, trivy-fs, trivy-image, gitleaks, checkov, sbom, security-gate]
+    steps:
+      - name: Post security scan comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Collect results
+            const scanners = [
+              {
+                name: 'govulncheck',
+                result: '${{ needs.govulncheck.outputs.result }}',
+                details: '${{ needs.govulncheck.outputs.details }}',
+                blocks: true
+              },
+              {
+                name: 'Trivy (filesystem)',
+                result: '${{ needs.trivy-fs.outputs.result }}',
+                details: '${{ needs.trivy-fs.outputs.details }}',
+                blocks: true
+              },
+              {
+                name: 'Trivy (container)',
+                result: '${{ needs.trivy-image.outputs.result }}',
+                details: '${{ needs.trivy-image.outputs.details }}',
+                blocks: true
+              },
+              {
+                name: 'gitleaks',
+                result: '${{ needs.gitleaks.outputs.result }}',
+                details: '${{ needs.gitleaks.outputs.details }}',
+                blocks: true
+              },
+              {
+                name: 'checkov',
+                result: '${{ needs.checkov.outputs.result }}',
+                details: '${{ needs.checkov.outputs.details }}',
+                blocks: true
+              },
+              {
+                name: 'SBOM (syft)',
+                result: '${{ needs.sbom.outputs.result }}',
+                details: '${{ needs.sbom.outputs.details }}',
+                blocks: false
+              }
+            ];
+
+            const gateResult = '${{ needs.security-gate.result }}';
+            const overallPass = gateResult === 'success';
+            const overallIcon = overallPass ? '\u2705' : '\u274c';
+            const overallText = overallPass ? 'PASSED' : 'FAILED';
+
+            let table = '| Scanner | Status | Findings | Blocks PR |\n';
+            table += '|---------|--------|----------|-----------|\n';
+
+            for (const s of scanners) {
+              const icon = s.result === 'pass' ? '\ud83d\udfe2' : (s.result === 'fail' ? '\ud83d\udd34' : '\u26aa');
+              const blocksText = s.blocks ? (s.result === 'fail' ? 'Yes' : 'No') : 'N/A';
+              table += `| ${s.name} | ${icon} | ${s.details || 'N/A'} | ${blocksText} |\n`;
+            }
+
+            const timestamp = new Date().toISOString();
+
+            const body = `## \ud83d\udd12 Security Scan Report
+
+            | Status | Result |
+            |--------|--------|
+            | **Overall** | ${overallIcon} **${overallText}** |
+            | **Policy** | Block on Critical/High only |
+
+            ### Scan Results
+
+            ${table}
+
+            <details>
+            <summary>What these scanners check</summary>
+
+            - **govulncheck**: Go dependency vulnerabilities (call-graph aware, confirmed reachable)
+            - **Trivy (filesystem)**: CVEs in go.mod, Dockerfile, YAML files
+            - **Trivy (container)**: OS and application CVEs in the built Docker image
+            - **gitleaks**: Leaked secrets, keys, and tokens in git history
+            - **checkov**: Infrastructure-as-code misconfigurations in Helm charts and Dockerfile
+            - **SBOM (syft)**: Software Bill of Materials generation (informational)
+
+            </details>
+
+            _Last updated: ${timestamp}_`;
+
+            // Find existing security comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c =>
+              (c.user.login === 'github-actions[bot]' || c.user.login === 'github-actions') &&
+              c.body.includes('Security Scan Report')
+            );
+
+            if (botComment) {
+              console.log(`Updating existing comment ${botComment.id}`);
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              console.log('Creating new security scan comment');
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            }
