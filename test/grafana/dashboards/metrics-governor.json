@@ -1697,7 +1697,7 @@
           "sort": "desc"
         }
       },
-      "title": "Compression Ratio",
+      "title": "Compression Savings",
       "type": "timeseries",
       "targets": [
         {
@@ -1705,7 +1705,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m])))",
+          "expr": "1 - (sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m])))",
           "legendFormat": "PRW Receive"
         },
         {
@@ -1713,7 +1713,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m])))",
+          "expr": "1 - (sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m])))",
           "legendFormat": "PRW Send"
         },
         {
@@ -1721,7 +1721,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[5m])))",
+          "expr": "1 - (sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[5m])))",
           "legendFormat": "OTLP/gRPC Receive"
         },
         {
@@ -1729,7 +1729,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(metrics_governor_otlp_export_bytes_total{compression!=\"uncompressed\",compression!=\"none\"}[5m])) / sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[5m])))",
+          "expr": "1 - (sum(rate(metrics_governor_otlp_export_bytes_total{compression!=\"uncompressed\",compression!=\"none\"}[5m])) / sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[5m])))",
           "legendFormat": "OTLP Send"
         }
       ]

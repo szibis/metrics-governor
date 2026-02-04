@@ -2687,24 +2687,24 @@
           "sort": "desc"
         }
       },
-      "title": "Compression Ratio",
-      "description": "Ratio of compressed to uncompressed bytes (lower is better compression)",
+      "title": "Compression Savings",
+      "description": "Percentage of bytes saved by compression (higher is better)",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m])))",
+          "expr": "1 - (sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"}[5m])))",
           "legendFormat": "PRW Receive"
         },
         {
-          "expr": "(sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m])))",
+          "expr": "1 - (sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"}[5m])))",
           "legendFormat": "PRW Send"
         },
         {
-          "expr": "(sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[5m])))",
+          "expr": "1 - (sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"compressed\"}[5m])) / sum(rate(metrics_governor_grpc_received_bytes_total{compression=\"uncompressed\"}[5m])))",
           "legendFormat": "OTLP/gRPC Receive"
         },
         {
-          "expr": "(sum(rate(metrics_governor_otlp_export_bytes_total{compression!=\"uncompressed\",compression!=\"none\"}[5m])) / sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[5m])))",
+          "expr": "1 - (sum(rate(metrics_governor_otlp_export_bytes_total{compression!=\"uncompressed\",compression!=\"none\"}[5m])) / sum(rate(metrics_governor_otlp_export_bytes_total{compression=\"uncompressed\"}[5m])))",
           "legendFormat": "OTLP Send"
         }
       ]
