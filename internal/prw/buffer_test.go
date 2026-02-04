@@ -2,6 +2,7 @@ package prw
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -520,4 +521,45 @@ func BenchmarkBuffer_Add_Parallel(b *testing.B) {
 			buf.Add(req)
 		}
 	})
+}
+
+func TestPRWMetadata_BoundedGrowth(t *testing.T) {
+	exp := &mockExporter{}
+	cfg := BufferConfig{
+		MaxSize:       100000,
+		MaxBatchSize:  100000,
+		FlushInterval: time.Hour,
+	}
+	buf := NewBuffer(cfg, exp, nil, nil, nil)
+
+	// Add more unique metric families than the cap
+	for i := 0; i < MaxMetadataEntries+100; i++ {
+		req := &WriteRequest{
+			Timeseries: []TimeSeries{
+				{
+					Labels:  []Label{{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
+					Samples: []Sample{{Value: 1.0, Timestamp: int64(i + 1)}},
+				},
+			},
+			Metadata: []MetricMetadata{
+				{
+					Type:             MetricTypeCounter,
+					MetricFamilyName: fmt.Sprintf("metric_%d", i),
+					Help:             fmt.Sprintf("help for metric_%d", i),
+				},
+			},
+		}
+		buf.Add(req)
+	}
+
+	buf.mu.Lock()
+	metadataLen := len(buf.metadata)
+	buf.mu.Unlock()
+
+	if metadataLen > MaxMetadataEntries {
+		t.Errorf("metadata length = %d, want <= %d (cap)", metadataLen, MaxMetadataEntries)
+	}
+	if metadataLen != MaxMetadataEntries {
+		t.Errorf("metadata length = %d, want exactly %d", metadataLen, MaxMetadataEntries)
+	}
 }

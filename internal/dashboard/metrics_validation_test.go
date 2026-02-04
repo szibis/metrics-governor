@@ -63,6 +63,8 @@ var knownMetrics = []string{
 	"metrics_governor_export_concurrent_workers",
 	"metrics_governor_export_retry_split_total",
 	"metrics_governor_failover_queue_push_total",
+	"metrics_governor_failover_queue_drain_total",
+	"metrics_governor_failover_queue_drain_errors_total",
 
 	// Memory queue metrics (buffer/memqueue.go)
 	"metrics_governor_memqueue_size",

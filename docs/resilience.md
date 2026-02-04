@@ -363,9 +363,34 @@ metrics-governor -queue-type=disk -queue-path=/data/queue
 | `metrics_governor_queue_evictions_total` | Counter | Entries evicted when queue is full |
 | `metrics_governor_failover_queue_push_total` | Counter | Batches saved to queue on export failure |
 
+## Failover Queue Drain Loop
+
+The failover queue is not just a passive store. A dedicated drain loop runs every 5 seconds and attempts to re-export entries from the failover queue back through the normal exporter. This means data pushed to the failover queue during an outage is automatically recovered when the backend comes back up.
+
+- Pops up to 10 entries per tick
+- On success: entry is removed and `failover_queue_drain_total` is incremented
+- On failure: entry is pushed back to the failover queue, drain stops for this tick
+- Safe to run concurrently with the normal flush path
+
+### Drain Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_failover_queue_drain_total` | Counter | Batches successfully drained from failover queue |
+| `metrics_governor_failover_queue_drain_errors_total` | Counter | Drain errors (entry re-queued) |
+
 ## Split-on-Error
 
-When the backend returns HTTP 400 or 413 indicating the payload is too large, the batch is automatically split in half and both halves are retried. This works both in the buffer's export path and in the QueuedExporter's retry loop.
+When the backend returns HTTP 400 or 413 indicating the payload is too large, the batch is automatically split in half and both halves are retried. This works in both the OTLP and PRW pipelines, in the buffer's export path and in the QueuedExporter's retry loop.
+
+Supported backends and error patterns:
+- **HTTP 413** (Request Entity Too Large) - standard HTTP response
+- **HTTP 400** with message containing: "too big", "too large", "exceeding", "maxrequestsize", "payload too large", "body too large"
+- Compatible with **VictoriaMetrics**, **Thanos**, **Mimir**, **Cortex**, and other Prometheus-compatible backends
+
+Split behavior:
+- **OTLP**: splits at `ResourceMetrics` level (each half gets a subset of resource metrics)
+- **PRW**: splits at `Timeseries` level (each half gets a subset of time series, metadata is copied to both)
 
 Recursion stops when a batch has only a single element. Non-retryable errors (e.g., authentication failures) cause the entry to be dropped from the retry queue to prevent infinite retry loops.
 
@@ -374,6 +399,18 @@ Recursion stops when a batch has only a single element. Non-retryable errors (e.
 | Metric | Type | Description |
 |--------|------|-------------|
 | `metrics_governor_export_retry_split_total` | Counter | Split-on-error retries |
+
+## Pipeline Parity
+
+Both the OTLP and PRW pipelines now have identical resilience features:
+
+| Feature | OTLP | PRW |
+|---------|------|-----|
+| Persistent disk queue | Yes | Yes |
+| Split-on-error | Yes | Yes |
+| Circuit breaker | Yes | Yes |
+| Exponential backoff | Yes | Yes |
+| Graceful drain on shutdown | Yes | Yes |
 
 ## Monitoring and Alerting
 

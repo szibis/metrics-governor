@@ -8,9 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- feat(buffer): add failover queue drain loop that actively re-exports queued entries every 5s instead of leaving them stranded
+  - New `Pop()` method on `FailoverQueue` interface
+  - Drain up to 10 entries per tick, re-push on failure
+  - New metrics: `metrics_governor_failover_queue_drain_total`, `metrics_governor_failover_queue_drain_errors_total`
+- feat(prw): persistent disk-backed queue replacing in-memory slice (pipeline parity with OTLP)
+  - PRW queue now uses the same `SendQueue` as OTLP for durable, restart-surviving storage
+  - Added `BackoffEnabled`, `BackoffMultiplier` configuration options
+  - Added `UnmarshalWriteRequest` helper for queue deserialization
+- feat(prw): split-on-error support for PRW pipeline
+  - HTTP 413 and "too big"/"too large"/"exceeding" patterns trigger automatic batch splitting at Timeseries level
+  - PRW exporter now returns `*ExportError` wrapping `*PRWClientError`/`*PRWServerError` for unified `IsSplittable()`/`IsRetryable()` handling
+- feat(exporter): pipeline parity tests verifying OTLP and PRW have identical resilience behavior
+
 ### Fixed
 
 - fix(memqueue): fix memory leak from unbounded slice growth in MemoryQueue causing OOM crash-loop after sustained traffic
+- fix(prw): cap metadata entries at 10,000 to prevent unbounded memory growth from continuously-arriving new metric families
+- fix(prw): eliminate unbounded queue slice growth by replacing in-memory `[]*prwQueueEntry` with disk-backed `*queue.SendQueue`
 
 ## [0.9.6] - 2026-02-02
 

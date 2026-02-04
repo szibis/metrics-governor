@@ -1,6 +1,6 @@
 # Testing
 
-A comprehensive test suite with **855+ tests** across unit, functional, e2e, and performance testing ensures reliability and correctness.
+A comprehensive test suite with **880+ tests** across unit, functional, e2e, and performance testing ensures reliability and correctness.
 
 [![Build Status](https://github.com/szibis/metrics-governor/actions/workflows/build.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
 [![Benchmarks](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml)
@@ -20,13 +20,13 @@ View the latest test results and coverage reports:
 | Component | Unit Tests | Functional | E2E | Benchmarks | Coverage |
 |-----------|:----------:|:----------:|:---:|:----------:|:--------:|
 | [**Auth**](../internal/auth/) | 27 | - | ✓ | 10 | ~88% |
-| [**Buffer**](../internal/buffer/) | 23 | 6 | ✓ | 6 | ~95% |
+| [**Buffer**](../internal/buffer/) | 28 | 6 | ✓ | 6 | ~95% |
 | [**Compression**](../internal/compression/) | 19 | - | ✓ | 13 | ~90% |
 | [**Config**](../internal/config/) | 50 | - | - | - | ~85% |
-| [**Exporter**](../internal/exporter/) | 103 | 5 | ✓ | 14 | ~90% |
+| [**Exporter**](../internal/exporter/) | 118 | 5 | ✓ | 14 | ~92% |
 | [**Limits**](../internal/limits/) | 77 | 10 | ✓ | 9 | ~92% |
 | [**Logging**](../internal/logging/) | 24 | - | - | - | ~80% |
-| [**PRW**](../internal/prw/) | 81 | 8 | ✓ | 6 | ~88% |
+| [**PRW**](../internal/prw/) | 82 | 8 | ✓ | 6 | ~89% |
 | [**Queue**](../internal/queue/) | 78 | 8 | ✓ | 7 | ~88% |
 | [**Receiver**](../internal/receiver/) | 45 | 9 | ✓ | 9 | ~90% |
 | [**Sharding**](../internal/sharding/) | 98 | 8 | ✓ | 10 | ~95% |
@@ -35,7 +35,7 @@ View the latest test results and coverage reports:
 | **Functional** | - | 73 | - | - | - |
 | **E2E** | - | - | 8 | - | - |
 | **Test Utils** | - | - | 72 | - | - |
-| **Total** | **702** | **73** | **80** | **90** | **~85%** |
+| **Total** | **727** | **73** | **80** | **90** | **~86%** |
 
 ## Test Categories Detail
 
@@ -46,13 +46,13 @@ Component-level tests with mocks. Each package tests its core functionality in i
 | Package | Tests | Key Test Areas |
 |---------|:-----:|----------------|
 | `auth` | 27 | Bearer token, basic auth, HTTP middleware, gRPC interceptors |
-| `buffer` | 23 | Add/flush operations, batching, concurrent access, graceful shutdown |
+| `buffer` | 28 | Add/flush operations, batching, concurrent access, graceful shutdown, failover drain |
 | `compression` | 19 | gzip/zstd/snappy/lz4 compress/decompress, round-trips |
 | `config` | 50 | CLI parsing, YAML loading, validation, defaults |
-| `exporter` | 103 | gRPC/HTTP export, retries, sharded export, queued export |
+| `exporter` | 118 | gRPC/HTTP export, retries, sharded export, queued export, split-on-error, pipeline parity |
 | `limits` | 77 | Rule matching, cardinality tracking, adaptive limiting, dry-run |
 | `logging` | 24 | JSON output, log levels, field formatting |
-| `prw` | 81 | PRW 1.0/2.0 encoding, buffer, limits, sharding |
+| `prw` | 82 | PRW 1.0/2.0 encoding, buffer, limits, sharding, metadata bounds |
 | `queue` | 187 | FastQueue operations, push/pop, persistence, recovery |
 | `receiver` | 45 | gRPC/HTTP receivers, TLS, authentication |
 | `sharding` | 98 | Hash ring, consistent hashing, DNS discovery, splitter |

@@ -29,16 +29,30 @@ var (
 		Name: "metrics_governor_failover_queue_push_total",
 		Help: "Total number of batches saved to failover queue on export failure",
 	})
+
+	failoverQueueDrainTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_failover_queue_drain_total",
+		Help: "Total number of batches successfully drained from failover queue",
+	})
+
+	failoverQueueDrainErrorsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_failover_queue_drain_errors_total",
+		Help: "Total number of failover queue drain errors",
+	})
 )
 
 func init() {
 	prometheus.MustRegister(exportConcurrentWorkers)
 	prometheus.MustRegister(exportRetrySplitTotal)
 	prometheus.MustRegister(failoverQueuePushTotal)
+	prometheus.MustRegister(failoverQueueDrainTotal)
+	prometheus.MustRegister(failoverQueueDrainErrorsTotal)
 
 	exportConcurrentWorkers.Set(0)
 	exportRetrySplitTotal.Add(0)
 	failoverQueuePushTotal.Add(0)
+	failoverQueueDrainTotal.Add(0)
+	failoverQueueDrainErrorsTotal.Add(0)
 }
 
 // Exporter defines the interface for sending metrics.
@@ -72,6 +86,7 @@ type LogAggregator interface {
 // FailoverQueue is the interface for a queue used as safety net on export failure.
 type FailoverQueue interface {
 	Push(req *colmetricspb.ExportMetricsServiceRequest) error
+	Pop() *colmetricspb.ExportMetricsServiceRequest
 	Len() int
 	Size() int64
 }
@@ -185,6 +200,10 @@ func (b *MetricsBuffer) Start(ctx context.Context) {
 	ticker := time.NewTicker(b.flushInterval)
 	defer ticker.Stop()
 
+	// Drain ticker for failover queue: attempt to re-export queued entries every 5s
+	drainTicker := time.NewTicker(5 * time.Second)
+	defer drainTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -195,7 +214,38 @@ func (b *MetricsBuffer) Start(ctx context.Context) {
 			b.flush(ctx)
 		case <-b.flushChan:
 			b.flush(ctx)
+		case <-drainTicker.C:
+			b.drainFailoverQueue(ctx)
 		}
+	}
+}
+
+// drainFailoverQueue pops entries from the failover queue and re-exports them.
+// Up to 10 entries are processed per tick. Failed entries are pushed back.
+func (b *MetricsBuffer) drainFailoverQueue(ctx context.Context) {
+	if b.failoverQueue == nil || b.failoverQueue.Len() == 0 {
+		return
+	}
+
+	const maxDrainPerTick = 10
+	for i := 0; i < maxDrainPerTick; i++ {
+		req := b.failoverQueue.Pop()
+		if req == nil {
+			return
+		}
+
+		if err := b.exporter.Export(ctx, req); err != nil {
+			// Re-push to failover queue for later retry
+			failoverQueueDrainErrorsTotal.Inc()
+			if pushErr := b.failoverQueue.Push(req); pushErr != nil {
+				logging.Error("failover drain: re-push failed, data lost", logging.F(
+					"error", err.Error(),
+					"push_error", pushErr.Error(),
+				))
+			}
+			return // Stop draining on first failure to avoid hammering a down backend
+		}
+		failoverQueueDrainTotal.Inc()
 	}
 }
 

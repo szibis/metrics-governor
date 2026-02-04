@@ -2,6 +2,7 @@ package exporter
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -396,9 +397,14 @@ func TestPRWExporter_Export_ClientError(t *testing.T) {
 		t.Fatal("Export() should return error for 4xx response")
 	}
 
-	clientErr, ok := err.(*PRWClientError)
-	if !ok {
-		t.Fatalf("Error should be *PRWClientError, got %T", err)
+	var exportErr *ExportError
+	if !errors.As(err, &exportErr) {
+		t.Fatalf("Error should be *ExportError, got %T", err)
+	}
+
+	var clientErr *PRWClientError
+	if !errors.As(err, &clientErr) {
+		t.Fatalf("Error should unwrap to *PRWClientError, got %T", err)
 	}
 
 	if clientErr.StatusCode != http.StatusBadRequest {
@@ -438,9 +444,14 @@ func TestPRWExporter_Export_ServerError(t *testing.T) {
 		t.Fatal("Export() should return error for 5xx response")
 	}
 
-	serverErr, ok := err.(*PRWServerError)
-	if !ok {
-		t.Fatalf("Error should be *PRWServerError, got %T", err)
+	var exportErr *ExportError
+	if !errors.As(err, &exportErr) {
+		t.Fatalf("Error should be *ExportError, got %T", err)
+	}
+
+	var serverErr *PRWServerError
+	if !errors.As(err, &serverErr) {
+		t.Fatalf("Error should unwrap to *PRWServerError, got %T", err)
 	}
 
 	if serverErr.StatusCode != http.StatusInternalServerError {

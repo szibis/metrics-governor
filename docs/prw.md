@@ -20,6 +20,8 @@ flowchart LR
         PR --> PB[Buffer/Limits]
         PB --> PE[PRW Exporter]
         PE --> PBE[PRW Backends]
+        PE -.->|"retry / split-on-error"| PQ[Persistent Queue]
+        PQ -.-> PE
     end
 ```
 
@@ -101,11 +103,16 @@ prw:
 
   queue:
     enabled: false
-    path: "./prw-queue"
+    path: "./prw-queue"              # Persistent disk-backed queue
     max_size: 10000
     max_bytes: 1073741824            # 1GB
     retry_interval: "5s"
     max_retry_delay: "5m"
+    backoff_enabled: true            # Exponential backoff for retries
+    backoff_multiplier: 2.0          # Delay multiplier on each failure
+    circuit_breaker_enabled: true    # Circuit breaker pattern
+    circuit_failure_threshold: 10    # Failures before opening circuit
+    circuit_reset_timeout: "30s"     # Time before half-open state
 ```
 
 ### CLI Flags
@@ -149,10 +156,17 @@ prw:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-prw-queue-enabled` | `false` | Enable retry queue |
-| `-prw-queue-path` | `./prw-queue` | Queue directory |
+| `-prw-queue-enabled` | `false` | Enable persistent retry queue |
+| `-prw-queue-path` | `./prw-queue` | Queue directory (disk-backed) |
 | `-prw-queue-max-size` | `10000` | Max queue entries |
+| `-prw-queue-max-bytes` | `1073741824` | Max queue size in bytes (1GB) |
 | `-prw-queue-retry-interval` | `5s` | Initial retry interval |
+| `-prw-queue-max-retry-delay` | `5m` | Maximum retry backoff delay |
+| `-prw-queue-backoff-enabled` | `true` | Enable exponential backoff |
+| `-prw-queue-backoff-multiplier` | `2.0` | Backoff delay multiplier |
+| `-prw-queue-circuit-breaker-enabled` | `true` | Enable circuit breaker |
+| `-prw-queue-circuit-breaker-threshold` | `10` | Failures before opening circuit |
+| `-prw-queue-circuit-breaker-reset-timeout` | `30s` | Time before half-open state |
 
 ## Endpoints
 
@@ -280,15 +294,37 @@ The receiver auto-detects compression based on the `Content-Encoding` header.
 When the exporter encounters errors:
 
 - **4xx Client Errors**: Not retried, logged as error
+- **HTTP 413 / "too big" errors**: Automatically split and retried (split-on-error)
 - **5xx Server Errors**: Queued for retry with exponential backoff
 - **Network Errors**: Queued for retry
+
+### Persistent Disk Queue
+
+The PRW queue uses the same high-performance disk-backed `SendQueue` as the OTLP pipeline, providing identical resilience:
+
+- **Persistent storage** — queued entries survive process restarts
+- **Circuit breaker** — stops retries when backend is consistently failing
+- **Exponential backoff** — configurable delay multiplier with max delay cap
+- **Split-on-error** — oversized batches are automatically split at the Timeseries level
 
 Enable the retry queue for persistent retry storage:
 
 ```bash
 -prw-queue-enabled \
--prw-queue-path /var/lib/metrics-governor/prw-queue
+-prw-queue-path /var/lib/metrics-governor/prw-queue \
+-prw-queue-backoff-enabled \
+-prw-queue-circuit-breaker-enabled
 ```
+
+### Split-on-Error
+
+When a backend returns HTTP 413 (Request Entity Too Large) or HTTP 400 with "too big"/"too large"/"exceeding" in the response body, the PRW queue automatically:
+
+1. Splits the batch in half at the Timeseries level
+2. Re-queues both halves for retry
+3. Metadata is copied to both halves
+
+This works with backends like VictoriaMetrics, Thanos, Mimir, and Cortex that enforce request size limits. See [resilience.md](./resilience.md) for details.
 
 ## Sharding
 
@@ -358,6 +394,9 @@ PRW pipeline metrics are exposed at the stats endpoint (`/metrics`):
 | `metrics_governor_prw_timeseries_sent_total` | counter | Total PRW timeseries sent to backend |
 | `metrics_governor_prw_batches_sent_total` | counter | Total PRW batches exported |
 | `metrics_governor_prw_export_errors_total` | counter | Total PRW export errors |
+| `metrics_governor_prw_retry_total` | counter | Total PRW retry attempts |
+| `metrics_governor_prw_retry_success_total` | counter | Successful PRW retries |
+| `metrics_governor_prw_retry_failure_total` | counter | Failed PRW retries (by error type) |
 
 ### Example PromQL Queries
 

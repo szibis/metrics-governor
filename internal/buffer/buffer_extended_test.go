@@ -735,3 +735,127 @@ func TestBuffer_SplitOnError_SingleElement(t *testing.T) {
 		t.Errorf("expected 1 entry in failover queue, got %d", failoverQ.Len())
 	}
 }
+
+// --- Failover Queue Drain Tests ---
+
+func TestBuffer_FailoverQueueDrain(t *testing.T) {
+	// Push entries to failover queue, verify drain loop re-exports them
+	exp := &datapointTrackingExporter{}
+	stats := &datapointTrackingStats{}
+	failoverQ := NewMemoryQueue(100, 100*1024*1024)
+
+	buf := New(100, 100, time.Hour, exp, stats, nil, nil,
+		WithFailoverQueue(failoverQ))
+
+	// Manually push 3 entries to the failover queue (simulating previous export failures)
+	for i := 0; i < 3; i++ {
+		rm := createTestMetricsWithDatapoints(1, 1)
+		req := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: rm}
+		err := failoverQ.Push(req)
+		if err != nil {
+			t.Fatalf("Push() error = %v", err)
+		}
+	}
+
+	if failoverQ.Len() != 3 {
+		t.Fatalf("failover queue len = %d, want 3", failoverQ.Len())
+	}
+
+	// Call drain directly
+	buf.drainFailoverQueue(context.Background())
+
+	// All entries should be drained (exported)
+	if failoverQ.Len() != 0 {
+		t.Errorf("failover queue len after drain = %d, want 0", failoverQ.Len())
+	}
+}
+
+func TestBuffer_FailoverQueueDrainRetry(t *testing.T) {
+	// Export fails on drain, verify entry is re-queued (not lost)
+	exp := &datapointTrackingExporter{failOn: map[int]bool{0: true}}
+	failoverQ := NewMemoryQueue(100, 100*1024*1024)
+
+	buf := New(100, 100, time.Hour, exp, nil, nil, nil,
+		WithFailoverQueue(failoverQ))
+
+	rm := createTestMetricsWithDatapoints(1, 1)
+	req := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: rm}
+	_ = failoverQ.Push(req)
+
+	if failoverQ.Len() != 1 {
+		t.Fatalf("failover queue len = %d, want 1", failoverQ.Len())
+	}
+
+	// Drain — export will fail, entry should be re-pushed
+	buf.drainFailoverQueue(context.Background())
+
+	// Entry should be back in the queue
+	if failoverQ.Len() != 1 {
+		t.Errorf("failover queue len after failed drain = %d, want 1 (re-pushed)", failoverQ.Len())
+	}
+}
+
+func TestBuffer_FailoverQueueDrainConcurrent(t *testing.T) {
+	// Verify concurrent flush + drain don't race
+	exp := &datapointTrackingExporter{}
+	stats := &datapointTrackingStats{}
+	failoverQ := NewMemoryQueue(100, 100*1024*1024)
+
+	buf := New(100, 100, 50*time.Millisecond, exp, stats, nil, nil,
+		WithFailoverQueue(failoverQ))
+
+	// Push some entries to failover queue
+	for i := 0; i < 5; i++ {
+		rm := createTestMetricsWithDatapoints(1, 1)
+		req := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: rm}
+		_ = failoverQ.Push(req)
+	}
+
+	// Also add data to the main buffer
+	for i := 0; i < 5; i++ {
+		rm := createTestMetricsWithDatapoints(1, 1)
+		buf.Add(rm)
+	}
+
+	// Concurrently flush and drain to verify no race
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		buf.flush(context.Background())
+	}()
+	go func() {
+		defer wg.Done()
+		buf.drainFailoverQueue(context.Background())
+	}()
+	wg.Wait()
+
+	// Verify no data was lost
+	if failoverQ.Len() != 0 {
+		t.Errorf("failover queue should be drained, got %d entries", failoverQ.Len())
+	}
+}
+
+func TestBuffer_FailoverQueueDrain_NilQueue(t *testing.T) {
+	// Verify drain is a no-op when failover queue is nil
+	exp := &datapointTrackingExporter{}
+	buf := New(100, 100, time.Hour, exp, nil, nil, nil)
+
+	// Should not panic
+	buf.drainFailoverQueue(context.Background())
+}
+
+func TestBuffer_FailoverQueueDrain_EmptyQueue(t *testing.T) {
+	// Verify drain is a no-op when failover queue is empty
+	exp := &datapointTrackingExporter{}
+	failoverQ := NewMemoryQueue(100, 100*1024*1024)
+
+	buf := New(100, 100, time.Hour, exp, nil, nil, nil,
+		WithFailoverQueue(failoverQ))
+
+	buf.drainFailoverQueue(context.Background())
+
+	if failoverQ.Len() != 0 {
+		t.Errorf("expected empty queue, got %d", failoverQ.Len())
+	}
+}
