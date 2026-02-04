@@ -49,6 +49,19 @@ services:
       - "-export-concurrency=64"      # Higher concurrency for perf testing
       - "-string-interning=true"
       - "-intern-max-value-length=64"
+      # Disk queue - persistent failover (5GB for high-volume perf testing)
+      - "-queue-enabled=true"
+      - "-queue-type=disk"
+      - "-queue-path=/data/queue"
+      - "-queue-max-size=50000"
+      - "-queue-max-bytes=5368709120"      # 5GB disk queue
+      - "-queue-retry-interval=2s"
+      - "-queue-full-behavior=drop_oldest"
+      - "-queue-adaptive-enabled=true"
+      - "-queue-inmemory-blocks=512"       # Larger in-memory buffer for throughput
+      - "-queue-chunk-size=268435456"      # 256MB chunks for perf
+      - "-queue-meta-sync=500ms"
+      - "-queue-stale-flush=2s"
       # Queue resilience (optimized for high load)
       - "-queue-backoff-enabled=true"
       - "-queue-backoff-multiplier=1.5"  # Less aggressive backoff
@@ -59,6 +72,8 @@ services:
       - "-rule-cache-max-size=50000"
       # Memory limit (more headroom for perf testing)
       - "-memory-limit-ratio=0.85"
+    volumes:
+      - mg-queue-perf-data:/data/queue
     deploy:
       resources:
         limits:
@@ -101,3 +116,7 @@ services:
       - VERIFICATION_METRIC=generator_verification_counter
       - PASS_THRESHOLD=95.0
       - METRICS_PORT=9092
+
+volumes:
+  mg-queue-perf-data:
+    driver: local

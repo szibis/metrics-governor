@@ -45,7 +45,8 @@ services:
       - "-queue-enabled=true"
       - "-queue-path=/data/queue"
       - "-queue-max-size=10000"
-      - "-queue-max-bytes=536870912"
+      - "-queue-type=disk"
+      - "-queue-max-bytes=5368709120"    # 5GB disk queue
       - "-queue-retry-interval=5s"
       - "-queue-full-behavior=drop_oldest"
       - "-queue-adaptive-enabled=true"

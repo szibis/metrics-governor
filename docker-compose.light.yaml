@@ -44,6 +44,13 @@ services:
       - "-buffer-size=1000"           # Smaller buffer
       # Performance tuning (defaults for development)
       - "-string-interning=true"
+      # Queue - memory mode for lightweight development
+      - "-queue-enabled=true"
+      - "-queue-type=memory"
+      - "-queue-max-size=1000"
+      - "-queue-max-bytes=268435456"       # 256MB in-memory queue
+      - "-queue-retry-interval=5s"
+      - "-queue-full-behavior=drop_oldest"
       # Queue resilience (conservative for light testing)
       - "-queue-backoff-enabled=true"
       - "-queue-backoff-multiplier=2.0"

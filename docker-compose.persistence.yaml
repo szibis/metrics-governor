@@ -37,10 +37,30 @@ services:
       - "-bloom-persistence-max-memory=67108864"
       - "-bloom-persistence-compression=true"
       - "-bloom-persistence-compression-level=1"
+      # Disk queue - persistent failover (5GB)
+      - "-queue-enabled=true"
+      - "-queue-type=disk"
+      - "-queue-path=/data/queue"
+      - "-queue-max-size=10000"
+      - "-queue-max-bytes=5368709120"      # 5GB disk queue
+      - "-queue-retry-interval=5s"
+      - "-queue-full-behavior=drop_oldest"
+      - "-queue-adaptive-enabled=true"
+      - "-queue-inmemory-blocks=256"
+      - "-queue-chunk-size=134217728"
+      - "-queue-meta-sync=1s"
+      - "-queue-stale-flush=5s"
+      # Queue resilience
+      - "-queue-backoff-enabled=true"
+      - "-queue-backoff-multiplier=2.0"
+      - "-queue-circuit-breaker-enabled=true"
+      - "-queue-circuit-breaker-threshold=10"
+      - "-queue-circuit-breaker-reset-timeout=30s"
       # Memory limit
       - "-memory-limit-ratio=0.9"
     volumes:
       - mg-bloom-test-data:/data/bloom-state
+      - mg-queue-persist-data:/data/queue
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/metrics"]
       interval: 5s
@@ -85,4 +105,6 @@ services:
 
 volumes:
   mg-bloom-test-data:
+    driver: local
+  mg-queue-persist-data:
     driver: local
