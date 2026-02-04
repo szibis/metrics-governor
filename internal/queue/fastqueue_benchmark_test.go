@@ -289,13 +289,13 @@ func BenchmarkFastQueue_RecoverV2Metadata(b *testing.B) {
 	tmpDir := b.TempDir()
 
 	cfg := FastQueueConfig{
-		Path:              tmpDir,
-		MaxInmemoryBlocks: 5,
-		ChunkFileSize:     1024 * 1024,
-		MetaSyncInterval:  1 * time.Hour,
+		Path:               tmpDir,
+		MaxInmemoryBlocks:  5,
+		ChunkFileSize:      1024 * 1024,
+		MetaSyncInterval:   1 * time.Hour,
 		StaleFlushInterval: 1 * time.Hour,
-		MaxSize:           1000,
-		MaxBytes:          10 * 1024 * 1024,
+		MaxSize:            1000,
+		MaxBytes:           10 * 1024 * 1024,
 	}
 
 	// Setup: create queue with minimal data (fast setup)
@@ -321,13 +321,13 @@ func BenchmarkFastQueue_RecoverLegacyMetadata(b *testing.B) {
 	tmpDir := b.TempDir()
 
 	cfg := FastQueueConfig{
-		Path:              tmpDir,
-		MaxInmemoryBlocks: 5,
-		ChunkFileSize:     1024 * 1024,
-		MetaSyncInterval:  1 * time.Hour,
+		Path:               tmpDir,
+		MaxInmemoryBlocks:  5,
+		ChunkFileSize:      1024 * 1024,
+		MetaSyncInterval:   1 * time.Hour,
 		StaleFlushInterval: 1 * time.Hour,
-		MaxSize:           1000,
-		MaxBytes:          10 * 1024 * 1024,
+		MaxSize:            1000,
+		MaxBytes:           10 * 1024 * 1024,
 	}
 
 	// Setup: create queue with minimal data

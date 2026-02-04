@@ -774,7 +774,7 @@ func TestFastQueueCleanupAllChunks(t *testing.T) {
 	cfg := FastQueueConfig{
 		Path:              tmpDir,
 		MaxInmemoryBlocks: 2,
-		ChunkFileSize:     1024, // Small chunks
+		ChunkFileSize:     1024,          // Small chunks
 		MetaSyncInterval:  1 * time.Hour, // Long interval to avoid interference
 		MaxSize:           1000,
 	}
