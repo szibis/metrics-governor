@@ -73,7 +73,6 @@ func TestHTTPExporter_CompressionTypes(t *testing.T) {
 		{"gzip", compression.Config{Type: compression.TypeGzip, Level: compression.LevelDefault}, "gzip"},
 		{"zstd", compression.Config{Type: compression.TypeZstd, Level: compression.LevelDefault}, "zstd"},
 		{"snappy", compression.Config{Type: compression.TypeSnappy}, "snappy"},
-		{"lz4", compression.Config{Type: compression.TypeLZ4, Level: compression.LevelDefault}, "lz4"},
 		{"zlib", compression.Config{Type: compression.TypeZlib, Level: compression.LevelDefault}, "zlib"},
 		{"deflate", compression.Config{Type: compression.TypeDeflate, Level: compression.LevelDefault}, "deflate"},
 		{"none", compression.Config{Type: compression.TypeNone}, ""},
@@ -173,7 +172,6 @@ func TestHTTPExporter_CompressionReducesSize(t *testing.T) {
 		{Type: compression.TypeGzip, Level: compression.LevelDefault},
 		{Type: compression.TypeZstd, Level: compression.LevelDefault},
 		{Type: compression.TypeSnappy},
-		{Type: compression.TypeLZ4, Level: compression.LevelDefault},
 	}
 
 	// Create a large request that should be compressible
@@ -231,7 +229,6 @@ func TestHTTPExporter_ConcurrentCompressedExports(t *testing.T) {
 		{Type: compression.TypeGzip, Level: compression.LevelDefault},
 		{Type: compression.TypeZstd, Level: compression.LevelDefault},
 		{Type: compression.TypeSnappy},
-		{Type: compression.TypeLZ4, Level: compression.LevelDefault},
 	}
 
 	for _, compCfg := range compressionTypes {

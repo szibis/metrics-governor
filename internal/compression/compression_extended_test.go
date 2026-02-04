@@ -139,28 +139,6 @@ func TestCompressDeflate_AllLevels(t *testing.T) {
 	}
 }
 
-func TestCompressLZ4_Default(t *testing.T) {
-	data := bytes.Repeat([]byte("test data for lz4 compression"), 100)
-
-	var buf bytes.Buffer
-	err := compressLZ4(&buf, data, LevelDefault)
-	if err != nil {
-		t.Errorf("compressLZ4 failed: %v", err)
-	}
-	if buf.Len() == 0 {
-		t.Error("expected non-empty compressed data")
-	}
-
-	// Verify we can decompress
-	decompressed, err := decompressLZ4(buf.Bytes())
-	if err != nil {
-		t.Errorf("decompressLZ4 failed: %v", err)
-	}
-	if !bytes.Equal(data, decompressed) {
-		t.Error("decompressed data doesn't match original")
-	}
-}
-
 func TestDecompressZstd_InvalidData(t *testing.T) {
 	invalidData := []byte{0xFF, 0xFF, 0xFF, 0xFF}
 	_, err := decompressZstd(invalidData)
@@ -178,7 +156,6 @@ func TestCompressEmptyData(t *testing.T) {
 		TypeSnappy,
 		TypeZlib,
 		TypeDeflate,
-		TypeLZ4,
 	}
 
 	for _, ct := range types {
@@ -213,7 +190,6 @@ func TestCompressLargeData(t *testing.T) {
 		TypeSnappy,
 		TypeZlib,
 		TypeDeflate,
-		TypeLZ4,
 	}
 
 	for _, ct := range types {
@@ -281,7 +257,6 @@ func TestPooledEncoder_NoCrossContamination(t *testing.T) {
 		{"snappy", Config{Type: TypeSnappy}},
 		{"zlib", Config{Type: TypeZlib, Level: LevelDefault}},
 		{"deflate", Config{Type: TypeDeflate, Level: LevelDefault}},
-		{"lz4", Config{Type: TypeLZ4, Level: LevelDefault}},
 	}
 
 	for _, tt := range types {
@@ -339,7 +314,6 @@ func TestPooledEncoder_ErrorRecovery(t *testing.T) {
 		{"zstd", Config{Type: TypeZstd, Level: LevelDefault}},
 		{"zlib", Config{Type: TypeZlib, Level: LevelDefault}},
 		{"deflate", Config{Type: TypeDeflate, Level: LevelDefault}},
-		{"lz4", Config{Type: TypeLZ4, Level: LevelDefault}},
 	}
 
 	for _, tt := range types {
@@ -385,7 +359,6 @@ func TestPooledEncoder_ConcurrentSafety(t *testing.T) {
 		{"snappy", Config{Type: TypeSnappy}},
 		{"zlib", Config{Type: TypeZlib, Level: LevelDefault}},
 		{"deflate", Config{Type: TypeDeflate, Level: LevelDefault}},
-		{"lz4", Config{Type: TypeLZ4, Level: LevelDefault}},
 	}
 
 	const goroutines = 100

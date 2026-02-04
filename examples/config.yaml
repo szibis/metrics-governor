@@ -53,7 +53,7 @@ exporter:
     headers: {}                        # custom headers, e.g. X-Custom-Header: value
   # Compression for HTTP protocol
   compression:
-    type: "none"                       # none, gzip, zstd, snappy, zlib, deflate, lz4
+    type: "none"                       # none, gzip, zstd, snappy, zlib, deflate
     level: 0                           # 0 = default, gzip: 1-9, zstd: 1,3,6,11
   # HTTP client connection pool settings
   http_client:

@@ -46,7 +46,6 @@ func TestCompat_RealisticPayload(t *testing.T) {
 		{"snappy", Config{Type: TypeSnappy}},
 		{"zlib-default", Config{Type: TypeZlib, Level: LevelDefault}},
 		{"deflate-default", Config{Type: TypeDeflate, Level: LevelDefault}},
-		{"lz4-default", Config{Type: TypeLZ4, Level: LevelDefault}},
 	}
 
 	for _, tt := range types {
@@ -90,7 +89,6 @@ func TestCompat_LargeProtobufLikePayload(t *testing.T) {
 		{Type: TypeGzip, Level: LevelDefault},
 		{Type: TypeZstd, Level: LevelDefault},
 		{Type: TypeSnappy},
-		{Type: TypeLZ4, Level: LevelDefault},
 	}
 
 	for _, cfg := range types {
@@ -110,50 +108,6 @@ func TestCompat_LargeProtobufLikePayload(t *testing.T) {
 					cfg.Type, len(decompressed), len(payload))
 			}
 		})
-	}
-}
-
-// TestCompat_ConcurrentLZ4ReaderPool specifically stress-tests the LZ4 reader
-// pool with concurrent decompressions to catch pool-related races after the
-// lz4/v4 library bump (v4.1.22 → v4.1.25).
-func TestCompat_ConcurrentLZ4ReaderPool(t *testing.T) {
-	data := bytes.Repeat([]byte("lz4 concurrent reader pool test data "), 200)
-	cfg := Config{Type: TypeLZ4, Level: LevelDefault}
-
-	compressed, err := Compress(data, cfg)
-	if err != nil {
-		t.Fatalf("Compress error: %v", err)
-	}
-
-	const goroutines = 50
-	const iterations = 30
-	var wg sync.WaitGroup
-	errCh := make(chan error, goroutines)
-
-	for g := 0; g < goroutines; g++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			for i := 0; i < iterations; i++ {
-				decompressed, err := Decompress(compressed, TypeLZ4)
-				if err != nil {
-					errCh <- fmt.Errorf("goroutine %d iter %d: Decompress: %w", id, i, err)
-					return
-				}
-				if !bytes.Equal(decompressed, data) {
-					errCh <- fmt.Errorf("goroutine %d iter %d: data mismatch (got %d bytes, want %d)",
-						id, i, len(decompressed), len(data))
-					return
-				}
-			}
-		}(g)
-	}
-
-	wg.Wait()
-	close(errCh)
-
-	for err := range errCh {
-		t.Error(err)
 	}
 }
 

@@ -256,7 +256,7 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.ExporterAuthHeaders, "exporter-auth-headers", "", "Custom headers for exporter (format: key1=value1,key2=value2)")
 
 	// Exporter Compression flags (gRPC uses built-in compression, HTTP uses Content-Encoding)
-	flag.StringVar(&cfg.ExporterCompression, "exporter-compression", "none", "Compression: none, gzip (widely supported), zstd (high perf), snappy, zlib, deflate, lz4")
+	flag.StringVar(&cfg.ExporterCompression, "exporter-compression", "none", "Compression: none, gzip (widely supported), zstd (high perf), snappy, zlib, deflate")
 	flag.IntVar(&cfg.ExporterCompressionLevel, "exporter-compression-level", 0, "Compression level (algorithm-specific, 0 for default)")
 
 	// Exporter HTTP client flags
@@ -1269,11 +1269,11 @@ OPTIONS:
         -exporter-auth-headers           Custom headers (format: key1=value1,key2=value2)
 
     Exporter Compression (HTTP only):
-        -exporter-compression <type>     Compression type: none, gzip, zstd, snappy, zlib, deflate, lz4 (default: none)
+        -exporter-compression <type>     Compression type: none, gzip, zstd, snappy, zlib, deflate (default: none)
         -exporter-compression-level <n>  Compression level (algorithm-specific, 0 for default)
                                          gzip/zlib/deflate: 1 (fastest) to 9 (best), -1 (default)
                                          zstd: 1 (fastest), 3 (default), 6 (better), 11 (best)
-                                         snappy/lz4: no levels supported
+                                         snappy: no levels supported
 
     Exporter HTTP Client:
         -exporter-max-idle-conns <n>           Maximum idle connections across all hosts (default: 100)

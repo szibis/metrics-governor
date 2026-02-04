@@ -1,15 +1,23 @@
 package queue
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/protobuf/proto"
 )
+
+// randomID generates a random 16-byte hex string for internal queue entry IDs.
+func randomID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
 
 // FullBehavior defines what happens when the queue is full.
 type FullBehavior string
@@ -334,7 +342,7 @@ func (q *SendQueue) Pop() (*QueueEntry, error) {
 	// Signal waiting goroutines
 	q.spaceCond.Broadcast()
 
-	id := uuid.New().String()
+	id := randomID()
 
 	// Periodically clean stale retry entries to prevent unbounded growth
 	q.cleanRetries()

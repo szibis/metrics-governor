@@ -1,12 +1,16 @@
 package sharding
 
 import (
+	"hash/maphash"
 	"sort"
 	"strconv"
 	"sync"
-
-	"github.com/cespare/xxhash/v2"
 )
+
+// hashSeed is a fixed seed for the lifetime of this process.
+// The ring is rebuilt from the endpoint list on restart, so
+// intra-process determinism is sufficient.
+var hashSeed = maphash.MakeSeed()
 
 // DefaultVirtualNodes is the default number of virtual nodes per endpoint.
 const DefaultVirtualNodes = 150
@@ -54,7 +58,7 @@ func (h *HashRing) UpdateEndpoints(endpoints []string) {
 		for i := 0; i < h.virtualNodes; i++ {
 			// Hash format: "endpoint#i"
 			key := endpoint + "#" + strconv.Itoa(i)
-			hash := xxhash.Sum64String(key)
+			hash := maphash.String(hashSeed, key)
 
 			// Handle hash collisions by skipping duplicates
 			if _, exists := h.nodes[hash]; !exists {
@@ -80,7 +84,7 @@ func (h *HashRing) GetEndpoint(key string) string {
 		return ""
 	}
 
-	hash := xxhash.Sum64String(key)
+	hash := maphash.String(hashSeed, key)
 
 	// Binary search for the first ring position >= hash
 	idx := sort.Search(len(h.ring), func(i int) bool {
