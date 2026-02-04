@@ -79,7 +79,7 @@ services:
     restart: on-failure
 
   # VictoriaMetrics for metrics storage (OTLP HTTP endpoint)
-  # Default: moderate resources. Use docker-compose.perf.yaml for high volume
+  # Default: moderate resources. Use compose_overrides/perf.yaml for high volume
   victoriametrics:
     image: victoriametrics/victoria-metrics:v1.134.0
     ports:
@@ -106,7 +106,7 @@ services:
       - ./test/vmscrape-config.yaml:/etc/victoriametrics/scrape.yaml:ro
 
   # Test metrics generator - sends to otel-collector
-  # Default: moderate load. Use docker-compose.light.yaml or docker-compose.perf.yaml for overrides
+  # Default: moderate load. Use compose_overrides/light.yaml or compose_overrides/perf.yaml for overrides
   metrics-generator:
     build:
       context: ./test

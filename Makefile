@@ -5,7 +5,7 @@ LDFLAGS=-ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/
 
 BUILD_DIR=bin
 
-.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all lint lint-dockerfile lint-yaml lint-helm lint-all ship ship-dry-run tag compose-up compose-down compose-light compose-perf compose-logs
+.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all lint lint-dockerfile lint-yaml lint-helm lint-all ship ship-dry-run tag compose-up compose-down compose-light compose-stable compose-perf compose-queue compose-persistence compose-sharding compose-logs
 
 all: darwin-arm64 linux-arm64 linux-amd64
 
@@ -183,17 +183,45 @@ compose-down:
 
 compose-light:
 	@echo "Starting LIGHT test environment (low volume, quick validation)..."
-	docker compose -f docker-compose.yaml -f docker-compose.light.yaml up -d --build
+	docker compose -f docker-compose.yaml -f compose_overrides/light.yaml up -d --build
 	@echo "Waiting for services to start..."
 	@sleep 10
 	@echo "Light test environment started. Grafana: http://localhost:3000 (admin/admin)"
 
+compose-stable:
+	@echo "Starting STABLE test environment (predictable metrics for verification)..."
+	docker compose -f docker-compose.yaml -f compose_overrides/stable.yaml up -d --build
+	@echo "Waiting for services to start..."
+	@sleep 10
+	@echo "Stable test environment started. Grafana: http://localhost:3000 (admin/admin)"
+
 compose-perf:
 	@echo "Starting PERFORMANCE test environment (high volume stress testing)..."
-	docker compose -f docker-compose.yaml -f docker-compose.perf.yaml up -d --build
+	docker compose -f docker-compose.yaml -f compose_overrides/perf.yaml up -d --build
 	@echo "Waiting for services to start..."
 	@sleep 15
 	@echo "Performance test environment started. Grafana: http://localhost:3000 (admin/admin)"
+
+compose-queue:
+	@echo "Starting QUEUE test environment (in-memory queue testing)..."
+	docker compose -f docker-compose.yaml -f compose_overrides/queue.yaml up -d --build
+	@echo "Waiting for services to start..."
+	@sleep 10
+	@echo "Queue test environment started. Grafana: http://localhost:3000 (admin/admin)"
+
+compose-persistence:
+	@echo "Starting PERSISTENCE test environment (bloom filter persistence testing)..."
+	docker compose -f docker-compose.yaml -f compose_overrides/persistence.yaml up -d --build
+	@echo "Waiting for services to start..."
+	@sleep 10
+	@echo "Persistence test environment started. Grafana: http://localhost:3000 (admin/admin)"
+
+compose-sharding:
+	@echo "Starting SHARDING test environment (multi-endpoint consistent hashing)..."
+	docker compose -f docker-compose.yaml -f compose_overrides/sharding.yaml up -d --build
+	@echo "Waiting for services to start..."
+	@sleep 15
+	@echo "Sharding test environment started. Grafana: http://localhost:3000 (admin/admin)"
 
 compose-logs:
 	docker compose logs -f
@@ -251,7 +279,11 @@ help:
 	@echo "  compose-up       - Start test environment (moderate load)"
 	@echo "  compose-down     - Stop test environment and remove volumes"
 	@echo "  compose-light    - Start LIGHT test (low volume, quick validation)"
+	@echo "  compose-stable   - Start STABLE test (predictable metrics)"
 	@echo "  compose-perf     - Start PERFORMANCE test (high volume stress)"
+	@echo "  compose-queue    - Start QUEUE test (in-memory queue testing)"
+	@echo "  compose-persistence - Start PERSISTENCE test (bloom filter)"
+	@echo "  compose-sharding - Start SHARDING test (multi-endpoint)"
 	@echo "  compose-logs     - Follow logs from all containers"
 	@echo "  compose-status   - Show container and metrics status"
 	@echo ""

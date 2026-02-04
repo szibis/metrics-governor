@@ -80,6 +80,7 @@ metrics-governor/
 ├── docs/                    # Documentation
 ├── test/                    # Integration test environment
 ├── bin/                     # Build output directory
+├── compose_overrides/          # Docker Compose override files
 ├── Dockerfile
 ├── docker-compose.yaml
 └── Makefile

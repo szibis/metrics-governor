@@ -202,10 +202,11 @@ docker compose down
 
 | Config | Command | Datapoints/sec | Use Case |
 |--------|---------|----------------|----------|
-| **stable** | `docker compose -f docker-compose.yaml -f docker-compose.stable.yaml up -d` | ~1,300 | Rate verification |
-| **light** | `docker compose -f docker-compose.yaml -f docker-compose.light.yaml up -d` | ~5,000-10,000 | CI/CD |
+| **stable** | `docker compose -f docker-compose.yaml -f compose_overrides/stable.yaml up -d` | ~1,300 | Rate verification |
+| **light** | `docker compose -f docker-compose.yaml -f compose_overrides/light.yaml up -d` | ~5,000-10,000 | CI/CD |
 | **default** | `docker compose up -d` | ~10,000-20,000 | General testing |
-| **perf** | `docker compose -f docker-compose.yaml -f docker-compose.perf.yaml up -d` | ~100,000+ | Stress testing |
+| **perf** | `docker compose -f docker-compose.yaml -f compose_overrides/perf.yaml up -d` | ~100,000+ | Stress testing |
+| **sharding** | `docker compose -f docker-compose.yaml -f compose_overrides/sharding.yaml up -d` | ~10,000 | Multi-endpoint sharding |
 
 ### Available Endpoints
 

@@ -1,0 +1,122 @@
+# Multi-endpoint sharding test configuration
+# Usage: docker compose -f docker-compose.yaml -f compose_overrides/sharding.yaml up -d
+#
+# This override tests consistent-hash sharding across 3 VictoriaMetrics instances:
+# - victoriametrics (base), vm-shard-2, vm-shard-3 share DNS alias "vm-shards"
+# - metrics-governor discovers all 3 via Docker DNS and distributes writes
+# - Validates dashboard sharding panels show real multi-endpoint data
+#
+# Expected: data distributed across 3 endpoints via consistent hashing
+
+services:
+  victoriametrics:
+    networks:
+      default:
+        aliases:
+          - vm-shards
+
+  vm-shard-2:
+    image: victoriametrics/victoria-metrics:v1.134.0
+    networks:
+      default:
+        aliases:
+          - vm-shards
+    command:
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=1d"
+      - "--search.latencyOffset=0s"
+      - "--maxInsertRequestSize=128MB"
+      - "--opentelemetry.maxRequestSize=128MB"
+      - "--opentelemetry.convertMetricNamesToPrometheus"
+      - "--memory.allowedPercent=70"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  vm-shard-3:
+    image: victoriametrics/victoria-metrics:v1.134.0
+    networks:
+      default:
+        aliases:
+          - vm-shards
+    command:
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=1d"
+      - "--search.latencyOffset=0s"
+      - "--maxInsertRequestSize=128MB"
+      - "--opentelemetry.maxRequestSize=128MB"
+      - "--opentelemetry.convertMetricNamesToPrometheus"
+      - "--memory.allowedPercent=70"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  metrics-governor:
+    command:
+      - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
+      - "-exporter-protocol=http"
+      - "-exporter-insecure=true"
+      - "-exporter-compression=zstd"
+      - "-stats-labels=service,env"
+      - "-limits-config=/etc/metrics-governor/limits.yaml"
+      - "-limits-dry-run=true"
+      - "-flush-interval=100ms"
+      - "-batch-size=100"
+      - "-max-batch-bytes=8388608"
+      - "-buffer-size=5000"
+      # Performance tuning
+      - "-string-interning=true"
+      - "-intern-max-value-length=64"
+      # Queue configuration
+      - "-queue-enabled=true"
+      - "-queue-type=disk"
+      - "-queue-path=/data/queue"
+      - "-queue-max-size=10000"
+      - "-queue-max-bytes=5368709120"
+      - "-queue-retry-interval=5s"
+      - "-queue-full-behavior=drop_oldest"
+      - "-queue-adaptive-enabled=true"
+      - "-queue-inmemory-blocks=256"
+      - "-queue-chunk-size=134217728"
+      - "-queue-meta-sync=1s"
+      - "-queue-stale-flush=5s"
+      # Queue resilience
+      - "-queue-backoff-enabled=true"
+      - "-queue-backoff-multiplier=2.0"
+      - "-queue-circuit-breaker-enabled=true"
+      - "-queue-circuit-breaker-threshold=10"
+      - "-queue-circuit-breaker-reset-timeout=30s"
+      # Sharding - distributes across vm-shards DNS alias (3 endpoints)
+      - "-sharding-enabled=true"
+      - "-sharding-headless-service=vm-shards:8428"
+      - "-sharding-labels=service,env"
+      - "-sharding-virtual-nodes=150"
+      - "-sharding-fallback-on-empty=true"
+      - "-sharding-dns-refresh-interval=10s"
+      # Memory limit
+      - "-memory-limit-ratio=0.9"
+      # Rule cache
+      - "-rule-cache-max-size=10000"
+
+  metrics-generator:
+    environment:
+      - OTLP_ENDPOINT=otel-collector:4317
+      - METRICS_INTERVAL=200ms
+      - SERVICES=payment-api,order-api,inventory-api,user-api,auth-api
+      - ENVIRONMENTS=prod,staging,dev
+      - ENABLE_EDGE_CASES=false
+      - ENABLE_HIGH_CARDINALITY=true
+      - ENABLE_BURST_TRAFFIC=false
+      - ENABLE_DIVERSE_METRICS=true
+      - HIGH_CARDINALITY_COUNT=50
+      - DIVERSE_METRIC_COUNT=50
+      - BURST_SIZE=500
+      - BURST_INTERVAL_SEC=60
+      - STATS_INTERVAL_SEC=10
+      - TARGET_METRICS_PER_SEC=5000
+      - TARGET_DATAPOINTS_PER_SEC=10000
+      - METRICS_PORT=9091

@@ -1,5 +1,5 @@
 # Light testing configuration - moderate volume for development
-# Usage: docker compose -f docker-compose.yaml -f docker-compose.light.yaml up -d
+# Usage: docker compose -f docker-compose.yaml -f compose_overrides/light.yaml up -d
 #
 # This override provides moderate data volume for:
 # - Quick functional testing
@@ -63,6 +63,13 @@ services:
       - "-queue-circuit-breaker-enabled=true"
       - "-queue-circuit-breaker-threshold=10"
       - "-queue-circuit-breaker-reset-timeout=30s"
+      # Sharding configuration
+      - "-sharding-enabled=true"
+      - "-sharding-headless-service=victoriametrics:8428"
+      - "-sharding-labels=service,env"
+      - "-sharding-virtual-nodes=150"
+      - "-sharding-fallback-on-empty=true"
+      - "-sharding-dns-refresh-interval=30s"
       # Memory limit
       - "-memory-limit-ratio=0.9"
     volumes:

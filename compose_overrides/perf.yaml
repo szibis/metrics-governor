@@ -1,5 +1,5 @@
 # Performance testing configuration - high volume stress testing
-# Usage: docker compose -f docker-compose.yaml -f docker-compose.perf.yaml up -d
+# Usage: docker compose -f docker-compose.yaml -f compose_overrides/perf.yaml up -d
 #
 # This override maximizes data volume for:
 # - Stress testing

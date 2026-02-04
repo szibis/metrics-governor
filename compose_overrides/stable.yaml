@@ -1,5 +1,5 @@
 # Stable testing configuration - predictable metrics for verification
-# Usage: docker compose -f docker-compose.yaml -f docker-compose.stable.yaml up -d
+# Usage: docker compose -f docker-compose.yaml -f compose_overrides/stable.yaml up -d
 #
 # This override provides completely predictable metrics for:
 # - Rate calculation verification
