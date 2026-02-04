@@ -201,7 +201,7 @@ jobs:
   memory-check-comment:
     runs-on: ubuntu-latest
     if: always()
-    needs: [resource-tests, goroutine-leak-check, memory-stress-test, benchmark-alloc-compare]
+    needs: [resource-tests, goroutine-leak-check, memory-stress-test]
     steps:
       - name: Download benchstat results
         uses: actions/download-artifact@v4
