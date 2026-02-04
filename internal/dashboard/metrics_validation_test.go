@@ -54,6 +54,21 @@ var knownMetrics = []string{
 	// Buffer stats (stats.go)
 	"metrics_governor_buffer_size",
 
+	// Batch splitting metrics (buffer/splitter.go)
+	"metrics_governor_batch_splits_total",
+	"metrics_governor_batch_bytes",
+	"metrics_governor_batch_too_large_total",
+
+	// Concurrent export metrics (buffer/buffer.go)
+	"metrics_governor_export_concurrent_workers",
+	"metrics_governor_export_retry_split_total",
+	"metrics_governor_failover_queue_push_total",
+
+	// Memory queue metrics (buffer/memqueue.go)
+	"metrics_governor_memqueue_size",
+	"metrics_governor_memqueue_bytes",
+	"metrics_governor_memqueue_evictions_total",
+
 	// Per-metric stats (stats.go)
 	"metrics_governor_metric_datapoints_total",
 	"metrics_governor_metric_cardinality",
@@ -427,6 +442,10 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_grpc",
 		"metrics_governor_receiver",
 		"metrics_governor_buffer",
+		"metrics_governor_batch",
+		"metrics_governor_export",
+		"metrics_governor_failover",
+		"metrics_governor_memqueue",
 		"metrics_governor_metric_",
 		"metrics_governor_label_",
 		"metrics_governor_queue",
