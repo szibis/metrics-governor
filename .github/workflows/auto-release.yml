@@ -331,11 +331,11 @@ jobs:
           echo "Generated changelog entry:"
           cat /tmp/changelog_entry.md
 
-      - name: Create release branch and PR
+      - name: Create release branch with verified commit
         if: steps.find_pr.outputs.skip != 'true' && steps.find_pr.outputs.is_release_pr != 'true' && steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
-        id: create_pr
+        id: create_branch
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.new_version.outputs.version }}"
           VERSION_NUM="${{ steps.new_version.outputs.version_num }}"
@@ -360,7 +360,9 @@ jobs:
           } > CHANGELOG.md.tmp
           mv CHANGELOG.md.tmp CHANGELOG.md
 
-          # --- Create commit via GitHub API (auto-verified) ---
+          # --- Create commit via GitHub API using GITHUB_TOKEN (auto-verified) ---
+          # Commits created through the API with an installation token (GITHUB_TOKEN)
+          # are automatically signed and verified by GitHub.
           BASE_SHA="${{ github.sha }}"
           BASE_TREE=$(gh api "repos/$REPO/git/commits/$BASE_SHA" --jq '.tree.sha')
 
@@ -386,7 +388,7 @@ jobs:
               ]
             }' | gh api "repos/$REPO/git/trees" --input - --jq '.sha')
 
-          # Create commit (auto-verified by GitHub)
+          # Create commit (verified via GITHUB_TOKEN installation token)
           COMMIT_MSG="chore(release): prepare ${VERSION}
 
           - Update appVersion to ${VERSION_NUM}
@@ -409,8 +411,19 @@ jobs:
               '{ref: $ref, sha: $sha}')
 
           echo "Created branch: $BRANCH"
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
 
-          # Create PR with auto-merge
+      - name: Create PR and enable auto-merge
+        if: steps.create_branch.outputs.branch != ''
+        id: create_pr
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          VERSION="${{ steps.new_version.outputs.version }}"
+          VERSION_NUM="${{ steps.new_version.outputs.version_num }}"
+          BRANCH="${{ steps.create_branch.outputs.branch }}"
+
+          # Create PR (using RELEASE_PAT so merge triggers workflow)
           PR_URL=$(gh pr create \
             --title "chore(release): ${VERSION}" \
             --body "## Release ${VERSION}
@@ -553,7 +566,7 @@ jobs:
         if: steps.find_pr.outputs.is_release_pr == 'true'
         id: release
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           REPO="${{ github.repository }}"
