@@ -292,7 +292,15 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install syft
-        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+        env:
+          SYFT_VERSION: v1.41.2
+        run: |
+          curl -sSfL -o syft_linux_amd64.tar.gz \
+            "https://github.com/anchore/syft/releases/download/${SYFT_VERSION}/syft_${SYFT_VERSION#v}_linux_amd64.tar.gz"
+          tar -xzf syft_linux_amd64.tar.gz syft
+          install syft /usr/local/bin/syft
+          rm -f syft syft_linux_amd64.tar.gz
+          syft version
 
       - name: Generate SBOM (SPDX)
         run: syft dir:. -o spdx-json=sbom-spdx.json
