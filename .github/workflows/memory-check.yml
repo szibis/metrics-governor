@@ -200,7 +200,7 @@ jobs:
           fi
 
       - name: Post benchmark comment
-        if: steps.benchstat.outputs.has_regressions == 'true'
+        if: steps.benchstat.outputs.has_regressions == 'true' && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
