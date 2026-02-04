@@ -22,20 +22,50 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Find the PR that was merged in this push
           COMMIT_SHA="${{ github.sha }}"
-          PR_JSON=$(gh api "repos/${{ github.repository }}/commits/${COMMIT_SHA}/pulls" \
-            --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | first // empty')
+          # Get commit message from GitHub API (no checkout yet)
+          COMMIT_MSG=$(gh api "repos/${{ github.repository }}/commits/${COMMIT_SHA}" \
+            --jq '.commit.message' 2>/dev/null | head -1 || echo "")
 
-          if [ -z "$PR_JSON" ]; then
+          echo "Commit SHA: ${COMMIT_SHA}"
+          echo "Commit message: ${COMMIT_MSG}"
+
+          PR_NUMBER=""
+          PR_TITLE=""
+          PR_LABELS=""
+
+          # Method 1: Parse PR number from squash merge commit message "Title (#N)"
+          if echo "$COMMIT_MSG" | grep -qE '\(#[0-9]+\)'; then
+            PR_NUMBER=$(echo "$COMMIT_MSG" | grep -oE '#[0-9]+' | tail -1 | tr -d '#')
+            echo "Found PR #${PR_NUMBER} from commit message"
+          fi
+
+          # Method 2: Fall back to commits API
+          if [ -z "$PR_NUMBER" ]; then
+            echo "Trying commits API fallback..."
+            PR_JSON=$(gh api "repos/${{ github.repository }}/commits/${COMMIT_SHA}/pulls" \
+              --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | first // empty' 2>/dev/null || echo "")
+            if [ -n "$PR_JSON" ]; then
+              PR_NUMBER=$(echo "$PR_JSON" | jq -r '.number')
+              echo "Found PR #${PR_NUMBER} from commits API"
+            fi
+          fi
+
+          if [ -z "$PR_NUMBER" ]; then
             echo "No merged PR found for commit ${COMMIT_SHA}"
             echo "skip=true" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          PR_NUMBER=$(echo "$PR_JSON" | jq -r '.number')
-          PR_TITLE=$(echo "$PR_JSON" | jq -r '.title')
-          PR_LABELS=$(echo "$PR_JSON" | jq -r '[.labels[].name] | join(",")')
+          # Get full PR details using gh pr view
+          PR_TITLE=$(gh pr view "$PR_NUMBER" --json title --jq '.title' 2>/dev/null || echo "")
+          PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")
+
+          if [ -z "$PR_TITLE" ]; then
+            echo "Could not fetch PR #${PR_NUMBER} details"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
           echo "Found PR #${PR_NUMBER}: ${PR_TITLE}"
           echo "Labels: ${PR_LABELS}"
@@ -436,17 +466,48 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           COMMIT_SHA="${{ github.sha }}"
-          PR_JSON=$(gh api "repos/${{ github.repository }}/commits/${COMMIT_SHA}/pulls" \
-            --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | first // empty')
 
-          if [ -z "$PR_JSON" ]; then
+          # Get commit message from GitHub API (no checkout yet)
+          COMMIT_MSG=$(gh api "repos/${{ github.repository }}/commits/${COMMIT_SHA}" \
+            --jq '.commit.message' 2>/dev/null | head -1 || echo "")
+
+          echo "Commit SHA: ${COMMIT_SHA}"
+          echo "Commit message: ${COMMIT_MSG}"
+
+          PR_NUMBER=""
+
+          # Method 1: Parse PR number from squash merge commit message "Title (#N)"
+          if echo "$COMMIT_MSG" | grep -qE '\(#[0-9]+\)'; then
+            PR_NUMBER=$(echo "$COMMIT_MSG" | grep -oE '#[0-9]+' | tail -1 | tr -d '#')
+            echo "Found PR #${PR_NUMBER} from commit message"
+          fi
+
+          # Method 2: Fall back to commits API
+          if [ -z "$PR_NUMBER" ]; then
+            echo "Trying commits API fallback..."
+            PR_JSON=$(gh api "repos/${{ github.repository }}/commits/${COMMIT_SHA}/pulls" \
+              --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | first // empty' 2>/dev/null || echo "")
+            if [ -n "$PR_JSON" ]; then
+              PR_NUMBER=$(echo "$PR_JSON" | jq -r '.number')
+              echo "Found PR #${PR_NUMBER} from commits API"
+            fi
+          fi
+
+          if [ -z "$PR_NUMBER" ]; then
             echo "No merged PR found"
             echo "is_release_pr=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          PR_TITLE=$(echo "$PR_JSON" | jq -r '.title')
+          # Get PR title
+          PR_TITLE=$(gh pr view "$PR_NUMBER" --json title --jq '.title' 2>/dev/null || echo "")
           echo "PR Title: $PR_TITLE"
+
+          if [ -z "$PR_TITLE" ]; then
+            echo "Could not fetch PR #${PR_NUMBER} details"
+            echo "is_release_pr=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
           if echo "$PR_TITLE" | grep -q "^chore(release):"; then
             echo "is_release_pr=true" >> $GITHUB_OUTPUT
