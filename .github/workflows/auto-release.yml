@@ -331,12 +331,6 @@ jobs:
           echo "Generated changelog entry:"
           cat /tmp/changelog_entry.md
 
-      - name: Configure git identity
-        if: steps.find_pr.outputs.skip != 'true' && steps.find_pr.outputs.is_release_pr != 'true' && steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
       - name: Create release branch and PR
         if: steps.find_pr.outputs.skip != 'true' && steps.find_pr.outputs.is_release_pr != 'true' && steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
         id: create_pr
@@ -347,11 +341,9 @@ jobs:
           VERSION_NUM="${{ steps.new_version.outputs.version_num }}"
           CHART_VERSION="${{ steps.new_version.outputs.chart_version }}"
           BRANCH="release/${VERSION}"
+          REPO="${{ github.repository }}"
 
-          # Create release branch
-          git checkout -b "$BRANCH"
-
-          # Update Helm Chart.yaml
+          # Update Helm Chart.yaml locally
           sed -i "s/^appVersion: .*/appVersion: \"$VERSION_NUM\"/" helm/metrics-governor/Chart.yaml
 
           if [ "${{ steps.detect.outputs.chart_changed }}" == "true" ]; then
@@ -359,7 +351,7 @@ jobs:
             echo "Chart version bumped to $CHART_VERSION"
           fi
 
-          # Update CHANGELOG.md
+          # Update CHANGELOG.md locally
           {
             head -7 CHANGELOG.md
             echo ""
@@ -368,15 +360,55 @@ jobs:
           } > CHANGELOG.md.tmp
           mv CHANGELOG.md.tmp CHANGELOG.md
 
-          # Commit changes
-          git add helm/metrics-governor/Chart.yaml CHANGELOG.md
-          git commit -m "chore(release): prepare ${VERSION}
+          # --- Create commit via GitHub API (auto-verified) ---
+          BASE_SHA="${{ github.sha }}"
+          BASE_TREE=$(gh api "repos/$REPO/git/commits/$BASE_SHA" --jq '.tree.sha')
+
+          # Create blobs for modified files
+          CHART_BLOB=$(jq -n --arg content "$(base64 < helm/metrics-governor/Chart.yaml)" \
+            '{content: $content, encoding: "base64"}' \
+            | gh api "repos/$REPO/git/blobs" --input - --jq '.sha')
+
+          CHANGELOG_BLOB=$(jq -n --arg content "$(base64 < CHANGELOG.md)" \
+            '{content: $content, encoding: "base64"}' \
+            | gh api "repos/$REPO/git/blobs" --input - --jq '.sha')
+
+          # Create tree with modified files
+          TREE_SHA=$(jq -n \
+            --arg base_tree "$BASE_TREE" \
+            --arg chart_sha "$CHART_BLOB" \
+            --arg changelog_sha "$CHANGELOG_BLOB" \
+            '{
+              base_tree: $base_tree,
+              tree: [
+                {path: "helm/metrics-governor/Chart.yaml", mode: "100644", type: "blob", sha: $chart_sha},
+                {path: "CHANGELOG.md", mode: "100644", type: "blob", sha: $changelog_sha}
+              ]
+            }' | gh api "repos/$REPO/git/trees" --input - --jq '.sha')
+
+          # Create commit (auto-verified by GitHub)
+          COMMIT_MSG="chore(release): prepare ${VERSION}
 
           - Update appVersion to ${VERSION_NUM}
           - Update CHANGELOG.md"
 
-          # Push branch
-          git push origin "$BRANCH"
+          COMMIT_SHA=$(jq -n \
+            --arg message "$COMMIT_MSG" \
+            --arg tree "$TREE_SHA" \
+            --arg parent "$BASE_SHA" \
+            '{message: $message, tree: $tree, parents: [$parent]}' \
+            | gh api "repos/$REPO/git/commits" --input - --jq '.sha')
+
+          echo "Created verified commit: $COMMIT_SHA"
+
+          # Create branch ref pointing to the new commit
+          gh api "repos/$REPO/git/refs" \
+            --input <(jq -n \
+              --arg ref "refs/heads/$BRANCH" \
+              --arg sha "$COMMIT_SHA" \
+              '{ref: $ref, sha: $sha}')
+
+          echo "Created branch: $BRANCH"
 
           # Create PR with auto-merge
           PR_URL=$(gh pr create \
@@ -505,12 +537,6 @@ jobs:
             echo "is_release_pr=false" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/checkout@v4
-        if: steps.find_pr.outputs.is_release_pr == 'true'
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.RELEASE_PAT }}
-
       - name: Extract version from PR title
         if: steps.find_pr.outputs.is_release_pr == 'true'
         id: version
@@ -523,28 +549,37 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "version_num=${VERSION#v}" >> $GITHUB_OUTPUT
 
-      - name: Configure git identity
-        if: steps.find_pr.outputs.is_release_pr == 'true'
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Create and push tag
+      - name: Create tag via API
         if: steps.find_pr.outputs.is_release_pr == 'true'
         id: release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          REPO="${{ github.repository }}"
+          COMMIT_SHA="${{ github.sha }}"
 
           # Check if tag already exists
-          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+          if gh api "repos/$REPO/git/ref/tags/$VERSION" >/dev/null 2>&1; then
             echo "Tag $VERSION already exists, skipping"
             echo "released=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # Create annotated tag
-          git tag -a "$VERSION" -m "Release $VERSION"
-          git push origin "$VERSION"
+          # Create annotated tag object via API (auto-verified by GitHub)
+          TAG_SHA=$(jq -n \
+            --arg tag "$VERSION" \
+            --arg message "Release $VERSION" \
+            --arg object "$COMMIT_SHA" \
+            '{tag: $tag, message: $message, object: $object, type: "commit"}' \
+            | gh api "repos/$REPO/git/tags" --input - --jq '.sha')
+
+          # Create tag ref
+          gh api "repos/$REPO/git/refs" \
+            --input <(jq -n \
+              --arg ref "refs/tags/$VERSION" \
+              --arg sha "$TAG_SHA" \
+              '{ref: $ref, sha: $sha}')
 
           echo "Created and pushed tag: $VERSION"
           echo "released=true" >> $GITHUB_OUTPUT
