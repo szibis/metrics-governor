@@ -14,14 +14,30 @@ jobs:
       github.event.label.name == 'release:skip' &&
       github.event.sender.login != 'github-actions[bot]'
     steps:
-      - name: Remove unauthorized release:skip label
+      - name: Check if release PR
+        id: check
         uses: actions/github-script@v7
         with:
           script: |
-            console.log(`User "${context.payload.sender.login}" attempted to add release:skip label`);
-            console.log('Only github-actions[bot] is allowed to add this label');
+            const pr = context.payload.pull_request;
+            const title = pr.title;
+            const sender = context.payload.sender.login;
 
-            // Remove the label
+            // Allow release:skip on release PRs (created by auto-release workflow)
+            if (title.startsWith('chore(release):')) {
+              console.log(`Allowing release:skip on release PR: "${title}"`);
+              core.setOutput('allowed', 'true');
+              return;
+            }
+
+            console.log(`User "${sender}" attempted to add release:skip to non-release PR: "${title}"`);
+            core.setOutput('allowed', 'false');
+
+      - name: Remove unauthorized release:skip label
+        if: steps.check.outputs.allowed == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
             await github.rest.issues.removeLabel({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -29,10 +45,9 @@ jobs:
               name: 'release:skip'
             });
 
-            // Post a comment explaining why
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
-              body: `The \`release:skip\` label was removed because it can only be applied by automated release workflows (github-actions[bot]). Manual application is not allowed.\n\nAdded by: @${context.payload.sender.login}`
+              body: `The \`release:skip\` label was removed because it can only be applied to release PRs (\`chore(release): ...\`) by the automated release workflow.\n\nAdded by: @${context.payload.sender.login}`
             });
