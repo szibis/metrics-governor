@@ -2,14 +2,44 @@ package buffer
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/szibis/metrics-governor/internal/exporter"
 	"github.com/szibis/metrics-governor/internal/logging"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	"google.golang.org/protobuf/proto"
 )
+
+var (
+	exportConcurrentWorkers = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_export_concurrent_workers",
+		Help: "Number of active export worker goroutines",
+	})
+
+	exportRetrySplitTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_export_retry_split_total",
+		Help: "Total number of split-on-error retries",
+	})
+
+	failoverQueuePushTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_failover_queue_push_total",
+		Help: "Total number of batches saved to failover queue on export failure",
+	})
+)
+
+func init() {
+	prometheus.MustRegister(exportConcurrentWorkers)
+	prometheus.MustRegister(exportRetrySplitTotal)
+	prometheus.MustRegister(failoverQueuePushTotal)
+
+	exportConcurrentWorkers.Set(0)
+	exportRetrySplitTotal.Add(0)
+	failoverQueuePushTotal.Add(0)
+}
 
 // Exporter defines the interface for sending metrics.
 type Exporter interface {
@@ -39,12 +69,43 @@ type LogAggregator interface {
 	Stop()
 }
 
+// FailoverQueue is the interface for a queue used as safety net on export failure.
+type FailoverQueue interface {
+	Push(req *colmetricspb.ExportMetricsServiceRequest) error
+	Len() int
+	Size() int64
+}
+
+// BufferOption is a functional option for MetricsBuffer.
+type BufferOption func(*MetricsBuffer)
+
+// WithMaxBatchBytes sets the maximum batch size in bytes. Batches exceeding
+// this limit are recursively split in half (VMAgent pattern).
+func WithMaxBatchBytes(n int) BufferOption {
+	return func(b *MetricsBuffer) { b.maxBatchBytes = n }
+}
+
+// WithConcurrency sets the number of concurrent export workers per flush cycle.
+func WithConcurrency(n int) BufferOption {
+	return func(b *MetricsBuffer) {
+		b.concurrency = exporter.NewConcurrencyLimiter(n)
+	}
+}
+
+// WithFailoverQueue sets a failover queue for the buffer. When all export
+// attempts fail (including splitting), failed batches are pushed to this
+// queue instead of being silently dropped.
+func WithFailoverQueue(q FailoverQueue) BufferOption {
+	return func(b *MetricsBuffer) { b.failoverQueue = q }
+}
+
 // MetricsBuffer buffers incoming metrics and flushes them periodically.
 type MetricsBuffer struct {
 	mu            sync.Mutex
 	metrics       []*metricspb.ResourceMetrics
 	maxSize       int
 	maxBatchSize  int
+	maxBatchBytes int
 	flushInterval time.Duration
 	exporter      Exporter
 	stats         StatsCollector
@@ -52,22 +113,28 @@ type MetricsBuffer struct {
 	flushChan     chan struct{}
 	doneChan      chan struct{}
 	logAggregator LogAggregator
+	concurrency   *exporter.ConcurrencyLimiter
+	failoverQueue FailoverQueue
 }
 
 // New creates a new MetricsBuffer.
-func New(maxSize, maxBatchSize int, flushInterval time.Duration, exporter Exporter, stats StatsCollector, limits LimitsEnforcer, logAggregator LogAggregator) *MetricsBuffer {
-	return &MetricsBuffer{
+func New(maxSize, maxBatchSize int, flushInterval time.Duration, exp Exporter, stats StatsCollector, limits LimitsEnforcer, logAggregator LogAggregator, opts ...BufferOption) *MetricsBuffer {
+	buf := &MetricsBuffer{
 		metrics:       make([]*metricspb.ResourceMetrics, 0, maxSize),
 		maxSize:       maxSize,
 		maxBatchSize:  maxBatchSize,
 		flushInterval: flushInterval,
-		exporter:      exporter,
+		exporter:      exp,
 		stats:         stats,
 		limits:        limits,
 		flushChan:     make(chan struct{}, 1),
 		doneChan:      make(chan struct{}),
 		logAggregator: logAggregator,
 	}
+	for _, opt := range opts {
+		opt(buf)
+	}
+	return buf
 }
 
 // Add adds metrics to the buffer.
@@ -150,48 +217,102 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 		b.stats.SetOTLPBufferSize(0)
 	}
 
-	// Send in batches
+	// Step 1: Split by count (maxBatchSize)
+	// Step 2: Split by bytes (maxBatchBytes) via recursive binary split
+	var allBatches [][]*metricspb.ResourceMetrics
 	for i := 0; i < len(toSend); i += b.maxBatchSize {
 		end := i + b.maxBatchSize
 		if end > len(toSend) {
 			end = len(toSend)
 		}
+		countBatch := toSend[i:end]
+		allBatches = append(allBatches, splitByBytes(countBatch, b.maxBatchBytes)...)
+	}
 
-		batch := toSend[i:end]
-		req := &colmetricspb.ExportMetricsServiceRequest{
-			ResourceMetrics: batch,
+	// Step 3: Export batches (concurrently if concurrency limiter is set)
+	if b.concurrency == nil {
+		for _, batch := range allBatches {
+			b.exportBatch(ctx, batch)
 		}
+		return
+	}
 
-		// Compute once, reuse in both error and success paths
-		byteSize := estimateResourceMetricsSize(batch)
-		datapointCount := countDatapoints(batch)
+	var wg sync.WaitGroup
+	for _, batch := range allBatches {
+		batch := batch
+		wg.Add(1)
+		b.concurrency.Acquire()
+		exportConcurrentWorkers.Inc()
+		go func() {
+			defer wg.Done()
+			defer b.concurrency.Release()
+			defer exportConcurrentWorkers.Dec()
+			b.exportBatch(ctx, batch)
+		}()
+	}
+	wg.Wait()
+}
 
-		if err := b.exporter.Export(ctx, req); err != nil {
-			if b.logAggregator != nil {
-				// Use aggregated logging to reduce log noise at high throughput
-				logKey := "export_error"
-				b.logAggregator.Error(logKey, "export failed", map[string]interface{}{
-					"error":      err.Error(),
-					"batch_size": len(batch),
-				}, int64(datapointCount))
-			} else {
-				logging.Error("export failed", logging.F(
-					"error", err.Error(),
-					"batch_size", len(batch),
-					"datapoints", datapointCount,
-				))
-			}
-			if b.stats != nil {
-				b.stats.RecordExportError()
-			}
-			continue
-		}
+// exportBatch exports a single batch with error-aware retry and split-on-error.
+func (b *MetricsBuffer) exportBatch(ctx context.Context, batch []*metricspb.ResourceMetrics) {
+	req := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: batch}
+	byteSize := estimateResourceMetricsSize(batch)
+	datapointCount := countDatapoints(batch)
 
-		// Record successful export using pre-computed values
+	err := b.exporter.Export(ctx, req)
+	if err == nil {
 		if b.stats != nil {
 			b.stats.RecordExport(datapointCount)
 			b.stats.RecordOTLPBytesSent(byteSize)
 		}
+		return
+	}
+
+	// Check if error indicates payload too large -- split and retry
+	var exportErr *exporter.ExportError
+	if errors.As(err, &exportErr) && exportErr.IsSplittable() && len(batch) > 1 {
+		exportRetrySplitTotal.Inc()
+		mid := len(batch) / 2
+		b.exportBatch(ctx, batch[:mid])
+		b.exportBatch(ctx, batch[mid:])
+		return
+	}
+
+	// All export attempts exhausted -- push to failover queue instead of dropping
+	if b.failoverQueue != nil {
+		if qErr := b.failoverQueue.Push(req); qErr != nil {
+			logging.Error("CRITICAL: export failed and failover queue push failed, data lost", logging.F(
+				"error", err.Error(),
+				"queue_error", qErr.Error(),
+				"datapoints", datapointCount,
+				"batch_size", len(batch),
+			))
+		} else {
+			failoverQueuePushTotal.Inc()
+			logging.Warn("export failed, batch pushed to failover queue", logging.F(
+				"error", err.Error(),
+				"datapoints", datapointCount,
+				"queue_size", b.failoverQueue.Len(),
+			))
+		}
+	} else {
+		// No failover queue -- legacy behavior: log + drop
+		if b.logAggregator != nil {
+			b.logAggregator.Error("export_error", "export failed", map[string]interface{}{
+				"error":      err.Error(),
+				"batch_size": len(batch),
+			}, int64(datapointCount))
+		} else {
+			logging.Error("export failed", logging.F(
+				"error", err.Error(),
+				"batch_size", len(batch),
+				"datapoints", datapointCount,
+			))
+		}
+	}
+
+	if b.stats != nil {
+		b.stats.RecordExportError()
 	}
 }
 

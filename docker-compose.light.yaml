@@ -40,6 +40,7 @@ services:
       - "-limits-dry-run=true"
       - "-flush-interval=1s"          # Slower flushing
       - "-batch-size=50"              # Smaller batches
+      - "-max-batch-bytes=4194304"    # 4MB conservative byte splitting
       - "-buffer-size=1000"           # Smaller buffer
       # Performance tuning (defaults for development)
       - "-string-interning=true"
@@ -56,7 +57,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G                  # Reduced memory
+          memory: 2G                  # Reduced memory
     command:
       - "--storageDataPath=/victoria-metrics-data"
       - "--httpListenAddr=:8428"

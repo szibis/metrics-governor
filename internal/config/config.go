@@ -85,6 +85,7 @@ type Config struct {
 	BufferSize    int
 	FlushInterval time.Duration
 	MaxBatchSize  int
+	MaxBatchBytes int
 
 	// Stats settings
 	StatsAddr   string
@@ -96,6 +97,7 @@ type Config struct {
 	RuleCacheMaxSize int
 
 	// Queue settings
+	QueueType              string // "memory" or "disk"
 	QueueEnabled           bool
 	QueuePath              string
 	QueueMaxSize           int
@@ -279,6 +281,7 @@ func ParseFlags() *Config {
 	flag.IntVar(&cfg.BufferSize, "buffer-size", 10000, "Maximum number of metrics to buffer")
 	flag.DurationVar(&cfg.FlushInterval, "flush-interval", 5*time.Second, "Buffer flush interval")
 	flag.IntVar(&cfg.MaxBatchSize, "batch-size", 1000, "Maximum batch size for export")
+	flag.IntVar(&cfg.MaxBatchBytes, "max-batch-bytes", 8388608, "Maximum batch size in bytes for export (0 = no limit)")
 
 	// Stats flags
 	flag.StringVar(&cfg.StatsAddr, "stats-addr", ":9090", "Stats/metrics HTTP endpoint address")
@@ -290,7 +293,8 @@ func ParseFlags() *Config {
 	flag.IntVar(&cfg.RuleCacheMaxSize, "rule-cache-max-size", 10000, "Maximum entries in the rule matching LRU cache (0 disables)")
 
 	// Queue flags
-	flag.BoolVar(&cfg.QueueEnabled, "queue-enabled", false, "Enable persistent queue for export retries")
+	flag.BoolVar(&cfg.QueueEnabled, "queue-enabled", true, "Enable queue for export retries (default: true)")
+	flag.StringVar(&cfg.QueueType, "queue-type", "memory", "Queue type: memory (bounded in-memory, fast) or disk (FastQueue, persistent)")
 	flag.StringVar(&cfg.QueuePath, "queue-path", "./queue", "Queue storage directory")
 	flag.IntVar(&cfg.QueueMaxSize, "queue-max-size", 10000, "Maximum number of batches in queue")
 	flag.Int64Var(&cfg.QueueMaxBytes, "queue-max-bytes", 1073741824, "Maximum total queue size in bytes (1GB default)")
@@ -559,6 +563,12 @@ func applyFlagOverrides(cfg *Config) {
 					cfg.MaxBatchSize = i
 				}
 			}
+		case "max-batch-bytes":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.MaxBatchBytes = i
+				}
+			}
 		case "stats-addr":
 			cfg.StatsAddr = f.Value.String()
 		case "stats-labels":
@@ -575,6 +585,8 @@ func applyFlagOverrides(cfg *Config) {
 			}
 		case "queue-enabled":
 			cfg.QueueEnabled = f.Value.String() == "true"
+		case "queue-type":
+			cfg.QueueType = f.Value.String()
 		case "queue-path":
 			cfg.QueuePath = f.Value.String()
 		case "queue-max-size":
@@ -1285,6 +1297,9 @@ OPTIONS:
         -buffer-size <n>                 Maximum metrics to buffer (default: 10000)
         -flush-interval <dur>            Buffer flush interval (default: 5s)
         -batch-size <n>                  Maximum batch size for export (default: 1000)
+        -max-batch-bytes <n>             Maximum batch size in bytes (default: 8388608 = 8MB, 0 = no limit)
+                                         Batches exceeding this are split. Set below backend limit
+                                         (e.g., VictoriaMetrics opentelemetry.maxRequestSize).
 
     Stats:
         -stats-addr <addr>               Stats/metrics HTTP endpoint address (default: ":9090")
@@ -1311,8 +1326,9 @@ OPTIONS:
         -bloom-persistence-compression            Enable gzip compression (default: true)
         -bloom-persistence-compression-level <n>  Gzip compression level 1-9 (default: 1)
 
-    Queue (FastQueue - High-Performance Persistent Retry):
-        -queue-enabled                   Enable persistent queue for export retries (default: false)
+    Queue (Failover & Persistent Retry):
+        -queue-enabled                   Enable queue for export retries (default: true)
+        -queue-type <type>               Queue type: memory (bounded in-memory, default) or disk (FastQueue, persistent)
         -queue-path <path>               Queue storage directory (default: ./queue)
         -queue-max-size <n>              Maximum number of batches in queue (default: 10000)
         -queue-max-bytes <n>             Maximum total queue size in bytes (default: 1GB)
@@ -1343,6 +1359,11 @@ OPTIONS:
         -sharding-labels                 Comma-separated labels for shard key (e.g., service,env,cluster)
         -sharding-virtual-nodes          Virtual nodes per endpoint (default: 150)
         -sharding-fallback-on-empty      Use static endpoint if no DNS results (default: true)
+
+    Performance:
+        -export-concurrency <n>          Concurrent export workers (default: NumCPU * 4)
+                                         Controls parallel batch exports within each flush cycle.
+        -string-interning                Enable string interning for label deduplication (default: true)
 
     General:
         -h, -help                        Show this help message
@@ -1464,12 +1485,14 @@ func DefaultConfig() *Config {
 		BufferSize:                      10000,
 		FlushInterval:                   5 * time.Second,
 		MaxBatchSize:                    1000,
+		MaxBatchBytes:                   8388608, // 8MB
 		StatsAddr:                       ":9090",
 		StatsLabels:                     "",
 		LimitsConfig:                    "",
 		LimitsDryRun:                    true,
 		RuleCacheMaxSize:                10000,
-		QueueEnabled:                    false,
+		QueueType:                       "memory",
+		QueueEnabled:                    true,
 		QueuePath:                       "./queue",
 		QueueMaxSize:                    10000,
 		QueueMaxBytes:                   1073741824, // 1GB

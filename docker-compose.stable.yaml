@@ -45,6 +45,7 @@ services:
       - "-stats-labels=series,metric_id"
       - "-flush-interval=500ms"
       - "-batch-size=100"
+      - "-max-batch-bytes=8388608"    # 8MB byte-aware batch splitting
       - "-buffer-size=2000"
       # Performance tuning
       - "-string-interning=true"

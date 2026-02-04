@@ -364,7 +364,18 @@ func (e *OTLPExporter) exportGRPC(ctx context.Context, req *colmetricspb.ExportM
 	if err != nil {
 		errType := classifyGRPCError(err)
 		recordExportError(errType)
-		return err
+		statusCode := 0
+		message := err.Error()
+		if st, ok := status.FromError(err); ok {
+			statusCode = int(st.Code())
+			message = st.Message()
+		}
+		return &ExportError{
+			Err:        err,
+			Type:       errType,
+			StatusCode: statusCode,
+			Message:    message,
+		}
 	}
 
 	// Track as uncompressed since gRPC compression is handled at transport level
@@ -447,14 +458,22 @@ func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportM
 	}
 	defer resp.Body.Close()
 
-	// Read and discard body to allow connection reuse
-	_, _ = io.Copy(io.Discard, resp.Body)
-
 	if resp.StatusCode != http.StatusOK {
+		// Read body (up to 4KB) for error message before discarding
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		_, _ = io.Copy(io.Discard, resp.Body)
 		errType := classifyHTTPStatusCode(resp.StatusCode)
 		recordExportError(errType)
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return &ExportError{
+			Err:        fmt.Errorf("unexpected status code: %d: %s", resp.StatusCode, string(bodyBytes)),
+			Type:       errType,
+			StatusCode: resp.StatusCode,
+			Message:    string(bodyBytes),
+		}
 	}
+
+	// Read and discard body to allow connection reuse
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	// Track exported bytes and datapoints
 	otlpExportBytesTotal.WithLabelValues(compressionLabel).Add(float64(len(body)))

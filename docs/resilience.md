@@ -11,11 +11,12 @@ graph TB
     subgraph "Resilience Features"
         CB[Circuit Breaker]
         BO[Exponential Backoff]
+        SOE[Split-on-Error]
         ML[Memory Limits]
     end
 
     subgraph "Queue System"
-        Q[Persistent Queue]
+        FQ[Failover Queue<br/>memory / disk]
         R[Retry Worker]
     end
 
@@ -23,13 +24,14 @@ graph TB
         BE[Metrics Backend]
     end
 
-    Q --> R
+    FQ --> R
     R --> CB
     CB -->|Closed| BE
-    CB -->|Open| Q
+    CB -->|Open| FQ
     R --> BO
     BO -->|Calculates| R
-    ML -->|Controls| Q
+    SOE -->|"400/413"| R
+    ML -->|Controls| FQ
 ```
 
 ## Circuit Breaker
@@ -254,16 +256,23 @@ flowchart TB
 
     subgraph "Buffer"
         BUF[In-Memory Buffer]
+        SPLIT[Byte-Aware Split]
+        WORKERS[Concurrent Workers]
     end
 
     subgraph "Export Attempt"
         EXP[Export to Backend]
     end
 
+    subgraph "Error Handling"
+        SOE{Too Large?}
+        HALF[Split in Half<br/>& Retry]
+    end
+
     subgraph "Resilience"
         CB{Circuit<br/>Breaker}
         BO[Calculate<br/>Backoff]
-        Q[Persistent<br/>Queue]
+        FQ[Failover<br/>Queue]
     end
 
     subgraph "Backend"
@@ -271,20 +280,25 @@ flowchart TB
     end
 
     IN --> BUF
-    BUF --> EXP
+    BUF --> SPLIT --> WORKERS --> EXP
 
     EXP -->|Success| BE
-    EXP -->|Failure| CB
+    EXP -->|Failure| SOE
 
-    CB -->|Open| Q
+    SOE -->|"400/413"| HALF
+    HALF --> EXP
+    SOE -->|Other| FQ
+
+    FQ -->|Retry| CB
     CB -->|Closed/HalfOpen| BO
-
-    BO --> Q
-    Q -->|After Delay| CB
+    CB -->|Open| FQ
+    BO --> FQ
+    FQ -->|After Delay| CB
 
     style CB fill:#f96,stroke:#333
     style BO fill:#9cf,stroke:#333
-    style Q fill:#9f9,stroke:#333
+    style FQ fill:#9f9,stroke:#333
+    style SOE fill:#ff9,stroke:#333
 ```
 
 ### Timeline Example
@@ -318,6 +332,48 @@ gantt
     Queuing           :active, q1, 00:00:35, 5m
     Draining          :done, q2, after q1, 30s
 ```
+
+## Failover Queue
+
+The failover queue is a safety net that catches all export failures. Instead of silently dropping data when an export fails, the batch is pushed to the failover queue for later retry.
+
+### Queue Types
+
+| Type | Durability | Performance | Use Case |
+|------|-----------|-------------|----------|
+| `memory` (default) | Lost on restart | Fast, no disk I/O | Transient errors, low-latency |
+| `disk` | Survives restarts | Slower, disk-backed | Critical data, long outages |
+
+### Configuration
+
+```bash
+# Memory queue (default) — fast, bounded, data lost on restart
+metrics-governor -queue-type=memory -queue-max-size=10000 -queue-max-bytes=1073741824
+
+# Disk queue — durable, survives restarts
+metrics-governor -queue-type=disk -queue-path=/data/queue
+```
+
+### Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_queue_size` | Gauge | Current entries in failover queue |
+| `metrics_governor_queue_bytes` | Gauge | Current bytes in failover queue |
+| `metrics_governor_queue_evictions_total` | Counter | Entries evicted when queue is full |
+| `metrics_governor_failover_queue_push_total` | Counter | Batches saved to queue on export failure |
+
+## Split-on-Error
+
+When the backend returns HTTP 400 or 413 indicating the payload is too large, the batch is automatically split in half and both halves are retried. This works both in the buffer's export path and in the QueuedExporter's retry loop.
+
+Recursion stops when a batch has only a single element. Non-retryable errors (e.g., authentication failures) cause the entry to be dropped from the retry queue to prevent infinite retry loops.
+
+### Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_export_retry_split_total` | Counter | Split-on-error retries |
 
 ## Monitoring and Alerting
 
@@ -443,6 +499,20 @@ exporter:
 1. Reduce `-queue-backoff-multiplier` to 1.5
 2. Reduce `-queue-max-retry-delay`
 3. Ensure circuit breaker resets properly
+
+### Backend Rejecting Batches as Too Large
+
+**Symptoms**: HTTP 400 errors with "too big data size" or "exceeding maxRequestSize"
+
+**Causes**:
+- `max-batch-bytes` set higher than backend limit
+- Single ResourceMetrics entry larger than backend limit (cannot split further)
+
+**Solutions**:
+1. Set `-max-batch-bytes` to 50% of backend limit (e.g., 8MB for 16MB VM limit)
+2. Check `metrics_governor_batch_splits_total` and `metrics_governor_export_retry_split_total`
+3. If split-on-error is frequent, reduce `-max-batch-bytes`
+4. For single oversized entries, reduce the number of datapoints per ResourceMetrics at the source
 
 ### OOM Kills Despite Memory Limits
 

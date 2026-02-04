@@ -36,6 +36,7 @@ services:
       - "-limits-dry-run=true"
       - "-flush-interval=100ms"
       - "-batch-size=100"
+      - "-max-batch-bytes=8388608"    # 8MB byte-aware batch splitting
       - "-buffer-size=5000"
       # Performance tuning (inspired by VictoriaMetrics techniques)
       - "-string-interning=true"

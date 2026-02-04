@@ -10,6 +10,8 @@ metrics-governor includes several high-performance optimizations for production 
 |--------------|:----:|:---:|---------------|------------|
 | Bloom Filters | Yes | Yes | -98% for cardinality tracking | Minimal |
 | String Interning | Yes | Yes | -76% allocations | -12% CPU |
+| Byte-Aware Batch Splitting | Yes | No | Minimal | Minimal |
+| Concurrent Export Workers | Yes | No | Bounded goroutines | Controlled parallelism |
 | Concurrency Limiting | Yes | Yes | Bounded goroutines | Controlled parallelism |
 | Queue I/O Optimization | Yes | Yes | -40-60% disk (compression) | 10x throughput |
 | Memory Limit Auto-Detection | Yes | Yes | Prevents OOM kills | More predictable GC |
@@ -21,6 +23,8 @@ graph TB
     subgraph "Performance Optimizations"
         BF[Bloom Filters]
         SI[String Interning]
+        BS[Byte-Aware Splitting]
+        CW[Concurrent Workers]
         CL[Concurrency Limiting]
         QIO[Queue I/O]
         ML[Memory Limits]
@@ -29,14 +33,18 @@ graph TB
     subgraph "Pipeline"
         RX[Receiver] --> LIM[Limits]
         LIM --> BUF[Buffer]
-        BUF --> EXP[Exporter]
+        BUF --> SPLIT[Batch Split]
+        SPLIT --> EXP[Export Workers]
+        EXP --> FQ[Failover Queue]
     end
 
     BF -.->|Cardinality| LIM
     SI -.->|Labels| RX
     SI -.->|Labels| EXP
+    BS -.->|Size Control| SPLIT
+    CW -.->|Parallelism| EXP
     CL -.->|Parallelism| EXP
-    QIO -.->|Persistence| BUF
+    QIO -.->|Persistence| FQ
     ML -.->|GC Control| ALL[All Components]
 ```
 
@@ -194,6 +202,116 @@ metrics-governor -string-interning=true -intern-max-value-length=64
 
 ---
 
+## Byte-Aware Batch Splitting
+
+Batches are split by serialized byte size before export, preventing backend rejections due to oversized payloads:
+
+- **Recursive binary split** - VMAgent-inspired pattern: if batch exceeds `max-batch-bytes`, split in half and check again
+- **Default 8MB limit** - Safely under typical backend limits (e.g., VictoriaMetrics 16MB `opentelemetry.maxRequestSize`)
+- **Split-on-error** - If backend returns HTTP 400/413 "too large", the batch is split in half and both halves retried automatically
+- **Zero data loss** - Failed batches go to failover queue instead of being dropped
+
+**Applies to:** OTLP buffer flush
+
+### How It Works
+
+```mermaid
+flowchart TB
+    subgraph "Batch Splitting Flow"
+        BATCH[Incoming Batch] --> COUNT{Count Split<br/>batch-size}
+        COUNT --> BYTES{Byte Split<br/>max-batch-bytes}
+        BYTES -->|Under limit| EXPORT[Export]
+        BYTES -->|Over limit| HALF[Split in Half]
+        HALF --> L[Left Half]
+        HALF --> R[Right Half]
+        L --> BYTES
+        R --> BYTES
+    end
+
+    subgraph "Error Recovery"
+        EXPORT -->|Success| DONE[Done]
+        EXPORT -->|"400/413 too large"| SPLIT_RETRY[Split & Retry]
+        EXPORT -->|Other error| FAILOVER[Failover Queue]
+        SPLIT_RETRY --> HALF
+    end
+```
+
+### Configuration
+
+```bash
+# Set maximum batch size in bytes (default: 8MB)
+metrics-governor -max-batch-bytes=8388608
+
+# Disable byte splitting (count-only batching)
+metrics-governor -max-batch-bytes=0
+```
+
+### Observability Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_batch_splits_total` | Counter | Number of byte-size-triggered batch splits |
+| `metrics_governor_batch_bytes` | Histogram | Batch sizes in bytes before export |
+| `metrics_governor_batch_too_large_total` | Counter | Batches that exceeded max-batch-bytes |
+| `metrics_governor_export_retry_split_total` | Counter | Split-on-error retries (backend said too large) |
+
+### Recommended Settings
+
+| Backend | max-batch-bytes | Rationale |
+|---------|-----------------|-----------|
+| VictoriaMetrics (16MB limit) | `8388608` (8MB) | 50% headroom under default maxRequestSize |
+| Grafana Mimir | `4194304` (4MB) | Conservative for multi-tenant ingestion |
+| OTel Collector | `8388608` (8MB) | Standard default |
+| Low-memory environments | `4194304` (4MB) | Smaller batches reduce peak memory |
+
+---
+
+## Concurrent Export Workers
+
+Parallel export workers within each flush cycle maximize throughput:
+
+- Controlled by `-export-concurrency` (default: `NumCPU * 4`)
+- Each flush cycle dispatches sub-batches to concurrent workers via `sync.WaitGroup`
+- Workers share a semaphore-based concurrency limiter
+- Failed batches are pushed to the failover queue, not dropped
+
+**Applies to:** OTLP buffer flush
+
+### How It Works
+
+```mermaid
+flowchart LR
+    subgraph "Flush Cycle"
+        SPLIT[Byte-Aware<br/>Split] --> B1[Sub-batch 1]
+        SPLIT --> B2[Sub-batch 2]
+        SPLIT --> BN[Sub-batch N]
+    end
+
+    subgraph "Worker Pool"
+        W1[Worker 1]
+        W2[Worker 2]
+        WN[Worker N]
+    end
+
+    subgraph "Outcome"
+        BE[Backend]
+        FQ[Failover Queue]
+    end
+
+    B1 --> W1 -->|Success| BE
+    B2 --> W2 -->|Success| BE
+    BN --> WN -->|Failure| FQ
+```
+
+### Observability Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_export_concurrent_workers` | Gauge | Active export worker goroutines |
+| `metrics_governor_failover_queue_push_total` | Counter | Batches saved to failover queue on export failure |
+
+---
+
 ## Concurrency Limiting
 
 Semaphore-based limiting prevents goroutine explosion:
@@ -202,7 +320,7 @@ Semaphore-based limiting prevents goroutine explosion:
 - 88% reduction in concurrent goroutines under load
 - Prevents memory exhaustion during traffic spikes
 
-**Applies to:** OTLP sharded exporter, PRW sharded exporter
+**Applies to:** OTLP buffer flush (concurrent export workers), OTLP sharded exporter, PRW sharded exporter
 
 ### How It Works
 
