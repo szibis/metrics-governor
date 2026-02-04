@@ -10,12 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/szibis/metrics-governor/internal/compression"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
-	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	"google.golang.org/protobuf/proto"
+
+	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
+
+	"github.com/szibis/metrics-governor/internal/compression"
 )
 
 // makeTestRequest creates a realistic OTLP export request with multiple metrics.
@@ -64,9 +66,9 @@ func makeTestRequest(metricCount int) *colmetricspb.ExportMetricsServiceRequest 
 // receives valid, decompressible data.
 func TestHTTPExporter_CompressionTypes(t *testing.T) {
 	compressionTypes := []struct {
-		name            string
-		cfg             compression.Config
-		expectedHeader  string
+		name           string
+		cfg            compression.Config
+		expectedHeader string
 	}{
 		{"gzip", compression.Config{Type: compression.TypeGzip, Level: compression.LevelDefault}, "gzip"},
 		{"zstd", compression.Config{Type: compression.TypeZstd, Level: compression.LevelDefault}, "zstd"},

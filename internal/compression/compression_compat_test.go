@@ -9,10 +9,10 @@ import (
 )
 
 // TestCompat_RealisticPayload exercises all compression codecs with a payload
-// that mimics serialised protobuf metrics data (mix of structured bytes and
+// that mimics serialized protobuf metrics data (mix of structured bytes and
 // repeated patterns). This catches format-level regressions after library bumps.
 func TestCompat_RealisticPayload(t *testing.T) {
-	// Build a ~50KB payload that looks like serialised protobuf:
+	// Build a ~50KB payload that looks like serialized protobuf:
 	// field tags, varints, repeated string fields, and some random bytes.
 	var buf bytes.Buffer
 	for i := 0; i < 500; i++ {
