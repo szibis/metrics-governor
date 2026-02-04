@@ -1,6 +1,8 @@
 name: Memory Check
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -11,6 +13,11 @@ permissions:
 jobs:
   resource-tests:
     runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
     outputs:
       success: ${{ steps.run.outputs.success }}
       total: ${{ steps.run.outputs.total }}
@@ -49,6 +56,11 @@ jobs:
 
   goroutine-leak-check:
     runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
     outputs:
       success: ${{ steps.run.outputs.success }}
       total: ${{ steps.run.outputs.total }}
@@ -87,6 +99,11 @@ jobs:
 
   memory-stress-test:
     runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
     outputs:
       success: ${{ steps.run.outputs.success }}
       total: ${{ steps.run.outputs.total }}
@@ -125,6 +142,11 @@ jobs:
 
   benchmark-alloc-compare:
     runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
     steps:
       - uses: actions/checkout@v4
         with:
@@ -221,7 +243,10 @@ jobs:
 
   memory-check-comment:
     runs-on: ubuntu-latest
-    if: always()
+    if: >-
+      always() &&
+      github.event_name == 'pull_request' &&
+      !contains(github.event.pull_request.labels.*.name, 'release:skip')
     needs: [resource-tests, goroutine-leak-check, memory-stress-test]
     steps:
       - name: Generate memory check report

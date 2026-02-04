@@ -153,6 +153,11 @@ jobs:
 
   test-unit:
     runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
     outputs:
       coverage: ${{ steps.coverage.outputs.coverage }}
       total_tests: ${{ steps.count.outputs.total }}
@@ -233,6 +238,11 @@ jobs:
 
   test-functional:
     runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
     outputs:
       total_tests: ${{ steps.count.outputs.total }}
       passed_tests: ${{ steps.count.outputs.passed }}
@@ -277,6 +287,11 @@ jobs:
 
   test-e2e:
     runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
     outputs:
       total_tests: ${{ steps.count.outputs.total }}
       passed_tests: ${{ steps.count.outputs.passed }}
@@ -388,7 +403,10 @@ jobs:
   # Post test coverage comment on PR
   coverage-comment:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: >-
+      always() &&
+      github.event_name == 'pull_request' &&
+      !contains(github.event.pull_request.labels.*.name, 'release:skip')
     needs: [build, test-unit, test-functional, test-e2e, test-e2e-docker]
     steps:
       - uses: actions/checkout@v4
@@ -617,6 +635,11 @@ jobs:
   # Docker Compose E2E test - full stack verification
   test-e2e-docker:
     runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
     needs: [build]  # Only need build to pass first
     outputs:
       success: ${{ steps.result.outputs.success }}
@@ -666,6 +689,11 @@ jobs:
 
   build-binaries:
     runs-on: ubuntu-latest
+    if: >-
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
     needs: [build, test-unit, test-functional, test-e2e, test-e2e-docker, lint, lint-dockerfile, lint-yaml, lint-helm]
     steps:
       - uses: actions/checkout@v4
