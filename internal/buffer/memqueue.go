@@ -105,10 +105,18 @@ func (q *MemoryQueue) Pop() *colmetricspb.ExportMetricsServiceRequest {
 	}
 
 	entry := q.entries[0]
+	q.entries[0] = nil // allow GC to collect the entry
 	q.entries = q.entries[1:]
 	q.bytes -= int64(proto.Size(entry))
 	if q.bytes < 0 {
 		q.bytes = 0
+	}
+
+	// Compact the slice if capacity is more than 2x length to prevent unbounded growth
+	if cap(q.entries) > 2*len(q.entries)+16 {
+		compacted := make([]*colmetricspb.ExportMetricsServiceRequest, len(q.entries))
+		copy(compacted, q.entries)
+		q.entries = compacted
 	}
 
 	memqueueSize.Set(float64(len(q.entries)))
@@ -137,6 +145,7 @@ func (q *MemoryQueue) evictOldest() {
 		return
 	}
 	evicted := q.entries[0]
+	q.entries[0] = nil // allow GC to collect the entry
 	q.entries = q.entries[1:]
 	q.bytes -= int64(proto.Size(evicted))
 	if q.bytes < 0 {
