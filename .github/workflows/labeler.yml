@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ensure labels exist with colors
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const labelsConfig = [
@@ -109,7 +109,7 @@ jobs:
 
       - name: Get PR info
         id: pr
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const pr = context.payload.pull_request;
@@ -243,7 +243,7 @@ jobs:
             console.log('Labels to add:', Array.from(labels));
 
       - name: Add labels
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const labelsStr = '${{ steps.pr.outputs.labels }}';

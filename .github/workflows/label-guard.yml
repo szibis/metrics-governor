@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Check if release PR
         id: check
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const pr = context.payload.pull_request;
@@ -35,7 +35,7 @@ jobs:
 
       - name: Remove unauthorized release:skip label
         if: steps.check.outputs.allowed == 'false'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             await github.rest.issues.removeLabel({
