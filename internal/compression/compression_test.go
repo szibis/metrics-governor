@@ -19,7 +19,6 @@ func TestParseType(t *testing.T) {
 		{"snappy", TypeSnappy, false},
 		{"zlib", TypeZlib, false},
 		{"deflate", TypeDeflate, false},
-		{"lz4", TypeLZ4, false},
 		{"unknown", TypeNone, true},
 	}
 
@@ -48,7 +47,6 @@ func TestContentEncoding(t *testing.T) {
 		{TypeSnappy, "snappy"},
 		{TypeZlib, "zlib"},
 		{TypeDeflate, "deflate"},
-		{TypeLZ4, "lz4"},
 	}
 
 	for _, tt := range tests {
@@ -74,7 +72,6 @@ func TestParseContentEncoding(t *testing.T) {
 		{"x-snappy-framed", TypeSnappy},
 		{"zlib", TypeZlib},
 		{"deflate", TypeDeflate},
-		{"lz4", TypeLZ4},
 		{"unknown", TypeNone},
 	}
 
@@ -107,7 +104,6 @@ func TestCompressDecompress(t *testing.T) {
 		{"zlib-best", Config{Type: TypeZlib, Level: LevelBest}},
 		{"deflate-default", Config{Type: TypeDeflate, Level: LevelDefault}},
 		{"deflate-best", Config{Type: TypeDeflate, Level: LevelBest}},
-		{"lz4-default", Config{Type: TypeLZ4, Level: LevelDefault}},
 	}
 
 	for _, tt := range tests {
@@ -179,7 +175,6 @@ func TestDecompressInvalidData(t *testing.T) {
 		TypeSnappy,
 		TypeZlib,
 		TypeDeflate,
-		TypeLZ4,
 	}
 
 	for _, tt := range tests {
@@ -207,7 +202,6 @@ func TestPooledRoundTrip(t *testing.T) {
 		{"snappy", Config{Type: TypeSnappy}},
 		{"zlib", Config{Type: TypeZlib, Level: LevelDefault}},
 		{"deflate", Config{Type: TypeDeflate, Level: LevelDefault}},
-		{"lz4", Config{Type: TypeLZ4, Level: LevelDefault}},
 	}
 
 	const iterations = 50
@@ -242,7 +236,6 @@ func TestEmptyData(t *testing.T) {
 		{Type: TypeSnappy},
 		{Type: TypeZlib},
 		{Type: TypeDeflate},
-		{Type: TypeLZ4},
 	}
 
 	for _, tt := range tests {

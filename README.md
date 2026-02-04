@@ -28,7 +28,7 @@
 - **Intelligent Limiting** - Unlike simple rate limiters that drop everything, metrics-governor identifies and drops only the top offenders while preserving data from well-behaved services
 - **Consistent Sharding** - Automatic endpoint discovery from Kubernetes headless services with consistent hashing ensures the same time-series always route to the same backend (works for both OTLP and PRW)
 - **Pipeline Parity** - OTLP and PRW pipelines have identical resilience: persistent disk queue, split-on-error, circuit breaker, exponential backoff, and failover drain
-- **Production-Ready** - Byte-aware batch splitting, concurrent exports, failover queue, FastQueue durable persistence with circuit breaker and exponential backoff, auto memory limits, TLS/mTLS, authentication, compression (gzip/zstd/snappy/lz4), and Helm chart included
+- **Production-Ready** - Byte-aware batch splitting, concurrent exports, failover queue, FastQueue durable persistence with circuit breaker and exponential backoff, auto memory limits, TLS/mTLS, authentication, compression (gzip/zstd/snappy), and Helm chart included
 - **High-Performance Optimizations** - String interning reduces allocations by 76%, concurrency limiting prevents goroutine explosion, Bloom filters reduce cardinality tracking memory by 98% (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
 - **Zero Configuration Start** - Works out of the box with sensible defaults; add limits and sharding when needed
 
@@ -128,7 +128,7 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
 | 📊 | [**Statistics**](docs/statistics.md) | Prometheus metrics, per-metric tracking, observability |
 | 🔐 | [**TLS**](docs/tls.md) | Server and client TLS, mTLS configuration |
 | 🔑 | [**Authentication**](docs/authentication.md) | Bearer token, basic auth, custom headers |
-| 📦 | [**Compression**](docs/compression.md) | gzip, zstd, snappy, lz4 compression support |
+| 📦 | [**Compression**](docs/compression.md) | gzip, zstd, snappy compression support |
 | 🌐 | [**HTTP Settings**](docs/http-settings.md) | Connection pools, timeouts, HTTP/2 |
 | 📝 | [**Logging**](docs/logging.md) | JSON structured logging, log aggregation |
 | 🧪 | [**Testing**](docs/testing.md) | Test environment, Docker Compose, verification |

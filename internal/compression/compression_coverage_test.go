@@ -157,55 +157,6 @@ func TestDecompressDeflate_CorruptedData(t *testing.T) {
 	}
 }
 
-func TestDecompressLZ4_CorruptedData(t *testing.T) {
-	// Not valid LZ4 data -- LZ4 frame magic is 0x184D2204
-	corrupted := []byte{0x04, 0x22, 0x4D, 0x18, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
-	_, err := decompressLZ4(corrupted)
-	if err == nil {
-		t.Error("expected error for corrupted LZ4 data")
-	}
-}
-
-func TestDecompressLZ4_TotalGarbage(t *testing.T) {
-	_, err := decompressLZ4([]byte{0x00, 0x01, 0x02, 0x03, 0x04})
-	if err == nil {
-		t.Error("expected error for garbage LZ4 data")
-	}
-}
-
-func TestDecompressLZ4_PooledReaderError(t *testing.T) {
-	// Seed the LZ4 reader pool by doing a valid round-trip.
-	validData := bytes.Repeat([]byte("lz4 pool test data"), 100)
-	compressed, err := Compress(validData, Config{Type: TypeLZ4, Level: LevelDefault})
-	if err != nil {
-		t.Fatalf("Compress error: %v", err)
-	}
-
-	result, err := Decompress(compressed, TypeLZ4)
-	if err != nil {
-		t.Fatalf("Decompress valid data error: %v", err)
-	}
-	if !bytes.Equal(result, validData) {
-		t.Fatal("valid data round-trip mismatch")
-	}
-
-	// Now try with corrupted data -- the pooled reader will Reset to bad data
-	// and fail during ReadAll, triggering the discard path.
-	_, err = decompressLZ4([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})
-	if err == nil {
-		t.Error("expected error for corrupted LZ4 data after pool use")
-	}
-
-	// Verify pool still works after error.
-	result2, err := Decompress(compressed, TypeLZ4)
-	if err != nil {
-		t.Fatalf("Decompress after error recovery failed: %v", err)
-	}
-	if !bytes.Equal(result2, validData) {
-		t.Fatal("data mismatch after error recovery")
-	}
-}
-
 // ---------------------------------------------------------------------------
 // failWriter forces write errors to test writer.Write() and writer.Close()
 // error paths in compression functions.
@@ -267,15 +218,6 @@ func TestCompressDeflate_WriteError(t *testing.T) {
 	}
 }
 
-func TestCompressLZ4_WriteError(t *testing.T) {
-	data := bytes.Repeat([]byte("data to compress"), 100)
-	fw := &failWriter{failOnWrite: 0}
-	err := compressLZ4(fw, data, LevelDefault)
-	if err == nil {
-		t.Error("expected error when writer fails")
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Pool discard metrics after errors
 // ---------------------------------------------------------------------------
@@ -291,47 +233,10 @@ func TestPoolDiscardMetrics_AfterWriteError(t *testing.T) {
 	_ = compressZstd(&failWriter{failOnWrite: 0}, data, LevelDefault)
 	_ = compressZlib(&failWriter{failOnWrite: 0}, data, LevelDefault)
 	_ = compressDeflate(&failWriter{failOnWrite: 0}, data, LevelDefault)
-	_ = compressLZ4(&failWriter{failOnWrite: 0}, data, LevelDefault)
 
 	stats := PoolStats()
 	if stats.CompressionPoolDiscards == 0 {
 		t.Error("expected pool discards > 0 after write errors")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// LZ4 with non-default level
-// ---------------------------------------------------------------------------
-
-func TestCompressLZ4_NonDefaultLevel(t *testing.T) {
-	data := bytes.Repeat([]byte("lz4 level test data"), 100)
-
-	// LZ4 uses bit-shifted compression levels: Level1 = 1<<9 = 512.
-	// Use the Level1 equivalent (512) as a non-default valid level.
-	var buf bytes.Buffer
-	err := compressLZ4(&buf, data, Level(512))
-	if err != nil {
-		t.Fatalf("compressLZ4 with level 512 (Level1) failed: %v", err)
-	}
-
-	decompressed, err := decompressLZ4(buf.Bytes())
-	if err != nil {
-		t.Fatalf("decompressLZ4 failed: %v", err)
-	}
-	if !bytes.Equal(decompressed, data) {
-		t.Error("decompressed data does not match original")
-	}
-}
-
-func TestCompressLZ4_InvalidLevel(t *testing.T) {
-	data := bytes.Repeat([]byte("lz4 invalid level test"), 100)
-	var buf bytes.Buffer
-
-	// Level 9 is invalid for LZ4 -- should trigger the error path
-	// where the writer is discarded from the pool.
-	err := compressLZ4(&buf, data, Level(9))
-	if err == nil {
-		t.Error("expected error for invalid LZ4 level")
 	}
 }
 

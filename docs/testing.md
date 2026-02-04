@@ -47,7 +47,7 @@ Component-level tests with mocks. Each package tests its core functionality in i
 |---------|:-----:|----------------|
 | `auth` | 27 | Bearer token, basic auth, HTTP middleware, gRPC interceptors |
 | `buffer` | 28 | Add/flush operations, batching, concurrent access, graceful shutdown, failover drain |
-| `compression` | 19 | gzip/zstd/snappy/lz4 compress/decompress, round-trips |
+| `compression` | 19 | gzip/zstd/snappy compress/decompress, round-trips |
 | `config` | 50 | CLI parsing, YAML loading, validation, defaults |
 | `exporter` | 118 | gRPC/HTTP export, retries, sharded export, queued export, split-on-error, pipeline parity |
 | `limits` | 77 | Rule matching, cardinality tracking, adaptive limiting, dry-run |

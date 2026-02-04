@@ -200,7 +200,7 @@ exporterAuth:
 
 # -- Exporter compression configuration (HTTP only)
 exporterCompression:
-  # -- Compression type: none, gzip, zstd, snappy, zlib, deflate, lz4
+  # -- Compression type: none, gzip, zstd, snappy, zlib, deflate
   type: "none"
   # -- Compression level (algorithm-specific, 0 for default)
   level: 0

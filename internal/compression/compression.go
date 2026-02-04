@@ -12,9 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/golang/snappy"
+	"github.com/klauspost/compress/s2"
 	"github.com/klauspost/compress/zstd"
-	"github.com/pierrec/lz4/v4"
 )
 
 // Type represents a compression algorithm.
@@ -33,8 +32,6 @@ const (
 	TypeZlib Type = "zlib"
 	// TypeDeflate uses deflate compression.
 	TypeDeflate Type = "deflate"
-	// TypeLZ4 uses lz4 compression.
-	TypeLZ4 Type = "lz4"
 )
 
 // Level represents compression level settings.
@@ -87,10 +84,8 @@ var (
 	gzipWriterPool  sync.Pool
 	zlibWriterPool  sync.Pool
 	flateWriterPool sync.Pool
-	lz4WriterPool   sync.Pool
 	zstdEncoderPool sync.Pool
 	zstdDecoderPool sync.Pool
-	lz4ReaderPool   sync.Pool
 )
 
 // Pool metrics - exported via PoolStats().
@@ -154,8 +149,6 @@ func ParseType(s string) (Type, error) {
 		return TypeZlib, nil
 	case "deflate":
 		return TypeDeflate, nil
-	case "lz4":
-		return TypeLZ4, nil
 	default:
 		return TypeNone, fmt.Errorf("unsupported compression type: %s", s)
 	}
@@ -174,8 +167,6 @@ func (t Type) ContentEncoding() string {
 		return "zlib"
 	case TypeDeflate:
 		return "deflate"
-	case TypeLZ4:
-		return "lz4"
 	default:
 		return ""
 	}
@@ -194,8 +185,6 @@ func ParseContentEncoding(encoding string) Type {
 		return TypeZlib
 	case "deflate":
 		return TypeDeflate
-	case "lz4":
-		return TypeLZ4
 	default:
 		return TypeNone
 	}
@@ -226,8 +215,6 @@ func Compress(data []byte, cfg Config) ([]byte, error) {
 		err = compressZlib(buf, data, cfg.Level)
 	case TypeDeflate:
 		err = compressDeflate(buf, data, cfg.Level)
-	case TypeLZ4:
-		err = compressLZ4(buf, data, cfg.Level)
 	default:
 		bufferPoolPuts.Add(1)
 		bufPool.Put(buf)
@@ -265,8 +252,6 @@ func Decompress(data []byte, compressionType Type) ([]byte, error) {
 		return decompressZlib(data)
 	case TypeDeflate:
 		return decompressDeflate(data)
-	case TypeLZ4:
-		return decompressLZ4(data)
 	default:
 		return nil, fmt.Errorf("unsupported compression type: %s", compressionType)
 	}
@@ -403,11 +388,11 @@ func decompressZstd(data []byte) ([]byte, error) {
 // -----------------------------------------------------------------------
 
 func compressSnappy(data []byte) []byte {
-	return snappy.Encode(nil, data)
+	return s2.EncodeSnappy(nil, data)
 }
 
 func decompressSnappy(data []byte) ([]byte, error) {
-	return snappy.Decode(nil, data)
+	return s2.Decode(nil, data)
 }
 
 // -----------------------------------------------------------------------
@@ -497,60 +482,4 @@ func decompressDeflate(data []byte) ([]byte, error) {
 	fr := flate.NewReader(bytes.NewReader(data))
 	defer fr.Close()
 	return io.ReadAll(fr)
-}
-
-// -----------------------------------------------------------------------
-// lz4 compression (pooled writer + reader)
-// -----------------------------------------------------------------------
-
-func compressLZ4(w io.Writer, data []byte, level Level) error {
-	var lw *lz4.Writer
-	if v := lz4WriterPool.Get(); v != nil {
-		compressionPoolGets.Add(1)
-		lw = v.(*lz4.Writer)
-		lw.Reset(w)
-	} else {
-		compressionPoolNews.Add(1)
-		lw = lz4.NewWriter(w)
-	}
-
-	if level != LevelDefault {
-		if err := lw.Apply(lz4.CompressionLevelOption(lz4.CompressionLevel(level))); err != nil {
-			compressionPoolDiscards.Add(1)
-			return fmt.Errorf("failed to apply lz4 compression level: %w", err)
-		}
-	}
-
-	if _, err := lw.Write(data); err != nil {
-		compressionPoolDiscards.Add(1)
-		return fmt.Errorf("failed to write lz4 data: %w", err)
-	}
-	if err := lw.Close(); err != nil {
-		compressionPoolDiscards.Add(1)
-		return fmt.Errorf("failed to close lz4 writer: %w", err)
-	}
-	compressionPoolPuts.Add(1)
-	lz4WriterPool.Put(lw)
-	return nil
-}
-
-func decompressLZ4(data []byte) ([]byte, error) {
-	var lr *lz4.Reader
-	if v := lz4ReaderPool.Get(); v != nil {
-		compressionPoolGets.Add(1)
-		lr = v.(*lz4.Reader)
-		lr.Reset(bytes.NewReader(data))
-	} else {
-		compressionPoolNews.Add(1)
-		lr = lz4.NewReader(bytes.NewReader(data))
-	}
-
-	result, err := io.ReadAll(lr)
-	if err != nil {
-		compressionPoolDiscards.Add(1)
-		return nil, err
-	}
-	compressionPoolPuts.Add(1)
-	lz4ReaderPool.Put(lr)
-	return result, nil
 }

@@ -41,9 +41,9 @@ flowchart LR
 ```mermaid
 xychart-beta
     title "Compression Savings (higher is better)"
-    x-axis [lz4, snappy, gzip-1, gzip-6, gzip-9, zstd-1, zstd-6, zstd-11]
+    x-axis [snappy, gzip-1, gzip-6, gzip-9, zstd-1, zstd-6, zstd-11]
     y-axis "Space Savings %" 0 --> 100
-    bar [15, 25, 55, 65, 70, 60, 72, 78]
+    bar [25, 55, 65, 70, 60, 72, 78]
 ```
 
 ## Supported Algorithms
@@ -55,7 +55,6 @@ xychart-beta
 | `snappy` | `snappy` | Yes | Yes | Fast compression with moderate ratio (PRW default) |
 | `zlib` | `zlib` | Yes | No | Zlib compression (similar to gzip) |
 | `deflate` | `deflate` | Yes | No | Raw deflate compression |
-| `lz4` | `lz4` | Yes | No | Very fast compression with lower ratio |
 
 ## Compression Levels
 
@@ -66,7 +65,6 @@ Each algorithm supports different compression levels:
 | **gzip/zlib/deflate** | 1-9, -1 | 1 = fastest, 9 = best compression, -1 = default |
 | **zstd** | 1, 3, 6, 11 | 1 = fastest, 3 = default, 6 = better, 11 = best |
 | **snappy** | N/A | No compression levels supported |
-| **lz4** | N/A | Uses default compression |
 
 ## Exporter Compression
 
@@ -127,8 +125,6 @@ The HTTP receiver automatically decompresses incoming requests based on the `Con
 - `snappy`, `x-snappy-framed`
 - `zlib`
 - `deflate`
-- `lz4`
-
 No configuration is required - decompression is automatic.
 
 ## Compression Options Reference
@@ -137,7 +133,7 @@ No configuration is required - decompression is automatic.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-exporter-compression` | `none` | Compression type: `none`, `gzip`, `zstd`, `snappy`, `zlib`, `deflate`, `lz4` |
+| `-exporter-compression` | `none` | Compression type: `none`, `gzip`, `zstd`, `snappy`, `zlib`, `deflate` |
 | `-exporter-compression-level` | `0` | Compression level (algorithm-specific, 0 for default) |
 
 ### PRW Compression Flags
@@ -150,12 +146,11 @@ No configuration is required - decompression is automatic.
 
 | Algorithm | Speed | Compression Ratio | Use Case |
 |-----------|-------|-------------------|----------|
-| **lz4** | Fastest | Lowest | Low latency requirements |
 | **snappy** | Very Fast | Low-Medium | Balanced speed/ratio, PRW default |
 | **gzip** | Medium | Good | Compatibility |
 | **zstd** | Fast | Excellent | Best overall choice |
 
-**Recommendation**: Use `zstd` for the best balance of compression ratio and speed. Use `lz4` or `snappy` when latency is critical.
+**Recommendation**: Use `zstd` for the best balance of compression ratio and speed. Use `snappy` when latency is critical.
 
 ---
 
@@ -165,7 +160,7 @@ Compression encoders are expensive to allocate and initialize. metrics-governor 
 
 ### How It Works
 
-A separate `sync.Pool` is maintained for each compression type (gzip, zstd, snappy, zlib, deflate, lz4). When an export request needs to compress data:
+A separate `sync.Pool` is maintained for each compression type (gzip, zstd, snappy, zlib, deflate). When an export request needs to compress data:
 
 1. An encoder is retrieved from the pool for the configured compression type.
 2. The encoder is used to compress the payload.

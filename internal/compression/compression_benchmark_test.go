@@ -137,41 +137,6 @@ func BenchmarkDecompress_Snappy(b *testing.B) {
 	}
 }
 
-// BenchmarkCompress_LZ4 benchmarks lz4 compression at different sizes
-func BenchmarkCompress_LZ4(b *testing.B) {
-	for _, ts := range testDataSizes {
-		data := generateTestData(ts.size)
-		cfg := Config{Type: TypeLZ4, Level: LevelDefault}
-
-		b.Run(ts.name, func(b *testing.B) {
-			b.ReportAllocs()
-			b.SetBytes(int64(ts.size))
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				_, _ = Compress(data, cfg)
-			}
-		})
-	}
-}
-
-// BenchmarkDecompress_LZ4 benchmarks lz4 decompression at different sizes
-func BenchmarkDecompress_LZ4(b *testing.B) {
-	for _, ts := range testDataSizes {
-		data := generateTestData(ts.size)
-		cfg := Config{Type: TypeLZ4, Level: LevelDefault}
-		compressed, _ := Compress(data, cfg)
-
-		b.Run(ts.name, func(b *testing.B) {
-			b.ReportAllocs()
-			b.SetBytes(int64(len(compressed)))
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				_, _ = Decompress(compressed, TypeLZ4)
-			}
-		})
-	}
-}
-
 // BenchmarkCompress_Zlib benchmarks zlib compression at different sizes
 func BenchmarkCompress_Zlib(b *testing.B) {
 	for _, ts := range testDataSizes {
@@ -200,7 +165,6 @@ func BenchmarkCompress_AllAlgorithms(b *testing.B) {
 		{"gzip", Config{Type: TypeGzip, Level: LevelDefault}},
 		{"zstd", Config{Type: TypeZstd, Level: LevelDefault}},
 		{"snappy", Config{Type: TypeSnappy, Level: LevelDefault}},
-		{"lz4", Config{Type: TypeLZ4, Level: LevelDefault}},
 		{"zlib", Config{Type: TypeZlib, Level: LevelDefault}},
 		{"deflate", Config{Type: TypeDeflate, Level: LevelDefault}},
 	}
@@ -282,7 +246,6 @@ func BenchmarkRoundTrip_AllAlgorithms(b *testing.B) {
 		{"gzip", Config{Type: TypeGzip, Level: LevelDefault}, TypeGzip},
 		{"zstd", Config{Type: TypeZstd, Level: LevelDefault}, TypeZstd},
 		{"snappy", Config{Type: TypeSnappy, Level: LevelDefault}, TypeSnappy},
-		{"lz4", Config{Type: TypeLZ4, Level: LevelDefault}, TypeLZ4},
 	}
 
 	for _, alg := range algorithms {
@@ -316,7 +279,6 @@ func BenchmarkCompress_Pooled_Concurrent(b *testing.B) {
 		{"snappy", Config{Type: TypeSnappy}},
 		{"zlib", Config{Type: TypeZlib, Level: LevelDefault}},
 		{"deflate", Config{Type: TypeDeflate, Level: LevelDefault}},
-		{"lz4", Config{Type: TypeLZ4, Level: LevelDefault}},
 	}
 
 	for _, alg := range algorithms {
@@ -354,7 +316,6 @@ func BenchmarkRoundTrip_Pooled(b *testing.B) {
 		{"snappy", Config{Type: TypeSnappy}},
 		{"zlib", Config{Type: TypeZlib, Level: LevelDefault}},
 		{"deflate", Config{Type: TypeDeflate, Level: LevelDefault}},
-		{"lz4", Config{Type: TypeLZ4, Level: LevelDefault}},
 	}
 
 	for _, alg := range algorithms {
