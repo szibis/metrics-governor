@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.9.7] - 2026-02-04
+
+### Added
+
+- feat: pipeline parity, failover drain, split-on-error, memory leak fixes (#43)
+- feat: byte-aware batch splitting, concurrent exports, failover queue (#41)
+
+### Fixed
+
+- fix(ci): use GitHub API for commits and tags in auto-release (#51)
+- fix(ci): use github-actions[bot] identity instead of GPG signing (#49)
+- fix(ci): configure git user identity from GPG key in auto-release (#47)
+- fix(ci): add --repo flag to gh pr view in auto-release (#46)
+- fix(ci): fix PR discovery for squash-merged commits (#45)
+- fix(ci): replace crazy-max/ghaction-import-gpg with inline GPG import (#44)
+- fix(ci): improve test results detection and fix race conditions (#39)
+- fix(ci): add GPG signing to release workflow commits (#38)
+- fix(ci): use release PR strategy instead of direct push (#36)
+
+### Performance
+
+- perf: caching and pooling optimizations for hot paths (#40)
+
+
 ## [Unreleased]
 
 ### Added
