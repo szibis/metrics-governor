@@ -323,6 +323,8 @@ func main() {
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(interval))),
 		sdkmetric.WithResource(res),
 	)
+	// Note: For low-memory temporality, set OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=lowmemory
+	// This uses delta temporality for counters/histograms (most memory efficient)
 	defer meterProvider.Shutdown(ctx)
 
 	otel.SetMeterProvider(meterProvider)

@@ -11,6 +11,8 @@ services:
   metrics-generator:
     environment:
       - OTLP_ENDPOINT=otel-collector:4317
+      # Use low-memory temporality: delta for counters/histograms (reduces memory)
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=lowmemory
       - METRICS_INTERVAL=50ms         # Fast generation
       - SERVICES=payment-api,order-api,inventory-api,user-api,auth-api,legacy-app,billing-api,notification-api,search-api,analytics-api
       - ENVIRONMENTS=prod,staging,dev,qa
