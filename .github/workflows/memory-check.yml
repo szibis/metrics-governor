@@ -29,15 +29,12 @@ jobs:
         id: run
         run: |
           set +e
-          go test -run Resource -count=1 -timeout=5m -v -json ./internal/... > results.jsonl 2>&1
-          EXIT_CODE=$?
+          go test -run Resource -count=1 -timeout=5m -v ./internal/... 2>&1 | tee results.txt
+          EXIT_CODE=${PIPESTATUS[0]}
 
-          TOTAL=$(grep -c '"Action":"run"' results.jsonl | tr -d ' ')
-          PASSED=$(grep -c '"Action":"pass"' results.jsonl | tr -d ' ')
-          # Subtract package-level pass events (no Test field)
-          TOTAL_TESTS=$(jq -r 'select(.Action=="run" and .Test != null and (.Test | contains("/") | not)) | .Test' results.jsonl 2>/dev/null | wc -l | tr -d ' ')
-          PASSED_TESTS=$(jq -r 'select(.Action=="pass" and .Test != null and (.Test | contains("/") | not)) | .Test' results.jsonl 2>/dev/null | wc -l | tr -d ' ')
-          FAILED_TESTS=$(jq -r 'select(.Action=="fail" and .Test != null and (.Test | contains("/") | not)) | .Test' results.jsonl 2>/dev/null | wc -l | tr -d ' ')
+          PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
+          FAILED_TESTS=$(grep -c '^--- FAIL:' results.txt)
+          TOTAL_TESTS=$((PASSED_TESTS + FAILED_TESTS))
 
           echo "total=${TOTAL_TESTS}" >> $GITHUB_OUTPUT
           echo "passed=${PASSED_TESTS}" >> $GITHUB_OUTPUT
@@ -48,9 +45,6 @@ jobs:
           else
             echo "success=false" >> $GITHUB_OUTPUT
           fi
-
-          # Print human-readable output
-          jq -r 'select(.Action=="output") | .Output // empty' results.jsonl 2>/dev/null || cat results.jsonl
           exit $EXIT_CODE
 
   goroutine-leak-check:
@@ -73,12 +67,12 @@ jobs:
         id: run
         run: |
           set +e
-          go test -run TestLeak -count=1 -timeout=5m -v -json ./internal/... > results.jsonl 2>&1
-          EXIT_CODE=$?
+          go test -run TestLeak -count=1 -timeout=5m -v ./internal/... 2>&1 | tee results.txt
+          EXIT_CODE=${PIPESTATUS[0]}
 
-          TOTAL_TESTS=$(jq -r 'select(.Action=="run" and .Test != null and (.Test | contains("/") | not)) | .Test' results.jsonl 2>/dev/null | wc -l | tr -d ' ')
-          PASSED_TESTS=$(jq -r 'select(.Action=="pass" and .Test != null and (.Test | contains("/") | not)) | .Test' results.jsonl 2>/dev/null | wc -l | tr -d ' ')
-          FAILED_TESTS=$(jq -r 'select(.Action=="fail" and .Test != null and (.Test | contains("/") | not)) | .Test' results.jsonl 2>/dev/null | wc -l | tr -d ' ')
+          PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
+          FAILED_TESTS=$(grep -c '^--- FAIL:' results.txt)
+          TOTAL_TESTS=$((PASSED_TESTS + FAILED_TESTS))
 
           echo "total=${TOTAL_TESTS}" >> $GITHUB_OUTPUT
           echo "passed=${PASSED_TESTS}" >> $GITHUB_OUTPUT
@@ -89,8 +83,6 @@ jobs:
           else
             echo "success=false" >> $GITHUB_OUTPUT
           fi
-
-          jq -r 'select(.Action=="output") | .Output // empty' results.jsonl 2>/dev/null || cat results.jsonl
           exit $EXIT_CODE
 
   memory-stress-test:
@@ -113,12 +105,12 @@ jobs:
         id: run
         run: |
           set +e
-          go test -run Stress -count=1 -timeout=10m -v -json ./internal/... > results.jsonl 2>&1
-          EXIT_CODE=$?
+          go test -run Stress -count=1 -timeout=10m -v ./internal/... 2>&1 | tee results.txt
+          EXIT_CODE=${PIPESTATUS[0]}
 
-          TOTAL_TESTS=$(jq -r 'select(.Action=="run" and .Test != null and (.Test | contains("/") | not)) | .Test' results.jsonl 2>/dev/null | wc -l | tr -d ' ')
-          PASSED_TESTS=$(jq -r 'select(.Action=="pass" and .Test != null and (.Test | contains("/") | not)) | .Test' results.jsonl 2>/dev/null | wc -l | tr -d ' ')
-          FAILED_TESTS=$(jq -r 'select(.Action=="fail" and .Test != null and (.Test | contains("/") | not)) | .Test' results.jsonl 2>/dev/null | wc -l | tr -d ' ')
+          PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
+          FAILED_TESTS=$(grep -c '^--- FAIL:' results.txt)
+          TOTAL_TESTS=$((PASSED_TESTS + FAILED_TESTS))
 
           echo "total=${TOTAL_TESTS}" >> $GITHUB_OUTPUT
           echo "passed=${PASSED_TESTS}" >> $GITHUB_OUTPUT
@@ -129,8 +121,6 @@ jobs:
           else
             echo "success=false" >> $GITHUB_OUTPUT
           fi
-
-          jq -r 'select(.Action=="output") | .Output // empty' results.jsonl 2>/dev/null || cat results.jsonl
           exit $EXIT_CODE
 
   benchmark-alloc-compare:
