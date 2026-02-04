@@ -440,3 +440,219 @@ func BenchmarkAtomicOperations(b *testing.B) {
 		}
 	})
 }
+
+// Tests for spike scenario functionality
+
+func TestGenerateUUID(t *testing.T) {
+	t.Run("generates unique IDs", func(t *testing.T) {
+		seen := make(map[string]bool)
+		for i := 0; i < 1000; i++ {
+			id := generateUUID()
+			if seen[id] {
+				t.Errorf("duplicate UUID generated: %s", id)
+			}
+			seen[id] = true
+		}
+	})
+
+	t.Run("format contains dashes", func(t *testing.T) {
+		id := generateUUID()
+		// Should be hex format with dashes
+		if len(id) < 20 {
+			t.Errorf("UUID too short: %s (length %d)", id, len(id))
+		}
+		// Should contain dashes
+		dashCount := 0
+		for _, c := range id {
+			if c == '-' {
+				dashCount++
+			}
+		}
+		if dashCount != 4 {
+			t.Errorf("UUID should have 4 dashes, got %d: %s", dashCount, id)
+		}
+	})
+
+	t.Run("all hex characters", func(t *testing.T) {
+		id := generateUUID()
+		validChars := "0123456789abcdef-"
+		for _, c := range id {
+			found := false
+			for _, v := range validChars {
+				if c == v {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("UUID contains invalid character %c: %s", c, id)
+			}
+		}
+	})
+}
+
+func TestSpikeScenarioStatsAtomic(t *testing.T) {
+	t.Run("spike counters increment correctly", func(t *testing.T) {
+		testStats := &SpikeScenarioStats{}
+
+		testStats.SpikesStarted.Add(1)
+		testStats.SpikesEnded.Add(1)
+		testStats.SpikeSeriesTotal.Add(100)
+
+		if got := testStats.SpikesStarted.Load(); got != 1 {
+			t.Errorf("SpikesStarted = %d, want 1", got)
+		}
+		if got := testStats.SpikesEnded.Load(); got != 1 {
+			t.Errorf("SpikesEnded = %d, want 1", got)
+		}
+		if got := testStats.SpikeSeriesTotal.Load(); got != 100 {
+			t.Errorf("SpikeSeriesTotal = %d, want 100", got)
+		}
+	})
+
+	t.Run("mistake counters increment correctly", func(t *testing.T) {
+		testStats := &SpikeScenarioStats{}
+
+		testStats.MistakeStarted.Add(1)
+		testStats.MistakeEnded.Add(1)
+		testStats.MistakeSeriesTotal.Add(200)
+
+		if got := testStats.MistakeStarted.Load(); got != 1 {
+			t.Errorf("MistakeStarted = %d, want 1", got)
+		}
+		if got := testStats.MistakeEnded.Load(); got != 1 {
+			t.Errorf("MistakeEnded = %d, want 1", got)
+		}
+		if got := testStats.MistakeSeriesTotal.Load(); got != 200 {
+			t.Errorf("MistakeSeriesTotal = %d, want 200", got)
+		}
+	})
+
+	t.Run("active flags work correctly", func(t *testing.T) {
+		testStats := &SpikeScenarioStats{}
+
+		// Initial state should be false
+		if testStats.ActiveSpike.Load() {
+			t.Error("ActiveSpike should be false initially")
+		}
+		if testStats.ActiveMistake.Load() {
+			t.Error("ActiveMistake should be false initially")
+		}
+
+		// Set to true
+		testStats.ActiveSpike.Store(true)
+		testStats.ActiveMistake.Store(true)
+
+		if !testStats.ActiveSpike.Load() {
+			t.Error("ActiveSpike should be true")
+		}
+		if !testStats.ActiveMistake.Load() {
+			t.Error("ActiveMistake should be true")
+		}
+
+		// Set back to false
+		testStats.ActiveSpike.Store(false)
+		testStats.ActiveMistake.Store(false)
+
+		if testStats.ActiveSpike.Load() {
+			t.Error("ActiveSpike should be false after reset")
+		}
+		if testStats.ActiveMistake.Load() {
+			t.Error("ActiveMistake should be false after reset")
+		}
+	})
+
+	t.Run("concurrent access safety", func(t *testing.T) {
+		testStats := &SpikeScenarioStats{}
+		done := make(chan bool)
+
+		// Launch multiple goroutines incrementing spike stats
+		for i := 0; i < 10; i++ {
+			go func() {
+				for j := 0; j < 100; j++ {
+					testStats.SpikesStarted.Add(1)
+					testStats.SpikeSeriesTotal.Add(10)
+				}
+				done <- true
+			}()
+		}
+
+		// Wait for all goroutines
+		for i := 0; i < 10; i++ {
+			<-done
+		}
+
+		// Each goroutine adds 100, 10 goroutines = 1000
+		if got := testStats.SpikesStarted.Load(); got != 1000 {
+			t.Errorf("SpikesStarted after concurrent access = %d, want 1000", got)
+		}
+		// Each goroutine adds 100*10=1000, 10 goroutines = 10000
+		if got := testStats.SpikeSeriesTotal.Load(); got != 10000 {
+			t.Errorf("SpikeSeriesTotal after concurrent access = %d, want 10000", got)
+		}
+	})
+}
+
+func TestSpikeEnvVars(t *testing.T) {
+	t.Run("spike scenario env defaults", func(t *testing.T) {
+		os.Unsetenv("ENABLE_SPIKE_SCENARIOS")
+		os.Unsetenv("SPIKE_MODE")
+		os.Unsetenv("SPIKE_CARDINALITY")
+		os.Unsetenv("SPIKE_DURATION_SEC")
+		os.Unsetenv("SPIKE_INTERVAL_MIN_SEC")
+		os.Unsetenv("SPIKE_INTERVAL_MAX_SEC")
+		os.Unsetenv("MISTAKE_DELAY_SEC")
+		os.Unsetenv("MISTAKE_DURATION_SEC")
+		os.Unsetenv("MISTAKE_CARDINALITY_RATE")
+
+		if getEnvBool("ENABLE_SPIKE_SCENARIOS", false) {
+			t.Error("ENABLE_SPIKE_SCENARIOS default should be false")
+		}
+		if getEnv("SPIKE_MODE", "realistic") != "realistic" {
+			t.Error("SPIKE_MODE default should be realistic")
+		}
+		if getEnvInt("SPIKE_CARDINALITY", 1000) != 1000 {
+			t.Error("SPIKE_CARDINALITY default should be 1000")
+		}
+		if getEnvInt("SPIKE_DURATION_SEC", 20) != 20 {
+			t.Error("SPIKE_DURATION_SEC default should be 20")
+		}
+		if getEnvInt("SPIKE_INTERVAL_MIN_SEC", 30) != 30 {
+			t.Error("SPIKE_INTERVAL_MIN_SEC default should be 30")
+		}
+		if getEnvInt("SPIKE_INTERVAL_MAX_SEC", 120) != 120 {
+			t.Error("SPIKE_INTERVAL_MAX_SEC default should be 120")
+		}
+		if getEnvInt("MISTAKE_DELAY_SEC", 90) != 90 {
+			t.Error("MISTAKE_DELAY_SEC default should be 90")
+		}
+		if getEnvInt("MISTAKE_DURATION_SEC", 120) != 120 {
+			t.Error("MISTAKE_DURATION_SEC default should be 120")
+		}
+		if getEnvInt("MISTAKE_CARDINALITY_RATE", 100) != 100 {
+			t.Error("MISTAKE_CARDINALITY_RATE default should be 100")
+		}
+	})
+
+	t.Run("spike scenario env custom values", func(t *testing.T) {
+		defer func() {
+			os.Unsetenv("ENABLE_SPIKE_SCENARIOS")
+			os.Unsetenv("SPIKE_MODE")
+			os.Unsetenv("SPIKE_CARDINALITY")
+		}()
+
+		os.Setenv("ENABLE_SPIKE_SCENARIOS", "true")
+		os.Setenv("SPIKE_MODE", "random")
+		os.Setenv("SPIKE_CARDINALITY", "500")
+
+		if !getEnvBool("ENABLE_SPIKE_SCENARIOS", false) {
+			t.Error("ENABLE_SPIKE_SCENARIOS should be true when set")
+		}
+		if getEnv("SPIKE_MODE", "realistic") != "random" {
+			t.Error("SPIKE_MODE should be 'random' when set")
+		}
+		if getEnvInt("SPIKE_CARDINALITY", 1000) != 500 {
+			t.Error("SPIKE_CARDINALITY should be 500 when set")
+		}
+	})
+}

@@ -35,6 +35,16 @@ services:
       - STABLE_METRIC_COUNT=100          # 100 unique metric names
       - STABLE_CARDINALITY=10            # 10 series per metric
       - STABLE_DATAPOINTS=1              # 1 datapoint per series per interval
+      # Spike scenario configuration (disabled - stable mode needs predictability)
+      - ENABLE_SPIKE_SCENARIOS=false
+      - SPIKE_MODE=realistic
+      - SPIKE_CARDINALITY=1000
+      - SPIKE_DURATION_SEC=20
+      - SPIKE_INTERVAL_MIN_SEC=30
+      - SPIKE_INTERVAL_MAX_SEC=120
+      - MISTAKE_DELAY_SEC=90
+      - MISTAKE_DURATION_SEC=120
+      - MISTAKE_CARDINALITY_RATE=100
 
   metrics-governor:
     command:

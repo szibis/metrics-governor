@@ -295,6 +295,7 @@ docker compose down
 | **default** | `docker compose up -d` | ~10,000-20,000 | General testing |
 | **perf** | `docker compose -f docker-compose.yaml -f compose_overrides/perf.yaml up -d` | ~100,000+ | Stress testing |
 | **sharding** | `docker compose -f docker-compose.yaml -f compose_overrides/sharding.yaml up -d` | ~10,000 | Multi-endpoint sharding |
+| **limits** | `docker compose -f docker-compose.yaml -f compose_overrides/limits.yaml up -d --build` | ~10,000 | Limits enforcement + spikes |
 
 ### Available Endpoints
 
@@ -323,14 +324,118 @@ The metrics generator creates various test scenarios:
 
 ### Generator Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OTLP_ENDPOINT` | `metrics-governor:4317` | Target endpoint |
-| `METRICS_INTERVAL` | `100ms` | Generation interval |
-| `SERVICES` | `payment-api,order-api,...` | Service names |
-| `ENABLE_HIGH_CARDINALITY` | `true` | Generate high cardinality |
-| `ENABLE_BURST_TRAFFIC` | `true` | Enable burst patterns |
-| `TARGET_DATAPOINTS_PER_SEC` | `10000` | Target datapoints |
+#### Connection
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `OTLP_ENDPOINT` | string | `localhost:4317` | OTLP gRPC endpoint |
+| `METRICS_PORT` | string | `9091` | Prometheus metrics port for generator stats |
+
+#### Traffic Shape
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `METRICS_INTERVAL` | duration | `100ms` | Generation interval between batches |
+| `TARGET_METRICS_PER_SEC` | int | `1000` | Target metrics rate (informational) |
+| `TARGET_DATAPOINTS_PER_SEC` | int | `10000` | Target datapoints rate (informational) |
+
+#### Services & Environments
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `SERVICES` | string | `payment-api,order-api,...` | Comma-separated service names |
+| `ENVIRONMENTS` | string | `prod,staging,dev,qa` | Comma-separated environments |
+
+#### Feature Toggles
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `ENABLE_EDGE_CASES` | bool | `true` | Generate extreme float values (0, ±inf, Pi, e) |
+| `ENABLE_HIGH_CARDINALITY` | bool | `true` | Generate high-cardinality metrics |
+| `ENABLE_BURST_TRAFFIC` | bool | `true` | Generate periodic traffic bursts |
+| `ENABLE_DIVERSE_METRICS` | bool | `true` | Generate 200+ unique metric names |
+| `ENABLE_STABLE_MODE` | bool | `false` | Predictable metrics for verification testing |
+
+#### Cardinality Control
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `HIGH_CARDINALITY_COUNT` | int | `100` | High-cardinality samples per interval |
+| `DIVERSE_METRIC_COUNT` | int | `200` | Number of unique metric names to generate |
+
+#### Burst Traffic
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `BURST_SIZE` | int | `2000` | Datapoints per burst |
+| `BURST_INTERVAL_SEC` | int | `15` | Seconds between bursts |
+
+#### Stable Mode
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `STABLE_METRIC_COUNT` | int | `100` | Number of stable metric names |
+| `STABLE_CARDINALITY` | int | `10` | Series per stable metric |
+| `STABLE_DATAPOINTS` | int | `1` | Datapoints per series per interval |
+
+#### Spike Scenarios
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `ENABLE_SPIKE_SCENARIOS` | bool | `false` | Enable time-varying cardinality spikes |
+| `SPIKE_MODE` | string | `realistic` | Mode: `random`, `mistake`, or `realistic` |
+| `SPIKE_CARDINALITY` | int | `1000` | Unique series created per spike |
+| `SPIKE_DURATION_SEC` | int | `20` | How long each spike lasts |
+| `SPIKE_INTERVAL_MIN_SEC` | int | `30` | Minimum seconds between spikes |
+| `SPIKE_INTERVAL_MAX_SEC` | int | `120` | Maximum seconds between spikes |
+| `MISTAKE_DELAY_SEC` | int | `90` | Base delay before mistake starts (±50% jitter) |
+| `MISTAKE_DURATION_SEC` | int | `120` | How long mistake scenario lasts |
+| `MISTAKE_CARDINALITY_RATE` | int | `100` | New unique series per second during mistake |
+
+#### Statistics
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `STATS_INTERVAL_SEC` | int | `10` | Seconds between stats output |
+| `ENABLE_STATS_OUTPUT` | bool | `true` | Print periodic stats to stdout |
+
+### Spike Scenario Modes
+
+The generator supports time-varying cardinality scenarios for testing limits enforcement and recovery:
+
+| Mode | Description |
+|------|-------------|
+| `random` | Random cardinality spikes every 30-120s, each creating 1000 new series for 20s, then recovering |
+| `mistake` | Simulates bad deployment: after random delay, floods 100 new series/sec for 2 min, then recovers, repeats |
+| `realistic` | Both random spikes AND mistake scenarios running concurrently with independent random timings |
+
+**Key feature**: Each spike/mistake uses a separate `MeterProvider` that is shut down after the event. This causes the OTel SDK to stop exporting those series, enabling clean recovery testing where the enforcer's 1-minute window clears the violations.
+
+### Generator Prometheus Metrics
+
+The generator exposes these metrics at `:9091/metrics`:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `generator_runtime_seconds` | counter | Total runtime |
+| `generator_metrics_sent_total` | counter | Total metrics sent |
+| `generator_datapoints_sent_total` | counter | Total datapoints sent |
+| `generator_batches_sent_total` | counter | Total batches sent |
+| `generator_batch_latency_avg_seconds` | gauge | Average batch latency |
+| `generator_batch_latency_min_seconds` | gauge | Minimum batch latency |
+| `generator_batch_latency_max_seconds` | gauge | Maximum batch latency |
+| `generator_high_cardinality_metrics_total` | counter | High-cardinality metrics generated |
+| `generator_unique_labels_total` | counter | Approximate unique label combinations |
+| `generator_bursts_sent_total` | counter | Traffic bursts sent |
+| `generator_burst_metrics_total` | counter | Metrics sent in bursts |
+| `generator_errors_total` | counter | Total errors |
+| `generator_metrics_per_second` | gauge | Current metrics rate |
+| `generator_datapoints_per_second` | gauge | Current datapoints rate |
+| `generator_spikes_started_total` | counter | Spike scenarios started |
+| `generator_spike_active` | gauge | Whether spike is currently active (0/1) |
+| `generator_spike_series_total` | counter | Series created by spikes |
+| `generator_mistake_active` | gauge | Whether mistake scenario is active (0/1) |
+| `generator_mistake_series_total` | counter | Series created by mistakes |
 
 ### Useful Commands
 
@@ -349,6 +454,18 @@ docker compose logs -f verifier
 
 # View metrics-governor logs
 docker compose logs -f metrics-governor
+
+# Watch spike scenarios
+docker compose logs -f metrics-generator 2>&1 | grep SPIKE
+
+# Watch mistake scenarios
+docker compose logs -f metrics-generator 2>&1 | grep MISTAKE
+
+# Check generator spike metrics
+curl -s localhost:9091/metrics | grep generator_spike
+
+# Watch limit enforcement for spike metrics
+docker compose logs -f metrics-governor 2>&1 | grep "spike-metric-limit"
 ```
 
 ### Verifier Output

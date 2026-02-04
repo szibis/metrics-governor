@@ -26,6 +26,16 @@ services:
       - TARGET_METRICS_PER_SEC=100000
       - TARGET_DATAPOINTS_PER_SEC=200000
       - METRICS_PORT=9091
+      # Spike scenario configuration (enabled for stress testing)
+      - ENABLE_SPIKE_SCENARIOS=true
+      - SPIKE_MODE=realistic
+      - SPIKE_CARDINALITY=1000
+      - SPIKE_DURATION_SEC=20
+      - SPIKE_INTERVAL_MIN_SEC=30
+      - SPIKE_INTERVAL_MAX_SEC=120
+      - MISTAKE_DELAY_SEC=90
+      - MISTAKE_DURATION_SEC=120
+      - MISTAKE_CARDINALITY_RATE=100
     deploy:
       resources:
         limits:
