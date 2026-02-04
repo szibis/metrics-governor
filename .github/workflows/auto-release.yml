@@ -1,8 +1,7 @@
 name: Auto Release
 
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches: [main]
 
 permissions:
@@ -13,26 +12,61 @@ permissions:
 jobs:
   # Job 1: When a feature/fix PR is merged, create a release PR
   prepare-release:
-    if: |
-      github.event.pull_request.merged == true &&
-      !startsWith(github.event.pull_request.title, 'chore(release):')
     runs-on: ubuntu-latest
     outputs:
       release_pr_created: ${{ steps.create_pr.outputs.created }}
       version: ${{ steps.new_version.outputs.version }}
     steps:
+      - name: Find merged PR
+        id: find_pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Find the PR that was merged in this push
+          COMMIT_SHA="${{ github.sha }}"
+          PR_JSON=$(gh api "repos/${{ github.repository }}/commits/${COMMIT_SHA}/pulls" \
+            --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | first // empty')
+
+          if [ -z "$PR_JSON" ]; then
+            echo "No merged PR found for commit ${COMMIT_SHA}"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          PR_NUMBER=$(echo "$PR_JSON" | jq -r '.number')
+          PR_TITLE=$(echo "$PR_JSON" | jq -r '.title')
+          PR_LABELS=$(echo "$PR_JSON" | jq -r '[.labels[].name] | join(",")')
+
+          echo "Found PR #${PR_NUMBER}: ${PR_TITLE}"
+          echo "Labels: ${PR_LABELS}"
+
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
+          echo "pr_labels=$PR_LABELS" >> $GITHUB_OUTPUT
+          echo "skip=false" >> $GITHUB_OUTPUT
+
+          # Check if this is a release PR (should not trigger prepare-release)
+          if echo "$PR_TITLE" | grep -q "^chore(release):"; then
+            echo "This is a release PR — skipping prepare-release"
+            echo "is_release_pr=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_release_pr=false" >> $GITHUB_OUTPUT
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.find_pr.outputs.skip != 'true' && steps.find_pr.outputs.is_release_pr != 'true'
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PAT }}
 
       - name: Detect changes
+        if: steps.find_pr.outputs.skip != 'true' && steps.find_pr.outputs.is_release_pr != 'true'
         id: detect
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Get changed files from PR via GitHub API (works with squash merge)
-          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_NUMBER="${{ steps.find_pr.outputs.pr_number }}"
           CHANGED_FILES=$(gh pr view $PR_NUMBER --json files --jq '.files[].path')
 
           echo "Changed files:"
@@ -57,83 +91,72 @@ jobs:
           fi
 
       - name: Determine version bump
+        if: steps.find_pr.outputs.skip != 'true' && steps.find_pr.outputs.is_release_pr != 'true'
         id: bump
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const pr = context.payload.pull_request;
-            const title = pr.title.toLowerCase();
-            const labels = pr.labels.map(l => l.name);
+        env:
+          PR_TITLE: ${{ steps.find_pr.outputs.pr_title }}
+          PR_LABELS: ${{ steps.find_pr.outputs.pr_labels }}
+        run: |
+          TITLE_LOWER=$(echo "$PR_TITLE" | tr '[:upper:]' '[:lower:]')
 
-            console.log('PR Title:', pr.title);
-            console.log('Labels:', labels);
+          echo "PR Title: $PR_TITLE"
+          echo "Labels: $PR_LABELS"
 
-            // Check for skip label
-            if (labels.includes('release:skip')) {
-              console.log('Skipping release: release:skip label found');
-              core.setOutput('skip', 'true');
-              return;
-            }
+          # Check for skip label
+          if echo ",$PR_LABELS," | grep -q ",release:skip,"; then
+            echo "Skipping release: release:skip label found"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
-            // Check for explicit version labels (highest priority)
-            if (labels.includes('release:major')) {
-              core.setOutput('bump', 'major');
-              core.setOutput('skip', 'false');
-              return;
-            }
-            if (labels.includes('release:minor')) {
-              core.setOutput('bump', 'minor');
-              core.setOutput('skip', 'false');
-              return;
-            }
-            if (labels.includes('release:patch')) {
-              core.setOutput('bump', 'patch');
-              core.setOutput('skip', 'false');
-              return;
-            }
+          # Check for explicit version labels (highest priority)
+          if echo ",$PR_LABELS," | grep -q ",release:major,"; then
+            echo "bump=major" >> $GITHUB_OUTPUT
+            echo "skip=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          if echo ",$PR_LABELS," | grep -q ",release:minor,"; then
+            echo "bump=minor" >> $GITHUB_OUTPUT
+            echo "skip=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          if echo ",$PR_LABELS," | grep -q ",release:patch,"; then
+            echo "bump=patch" >> $GITHUB_OUTPUT
+            echo "skip=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
-            // Check for breaking change
-            if (labels.includes('breaking-change') || title.includes('!:') || title.includes('breaking')) {
-              core.setOutput('bump', 'major');
-              core.setOutput('skip', 'false');
-              return;
-            }
+          # Check for breaking change
+          if echo ",$PR_LABELS," | grep -q ",breaking-change," || \
+             echo "$TITLE_LOWER" | grep -qE '!:|breaking'; then
+            echo "bump=major" >> $GITHUB_OUTPUT
+            echo "skip=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
-            // Determine bump from conventional commit type
-            const conventionalTypes = {
-              'feat': 'minor',
-              'fix': 'patch',
-              'perf': 'patch',
-              'security': 'patch',
-              'deps': 'patch',
-              'ci': 'patch',
-              'build': 'patch',
-              'docs': 'none',
-              'chore': 'none',
-              'test': 'none',
-              'refactor': 'none',
-              'style': 'none',
-            };
+          # Determine bump from conventional commit type
+          BUMP="none"
+          case "$TITLE_LOWER" in
+            feat:*|feat\(*) BUMP="minor" ;;
+            fix:*|fix\(*) BUMP="patch" ;;
+            perf:*|perf\(*) BUMP="patch" ;;
+            security:*|security\(*) BUMP="patch" ;;
+            deps:*|deps\(*) BUMP="patch" ;;
+            ci:*|ci\(*) BUMP="patch" ;;
+            build:*|build\(*) BUMP="patch" ;;
+          esac
 
-            let bump = 'none';
-            for (const [type, bumpType] of Object.entries(conventionalTypes)) {
-              if (title.startsWith(`${type}:`) || title.startsWith(`${type}(`)) {
-                bump = bumpType;
-                break;
-              }
-            }
+          if [ "$BUMP" = "none" ]; then
+            echo "No release: PR type does not trigger release"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
-            if (bump === 'none') {
-              console.log('No release: PR type does not trigger release');
-              core.setOutput('skip', 'true');
-              return;
-            }
-
-            core.setOutput('bump', bump);
-            core.setOutput('skip', 'false');
+          echo "bump=$BUMP" >> $GITHUB_OUTPUT
+          echo "skip=false" >> $GITHUB_OUTPUT
 
       - name: Get current version
-        if: steps.bump.outputs.skip != 'true'
+        if: steps.find_pr.outputs.skip != 'true' && steps.find_pr.outputs.is_release_pr != 'true' && steps.bump.outputs.skip != 'true'
         id: current
         run: |
           # Get latest version tag
@@ -160,7 +183,7 @@ jobs:
           echo "chart_version=$CHART_VERSION" >> $GITHUB_OUTPUT
 
       - name: Calculate new version
-        if: steps.bump.outputs.skip != 'true'
+        if: steps.find_pr.outputs.skip != 'true' && steps.find_pr.outputs.is_release_pr != 'true' && steps.bump.outputs.skip != 'true'
         id: new_version
         run: |
           BUMP="${{ steps.bump.outputs.bump }}"
@@ -204,7 +227,7 @@ jobs:
           echo "chart_version=$NEW_CHART_VERSION" >> $GITHUB_OUTPUT
 
       - name: Check if tag exists
-        if: steps.bump.outputs.skip != 'true'
+        if: steps.find_pr.outputs.skip != 'true' && steps.find_pr.outputs.is_release_pr != 'true' && steps.bump.outputs.skip != 'true'
         id: check_tag
         run: |
           VERSION="${{ steps.new_version.outputs.version }}"
@@ -216,7 +239,7 @@ jobs:
           fi
 
       - name: Generate changelog entry
-        if: steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
+        if: steps.find_pr.outputs.skip != 'true' && steps.find_pr.outputs.is_release_pr != 'true' && steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
         id: changelog
         env:
           GH_TOKEN: ${{ github.token }}
@@ -278,7 +301,7 @@ jobs:
           cat /tmp/changelog_entry.md
 
       - name: Import GPG key
-        if: steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
+        if: steps.find_pr.outputs.skip != 'true' && steps.find_pr.outputs.is_release_pr != 'true' && steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
         uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -287,7 +310,7 @@ jobs:
           git_commit_gpgsign: true
 
       - name: Create release branch and PR
-        if: steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
+        if: steps.find_pr.outputs.skip != 'true' && steps.find_pr.outputs.is_release_pr != 'true' && steps.bump.outputs.skip != 'true' && steps.check_tag.outputs.exists != 'true'
         id: create_pr
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
@@ -363,7 +386,11 @@ jobs:
           echo "## Auto Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ steps.bump.outputs.skip }}" == "true" ]; then
+          if [ "${{ steps.find_pr.outputs.skip }}" == "true" ]; then
+            echo "**Status:** Skipped (no merged PR found)" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.find_pr.outputs.is_release_pr }}" == "true" ]; then
+            echo "**Status:** Skipped (release PR merge — handled by create-release job)" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.bump.outputs.skip }}" == "true" ]; then
             echo "**Status:** Skipped" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "No release triggered. To force a release, add one of these labels:" >> $GITHUB_STEP_SUMMARY
@@ -386,32 +413,58 @@ jobs:
             echo "| **Release PR** | ${{ steps.create_pr.outputs.pr_url }} |" >> $GITHUB_STEP_SUMMARY
           fi
 
-  # Job 2: When a release PR is merged, create tag and release
+  # Job 2: When a release PR is merged (push to main with chore(release) commit), create tag
   create-release:
-    if: |
-      github.event.pull_request.merged == true &&
-      startsWith(github.event.pull_request.title, 'chore(release):')
     runs-on: ubuntu-latest
     outputs:
       released: ${{ steps.release.outputs.released }}
       version: ${{ steps.release.outputs.version }}
     steps:
+      - name: Find merged PR
+        id: find_pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          COMMIT_SHA="${{ github.sha }}"
+          PR_JSON=$(gh api "repos/${{ github.repository }}/commits/${COMMIT_SHA}/pulls" \
+            --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | first // empty')
+
+          if [ -z "$PR_JSON" ]; then
+            echo "No merged PR found"
+            echo "is_release_pr=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          PR_TITLE=$(echo "$PR_JSON" | jq -r '.title')
+          echo "PR Title: $PR_TITLE"
+
+          if echo "$PR_TITLE" | grep -q "^chore(release):"; then
+            echo "is_release_pr=true" >> $GITHUB_OUTPUT
+            echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
+          else
+            echo "is_release_pr=false" >> $GITHUB_OUTPUT
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.find_pr.outputs.is_release_pr == 'true'
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PAT }}
 
       - name: Extract version from PR title
+        if: steps.find_pr.outputs.is_release_pr == 'true'
         id: version
+        env:
+          PR_TITLE: ${{ steps.find_pr.outputs.pr_title }}
         run: |
           # Extract version from PR title like "chore(release): v1.2.3"
-          TITLE="${{ github.event.pull_request.title }}"
-          VERSION=$(echo "$TITLE" | grep -oP 'v\d+\.\d+\.\d+')
+          VERSION=$(echo "$PR_TITLE" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')
           echo "Version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "version_num=${VERSION#v}" >> $GITHUB_OUTPUT
 
       - name: Import GPG key
+        if: steps.find_pr.outputs.is_release_pr == 'true'
         uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -420,9 +473,17 @@ jobs:
           git_tag_gpgsign: true
 
       - name: Create and push tag
+        if: steps.find_pr.outputs.is_release_pr == 'true'
         id: release
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+
+          # Check if tag already exists
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists, skipping"
+            echo "released=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
           # Create signed tag (GPG signing configured by import-gpg action)
           git tag -s "$VERSION" -m "Release $VERSION"
@@ -433,6 +494,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Summary
+        if: steps.find_pr.outputs.is_release_pr == 'true' && steps.release.outputs.released == 'true'
         run: |
           echo "## Release Created" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
