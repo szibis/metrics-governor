@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/szibis/metrics-governor/internal/compression"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -69,14 +70,18 @@ type Config struct {
 	CircuitBreakerResetTimeout time.Duration
 
 	// FastQueue settings
-	// InmemoryBlocks is the in-memory channel size (default: 256).
+	// InmemoryBlocks is the in-memory channel size (default: 2048).
 	InmemoryBlocks int
 	// ChunkSize is the chunk file size (default: 512MB).
 	ChunkSize int64
 	// MetaSyncInterval is the metadata sync interval (default: 1s).
 	MetaSyncInterval time.Duration
-	// StaleFlushInterval is the stale flush interval (default: 5s).
+	// StaleFlushInterval is the stale flush interval (default: 30s).
 	StaleFlushInterval time.Duration
+	// WriteBufferSize is the buffered writer size in bytes (default: 256KB).
+	WriteBufferSize int
+	// Compression is the block compression type (default: "snappy").
+	Compression string
 }
 
 // DefaultConfig returns a default queue configuration.
@@ -97,10 +102,12 @@ func DefaultConfig() Config {
 		CircuitBreakerEnabled:      true,
 		CircuitBreakerThreshold:    10,
 		CircuitBreakerResetTimeout: 30 * time.Second,
-		InmemoryBlocks:             256,
+		InmemoryBlocks:             2048,
 		ChunkSize:                  512 * 1024 * 1024, // 512MB
 		MetaSyncInterval:           time.Second,
-		StaleFlushInterval:         5 * time.Second,
+		StaleFlushInterval:         30 * time.Second,
+		WriteBufferSize:            262144, // 256KB
+		Compression:                "snappy",
 	}
 }
 
@@ -161,7 +168,7 @@ func New(cfg Config) (*SendQueue, error) {
 		cfg.CompactThreshold = 0.5
 	}
 	if cfg.InmemoryBlocks <= 0 {
-		cfg.InmemoryBlocks = 256
+		cfg.InmemoryBlocks = 2048
 	}
 	if cfg.ChunkSize <= 0 {
 		cfg.ChunkSize = 512 * 1024 * 1024
@@ -170,8 +177,17 @@ func New(cfg Config) (*SendQueue, error) {
 		cfg.MetaSyncInterval = time.Second
 	}
 	if cfg.StaleFlushInterval <= 0 {
-		cfg.StaleFlushInterval = 5 * time.Second
+		cfg.StaleFlushInterval = 30 * time.Second
 	}
+	if cfg.WriteBufferSize <= 0 {
+		cfg.WriteBufferSize = 262144 // 256KB
+	}
+	if cfg.Compression == "" {
+		cfg.Compression = "snappy"
+	}
+
+	// Parse compression type
+	compressionType, _ := compression.ParseType(cfg.Compression)
 
 	// Create FastQueue
 	fqCfg := FastQueueConfig{
@@ -182,6 +198,8 @@ func New(cfg Config) (*SendQueue, error) {
 		StaleFlushInterval: cfg.StaleFlushInterval,
 		MaxSize:            cfg.MaxSize,
 		MaxBytes:           cfg.MaxBytes,
+		WriteBufferSize:    cfg.WriteBufferSize,
+		Compression:        compressionType,
 	}
 
 	fq, err := NewFastQueue(fqCfg)

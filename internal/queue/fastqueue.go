@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"bufio"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -16,14 +17,22 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/klauspost/compress/s2"
+	"github.com/szibis/metrics-governor/internal/compression"
 )
 
 const (
 	// Default configuration values
-	defaultInmemoryBlocks     = 256
+	defaultInmemoryBlocks     = 2048
 	defaultChunkFileSize      = 512 * 1024 * 1024 // 512MB
 	defaultMetaSyncInterval   = time.Second
-	defaultStaleFlushInterval = 5 * time.Second
+	defaultStaleFlushInterval = 30 * time.Second
+	defaultWriteBufferSize    = 262144 // 256KB
+
+	// Compression flag bits in the block header length field
+	compressionFlagBit = uint64(1) << 63 // Bit 63: snappy compressed
+	lengthMask         = ^(uint64(3) << 62) // Mask out top 2 bits for actual length
 
 	// File names
 	metaFileName = "fastqueue.meta"
@@ -57,8 +66,10 @@ type FastQueueConfig struct {
 	ChunkFileSize      int64
 	MetaSyncInterval   time.Duration
 	StaleFlushInterval time.Duration
-	MaxSize            int   // Maximum number of entries (for compatibility)
-	MaxBytes           int64 // Maximum total bytes (for compatibility)
+	MaxSize            int              // Maximum number of entries (for compatibility)
+	MaxBytes           int64            // Maximum total bytes (for compatibility)
+	WriteBufferSize    int              // Buffered writer size in bytes (default: 256KB)
+	Compression        compression.Type // Block compression type (default: snappy)
 }
 
 // fastqueueMeta holds the metadata persisted to disk.
@@ -82,6 +93,7 @@ type FastQueue struct {
 
 	// Disk layer
 	writerChunk  *os.File
+	writerBuf    *bufio.Writer
 	writerOffset int64
 	readerChunk  *os.File
 	readerOffset int64
@@ -116,6 +128,12 @@ func NewFastQueue(cfg FastQueueConfig) (*FastQueue, error) {
 	}
 	if cfg.StaleFlushInterval <= 0 {
 		cfg.StaleFlushInterval = defaultStaleFlushInterval
+	}
+	if cfg.WriteBufferSize <= 0 {
+		cfg.WriteBufferSize = defaultWriteBufferSize
+	}
+	if cfg.Compression == "" {
+		cfg.Compression = compression.TypeSnappy
 	}
 
 	// Create directory
@@ -218,14 +236,16 @@ func (fq *FastQueue) Pop() ([]byte, error) {
 
 	// Check if there's data on disk first (disk has older data)
 	if fq.readerOffset < fq.writerOffset {
+		offsetBefore := fq.readerOffset
 		data, err := fq.readBlockFromDiskLocked()
 		if err != nil && err != io.EOF {
 			return nil, err
 		}
 		if data != nil {
+			diskBytesConsumed := fq.readerOffset - offsetBefore
 			fq.activeCount.Add(-1)
 			fq.totalBytes.Add(-int64(len(data)))
-			fq.diskBytes.Add(-int64(len(data) + blockHeaderSize))
+			fq.diskBytes.Add(-diskBytesConsumed)
 			fq.updateMetrics()
 
 			// Clean up consumed chunks
@@ -329,7 +349,12 @@ func (fq *FastQueue) Close() error {
 		errs = append(errs, fmt.Errorf("failed to sync metadata: %w", err))
 	}
 
-	// Close chunk files
+	// Flush buffered writer and close chunk files
+	if fq.writerBuf != nil {
+		if err := fq.writerBuf.Flush(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to flush write buffer: %w", err))
+		}
+	}
 	if fq.writerChunk != nil {
 		if err := fq.writerChunk.Sync(); err != nil {
 			errs = append(errs, err)
@@ -503,8 +528,8 @@ func (fq *FastQueue) countEntriesOnDisk() (int, int64, error) {
 
 		for offset < chunkEnd {
 			// Read length header
-			var length uint64
-			if err := binary.Read(f, binary.LittleEndian, &length); err != nil {
+			var lengthField uint64
+			if err := binary.Read(f, binary.LittleEndian, &lengthField); err != nil {
 				if err == io.EOF {
 					break
 				}
@@ -512,15 +537,18 @@ func (fq *FastQueue) countEntriesOnDisk() (int, int64, error) {
 				return 0, 0, err
 			}
 
+			// Mask out compression flag bits to get actual data length
+			dataLen := int64(lengthField & lengthMask)
+
 			// Skip data
-			if _, err := f.Seek(int64(length), io.SeekCurrent); err != nil {
+			if _, err := f.Seek(dataLen, io.SeekCurrent); err != nil {
 				f.Close()
 				return 0, 0, err
 			}
 
 			count++
-			totalDataBytes += int64(length)
-			offset += blockHeaderSize + int64(length)
+			totalDataBytes += dataLen
+			offset += blockHeaderSize + dataLen
 		}
 
 		f.Close()
@@ -535,33 +563,67 @@ func (fq *FastQueue) chunkPath(offset int64) string {
 	return filepath.Join(fq.cfg.Path, fmt.Sprintf("%016x", chunkStart))
 }
 
-// flushInmemoryBlocksLocked drains the channel to disk (must hold lock).
+// flushInmemoryBlocksLocked drains the channel to disk with write coalescing (must hold lock).
 func (fq *FastQueue) flushInmemoryBlocksLocked() error {
-	flushed := 0
+	// Drain all pending blocks from channel first (coalescing)
+	var blocks []*block
 	for {
 		select {
 		case b := <-fq.ch:
-			if err := fq.writeBlockToDiskLocked(b.data); err != nil {
-				return err
-			}
+			blocks = append(blocks, b)
 			fq.inmemoryBytes.Add(-int64(len(b.data)))
-			flushed++
 		default:
-			if flushed > 0 {
-				IncrementInmemoryFlush()
-			}
-			return nil
+			goto done
 		}
 	}
+done:
+	if len(blocks) == 0 {
+		return nil
+	}
+
+	// Write all blocks through the buffered writer
+	for _, b := range blocks {
+		if err := fq.writeBlockToDiskLocked(b.data); err != nil {
+			return err
+		}
+	}
+
+	// Flush the bufio.Writer after the entire batch
+	if fq.writerBuf != nil {
+		if err := fq.writerBuf.Flush(); err != nil {
+			return err
+		}
+	}
+
+	IncrementInmemoryFlush()
+	return nil
 }
 
 // writeBlockToDiskLocked writes a block to the current chunk (must hold lock).
+// Applies compression if configured and writes through a bufio.Writer.
 func (fq *FastQueue) writeBlockToDiskLocked(data []byte) error {
+	// Compress data if configured
+	writeData := data
+	var lengthField uint64
+
+	if fq.cfg.Compression == compression.TypeSnappy {
+		writeData = s2.EncodeSnappy(nil, data)
+		lengthField = uint64(len(writeData)) | compressionFlagBit
+	} else {
+		lengthField = uint64(len(writeData))
+	}
+
 	// Check if we need to rotate to a new chunk
 	if fq.writerChunk != nil {
 		chunkOffset := fq.writerOffset % fq.cfg.ChunkFileSize
-		if chunkOffset+int64(blockHeaderSize+len(data)) > fq.cfg.ChunkFileSize {
-			// Close current chunk and open new one
+		if chunkOffset+int64(blockHeaderSize+len(writeData)) > fq.cfg.ChunkFileSize {
+			// Flush buffered writer before rotation
+			if fq.writerBuf != nil {
+				if err := fq.writerBuf.Flush(); err != nil {
+					return err
+				}
+			}
+			// Sync and close current chunk
 			if err := fq.writerChunk.Sync(); err != nil {
 				return err
 			}
@@ -570,6 +632,7 @@ func (fq *FastQueue) writeBlockToDiskLocked(data []byte) error {
 				fq.writerChunk.Close()
 			}
 			fq.writerChunk = nil
+			fq.writerBuf = nil
 
 			// Move writer offset to next chunk boundary
 			fq.writerOffset = ((fq.writerOffset / fq.cfg.ChunkFileSize) + 1) * fq.cfg.ChunkFileSize
@@ -589,13 +652,17 @@ func (fq *FastQueue) writeBlockToDiskLocked(data []byte) error {
 			return err
 		}
 		fq.writerChunk = f
+		fq.writerBuf = bufio.NewWriterSize(f, fq.cfg.WriteBufferSize)
 	}
 
-	// Write length header
+	// Write through buffered writer
+	w := fq.writerBuf
+
+	// Write length header (with compression flag)
 	header := make([]byte, blockHeaderSize)
-	binary.LittleEndian.PutUint64(header, uint64(len(data)))
+	binary.LittleEndian.PutUint64(header, lengthField)
 
-	if _, err := fq.writerChunk.Write(header); err != nil {
+	if _, err := w.Write(header); err != nil {
 		if isDiskFullError(err) {
 			IncrementDiskFull()
 			return ErrDiskFull
@@ -603,8 +670,8 @@ func (fq *FastQueue) writeBlockToDiskLocked(data []byte) error {
 		return err
 	}
 
-	// Write data
-	if _, err := fq.writerChunk.Write(data); err != nil {
+	// Write (possibly compressed) data
+	if _, err := w.Write(writeData); err != nil {
 		if isDiskFullError(err) {
 			IncrementDiskFull()
 			return ErrDiskFull
@@ -612,18 +679,26 @@ func (fq *FastQueue) writeBlockToDiskLocked(data []byte) error {
 		return err
 	}
 
-	fq.writerOffset += int64(blockHeaderSize + len(data))
-	fq.pendingBytes += int64(blockHeaderSize + len(data))
-	fq.diskBytes.Add(int64(blockHeaderSize + len(data)))
+	fq.writerOffset += int64(blockHeaderSize + len(writeData))
+	fq.pendingBytes += int64(blockHeaderSize + len(writeData))
+	fq.diskBytes.Add(int64(blockHeaderSize + len(writeData)))
 	fq.lastBlockWrite = time.Now()
 
 	return nil
 }
 
 // readBlockFromDiskLocked reads a block from disk (must hold lock).
+// Returns the decompressed data and the on-disk bytes consumed (header + compressed data).
 func (fq *FastQueue) readBlockFromDiskLocked() ([]byte, error) {
 	if fq.readerOffset >= fq.writerOffset {
 		return nil, io.EOF
+	}
+
+	// Flush buffered writer before reading to ensure data is visible on disk
+	if fq.writerBuf != nil {
+		if err := fq.writerBuf.Flush(); err != nil {
+			return nil, err
+		}
 	}
 
 	// Check if we need to move to next chunk
@@ -683,16 +758,27 @@ func (fq *FastQueue) readBlockFromDiskLocked() ([]byte, error) {
 		return nil, err
 	}
 
-	length := binary.LittleEndian.Uint64(header)
+	lengthField := binary.LittleEndian.Uint64(header)
+	compressed := (lengthField & compressionFlagBit) != 0
+	dataLen := lengthField & lengthMask
 
 	// Read data
-	data := make([]byte, length)
+	data := make([]byte, dataLen)
 	if _, err := io.ReadFull(fq.readerChunk, data); err != nil {
 		return nil, err
 	}
 
-	fq.readerOffset += int64(blockHeaderSize) + int64(length)
-	fq.pendingBytes -= int64(blockHeaderSize) + int64(length)
+	fq.readerOffset += int64(blockHeaderSize) + int64(dataLen)
+	fq.pendingBytes -= int64(blockHeaderSize) + int64(dataLen)
+
+	// Decompress if needed
+	if compressed {
+		decoded, err := s2.Decode(nil, data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decompress block: %w", err)
+		}
+		return decoded, nil
+	}
 
 	return data, nil
 }
@@ -739,12 +825,23 @@ func (fq *FastQueue) peekBlockFromDiskLocked() ([]byte, error) {
 		return nil, err
 	}
 
-	length := binary.LittleEndian.Uint64(header)
+	lengthField := binary.LittleEndian.Uint64(header)
+	compressed := (lengthField & compressionFlagBit) != 0
+	dataLen := lengthField & lengthMask
 
 	// Read data
-	data := make([]byte, length)
+	data := make([]byte, dataLen)
 	if _, err := io.ReadFull(f, data); err != nil {
 		return nil, err
+	}
+
+	// Decompress if needed
+	if compressed {
+		decoded, err := s2.Decode(nil, data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decompress block: %w", err)
+		}
+		return decoded, nil
 	}
 
 	return data, nil
@@ -918,6 +1015,7 @@ func (fq *FastQueue) staleFlushLoop() {
 				// Check if oldest block is stale
 				if time.Since(fq.lastBlockWrite) >= fq.cfg.StaleFlushInterval {
 					_ = fq.flushInmemoryBlocksLocked()
+					// flushInmemoryBlocksLocked already flushes the bufio.Writer
 				}
 			}
 			fq.mu.Unlock()
