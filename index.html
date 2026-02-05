@@ -270,21 +270,40 @@
       <div style="margin-top:.5rem">
         <small class="help-tip" style="display:block;margin-bottom:.5rem">Enter your actual available resources to check if the estimated sizing fits. Status shows green when estimates are within budget.</small>
         <div class="grid-3">
-          <label>
-            <span style="display:flex;align-items:center;gap:.4rem">Available CPU (cores) <span class="dot" :class="estCores <= fitCpuCores ? 'dot-green' : 'dot-red'"></span></span>
-            <input type="number" x-model.number="fitCpuCores" min="0.5" step="0.5">
-            <small :class="estCores <= fitCpuCores ? 'status-green' : 'status-red'" x-text="estCores <= fitCpuCores ? 'OK \u2014 ' + ((1 - estCores / fitCpuCores) * 100).toFixed(0) + '% headroom' : 'Over by ' + (estCores - fitCpuCores).toFixed(2) + ' cores'"></small>
-          </label>
-          <label>
-            <span style="display:flex;align-items:center;gap:.4rem">Available Memory (MB) <span class="dot" :class="totalMemory / 1048576 <= fitMemoryMB ? 'dot-green' : 'dot-red'"></span></span>
-            <input type="number" x-model.number="fitMemoryMB" min="64" step="64">
-            <small :class="totalMemory / 1048576 <= fitMemoryMB ? 'status-green' : 'status-red'" x-text="totalMemory / 1048576 <= fitMemoryMB ? 'OK \u2014 ' + ((1 - totalMemory / 1048576 / fitMemoryMB) * 100).toFixed(0) + '% headroom' : 'Over by ' + ((totalMemory / 1048576 - fitMemoryMB)).toFixed(0) + ' MB'"></small>
-          </label>
-          <label>
-            <span style="display:flex;align-items:center;gap:.4rem">Available Disk (MB) <span class="dot" :class="(queueType === 'disk' ? pvcSize : 0) <= fitDiskMB ? 'dot-green' : 'dot-red'"></span></span>
-            <input type="number" x-model.number="fitDiskMB" min="0" step="100">
-            <small :class="(queueType === 'disk' ? pvcSize : 0) <= fitDiskMB ? 'status-green' : 'status-red'" x-text="queueType !== 'disk' ? 'N/A \u2014 memory queue' : (pvcSize <= fitDiskMB ? 'OK \u2014 ' + ((1 - pvcSize / fitDiskMB) * 100).toFixed(0) + '% headroom' : 'Over by ' + (pvcSize - fitDiskMB) + ' MB')"></small>
-          </label>
+          <div>
+            <span style="display:flex;align-items:center;gap:.4rem;font-weight:600;font-size:.9em;margin-bottom:.25rem">Available CPU <span class="dot" :class="fitCpuOk ? 'dot-green' : 'dot-red'"></span></span>
+            <div style="display:flex;gap:.25rem">
+              <input type="number" x-model.number="fitCpuVal" min="0" :step="fitCpuUnit === 'cores' ? 0.5 : 100" style="flex:1">
+              <select x-model="fitCpuUnit" style="width:auto;min-width:90px">
+                <option value="cores">cores</option>
+                <option value="m">millicores</option>
+              </select>
+            </div>
+            <small :class="fitCpuOk ? 'status-green' : 'status-red'" x-text="fitCpuStatusText"></small>
+          </div>
+          <div>
+            <span style="display:flex;align-items:center;gap:.4rem;font-weight:600;font-size:.9em;margin-bottom:.25rem">Available Memory <span class="dot" :class="fitMemOk ? 'dot-green' : 'dot-red'"></span></span>
+            <div style="display:flex;gap:.25rem">
+              <input type="number" x-model.number="fitMemVal" min="0" :step="fitMemUnit === 'MB' ? 64 : 0.5" style="flex:1">
+              <select x-model="fitMemUnit" style="width:auto;min-width:70px">
+                <option value="MB">MB</option>
+                <option value="GB">GB</option>
+              </select>
+            </div>
+            <small :class="fitMemOk ? 'status-green' : 'status-red'" x-text="fitMemStatusText"></small>
+          </div>
+          <div>
+            <span style="display:flex;align-items:center;gap:.4rem;font-weight:600;font-size:.9em;margin-bottom:.25rem">Available Disk <span class="dot" :class="fitDiskOk ? 'dot-green' : 'dot-red'"></span></span>
+            <div style="display:flex;gap:.25rem">
+              <input type="number" x-model.number="fitDiskVal" min="0" :step="fitDiskUnit === 'MB' ? 100 : (fitDiskUnit === 'GB' ? 1 : 0.1)" style="flex:1">
+              <select x-model="fitDiskUnit" style="width:auto;min-width:70px">
+                <option value="MB">MB</option>
+                <option value="GB">GB</option>
+                <option value="TB">TB</option>
+              </select>
+            </div>
+            <small :class="fitDiskOk ? 'status-green' : 'status-red'" x-text="fitDiskStatusText"></small>
+          </div>
         </div>
       </div>
     </details>
@@ -613,7 +632,7 @@ function configHelper() {
         'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
         'queueType','queueMaxSizeMB','targetRetentionMin','coresPerPod','cloudProvider',
-        'fitCpuCores','fitMemoryMB','fitDiskMB',
+        'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
         'rules','middleTab','activeTab',
       ];
@@ -641,7 +660,7 @@ function configHelper() {
         'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
         'queueType','queueMaxSizeMB','targetRetentionMin','coresPerPod','cloudProvider',
-        'fitCpuCores','fitMemoryMB','fitDiskMB',
+        'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
         'rules','middleTab','activeTab','ruleIdCounter',
       ];
@@ -686,9 +705,12 @@ function configHelper() {
     queueType: 'disk',
     queueMaxSizeMB: 100,
     targetRetentionMin: 10,
-    fitCpuCores: 4,
-    fitMemoryMB: 512,
-    fitDiskMB: 500,
+    fitCpuVal: 4,
+    fitCpuUnit: 'cores',
+    fitMemVal: 512,
+    fitMemUnit: 'MB',
+    fitDiskVal: 500,
+    fitDiskUnit: 'MB',
     coresPerPod: 2,
     cloudProvider: 'aws',
 
@@ -815,6 +837,39 @@ function configHelper() {
       if (s < 3600) return Math.round(s / 60) + ' min';
       if (s < 86400) return (s / 3600).toFixed(1) + ' hours';
       return (s / 86400).toFixed(1) + ' days';
+    },
+
+    // ---- Fit check (normalized) ----
+    get fitCpuCores() { return this.fitCpuUnit === 'm' ? this.fitCpuVal / 1000 : this.fitCpuVal; },
+    get fitMemMB() { return this.fitMemUnit === 'GB' ? this.fitMemVal * 1024 : this.fitMemVal; },
+    get fitDiskMB() {
+      if (this.fitDiskUnit === 'GB') return this.fitDiskVal * 1024;
+      if (this.fitDiskUnit === 'TB') return this.fitDiskVal * 1048576;
+      return this.fitDiskVal;
+    },
+    get estMemMB() { return this.totalMemory / 1048576; },
+    get estDiskMB() { return this.queueType === 'disk' ? this.pvcSize : 0; },
+    get fitCpuOk() { return this.estCores <= this.fitCpuCores; },
+    get fitMemOk() { return this.estMemMB <= this.fitMemMB; },
+    get fitDiskOk() { return this.estDiskMB <= this.fitDiskMB; },
+    get fitCpuStatusText() {
+      const avail = this.fitCpuCores;
+      const need = this.estCores;
+      if (need <= avail) return 'OK \u2014 ' + ((1 - need / avail) * 100).toFixed(0) + '% headroom (' + need.toFixed(2) + ' of ' + avail.toFixed(2) + ' cores)';
+      return 'Over by ' + (need - avail).toFixed(2) + ' cores (' + Math.ceil(need * 1000) + 'm needed)';
+    },
+    get fitMemStatusText() {
+      const avail = this.fitMemMB;
+      const need = this.estMemMB;
+      if (need <= avail) return 'OK \u2014 ' + ((1 - need / avail) * 100).toFixed(0) + '% headroom (' + this.fmtBytes(need * 1048576) + ' of ' + this.fmtBytes(avail * 1048576) + ')';
+      return 'Over by ' + this.fmtBytes((need - avail) * 1048576) + ' (' + this.fmtBytes(need * 1048576) + ' needed)';
+    },
+    get fitDiskStatusText() {
+      if (this.queueType !== 'disk') return 'N/A \u2014 memory queue selected';
+      const avail = this.fitDiskMB;
+      const need = this.estDiskMB;
+      if (need <= avail) return 'OK \u2014 ' + ((1 - need / avail) * 100).toFixed(0) + '% headroom (' + this.fmtBytes(need * 1048576) + ' of ' + this.fmtBytes(avail * 1048576) + ')';
+      return 'Over by ' + this.fmtBytes((need - avail) * 1048576) + ' (' + this.fmtBytes(need * 1048576) + ' needed)';
     },
 
     // ---- Cloud storage ----
