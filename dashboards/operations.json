@@ -4111,8 +4111,8 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "rate(metrics_governor_rule_dropped_groups_total{rule!=\"none\"}[1m]) > 0",
-          "legendFormat": "{{rule}}"
+          "expr": "rate(metrics_governor_limit_groups_dropped_total{rule!=\"none\"}[1m])",
+          "legendFormat": "{{rule}} ({{action}})"
         }
       ]
     },
@@ -4410,12 +4410,156 @@
       ]
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "color-text"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Rule"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 180
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Blocked Labels"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 400
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "1": {
+                        "color": "red",
+                        "index": 0,
+                        "text": "BLOCKED"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 100
+      },
+      "id": 402,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Rule"
+          }
+        ]
+      },
+      "pluginVersion": "11.2.0",
+      "title": "Currently Blocked Label Groups",
+      "description": "Shows which specific label combinations are currently being blocked by limits enforcement. The 'group' field shows the label key=value pairs that triggered the block.",
+      "type": "table",
+      "targets": [
+        {
+          "expr": "metrics_governor_dropped_group_info",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "__auto",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true
+            },
+            "indexByName": {
+              "rule": 0,
+              "group": 1,
+              "Value": 2
+            },
+            "renameByName": {
+              "Value": "Status",
+              "group": "Blocked Labels",
+              "rule": "Rule"
+            }
+          }
+        }
+      ]
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 107
+        "y": 108
       },
       "id": 30,
       "panels": [],

@@ -1,0 +1,135 @@
+# Stability test configuration - exactly 100k datapoints/s
+# Usage: docker compose -f docker-compose.yaml -f compose_overrides/stability-100k.yaml up -d
+#
+# This override provides stable 100k datapoints/s for investigating rate behavior:
+# - Stable mode enabled (predictable, no random variation)
+# - All spikes/bursts disabled
+# - 1s interval with 100,000 datapoints per interval = 100k/s
+#
+# Expected metrics per interval (1s):
+# - 10000 metrics * 10 series * 1 datapoint = 100,000 datapoints/interval
+# - At 1s intervals = 100,000 datapoints/second
+# - Total cardinality: 100,000 unique series (stable, no growth)
+#
+# Run for 20+ minutes to observe rate stability
+
+services:
+  metrics-generator:
+    environment:
+      - OTLP_ENDPOINT=otel-collector:4317
+      # Use low-memory temporality to reduce memory usage
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=lowmemory
+      - METRICS_INTERVAL=1s              # 1s intervals
+      - SERVICES=stability-test          # Single service
+      - ENVIRONMENTS=prod                # Single environment
+      # Disable ALL variable traffic features
+      - ENABLE_EDGE_CASES=false
+      - ENABLE_HIGH_CARDINALITY=false
+      - ENABLE_BURST_TRAFFIC=false
+      - ENABLE_DIVERSE_METRICS=false
+      - HIGH_CARDINALITY_COUNT=0
+      - DIVERSE_METRIC_COUNT=0
+      - BURST_SIZE=0
+      - BURST_INTERVAL_SEC=9999
+      - STATS_INTERVAL_SEC=10
+      - TARGET_METRICS_PER_SEC=100000
+      - TARGET_DATAPOINTS_PER_SEC=100000
+      - METRICS_PORT=9091
+      # Stable mode - exact predictable output
+      # 10000 metrics * 10 series * 1 datapoint = 100,000 per interval
+      # At 1s intervals = 100,000 datapoints/second
+      - ENABLE_STABLE_MODE=true
+      - STABLE_METRIC_COUNT=10000        # 10000 unique metric names
+      - STABLE_CARDINALITY=10            # 10 series per metric
+      - STABLE_DATAPOINTS=1              # 1 datapoint per series per interval
+      # Spike scenarios DISABLED
+      - ENABLE_SPIKE_SCENARIOS=false
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2"
+
+  metrics-governor:
+    command:
+      - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
+      - "-exporter-protocol=http"
+      - "-exporter-insecure=true"
+      - "-exporter-compression=zstd"
+      - "-stats-labels=service,env"
+      - "-flush-interval=100ms"
+      - "-batch-size=500"
+      - "-max-batch-bytes=8388608"       # 8MB
+      - "-buffer-size=20000"
+      # Performance tuning
+      - "-export-concurrency=16"
+      - "-string-interning=true"
+      - "-intern-max-value-length=64"
+      # Disk queue - persistent failover
+      - "-queue-enabled=true"
+      - "-queue-type=disk"
+      - "-queue-path=/data/queue"
+      - "-queue-max-size=20000"
+      - "-queue-max-bytes=2147483648"    # 2GB
+      - "-queue-retry-interval=5s"
+      - "-queue-full-behavior=drop_oldest"
+      - "-queue-adaptive-enabled=true"
+      - "-queue-inmemory-blocks=256"
+      - "-queue-chunk-size=134217728"    # 128MB
+      - "-queue-meta-sync=1s"
+      - "-queue-stale-flush=5s"
+      # Queue resilience
+      - "-queue-backoff-enabled=true"
+      - "-queue-backoff-multiplier=2.0"
+      - "-queue-circuit-breaker-enabled=true"
+      - "-queue-circuit-breaker-threshold=10"
+      - "-queue-circuit-breaker-reset-timeout=30s"
+      # Memory limit
+      - "-memory-limit-ratio=0.9"
+    volumes:
+      - mg-queue-stability-data:/data/queue
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1"
+
+  victoriametrics:
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2"
+    command:
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=1d"
+      - "--search.latencyOffset=0s"
+      - "--promscrape.config=/etc/victoriametrics/scrape.yaml"
+      - "--maxInsertRequestSize=64MB"
+      - "--opentelemetry.maxRequestSize=64MB"
+      - "--opentelemetry.convertMetricNamesToPrometheus"
+      - "--memory.allowedPercent=80"
+      - "--search.maxUniqueTimeseries=100000"
+      - "--search.maxConcurrentRequests=16"
+      - "--search.maxQueryDuration=10s"
+
+  otel-collector:
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1"
+
+  verifier:
+    environment:
+      - VM_ENDPOINT=http://victoriametrics:8428
+      - MG_ENDPOINT=http://metrics-governor:9090
+      - CHECK_INTERVAL=30s
+      - VERIFICATION_METRIC=generator_verification_counter
+      - PASS_THRESHOLD=99.0              # High threshold for stability test
+      - METRICS_PORT=9092
+
+volumes:
+  mg-queue-stability-data:
+    driver: local

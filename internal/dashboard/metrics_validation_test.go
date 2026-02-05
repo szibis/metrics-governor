@@ -123,6 +123,7 @@ var knownMetrics = []string{
 	"metrics_governor_rule_current_cardinality",
 	"metrics_governor_rule_groups_total",
 	"metrics_governor_rule_dropped_groups_total",
+	"metrics_governor_dropped_group_info",
 	"metrics_governor_rule_max_datapoints_rate",
 	"metrics_governor_rule_max_cardinality",
 	"metrics_governor_rule_group_datapoints",

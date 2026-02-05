@@ -1,8 +1,8 @@
-# Limits enforcement testing configuration
+# Limits enforcement testing configuration - moderate load (half of perf.yaml)
 # Usage: docker compose -f docker-compose.yaml -f compose_overrides/limits.yaml up -d --build
 #
-# This override enables real limits enforcement with spike scenarios:
-# - Generator: spike scenarios enabled (random + mistake)
+# This override enables real limits enforcement with spike scenarios at moderate load:
+# - Generator: spike scenarios enabled, ~50% of perf.yaml throughput
 # - metrics-governor: limits-dry-run=false (real enforcement)
 # - Tight limits calibrated to trigger violations
 # - Verifier: threshold lowered (data will be intentionally dropped)
@@ -20,37 +20,38 @@ services:
       - OTLP_ENDPOINT=otel-collector:4317
       # Use low-memory temporality: delta for counters/histograms (reduces memory)
       - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=lowmemory
-      - METRICS_INTERVAL=200ms
-      - SERVICES=payment-api,order-api,inventory-api,user-api,auth-api,legacy-app
+      - METRICS_INTERVAL=100ms
+      - SERVICES=payment-api,order-api,inventory-api,user-api,auth-api,legacy-app,billing-api,notification-api
       - ENVIRONMENTS=prod,staging,dev,qa
-      - ENABLE_EDGE_CASES=false
+      - ENABLE_EDGE_CASES=true
       - ENABLE_HIGH_CARDINALITY=true
       - ENABLE_BURST_TRAFFIC=true
       - ENABLE_DIVERSE_METRICS=true
-      - HIGH_CARDINALITY_COUNT=100
-      - DIVERSE_METRIC_COUNT=100
-      - BURST_SIZE=1000
-      - BURST_INTERVAL_SEC=30
-      - STATS_INTERVAL_SEC=10
-      - TARGET_METRICS_PER_SEC=5000
-      - TARGET_DATAPOINTS_PER_SEC=10000
+      - HIGH_CARDINALITY_COUNT=250   # Half of perf (500)
+      - DIVERSE_METRIC_COUNT=150     # Half of perf (300)
+      - BURST_SIZE=2500              # Half of perf (5000)
+      - BURST_INTERVAL_SEC=20
+      - STATS_INTERVAL_SEC=5
+      - TARGET_METRICS_PER_SEC=50000   # Half of perf (100000)
+      - TARGET_DATAPOINTS_PER_SEC=100000  # Half of perf (200000)
       - METRICS_PORT=9091
       # Spike scenario configuration (enabled for limits testing)
       - ENABLE_SPIKE_SCENARIOS=true
       - SPIKE_MODE=realistic
-      - SPIKE_CARDINALITY=1000
-      - SPIKE_DURATION_SEC=45
-      - SPIKE_INTERVAL_MIN_SEC=5
-      - SPIKE_INTERVAL_MAX_SEC=15
-      - MISTAKE_DELAY_SEC=10
-      - MISTAKE_DURATION_SEC=60
+      - SPIKE_CARDINALITY=500        # Half of default (1000)
+      - SPIKE_DURATION_SEC=30
+      - SPIKE_INTERVAL_MIN_SEC=15
+      - SPIKE_INTERVAL_MAX_SEC=45
+      - MISTAKE_DELAY_SEC=20
+      - MISTAKE_DURATION_SEC=90
       - MISTAKE_CARDINALITY_RATE=50
     deploy:
       resources:
         limits:
           # OTel SDK uses cumulative aggregation - stores all unique series in memory
           # With spike scenarios enabled, memory grows significantly
-          memory: 3G
+          memory: 4G
+          cpus: "1.5"
 
   metrics-governor:
     command:
@@ -61,70 +62,81 @@ services:
       - "-stats-labels=service,env"
       - "-limits-config=/etc/metrics-governor/limits-testing.yaml"
       - "-limits-dry-run=false"      # Real enforcement!
-      - "-flush-interval=100ms"
-      - "-batch-size=200"
+      - "-flush-interval=75ms"
+      - "-batch-size=350"
       - "-max-batch-bytes=8388608"   # 8MB
-      - "-buffer-size=10000"
+      - "-buffer-size=25000"
       # Performance tuning
+      - "-export-concurrency=32"     # Half of perf (64)
       - "-string-interning=true"
       - "-intern-max-value-length=64"
       # Disk queue - persistent failover
       - "-queue-enabled=true"
       - "-queue-type=disk"
       - "-queue-path=/data/queue"
-      - "-queue-max-size=10000"
+      - "-queue-max-size=25000"
       - "-queue-max-bytes=5368709120"      # 5GB
-      - "-queue-retry-interval=5s"
+      - "-queue-retry-interval=3s"
       - "-queue-full-behavior=drop_oldest"
       - "-queue-adaptive-enabled=true"
-      - "-queue-inmemory-blocks=256"
-      - "-queue-chunk-size=134217728"
-      - "-queue-meta-sync=1s"
-      - "-queue-stale-flush=5s"
+      - "-queue-inmemory-blocks=384"
+      - "-queue-chunk-size=201326592"      # 192MB
+      - "-queue-meta-sync=750ms"
+      - "-queue-stale-flush=3s"
       # Queue resilience
       - "-queue-backoff-enabled=true"
-      - "-queue-backoff-multiplier=2.0"
+      - "-queue-backoff-multiplier=1.75"
       - "-queue-circuit-breaker-enabled=true"
-      - "-queue-circuit-breaker-threshold=10"
-      - "-queue-circuit-breaker-reset-timeout=30s"
+      - "-queue-circuit-breaker-threshold=15"
+      - "-queue-circuit-breaker-reset-timeout=20s"
       # Rule cache
-      - "-rule-cache-max-size=20000"
+      - "-rule-cache-max-size=35000"
       # Memory limit
-      - "-memory-limit-ratio=0.9"
+      - "-memory-limit-ratio=0.85"
     volumes:
       - mg-queue-limits-data:/data/queue
       - ./examples/limits-testing.yaml:/etc/metrics-governor/limits-testing.yaml:ro
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 3G
+          cpus: "1.5"
 
   victoriametrics:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 8G                 # Half of perf (16G)
+          cpus: "2"
     command:
       - "--storageDataPath=/victoria-metrics-data"
       - "--httpListenAddr=:8428"
       - "--retentionPeriod=1d"
       - "--search.latencyOffset=0s"
       - "--promscrape.config=/etc/victoriametrics/scrape.yaml"
-      - "--maxInsertRequestSize=64MB"
-      - "--opentelemetry.maxRequestSize=64MB"
+      - "--maxInsertRequestSize=128MB"
+      - "--opentelemetry.maxRequestSize=128MB"
       - "--opentelemetry.convertMetricNamesToPrometheus"
-      - "--memory.allowedPercent=75"
-      - "--search.maxUniqueTimeseries=500000"
-      - "--search.maxConcurrentRequests=16"
-      - "--search.maxQueryDuration=10s"
+      - "--memory.allowedPercent=80"
+      - "--search.maxUniqueTimeseries=2500000"
+      - "--search.maxConcurrentRequests=32"
+      - "--search.maxQueryDuration=20s"
+      - "--search.logSlowQueryDuration=10s"
+
+  otel-collector:
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1"
 
   verifier:
     environment:
       - VM_ENDPOINT=http://victoriametrics:8428
       - MG_ENDPOINT=http://metrics-governor:9090
-      - CHECK_INTERVAL=30s
+      - CHECK_INTERVAL=15s
       - VERIFICATION_METRIC=generator_verification_counter
-      - PASS_THRESHOLD=80.0          # Lower threshold - data will be dropped
+      - PASS_THRESHOLD=85.0          # Lower threshold - data will be dropped
       - METRICS_PORT=9092
 
 volumes:
