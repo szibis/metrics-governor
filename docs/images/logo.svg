@@ -31,82 +31,57 @@
     <filter id="ds">
       <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000" flood-opacity="0.35"/>
     </filter>
-    <filter id="ig">
-      <feGaussianBlur stdDeviation="5" result="b"/>
-      <feFlood flood-color="#fbbf24" flood-opacity="0.5" result="c"/>
-      <feComposite in="c" in2="b" operator="in" result="g"/>
-      <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
     <clipPath id="sc">
       <path d="M256 44 L444 108 Q452 112 452 120 L452 256 Q452 346 352 412 L264 468 Q256 472 248 468 L160 412 Q60 346 60 256 L60 120 Q60 112 68 108 Z"/>
     </clipPath>
   </defs>
 
-  <!-- Shield outer glow for light theme visibility -->
+  <!-- Shield outer glow for light theme -->
   <path d="M256 24 L460 96 Q470 100 470 110 L470 262 Q470 366 360 438 L264 500 Q256 504 248 500 L152 438 Q42 366 42 262 L42 110 Q42 100 52 96 Z" fill="none" stroke="#4f46e5" stroke-width="4" stroke-linejoin="round" opacity="0.15"/>
 
   <!-- Shield body -->
   <path d="M256 30 L458 100 Q468 104 468 114 L468 262 Q468 364 360 436 L264 498 Q256 502 248 498 L152 436 Q44 364 44 262 L44 114 Q44 104 54 100 Z" fill="url(#sf)"/>
   <path d="M256 30 L458 100 Q468 104 468 114 L468 262 Q468 364 360 436 L264 498 Q256 502 248 498 L152 436 Q44 364 44 262 L44 114 Q44 104 54 100 Z" fill="none" stroke="url(#sg)" stroke-width="18" stroke-linejoin="round"/>
 
-  <!-- Inner accent stroke -->
+  <!-- Inner accent -->
   <path d="M256 58 L434 118 Q440 121 440 126 L440 252 Q440 334 344 398 L264 452 Q256 456 248 452 L168 398 Q72 334 72 252 L72 126 Q72 121 78 118 Z" fill="none" stroke="url(#sg)" stroke-width="3.5" stroke-linejoin="round" opacity="0.25"/>
 
   <!-- Clipped chart content -->
   <g clip-path="url(#sc)">
-
     <!-- Good bar 1 (cyan) -->
-    <rect x="130" y="300" width="64" height="120" rx="8" ry="8" fill="url(#b1)" filter="url(#ds)"/>
+    <rect x="120" y="300" width="64" height="120" rx="8" ry="8" fill="url(#b1)" filter="url(#ds)"/>
 
     <!-- Good bar 2 (green) -->
-    <rect x="220" y="265" width="64" height="155" rx="8" ry="8" fill="url(#b2)" filter="url(#ds)"/>
+    <rect x="210" y="268" width="64" height="152" rx="8" ry="8" fill="url(#b2)" filter="url(#ds)"/>
 
     <!-- Red spiking bar — being smashed -->
-    <rect x="320" y="150" width="64" height="270" rx="8" ry="8" fill="url(#br)" filter="url(#ds)" opacity="0.85"/>
-    <!-- Cracks -->
-    <line x1="316" y1="240" x2="388" y2="218" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity="0.7"/>
-    <line x1="316" y1="256" x2="388" y2="234" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
-    <line x1="330" y1="222" x2="356" y2="252" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity="0.4"/>
+    <rect x="310" y="155" width="64" height="265" rx="8" ry="8" fill="url(#br)" filter="url(#ds)" opacity="0.85"/>
+    <!-- Cracks on red bar -->
+    <line x1="306" y1="232" x2="378" y2="212" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity="0.7"/>
+    <line x1="306" y1="248" x2="378" y2="228" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+    <line x1="324" y1="218" x2="350" y2="248" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity="0.4"/>
 
-    <!-- Debris -->
-    <rect x="382" y="195" width="14" height="18" rx="3" ry="3" fill="#f87171" opacity="0.7" transform="rotate(25,389,204)"/>
-    <rect x="394" y="220" width="10" height="13" rx="2" ry="2" fill="#ef4444" opacity="0.5" transform="rotate(-20,399,226)"/>
-    <rect x="304" y="200" width="12" height="15" rx="3" ry="3" fill="#fca5a5" opacity="0.6" transform="rotate(35,310,207)"/>
+    <!-- Debris chunks -->
+    <rect x="374" y="190" width="14" height="18" rx="3" ry="3" fill="#f87171" opacity="0.7" transform="rotate(25,381,199)"/>
+    <rect x="386" y="215" width="10" height="13" rx="2" ry="2" fill="#ef4444" opacity="0.5" transform="rotate(-20,391,221)"/>
+    <rect x="296" y="198" width="12" height="15" rx="3" ry="3" fill="#fca5a5" opacity="0.6" transform="rotate(35,302,205)"/>
 
-    <!-- Limit line (dashed, no text) -->
+    <!-- Limit line (dashed) -->
     <line x1="80" y1="260" x2="440" y2="260" stroke="#dc2626" stroke-width="5" stroke-dasharray="16,8" opacity="0.75"/>
-
   </g>
 
-  <!-- HAMMER — large and prominent -->
-  <g transform="translate(272, 30) rotate(-38, 80, 80)" filter="url(#ds)">
+  <!-- HAMMER — big, centered, striking the red bar -->
+  <g transform="translate(220, 24) rotate(-40, 110, 100)" filter="url(#ds)">
     <!-- Handle -->
-    <rect x="70" y="96" width="22" height="110" rx="6" ry="6" fill="url(#hw)" stroke="#713f12" stroke-width="2.5"/>
+    <rect x="96" y="130" width="28" height="140" rx="7" ry="7" fill="url(#hw)" stroke="#713f12" stroke-width="3"/>
     <!-- Head -->
-    <rect x="10" y="42" width="142" height="60" rx="10" ry="10" fill="url(#hh)" stroke="#64748b" stroke-width="3.5"/>
-    <!-- Left face -->
-    <rect x="0" y="48" width="20" height="48" rx="6" ry="6" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2.5"/>
-    <!-- Right face -->
-    <rect x="142" y="48" width="20" height="48" rx="6" ry="6" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2.5"/>
-    <!-- Highlight -->
-    <rect x="28" y="50" width="106" height="8" rx="4" ry="4" fill="#fff" opacity="0.3"/>
-  </g>
-
-  <!-- Impact sparks -->
-  <g filter="url(#ig)">
-    <line x1="350" y1="180" x2="318" y2="210" stroke="#fbbf24" stroke-width="5.5" stroke-linecap="round"/>
-    <line x1="372" y1="190" x2="354" y2="218" stroke="#fbbf24" stroke-width="4.5" stroke-linecap="round"/>
-    <line x1="334" y1="170" x2="304" y2="190" stroke="#f59e0b" stroke-width="4" stroke-linecap="round"/>
-    <line x1="366" y1="172" x2="388" y2="200" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
-    <circle cx="310" cy="204" r="6" fill="#fbbf24"/>
-    <circle cx="380" cy="212" r="5" fill="#f59e0b"/>
-    <circle cx="296" cy="190" r="4" fill="#fcd34d"/>
-    <circle cx="392" cy="194" r="3.5" fill="#fcd34d"/>
-  </g>
-
-  <!-- Down arrow — dropped -->
-  <g transform="translate(352, 155)">
-    <polygon points="0,-20 16,0 8,0 8,24 -8,24 -8,0 -16,0" fill="#dc2626"/>
+    <rect x="14" y="52" width="192" height="84" rx="12" ry="12" fill="url(#hh)" stroke="#64748b" stroke-width="4"/>
+    <!-- Left striking face -->
+    <rect x="0" y="60" width="26" height="68" rx="7" ry="7" fill="#e2e8f0" stroke="#94a3b8" stroke-width="3"/>
+    <!-- Right striking face -->
+    <rect x="194" y="60" width="26" height="68" rx="7" ry="7" fill="#e2e8f0" stroke="#94a3b8" stroke-width="3"/>
+    <!-- Head highlight -->
+    <rect x="36" y="62" width="148" height="10" rx="5" ry="5" fill="#fff" opacity="0.3"/>
   </g>
 
 </svg>
