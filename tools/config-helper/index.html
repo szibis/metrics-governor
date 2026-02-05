@@ -466,12 +466,12 @@
               <tr>
                 <td><b>Write throughput</b></td>
                 <td><code>dps &times; series_size &times; compression_ratio</code></td>
-                <td>Sustained bytes/sec to disk; independent of batch size (batch size cancels out)</td>
+                <td>Sustained bytes/sec to disk during queuing. Batch size cancels out algebraically, but achieving this throughput requires the disk to support the IOPS below</td>
               </tr>
               <tr>
                 <td><b>Write IOPS</b></td>
                 <td><code>ceil(dps / batch_size)</code></td>
-                <td>Each batch flush = 1 write I/O; larger batches reduce IOPS</td>
+                <td>Each batch flush = 1 write I/O. Smaller batches &rarr; more IOPS needed &rarr; can become the bottleneck that limits effective throughput. Increase batch size to reduce IOPS pressure</td>
               </tr>
               <tr>
                 <td><b>Read IOPS</b></td>
