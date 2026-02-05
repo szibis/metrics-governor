@@ -61,27 +61,22 @@
     <line x1="306" y1="248" x2="378" y2="228" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
     <line x1="324" y1="218" x2="350" y2="248" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity="0.4"/>
 
-    <!-- Debris chunks -->
-    <rect x="374" y="190" width="14" height="18" rx="3" ry="3" fill="#f87171" opacity="0.7" transform="rotate(25,381,199)"/>
-    <rect x="386" y="215" width="10" height="13" rx="2" ry="2" fill="#ef4444" opacity="0.5" transform="rotate(-20,391,221)"/>
-    <rect x="296" y="198" width="12" height="15" rx="3" ry="3" fill="#fca5a5" opacity="0.6" transform="rotate(35,302,205)"/>
-
     <!-- Limit line (dashed) -->
     <line x1="80" y1="260" x2="440" y2="260" stroke="#dc2626" stroke-width="5" stroke-dasharray="16,8" opacity="0.75"/>
   </g>
 
-  <!-- HAMMER — big, centered, striking the red bar -->
-  <g transform="translate(220, 24) rotate(-40, 110, 100)" filter="url(#ds)">
-    <!-- Handle -->
-    <rect x="96" y="130" width="28" height="140" rx="7" ry="7" fill="url(#hw)" stroke="#713f12" stroke-width="3"/>
+  <!-- HAMMER — mirrored left, swinging from top-left down onto red bar, inside shield -->
+  <g transform="translate(130, 68) rotate(38, 110, 90)" filter="url(#ds)">
+    <!-- Handle (goes up-left) -->
+    <rect x="96" y="126" width="28" height="130" rx="7" ry="7" fill="url(#hw)" stroke="#713f12" stroke-width="3"/>
     <!-- Head -->
-    <rect x="14" y="52" width="192" height="84" rx="12" ry="12" fill="url(#hh)" stroke="#64748b" stroke-width="4"/>
+    <rect x="14" y="52" width="192" height="80" rx="12" ry="12" fill="url(#hh)" stroke="#64748b" stroke-width="4"/>
     <!-- Left striking face -->
-    <rect x="0" y="60" width="26" height="68" rx="7" ry="7" fill="#e2e8f0" stroke="#94a3b8" stroke-width="3"/>
+    <rect x="0" y="58" width="26" height="66" rx="7" ry="7" fill="#e2e8f0" stroke="#94a3b8" stroke-width="3"/>
     <!-- Right striking face -->
-    <rect x="194" y="60" width="26" height="68" rx="7" ry="7" fill="#e2e8f0" stroke="#94a3b8" stroke-width="3"/>
+    <rect x="194" y="58" width="26" height="66" rx="7" ry="7" fill="#e2e8f0" stroke="#94a3b8" stroke-width="3"/>
     <!-- Head highlight -->
-    <rect x="36" y="62" width="148" height="10" rx="5" ry="5" fill="#fff" opacity="0.3"/>
+    <rect x="36" y="60" width="148" height="10" rx="5" ry="5" fill="#fff" opacity="0.3"/>
   </g>
 
 </svg>
