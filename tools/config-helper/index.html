@@ -285,7 +285,12 @@
       <summary style="font-size:.95em">Fit Check &mdash; does it fit your cluster?</summary>
       <div style="margin-top:.5rem">
         <small class="help-tip" style="display:block;margin-bottom:.5rem">Enter your actual available resources to check if the estimated sizing fits. Status shows green when estimates are within budget.</small>
-        <div class="grid-3">
+        <div class="grid-4">
+          <div>
+            <span style="display:flex;align-items:center;gap:.4rem;font-weight:600;font-size:.9em;margin-bottom:.25rem">Pod Override <span class="dot" :class="fitPodOk ? 'dot-green' : 'dot-red'"></span></span>
+            <input type="number" x-model.number="podOverride" min="0" step="1" placeholder="0 = auto">
+            <small :class="fitPodOk ? 'status-green' : 'status-red'" x-text="fitPodStatusText" style="font-size:.8em"></small>
+          </div>
           <div>
             <span style="display:flex;align-items:center;gap:.4rem;font-weight:600;font-size:.9em;margin-bottom:.25rem">Available CPU <span class="dot" :class="fitCpuOk ? 'dot-green' : 'dot-red'"></span></span>
             <div style="display:flex;gap:.25rem">
@@ -353,8 +358,11 @@
       <summary>Kubernetes Pod Sizing</summary>
       <div class="grid-4" style="margin-top:.75rem">
         <div class="est-card">
-          <h4>Recommended Pods</h4>
-          <div class="est-val" x-text="recommendedPods"></div>
+          <h4 x-text="podOverride > 0 ? 'Pods (overridden)' : 'Recommended Pods'"></h4>
+          <div class="est-val" x-text="actualPods"></div>
+          <template x-if="podOverride > 0 && podOverride !== recommendedPods">
+            <small>Recommended: <span x-text="recommendedPods"></span></small>
+          </template>
           <small class="help-tip">Based on 70% CPU target utilization per pod</small>
         </div>
         <div class="est-card">
@@ -375,7 +383,7 @@
           <small>CPU: <span x-text="totalClusterCpu + 'm (' + (totalClusterCpu / 1000).toFixed(2) + ' cores)'"></span></small><br>
           <small>Memory: <span x-text="fmtBytes(totalClusterMem)"></span></small><br>
           <template x-if="queueType === 'disk'">
-            <small>Disk: <span x-text="(recommendedPods * queueMaxSizeMB) + ' MB'"></span></small>
+            <small>Disk: <span x-text="(actualPods * queueMaxSizeMB) + ' MB'"></span></small>
           </template>
         </div>
       </div>
@@ -682,6 +690,7 @@ function configHelper() {
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
         'queueType','queueMaxSizeMB','targetRetentionMin','coresPerPod','cloudProvider',
         'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
+        'podOverride',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
         'rules','middleTab','activeTab',
       ];
@@ -737,6 +746,7 @@ function configHelper() {
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
         'queueType','queueMaxSizeMB','targetRetentionMin','coresPerPod','cloudProvider',
         'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
+        'podOverride',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
         'rules','middleTab','activeTab','ruleIdCounter',
       ];
@@ -787,6 +797,7 @@ function configHelper() {
     fitMemUnit: 'MB',
     fitDiskVal: 500,
     fitDiskUnit: 'MB',
+    podOverride: 0,
     coresPerPod: 2,
     cloudProvider: 'aws',
 
@@ -1000,19 +1011,26 @@ function configHelper() {
     // ---- K8s pod sizing ----
     get maxThroughputPerPod() { return this.coresPerPod * 100000 * 0.7; },
     get recommendedPods() { return Math.max(1, Math.ceil(this.dps / this.maxThroughputPerPod)); },
-    get perPodCpuReq() { return Math.ceil(this.dps / this.recommendedPods / 100000 * 1000); },
+    get actualPods() { return this.podOverride > 0 ? this.podOverride : this.recommendedPods; },
+    get perPodCpuReq() { return Math.ceil(this.dps / this.actualPods / 100000 * 1000); },
     get perPodCpuLimit() { return Math.ceil(this.perPodCpuReq * 1.5); },
-    get perPodMemReq() { return Math.ceil(this.totalMemory / this.recommendedPods); },
+    get perPodMemReq() { return Math.ceil(this.totalMemory / this.actualPods); },
     get perPodMemLimit() { return Math.ceil(this.perPodMemReq * 1.3); },
-    get totalClusterCpu() { return this.recommendedPods * this.perPodCpuReq; },
-    get totalClusterMem() { return this.recommendedPods * this.perPodMemReq; },
+    get totalClusterCpu() { return this.actualPods * this.perPodCpuReq; },
+    get totalClusterMem() { return this.actualPods * this.perPodMemReq; },
+    get fitPodOk() { return this.podOverride <= 0 || this.podOverride >= this.recommendedPods; },
+    get fitPodStatusText() {
+      if (this.podOverride <= 0) return 'Using recommended: ' + this.recommendedPods + ' pods';
+      if (this.podOverride >= this.recommendedPods) return 'OK \u2014 ' + this.podOverride + ' pods (\u2265 ' + this.recommendedPods + ' recommended)';
+      return 'Below recommended (' + this.recommendedPods + ') \u2014 may cause CPU overload';
+    },
 
     // ---- YAML generation ----
     get helmYaml() {
       const csi = { aws: 'ebs.csi.aws.com', azure: 'disk.csi.azure.com', gcp: 'pd.csi.storage.gke.io' };
       const diskTypes = { aws: 'gp3', azure: 'Premium_LRS', gcp: 'pd-ssd' };
       let y = '';
-      y += `replicaCount: ${this.recommendedPods}\n`;
+      y += `replicaCount: ${this.actualPods}\n`;
       y += `\nresources:\n`;
       y += `  requests:\n`;
       y += `    cpu: "${this.perPodCpuReq}m"\n`;
@@ -1240,17 +1258,14 @@ function configHelper() {
         if (m['replicaCount'] !== undefined) {
           const pods = this.parseYamlNum(m['replicaCount']);
           if (pods !== undefined && pods >= 1) {
-            // reverse: pods = ceil(dps / (coresPerPod * 100000 * 0.7))
-            // → coresPerPod = dps / (pods * 100000 * 0.7)
-            const cpp = this.dps / (pods * 100000 * 0.7);
-            this.coresPerPod = Math.max(0.5, Math.round(cpp * 2) / 2); // round to nearest 0.5
+            this.podOverride = pods;
           }
         }
         if (m['resources.requests.cpu'] !== undefined) {
           const mc = this.parseCpuToMillicores(m['resources.requests.cpu']);
           if (mc !== undefined && mc > 0) {
             // reverse: perPodCpuReq = ceil(dps / pods / 100000 * 1000) → dps = mc * pods * 100
-            const pods = this.recommendedPods;
+            const pods = this.actualPods;
             const newDps = Math.round(mc * pods * 100);
             if (newDps > 0) this.dps = newDps;
           }
@@ -1393,14 +1408,14 @@ function configHelper() {
     lintHelm() {
       const issues = this.validateYamlSyntax(this.helmText);
       // Semantic checks
-      if (this.recommendedPods < 1) issues.push({ type: 'error', msg: 'replicaCount must be >= 1' });
+      if (this.actualPods < 1) issues.push({ type: 'error', msg: 'replicaCount must be >= 1' });
       if (this.perPodCpuReq <= 0) issues.push({ type: 'error', msg: 'CPU request must be > 0' });
       if (this.perPodCpuLimit < this.perPodCpuReq) issues.push({ type: 'error', msg: 'CPU limit should be >= CPU request' });
       if (this.perPodMemReq <= 0) issues.push({ type: 'error', msg: 'Memory request must be > 0' });
       if (this.perPodMemLimit < this.perPodMemReq) issues.push({ type: 'error', msg: 'Memory limit should be >= memory request' });
       if (this.bufferBatchSize > this.bufferMaxSize) issues.push({ type: 'warn', msg: 'batchSize exceeds bufferSize - batches will never fill completely' });
       if (this.queueMaxSizeMB < 10) issues.push({ type: 'warn', msg: 'Queue size < 10 MB may not provide meaningful outage buffering' });
-      if (this.recommendedPods > 10) issues.push({ type: 'warn', msg: `High pod count (${this.recommendedPods}) - consider increasing cores per pod` });
+      if (this.actualPods > 10) issues.push({ type: 'warn', msg: `High pod count (${this.actualPods}) - consider increasing cores per pod` });
       if (this.cpuUtil > 0.9) issues.push({ type: 'warn', msg: 'CPU utilization > 90% - may experience throttling under load spikes' });
       if (this.queueType === 'disk' && this.pvcSize > 10240) issues.push({ type: 'warn', msg: 'PVC size > 10 GB - verify cloud storage limits for your tier' });
       if (issues.length === 0) issues.push({ type: 'ok', msg: 'Valid - no issues found' });

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="180" viewBox="0 0 480 180">
+  <defs>
+    <style>
+      .bg { fill: #1a1a2e; }
+      .card { fill: #16213e; stroke: #334155; stroke-width: 1; rx: 8; }
+      .title { fill: #e2e8f0; font-family: system-ui, sans-serif; font-size: 14px; font-weight: 700; }
+      .label { fill: #94a3b8; font-family: system-ui, sans-serif; font-size: 10px; }
+      .header { fill: #e2e8f0; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 700; }
+      .small { fill: #64748b; font-family: system-ui, sans-serif; font-size: 9px; }
+      .input-bg { fill: #0f172a; stroke: #334155; stroke-width: 1; rx: 4; }
+      .value { fill: #f1f5f9; font-family: 'SF Mono', monospace; font-size: 12px; }
+      .dot-green { fill: #2ecc40; }
+      .status-green { fill: #2ecc40; font-family: system-ui, sans-serif; font-size: 9px; }
+      .arrow-bi { fill: none; stroke: #6366f1; stroke-width: 1.5; }
+      .arrow-label { fill: #818cf8; font-family: system-ui, sans-serif; font-size: 8px; font-weight: 600; }
+    </style>
+  </defs>
+  <rect class="bg" width="480" height="180"/>
+
+  <text class="header" x="20" y="24">Fit Check — does it fit your cluster?</text>
+  <text class="small" x="20" y="40">Enter your actual available resources. Pod override lets you set a fixed replica count.</text>
+
+  <!-- 4-column grid -->
+  <!-- Pod Override -->
+  <rect class="card" x="15" y="50" width="105" height="80"/>
+  <text class="label" x="25" y="68">Pod Override</text>
+  <circle class="dot-green" cx="94" cy="65" r="3"/>
+  <rect class="input-bg" x="25" y="74" width="85" height="24"/>
+  <text class="value" x="35" y="91">0</text>
+  <text class="small" x="65" y="91">(auto)</text>
+  <text class="status-green" x="25" y="118">Using recommended: 1 pod</text>
+
+  <!-- CPU -->
+  <rect class="card" x="130" y="50" width="105" height="80"/>
+  <text class="label" x="140" y="68">Available CPU</text>
+  <circle class="dot-green" cx="209" cy="65" r="3"/>
+  <rect class="input-bg" x="140" y="74" width="55" height="24"/>
+  <text class="value" x="150" y="91">4</text>
+  <rect class="input-bg" x="198" y="74" width="28" height="24"/>
+  <text class="value" x="200" y="91" style="font-size:9px">cores</text>
+  <text class="status-green" x="140" y="118">OK — 87% headroom</text>
+
+  <!-- Memory -->
+  <rect class="card" x="245" y="50" width="105" height="80"/>
+  <text class="label" x="255" y="68">Available Memory</text>
+  <circle class="dot-green" cx="324" cy="65" r="3"/>
+  <rect class="input-bg" x="255" y="74" width="55" height="24"/>
+  <text class="value" x="265" y="91">512</text>
+  <rect class="input-bg" x="313" y="74" width="28" height="24"/>
+  <text class="value" x="316" y="91" style="font-size:9px">MB</text>
+  <text class="status-green" x="255" y="118">OK — 89% headroom</text>
+
+  <!-- Disk -->
+  <rect class="card" x="360" y="50" width="105" height="80"/>
+  <text class="label" x="370" y="68">Available Disk</text>
+  <circle class="dot-green" cx="439" cy="65" r="3"/>
+  <rect class="input-bg" x="370" y="74" width="55" height="24"/>
+  <text class="value" x="380" y="91">500</text>
+  <rect class="input-bg" x="428" y="74" width="28" height="24"/>
+  <text class="value" x="431" y="91" style="font-size:9px">MB</text>
+  <text class="status-green" x="370" y="118">OK — 76% headroom</text>
+
+  <!-- Bidirectional sync hint -->
+  <rect class="card" x="15" y="140" width="450" height="32"/>
+  <line x1="30" y1="156" x2="60" y2="156" class="arrow-bi" marker-end="url(#arrowR)" marker-start="url(#arrowL)"/>
+  <text class="arrow-label" x="70" y="160">Pod override &amp; fit check values sync with YAML textareas bidirectionally</text>
+  <defs>
+    <marker id="arrowR" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="none" stroke="#6366f1" stroke-width="1.5"/></marker>
+    <marker id="arrowL" markerWidth="6" markerHeight="6" refX="1" refY="3" orient="auto"><path d="M6,0 L0,3 L6,6" fill="none" stroke="#6366f1" stroke-width="1.5"/></marker>
+  </defs>
+</svg>

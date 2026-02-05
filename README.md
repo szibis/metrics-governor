@@ -1,4 +1,8 @@
-# metrics-governor
+<p align="center">
+  <img src="docs/images/logo.svg" alt="metrics-governor logo" width="120">
+</p>
+
+<h1 align="center">metrics-governor</h1>
 
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -124,17 +128,23 @@ Plan your deployment in seconds. The **interactive Configuration Helper** estima
 
 <table>
 <tr>
-<td width="33%" align="center">
+<td width="50%" align="center">
 <a href="docs/images/config-helper-inputs.svg"><img src="docs/images/config-helper-inputs.svg" alt="Throughput inputs with simple/advanced toggle" width="100%"></a>
-<br><sub><b>Throughput Inputs</b> — Simple &amp; Advanced modes</sub>
+<br><sub><b>Throughput Inputs</b> — Simple &amp; Advanced modes with outage buffer</sub>
 </td>
-<td width="33%" align="center">
-<a href="docs/images/config-helper-estimation.svg"><img src="docs/images/config-helper-estimation.svg" alt="Resource estimation with color-coded status" width="100%"></a>
-<br><sub><b>Resource Estimation</b> — CPU, memory, disk, K8s pods</sub>
+<td width="50%" align="center">
+<a href="docs/images/config-helper-estimation.svg"><img src="docs/images/config-helper-estimation.svg" alt="Resource estimation with fit check and pod override" width="100%"></a>
+<br><sub><b>Resource Estimation</b> — CPU, memory, disk, fit check &amp; pod override</sub>
 </td>
-<td width="33%" align="center">
-<a href="docs/images/config-helper-preview.svg"><img src="docs/images/config-helper-preview.svg" alt="Live YAML preview with copy and download" width="100%"></a>
-<br><sub><b>Live Config Preview</b> — Copy or download YAML</sub>
+</tr>
+<tr>
+<td width="50%" align="center">
+<a href="docs/images/config-helper-preview.svg"><img src="docs/images/config-helper-preview.svg" alt="Editable YAML preview with bidirectional sync" width="100%"></a>
+<br><sub><b>Editable YAML</b> — Edit directly, changes sync to inputs bidirectionally</sub>
+</td>
+<td width="50%" align="center">
+<a href="docs/images/config-helper-fitcheck.svg"><img src="docs/images/config-helper-fitcheck.svg" alt="Fit check with pod override and resource validation" width="100%"></a>
+<br><sub><b>Fit Check</b> — Pod override, CPU, memory &amp; disk validation</sub>
 </td>
 </tr>
 </table>
