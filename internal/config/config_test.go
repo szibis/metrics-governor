@@ -31,8 +31,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.FlushInterval != 5*time.Second {
 		t.Errorf("expected FlushInterval 5s, got %v", cfg.FlushInterval)
 	}
-	if cfg.MaxBatchSize != 1000 {
-		t.Errorf("expected MaxBatchSize 1000, got %d", cfg.MaxBatchSize)
+	if cfg.MaxBatchSize != 5000 {
+		t.Errorf("expected MaxBatchSize 5000, got %d", cfg.MaxBatchSize)
 	}
 	if cfg.StatsAddr != ":9090" {
 		t.Errorf("expected StatsAddr ':9090', got '%s'", cfg.StatsAddr)

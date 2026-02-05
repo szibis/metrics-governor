@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/szibis/metrics-governor/internal/compression"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
@@ -1937,6 +1938,7 @@ func TestFastQueueWriteBlockChunkRotationSameReaderWriter(t *testing.T) {
 		MetaSyncInterval:   time.Hour,
 		StaleFlushInterval: time.Hour,
 		MaxSize:            200,
+		Compression:        compression.TypeNone,
 	}
 
 	fq, err := NewFastQueue(cfg)
@@ -2282,6 +2284,7 @@ func TestFastQueueWriteBlockToDiskNewChunkFile(t *testing.T) {
 		MetaSyncInterval:   time.Hour,
 		StaleFlushInterval: time.Hour,
 		MaxSize:            100,
+		Compression:        compression.TypeNone,
 	}
 
 	fq, err := NewFastQueue(cfg)
@@ -2617,6 +2620,7 @@ func TestFastQueuePeekBlockFromDiskSeparateFile(t *testing.T) {
 		MetaSyncInterval:   time.Hour,
 		StaleFlushInterval: time.Hour,
 		MaxSize:            100,
+		Compression:        compression.TypeNone,
 	}
 
 	fq, err := NewFastQueue(cfg)
@@ -2629,6 +2633,10 @@ func TestFastQueuePeekBlockFromDiskSeparateFile(t *testing.T) {
 	fq.writeBlockToDiskLocked([]byte("peek-data-1"))
 	fq.writeBlockToDiskLocked([]byte("peek-data-2"))
 	fq.activeCount.Store(2)
+	// Flush buffered writer so data is visible on disk for separate file read
+	if fq.writerBuf != nil {
+		fq.writerBuf.Flush()
+	}
 	fq.mu.Unlock()
 
 	// Close the readerChunk so peekBlockFromDiskLocked opens its own file
@@ -2920,6 +2928,7 @@ func TestFastQueueReadBlockFromDiskHeaderTruncated(t *testing.T) {
 		MetaSyncInterval:   time.Hour,
 		StaleFlushInterval: time.Hour,
 		MaxSize:            100,
+		Compression:        compression.TypeNone,
 	}
 
 	fq, err := NewFastQueue(cfg)
@@ -2930,6 +2939,10 @@ func TestFastQueueReadBlockFromDiskHeaderTruncated(t *testing.T) {
 	// Write one valid block to disk
 	fq.mu.Lock()
 	fq.writeBlockToDiskLocked([]byte("valid-block"))
+	// Flush buffered writer before writing directly to chunk file
+	if fq.writerBuf != nil {
+		fq.writerBuf.Flush()
+	}
 	fq.mu.Unlock()
 
 	// Manually append a truncated header (only 4 bytes instead of 8) to the chunk file

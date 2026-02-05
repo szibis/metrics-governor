@@ -236,6 +236,96 @@ func TestRace_FastQueue_ConcurrentPushWithStats(t *testing.T) {
 	wg.Wait()
 }
 
+func TestRace_FastQueue_ConcurrentCompression(t *testing.T) {
+	dir := t.TempDir()
+	fq, err := NewFastQueue(FastQueueConfig{
+		Path:               dir,
+		MaxSize:            5000,
+		MaxBytes:           100 * 1024 * 1024,
+		MaxInmemoryBlocks:  64,
+		ChunkFileSize:      16 * 1024 * 1024,
+		MetaSyncInterval:   500 * time.Millisecond,
+		StaleFlushInterval: time.Second,
+		Compression:        "snappy",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fq.Close()
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				data := []byte(fmt.Sprintf("compressed-push-%d-%d-data", id, j))
+				fq.Push(data)
+			}
+		}(i)
+	}
+
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				fq.Pop()
+				runtime.Gosched()
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+func TestRace_FastQueue_BufferedWriterConcurrent(t *testing.T) {
+	dir := t.TempDir()
+	fq, err := NewFastQueue(FastQueueConfig{
+		Path:               dir,
+		MaxSize:            5000,
+		MaxBytes:           100 * 1024 * 1024,
+		MaxInmemoryBlocks:  32,
+		ChunkFileSize:      16 * 1024 * 1024,
+		MetaSyncInterval:   500 * time.Millisecond,
+		StaleFlushInterval: time.Second,
+		WriteBufferSize:    262144,
+		Compression:        "none",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fq.Close()
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				fq.Push([]byte(fmt.Sprintf("buffered-data-%d-%d", id, j)))
+				fq.Len()
+				fq.Size()
+			}
+		}(i)
+	}
+
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				fq.Pop()
+				runtime.Gosched()
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
 // --- Memory leak tests ---
 
 func TestMemLeak_SendQueue_PushPopCycles(t *testing.T) {

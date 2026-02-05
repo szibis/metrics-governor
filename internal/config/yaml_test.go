@@ -352,8 +352,8 @@ func TestApplyDefaults(t *testing.T) {
 	if cfg.Buffer.Size != 10000 {
 		t.Errorf("expected default buffer size 10000, got %d", cfg.Buffer.Size)
 	}
-	if cfg.Buffer.BatchSize != 1000 {
-		t.Errorf("expected default batch size 1000, got %d", cfg.Buffer.BatchSize)
+	if cfg.Buffer.BatchSize != 5000 {
+		t.Errorf("expected default batch size 5000, got %d", cfg.Buffer.BatchSize)
 	}
 	if cfg.Stats.Address != ":9090" {
 		t.Errorf("expected default stats address ':9090', got %s", cfg.Stats.Address)
@@ -540,8 +540,8 @@ func TestApplyDefaultsFastQueue(t *testing.T) {
 	cfg := &YAMLConfig{}
 	cfg.ApplyDefaults()
 
-	if cfg.Exporter.Queue.InmemoryBlocks != 256 {
-		t.Errorf("expected default inmemory_blocks 256, got %d", cfg.Exporter.Queue.InmemoryBlocks)
+	if cfg.Exporter.Queue.InmemoryBlocks != 2048 {
+		t.Errorf("expected default inmemory_blocks 2048, got %d", cfg.Exporter.Queue.InmemoryBlocks)
 	}
 	if cfg.Exporter.Queue.ChunkSize != 512*1024*1024 {
 		t.Errorf("expected default chunk_size 512MB, got %d", cfg.Exporter.Queue.ChunkSize)
@@ -549,8 +549,14 @@ func TestApplyDefaultsFastQueue(t *testing.T) {
 	if time.Duration(cfg.Exporter.Queue.MetaSyncInterval) != time.Second {
 		t.Errorf("expected default meta_sync_interval 1s, got %v", cfg.Exporter.Queue.MetaSyncInterval)
 	}
-	if time.Duration(cfg.Exporter.Queue.StaleFlushInterval) != 5*time.Second {
-		t.Errorf("expected default stale_flush_interval 5s, got %v", cfg.Exporter.Queue.StaleFlushInterval)
+	if time.Duration(cfg.Exporter.Queue.StaleFlushInterval) != 30*time.Second {
+		t.Errorf("expected default stale_flush_interval 30s, got %v", cfg.Exporter.Queue.StaleFlushInterval)
+	}
+	if cfg.Exporter.Queue.WriteBufferSize != 262144 {
+		t.Errorf("expected default write_buffer_size 262144, got %d", cfg.Exporter.Queue.WriteBufferSize)
+	}
+	if cfg.Exporter.Queue.Compression != "snappy" {
+		t.Errorf("expected default compression 'snappy', got '%s'", cfg.Exporter.Queue.Compression)
 	}
 }
 
