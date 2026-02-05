@@ -208,8 +208,15 @@
             <small class="help-tip">How long to buffer data during backend outage. Auto-sizes queue below.</small>
           </label>
           <label>
-            Queue max size MB
-            <input type="number" x-model.number="queueMaxSizeMB" min="10" step="50">
+            Queue max size
+            <div style="display:flex;gap:.25rem">
+              <input type="number" x-model.number="queueMaxSizeVal" min="1" :step="queueMaxSizeUnit === 'MB' ? 50 : (queueMaxSizeUnit === 'GB' ? 1 : 0.1)" style="flex:1">
+              <select x-model="queueMaxSizeUnit" style="width:auto;min-width:70px">
+                <option value="MB">MB</option>
+                <option value="GB">GB</option>
+                <option value="TB">TB</option>
+              </select>
+            </div>
             <small class="help-tip" x-text="'Sized for ~' + queueRetentionStr + ' of outage buffer at current throughput.'"></small>
           </label>
           <label>
@@ -264,7 +271,7 @@
         <small>Buffer: <span x-text="fmtBytes(bufferMemory)"></span></small><br>
         <small>Base overhead: ~50 MB</small>
         <template x-if="queueType === 'memory'">
-          <small><br>Queue (memory): <span x-text="queueMaxSizeMB + ' MB'"></span></small>
+          <small><br>Queue (memory): <span x-text="fmtBytes(queueMaxSizeMB * 1048576)"></span></small>
         </template>
       </div>
 
@@ -283,7 +290,7 @@
         </template>
         <template x-if="queueType === 'memory'">
           <div>
-            <div class="est-val" x-text="queueMaxSizeMB + ' MB'"></div>
+            <div class="est-val" x-text="fmtBytes(queueMaxSizeMB * 1048576)"></div>
             <small>Added to RAM estimate</small>
           </div>
         </template>
@@ -704,7 +711,7 @@ function configHelper() {
         'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
         'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
-        'queueType','queueMaxSizeMB','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
+        'queueType','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
         'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
         'podOverride',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
@@ -753,7 +760,7 @@ function configHelper() {
       // queueMaxSizeMB = writeThroughput (bytes/sec) * targetRetentionMin * 60 / 1MB
       const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (10 + this.avgLabelLen) + 16)) * 0.3;
       const needed = Math.ceil(bytesPerSec * this.targetRetentionMin * 60 / 1048576);
-      this.queueMaxSizeMB = Math.max(10, needed);
+      this.setQueueMaxSizeMB(Math.max(10, needed));
     },
     saveState() {
       const state = {};
@@ -761,7 +768,7 @@ function configHelper() {
         'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
         'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
-        'queueType','queueMaxSizeMB','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
+        'queueType','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
         'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
         'podOverride',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
@@ -806,7 +813,8 @@ function configHelper() {
     bufferBatchSize: 1000,
     queueMaxRetries: 3,
     queueType: 'disk',
-    queueMaxSizeMB: 100,
+    queueMaxSizeVal: 100,
+    queueMaxSizeUnit: 'MB',
     targetRetentionVal: 10,
     targetRetentionUnit: 'min',
     fitCpuVal: 4,
@@ -928,6 +936,16 @@ function configHelper() {
     get queueMemoryAdd() { return this.queueType === 'memory' ? this.queueMaxSizeMB * 1048576 : 0; },
     get totalMemory() { return this.trackerMemory + this.bufferMemory + this.baseOverhead + this.queueMemoryAdd; },
 
+    get queueMaxSizeMB() {
+      if (this.queueMaxSizeUnit === 'GB') return this.queueMaxSizeVal * 1024;
+      if (this.queueMaxSizeUnit === 'TB') return this.queueMaxSizeVal * 1048576;
+      return this.queueMaxSizeVal;
+    },
+    setQueueMaxSizeMB(mb) {
+      if (this.queueMaxSizeUnit === 'TB') this.queueMaxSizeVal = Math.round(mb / 1048576 * 1000) / 1000;
+      else if (this.queueMaxSizeUnit === 'GB') this.queueMaxSizeVal = Math.round(mb / 1024 * 100) / 100;
+      else this.queueMaxSizeVal = Math.max(10, Math.ceil(mb));
+    },
     // ---- Queue disk estimation ----
     get avgBatchBytes() { return this.bufferBatchSize * this.avgSeriesSize; },
     get compressionRatio() { return 0.3; },
@@ -1291,7 +1309,7 @@ function configHelper() {
         }
         if (m['queue.maxBytes'] !== undefined) {
           const v = this.parseYamlNum(m['queue.maxBytes']);
-          if (v !== undefined) this.queueMaxSizeMB = Math.ceil(v / 1048576);
+          if (v !== undefined) this.setQueueMaxSizeMB(Math.ceil(v / 1048576));
         }
         if (m['replicaCount'] !== undefined) {
           const pods = this.parseYamlNum(m['replicaCount']);
@@ -1312,7 +1330,7 @@ function configHelper() {
           const mb = this.parseSizeToMB(m['persistence.size']);
           if (mb !== undefined) {
             // pvcSize = queueMaxSizeMB * 1.2 → queueMaxSizeMB = pvcSize / 1.2
-            this.queueMaxSizeMB = Math.max(10, Math.round(mb / 1.2));
+            this.setQueueMaxSizeMB(Math.max(10, Math.round(mb / 1.2)));
           }
         }
       } finally {
@@ -1346,7 +1364,7 @@ function configHelper() {
         }
         if (m['queue.max_bytes'] !== undefined) {
           const v = this.parseYamlNum(m['queue.max_bytes']);
-          if (v !== undefined) this.queueMaxSizeMB = Math.max(10, Math.ceil(v / 1048576));
+          if (v !== undefined) this.setQueueMaxSizeMB(Math.max(10, Math.ceil(v / 1048576)));
         }
       } finally {
         this.$nextTick(() => { this._updatingFromYaml = false; });
