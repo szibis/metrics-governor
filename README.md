@@ -33,7 +33,7 @@
 - **Consistent Sharding** - Automatic endpoint discovery from Kubernetes headless services with consistent hashing ensures the same time-series always route to the same backend (works for both OTLP and PRW)
 - **Pipeline Parity** - OTLP and PRW pipelines have identical resilience: persistent disk queue, split-on-error, circuit breaker, exponential backoff, and failover drain
 - **Production-Ready** - Byte-aware batch splitting, concurrent exports, failover queue, FastQueue durable persistence with circuit breaker and exponential backoff, auto memory limits, TLS/mTLS, authentication, compression (gzip/zstd/snappy), and Helm chart included
-- **High-Performance Optimizations** - String interning reduces allocations by 76%, concurrency limiting prevents goroutine explosion, Bloom filters reduce cardinality tracking memory by 98% (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
+- **High-Performance Optimizations** - String interning reduces allocations by 76%, concurrency limiting prevents goroutine explosion. Three cardinality modes: Bloom filters (98% less memory), HyperLogLog (constant memory), and Hybrid auto-switching (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
 - **Zero Configuration Start** - Works out of the box with sensible defaults; add limits and sharding when needed
 
 ## Architecture
@@ -191,9 +191,9 @@ Plan your deployment in seconds. The **interactive Configuration Helper** estima
 | **Disk I/O Optimizations** | Buffered writer (256KB), write coalescing, per-block snappy compression toggle — reduces syscalls ~128x and disk I/O ~70% |
 | **Failover Queue** | Memory or disk-backed safety net catches all export failures with automatic drain loop — data is never silently dropped |
 | **Split-on-Error** | Oversized batches automatically split in half and retry on HTTP 413 and "too big" errors from backends like VictoriaMetrics, Thanos, Mimir, and Cortex |
-| **Memory Optimized** | Bloom filter cardinality tracking uses 98% less memory (1.2MB vs 75MB per 1M series), with optional persistence across restarts |
-| **Bloom Persistence** | Save and restore bloom filter state across pod restarts — eliminates cold-start re-learning period with configurable save intervals and TTL |
-| **Performance Optimized** | String interning (76% fewer allocations), concurrency limiting, and Bloom/HLL hybrid cardinality tracking |
+| **Cardinality Tracking** | Three modes: **Bloom filter** (98% less memory, 1.2MB vs 75MB per 1M series), **HyperLogLog** (constant ~12KB per tracker, ideal for high-cardinality metrics), and **Hybrid** (auto-switches Bloom→HLL at configurable threshold) |
+| **Bloom Persistence** | Save and restore Bloom/HLL filter state across pod restarts — eliminates cold-start re-learning period with configurable save intervals and TTL |
+| **Performance Optimized** | String interning (76% fewer allocations), concurrency limiting, and configurable cardinality mode selection |
 | **Human-Readable Config** | CLI flags and YAML config accept Mi/Gi/Ti notation for all byte-size values (e.g. `--queue-max-bytes 2Gi`) |
 | **Configuration Helper** | Interactive browser-based tool for deployment planning — estimates CPU, memory, disk I/O, K8s pod sizing, per-pod traffic splitting, and generates ready-to-use YAML |
 | **Cloud Storage Guidance** | Auto-recommends AWS, Azure, and GCP block storage classes based on calculated per-pod IOPS and throughput requirements |

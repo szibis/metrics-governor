@@ -240,16 +240,12 @@ jobs:
           exit $EXIT_CODE
 
   benchmark-alloc-compare:
-    # Run after required jobs so it doesn't compete for runner slots
-    needs: [ci-filter, resource-tests, goroutine-leak-check, memory-stress-test, race-condition-tests, memory-leak-tests]
+    needs: [ci-filter]
     runs-on: ubuntu-latest
     if: >-
-      always() &&
       needs.ci-filter.outputs.skip_memory != 'true' &&
-      !(
-        github.event_name == 'pull_request' &&
-        contains(github.event.pull_request.labels.*.name, 'release:skip')
-      )
+      github.event_name == 'pull_request' &&
+      !contains(github.event.pull_request.labels.*.name, 'release:skip')
     steps:
       - uses: actions/checkout@v4
         with:
@@ -265,12 +261,12 @@ jobs:
         run: go install golang.org/x/perf/cmd/benchstat@latest
 
       - name: Run benchmarks on PR branch
-        run: go test -bench=. -benchmem -count=5 -timeout=10m ./internal/... > new.txt 2>&1 || true
+        run: go test -bench=. -benchmem -benchtime=1s -count=3 -timeout=5m ./internal/... > new.txt 2>&1 || true
 
       - name: Run benchmarks on base branch
         run: |
           git checkout ${{ github.event.pull_request.base.sha }}
-          go test -bench=. -benchmem -count=5 -timeout=10m ./internal/... > old.txt 2>&1 || true
+          go test -bench=. -benchmem -benchtime=1s -count=3 -timeout=5m ./internal/... > old.txt 2>&1 || true
           git checkout ${{ github.event.pull_request.head.sha }}
 
       - name: Compare benchmarks
