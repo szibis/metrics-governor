@@ -802,8 +802,29 @@ function configHelper() {
         const raw = localStorage.getItem('mg-config-state');
         if (!raw) return;
         const state = JSON.parse(raw);
-        for (const [k, v] of Object.entries(state)) {
-          if (v !== undefined && v !== null && k in this) this[k] = v;
+        // Only load known mutable fields — skip old getter-named keys (queueMaxSizeMB, targetRetentionMin)
+        const loadable = [
+          'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
+          'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
+          'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
+          'queueType','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
+          'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
+          'podOverride',
+          'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
+          'rules','middleTab','activeTab','ruleIdCounter',
+        ];
+        for (const k of loadable) {
+          if (state[k] !== undefined && state[k] !== null) this[k] = state[k];
+        }
+        // Migrate old state: queueMaxSizeMB → queueMaxSizeVal (MB)
+        if (state.queueMaxSizeMB !== undefined && state.queueMaxSizeVal === undefined) {
+          this.queueMaxSizeVal = state.queueMaxSizeMB;
+          this.queueMaxSizeUnit = 'MB';
+        }
+        // Migrate old state: targetRetentionMin → targetRetentionVal (min)
+        if (state.targetRetentionMin !== undefined && state.targetRetentionVal === undefined) {
+          this.targetRetentionVal = state.targetRetentionMin;
+          this.targetRetentionUnit = 'min';
         }
       } catch(e) {}
     },
@@ -1034,9 +1055,11 @@ function configHelper() {
       const sizeGiB = Math.max(1, Math.ceil(this.pvcSize / 1024));
       const sizeTiB = sizeGiB / 1024;
 
-      // AWS st1: baseline 40 MB/s per TiB, burst 250 MB/s per TiB, max 500 MB/s
-      const st1Base = Math.min(500, Math.max(5, Math.round(sizeTiB * 40)));
-      const st1Burst = Math.min(500, Math.max(31, Math.round(sizeTiB * 250)));
+      // AWS st1: min volume 125 GiB, baseline 40 MB/s per TiB, burst 250 MB/s per TiB, max 500 MB/s
+      const st1GiB = Math.max(125, sizeGiB);
+      const st1TiB = st1GiB / 1024;
+      const st1Base = Math.min(500, Math.round(st1TiB * 40));
+      const st1Burst = Math.min(500, Math.round(st1TiB * 250));
       // GCP size-dependent write performance
       const pdSsdIOPS = Math.min(100000, Math.max(300, sizeGiB * 30));
       const pdBalIOPS = Math.min(80000, Math.max(3000, sizeGiB * 6));
@@ -1047,7 +1070,7 @@ function configHelper() {
           { name: 'gp3', maxIOPS: 80000, maxThroughput: 2000, note: '3K IOPS + 125 MB/s baseline included; provisionable' },
           { name: 'io2 Block Express', maxIOPS: 256000, maxThroughput: 4000, note: 'Provisioned; up to 1000 IOPS/GiB' },
           { name: 'io1', maxIOPS: 64000, maxThroughput: 1000, note: 'Provisioned; up to 50 IOPS/GiB' },
-          { name: 'st1 (HDD)', maxIOPS: 500, maxThroughput: st1Base, note: `Burst credits: ${st1Base} MB/s baseline, ${st1Burst} MB/s burst at ${sizeGiB} GiB` },
+          { name: 'st1 (HDD)', maxIOPS: 500, maxThroughput: st1Burst, note: `Min vol ${st1GiB} GiB: ${st1Base} MB/s sustained, ${st1Burst} MB/s burst` },
         ],
         azure: [
           { name: 'Premium SSD v1', maxIOPS: 20000, maxThroughput: 900, note: 'Tier-based; credit burst up to 30K IOPS/1000 MB/s' },
