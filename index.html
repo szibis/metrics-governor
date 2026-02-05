@@ -201,8 +201,8 @@
       <!-- CPU -->
       <div class="est-card">
         <h4>CPU</h4>
-        <div class="est-val" :class="cpuStatusClass" x-text="estCores.toFixed(2) + ' cores'"></div>
-        <small x-text="'of ' + availableCores + ' available (' + cpuUtilPct + '%)'"></small>
+        <div class="est-val" :class="cpuStatusClass" x-text="estCores >= 1 ? estCores.toFixed(2) + ' cores' : Math.ceil(estCores * 1000) + 'm'"></div>
+        <small x-text="(estCores >= 1 ? Math.ceil(estCores * 1000) + 'm' : estCores.toFixed(2) + ' cores') + ' \u2014 ' + availableCores + ' available (' + cpuUtilPct + '%)'"></small>
         <div><span :class="cpuBadgeClass" x-text="cpuStatusLabel"></span></div>
       </div>
 
@@ -271,26 +271,99 @@
         <div class="est-card">
           <h4>Recommended Pods</h4>
           <div class="est-val" x-text="recommendedPods"></div>
+          <small class="help-tip">Based on 70% CPU target utilization per pod</small>
         </div>
         <div class="est-card">
           <h4>Per-Pod CPU</h4>
           <div class="est-val" x-text="perPodCpuReq + 'm'"></div>
-          <small x-text="'Limit: ' + perPodCpuLimit + 'm'"></small>
+          <small x-text="(perPodCpuReq / 1000).toFixed(2) + ' cores'"></small><br>
+          <small x-text="'Limit: ' + perPodCpuLimit + 'm (' + (perPodCpuLimit / 1000).toFixed(2) + ' cores)'"></small>
+          <br><small class="help-tip">Limit = request &times; 1.5</small>
         </div>
         <div class="est-card">
           <h4>Per-Pod Memory</h4>
           <div class="est-val" x-text="fmtBytes(perPodMemReq)"></div>
           <small x-text="'Limit: ' + fmtBytes(perPodMemLimit)"></small>
+          <br><small class="help-tip">Limit = request &times; 1.3</small>
         </div>
         <div class="est-card">
           <h4>Total Cluster</h4>
-          <small>CPU: <span x-text="totalClusterCpu + 'm'"></span></small><br>
+          <small>CPU: <span x-text="totalClusterCpu + 'm (' + (totalClusterCpu / 1000).toFixed(2) + ' cores)'"></span></small><br>
           <small>Memory: <span x-text="fmtBytes(totalClusterMem)"></span></small><br>
           <template x-if="queueType === 'disk'">
             <small>Disk: <span x-text="(recommendedPods * queueMaxSizeMB) + ' MB'"></span></small>
           </template>
         </div>
       </div>
+
+      <!-- Sizing rules explanation -->
+      <details style="margin-top:.75rem">
+        <summary style="font-size:.95em">How these values are calculated</summary>
+        <div style="margin-top:.5rem">
+          <table style="font-size:.85em">
+            <thead><tr><th>Value</th><th>Formula</th><th>Rationale</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><b>Pod count</b></td>
+                <td><code>ceil(dps / (cores_per_pod &times; 100k &times; 0.7))</code></td>
+                <td>Each core handles ~100k dps; 70% target leaves headroom for GC and spikes</td>
+              </tr>
+              <tr>
+                <td><b>CPU request</b></td>
+                <td><code>ceil(dps / pods / 100k &times; 1000)m</code></td>
+                <td>Actual expected usage converted to millicores</td>
+              </tr>
+              <tr>
+                <td><b>CPU limit</b></td>
+                <td><code>request &times; 1.5</code></td>
+                <td>50% headroom for burst handling (traffic spikes, GC pauses)</td>
+              </tr>
+              <tr>
+                <td><b>Memory request</b></td>
+                <td><code>ceil(total_memory / pods)</code></td>
+                <td>Steady-state memory: trackers + buffer + base overhead + queue</td>
+              </tr>
+              <tr>
+                <td><b>Memory limit</b></td>
+                <td><code>request &times; 1.3</code></td>
+                <td>30% headroom for Go GC overhead and transient allocations</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+
+      <!-- CNCF / K8s best practices -->
+      <details style="margin-top:.5rem">
+        <summary style="font-size:.95em">K8s resource sizing best practices</summary>
+        <div style="margin-top:.5rem;font-size:.85em;line-height:1.6">
+          <p><b>Requests vs Limits</b> &mdash; per the <a href="https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/" target="_blank">Kubernetes resource management docs</a>:</p>
+          <ul style="margin-top:.25rem">
+            <li><b>Requests</b> = guaranteed minimum. The scheduler uses this to place pods. Set to actual expected usage so the scheduler can bin-pack efficiently.</li>
+            <li><b>Limits</b> = hard ceiling. The kubelet enforces this: CPU is throttled, memory triggers OOM kill. Set above requests to allow for bursts.</li>
+            <li><b>CPU</b>: limits &gt; requests is fine &mdash; CPU is compressible and just gets throttled. A 1.5&times; ratio is a common production pattern.</li>
+            <li><b>Memory</b>: keep limit closer to request (1.2&ndash;1.3&times;) because exceeding the limit means OOM kill and pod restart. Go's <code>GOMEMLIMIT</code> (auto-detected by metrics-governor) makes GC more aggressive near the limit, preventing most OOM scenarios.</li>
+          </ul>
+
+          <p style="margin-top:.75rem"><b>CNCF recommended patterns:</b></p>
+          <ul style="margin-top:.25rem">
+            <li><b>Guaranteed QoS</b> (request = limit) &mdash; best for latency-sensitive workloads. Pods won't be evicted under memory pressure. Use this if metrics-governor is a critical path component.</li>
+            <li><b>Burstable QoS</b> (request &lt; limit) &mdash; better cluster utilization. Pods can burst above requests when resources are free. <b>This tool uses this pattern by default.</b></li>
+            <li><b>Always set requests</b> &mdash; pods without requests get <i>BestEffort</i> QoS and are the first to be evicted.</li>
+          </ul>
+
+          <p style="margin-top:.75rem"><b>Sizing tips for metrics-governor:</b></p>
+          <ul style="margin-top:.25rem">
+            <li><b>Right-size over time</b> &mdash; start with these estimates, then observe actual usage via <code>container_cpu_usage_seconds_total</code> and <code>container_memory_working_set_bytes</code> in Prometheus. Adjust requests to P95 actual usage.</li>
+            <li><b>Use VPA or Goldilocks</b> &mdash; the <a href="https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler" target="_blank">Vertical Pod Autoscaler</a> or <a href="https://github.com/FairwindsOps/goldilocks" target="_blank">Goldilocks</a> can recommend optimal requests/limits based on observed usage.</li>
+            <li><b>HPA for horizontal scaling</b> &mdash; metrics-governor's Helm chart supports HPA. Scale on CPU utilization (default 80%) or custom metrics like <code>metrics_governor_datapoints_total</code>.</li>
+            <li><b>PodDisruptionBudget</b> &mdash; set <code>minAvailable: 1</code> to ensure at least one pod stays running during node drains and cluster upgrades.</li>
+            <li><b>Topology spread</b> &mdash; for high availability, use <code>topologySpreadConstraints</code> to distribute pods across zones/nodes.</li>
+          </ul>
+
+          <p style="margin-top:.75rem;color:var(--pico-muted-color)"><small>References: <a href="https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/" target="_blank">K8s Resource Management</a> &bull; <a href="https://kubernetes.io/docs/tasks/configure-pod-container/quality-service-pod/" target="_blank">QoS Classes</a> &bull; <a href="https://www.cncf.io/blog/2023/09/29/kubernetes-resource-management-a-practitioners-guide/" target="_blank">CNCF Resource Management Guide</a> &bull; <a href="https://home.robusta.dev/blog/stop-using-cpu-limits" target="_blank">Stop Using CPU Limits</a></small></p>
+        </div>
+      </details>
     </details>
     </details>
   </section>
