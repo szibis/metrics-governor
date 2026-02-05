@@ -14,26 +14,26 @@ import (
 // configMeta mirrors the JSON structure embedded in index.html.
 type configMeta struct {
 	Defaults struct {
-		BufferSize          int     `json:"buffer_size"`
-		BufferBatchSize     int     `json:"buffer_batch_size"`
-		QueueType           string  `json:"queue_type"`
-		QueueMaxBytes       int64   `json:"queue_max_bytes"`
-		QueueRetryInterval  string  `json:"queue_retry_interval"`
-		QueueMaxRetryDelay  string  `json:"queue_max_retry_delay"`
-		QueueFullBehavior   string  `json:"queue_full_behavior"`
-		CardinalityMode     string  `json:"cardinality_mode"`
-		BloomFPR            float64 `json:"bloom_fpr"`
-		HLLThreshold        int64   `json:"hll_threshold"`
-		RetentionWindow     string  `json:"retention_window"`
-		GRPCListen          string  `json:"grpc_listen"`
-		HTTPListen          string  `json:"http_listen"`
-		StatsAddr           string  `json:"stats_addr"`
-		ExporterEndpoint    string  `json:"exporter_endpoint"`
-		ExporterProtocol    string  `json:"exporter_protocol"`
-		ExporterInsecure    bool    `json:"exporter_insecure"`
-		FlushInterval       string  `json:"flush_interval"`
-		StringInterning     bool    `json:"string_interning"`
-		InternMaxValueLen   int     `json:"intern_max_value_length"`
+		BufferSize         int     `json:"buffer_size"`
+		BufferBatchSize    int     `json:"buffer_batch_size"`
+		QueueType          string  `json:"queue_type"`
+		QueueMaxBytes      int64   `json:"queue_max_bytes"`
+		QueueRetryInterval string  `json:"queue_retry_interval"`
+		QueueMaxRetryDelay string  `json:"queue_max_retry_delay"`
+		QueueFullBehavior  string  `json:"queue_full_behavior"`
+		CardinalityMode    string  `json:"cardinality_mode"`
+		BloomFPR           float64 `json:"bloom_fpr"`
+		HLLThreshold       int64   `json:"hll_threshold"`
+		RetentionWindow    string  `json:"retention_window"`
+		GRPCListen         string  `json:"grpc_listen"`
+		HTTPListen         string  `json:"http_listen"`
+		StatsAddr          string  `json:"stats_addr"`
+		ExporterEndpoint   string  `json:"exporter_endpoint"`
+		ExporterProtocol   string  `json:"exporter_protocol"`
+		ExporterInsecure   bool    `json:"exporter_insecure"`
+		FlushInterval      string  `json:"flush_interval"`
+		StringInterning    bool    `json:"string_interning"`
+		InternMaxValueLen  int     `json:"intern_max_value_length"`
 	} `json:"defaults"`
 }
 
