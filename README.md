@@ -170,8 +170,10 @@ Plan your deployment in seconds. The **interactive Configuration Helper** estima
 | 📝 | [**Logging**](docs/logging.md) | JSON structured logging, log aggregation |
 | 🧪 | [**Testing**](docs/testing.md) | Test environment, Docker Compose, verification |
 | 🛠️ | [**Development**](docs/development.md) | Building, project structure, contributing |
-| ⚡ | [**Performance**](docs/performance.md) | Bloom filters, string interning, queue optimization |
+| ⚡ | [**Performance**](docs/performance.md) | Bloom filters, string interning, queue I/O optimization |
 | 🛡️ | [**Resilience**](docs/resilience.md) | Circuit breaker, exponential backoff, memory limits |
+| 💾 | [**Bloom Persistence**](docs/bloom-persistence.md) | Save/restore bloom filter state across restarts |
+| 🖥️ | [**Configuration Helper**](docs/config-helper.md) | Interactive browser tool for deployment planning |
 
 ---
 
@@ -179,19 +181,24 @@ Plan your deployment in seconds. The **interactive Configuration Helper** estima
 
 | Capability | Description |
 |------------|-------------|
-| **OTLP Protocol** | Full gRPC and HTTP receiver/exporter with TLS and authentication |
-| **PRW Protocol** | Prometheus Remote Write 1.0/2.0 with native histograms, VictoriaMetrics mode |
+| **OTLP Protocol** | Full gRPC and HTTP receiver/exporter with TLS, mTLS, and authentication (bearer token, basic auth) |
+| **PRW Protocol** | Prometheus Remote Write 1.0/2.0 with native histograms, VictoriaMetrics mode, custom endpoint paths |
 | **Intelligent Buffering** | Configurable buffer with byte-aware batch splitting, concurrent export workers, and failover queue (both OTLP and PRW) |
-| **Adaptive Limits** | Per-group tracking with smart dropping of top offenders only |
-| **Real-time Statistics** | Per-metric cardinality, datapoints, and limit violation tracking |
-| **Prometheus Integration** | Native `/metrics` endpoint for monitoring the proxy itself |
-| **Consistent Sharding** | Distribute metrics across multiple backends via DNS discovery (OTLP and PRW) |
-| **Persistent Queue** | FastQueue disk-backed queue with snappy compression, buffered I/O, circuit breaker, exponential backoff, automatic retry, and split-on-error — identical for both OTLP and PRW pipelines |
+| **Adaptive Limits** | Per-group tracking with smart dropping of top offenders only, dry-run mode for safe rollouts |
+| **Real-time Statistics** | Per-metric cardinality, datapoints, and limit violation tracking with Prometheus metrics |
+| **Consistent Sharding** | Distribute metrics across multiple backends via K8s DNS discovery with virtual nodes (OTLP and PRW) |
+| **Persistent Queue** | FastQueue disk-backed queue with snappy compression, 256KB buffered I/O, write coalescing, circuit breaker, exponential backoff, automatic retry, and split-on-error — identical for both OTLP and PRW pipelines |
+| **Disk I/O Optimizations** | Buffered writer (256KB), write coalescing, per-block snappy compression toggle — reduces syscalls ~128x and disk I/O ~70% |
 | **Failover Queue** | Memory or disk-backed safety net catches all export failures with automatic drain loop — data is never silently dropped |
 | **Split-on-Error** | Oversized batches automatically split in half and retry on HTTP 413 and "too big" errors from backends like VictoriaMetrics, Thanos, Mimir, and Cortex |
-| **Memory Optimized** | Bloom filter cardinality tracking uses 98% less memory (1.2MB vs 75MB per 1M series) |
-| **Performance Optimized** | String interning and concurrency limiting for high-throughput workloads |
-| **Production Ready** | Helm chart, multi-arch Docker images, graceful shutdown |
+| **Memory Optimized** | Bloom filter cardinality tracking uses 98% less memory (1.2MB vs 75MB per 1M series), with optional persistence across restarts |
+| **Bloom Persistence** | Save and restore bloom filter state across pod restarts — eliminates cold-start re-learning period with configurable save intervals and TTL |
+| **Performance Optimized** | String interning (76% fewer allocations), concurrency limiting, and Bloom/HLL hybrid cardinality tracking |
+| **Human-Readable Config** | CLI flags and YAML config accept Mi/Gi/Ti notation for all byte-size values (e.g. `--queue-max-bytes 2Gi`) |
+| **Configuration Helper** | Interactive browser-based tool for deployment planning — estimates CPU, memory, disk I/O, K8s pod sizing, per-pod traffic splitting, and generates ready-to-use YAML |
+| **Cloud Storage Guidance** | Auto-recommends AWS, Azure, and GCP block storage classes based on calculated per-pod IOPS and throughput requirements |
+| **Graceful Shutdown** | Configurable timeout drains in-flight exports and persists queue state before termination |
+| **Production Ready** | Helm chart, multi-arch Docker images, 880+ tests including pipeline integrity, durability, and resilience test suites |
 
 ---
 
