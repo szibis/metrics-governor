@@ -409,6 +409,29 @@ jobs:
       - name: Lint Helm chart
         run: helm lint helm/metrics-governor
 
+  validate-config-helper:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate config helper against Go defaults
+        run: go test -v ./tools/config-helper/...
+
+      - name: Check config-meta is up to date
+        run: |
+          go run ./tools/config-helper/cmd/generate
+          if ! git diff --quiet tools/config-helper/index.html index.html; then
+            echo "::error::config-meta JSON is out of date. Run 'make generate-config-meta' and commit."
+            git diff --stat
+            exit 1
+          fi
+
   # Post test coverage comment on PR
   coverage-comment:
     needs: [ci-filter, build, test-unit, test-functional, test-e2e, test-e2e-docker]

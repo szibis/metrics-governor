@@ -1,4 +1,8 @@
-# metrics-governor
+<p align="center">
+  <img src="docs/images/logo.svg" alt="metrics-governor logo" width="120">
+</p>
+
+<h1 align="center">metrics-governor</h1>
 
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -113,6 +117,39 @@ rules:
 ```
 
 When cardinality exceeds 10,000, metrics-governor identifies which service is the top contributor and drops only that service's metrics, preserving data from well-behaved services.
+
+---
+
+## 🖥️ Configuration Helper
+
+Plan your deployment in seconds. The **interactive Configuration Helper** estimates CPU, memory, disk I/O, and K8s pod sizing from your throughput inputs, builds limits rules visually, and generates ready-to-use Helm, app config, and limits YAML files — all in a single zero-dependency HTML page.
+
+**[Open Configuration Helper](https://szibis.github.io/metrics-governor/)** | [View source](tools/config-helper/)
+
+<table>
+<tr>
+<td width="50%" align="center">
+<a href="docs/images/config-helper-inputs.svg"><img src="docs/images/config-helper-inputs.svg" alt="Throughput inputs with simple/advanced toggle" width="100%"></a>
+<br><sub><b>Throughput Inputs</b> — Simple &amp; Advanced modes with outage buffer</sub>
+</td>
+<td width="50%" align="center">
+<a href="docs/images/config-helper-estimation.svg"><img src="docs/images/config-helper-estimation.svg" alt="Resource estimation with fit check and pod override" width="100%"></a>
+<br><sub><b>Resource Estimation</b> — CPU, memory, disk, fit check &amp; pod override</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" align="center">
+<a href="docs/images/config-helper-preview.svg"><img src="docs/images/config-helper-preview.svg" alt="Editable YAML preview with bidirectional sync" width="100%"></a>
+<br><sub><b>Editable YAML</b> — Edit directly, changes sync to inputs bidirectionally</sub>
+</td>
+<td width="50%" align="center">
+<a href="docs/images/config-helper-fitcheck.svg"><img src="docs/images/config-helper-fitcheck.svg" alt="Fit check with pod override and resource validation" width="100%"></a>
+<br><sub><b>Fit Check</b> — Pod override, CPU, memory &amp; disk validation</sub>
+</td>
+</tr>
+</table>
+
+> **No build tools, no server** — open `index.html` directly in your browser or use the [hosted version](https://szibis.github.io/metrics-governor/).
 
 ---
 
