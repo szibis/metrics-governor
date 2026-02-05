@@ -37,6 +37,7 @@
     .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
     @media (max-width: 768px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
     summary { cursor: pointer; font-weight: 600; }
+    details details > summary { font-size: 1.1em; font-weight: 700; }
     .copy-ok { color: var(--status-green); font-size: .85em; }
     .storage-rec { background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: .75rem; margin-top: .5rem; }
     .error-msg { color: var(--status-red); font-size: .85em; margin-top: .25rem; }
