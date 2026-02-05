@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="280" viewBox="0 0 480 280">
+  <defs>
+    <style>
+      .bg { fill: #1a1a2e; }
+      .card { fill: #16213e; stroke: #334155; stroke-width: 1; rx: 8; }
+      .title { fill: #e2e8f0; font-family: system-ui, sans-serif; font-size: 14px; font-weight: 700; }
+      .label { fill: #94a3b8; font-family: system-ui, sans-serif; font-size: 10px; }
+      .value { fill: #f1f5f9; font-family: 'SF Mono', monospace; font-size: 12px; }
+      .input-bg { fill: #0f172a; stroke: #334155; stroke-width: 1; rx: 4; }
+      .switch-bg { fill: #334155; rx: 8; }
+      .switch-on { fill: #6366f1; rx: 8; }
+      .switch-dot { fill: #fff; }
+      .header { fill: #e2e8f0; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 700; }
+      .subtext { fill: #64748b; font-family: system-ui, sans-serif; font-size: 9px; }
+    </style>
+  </defs>
+  <rect class="bg" width="480" height="280"/>
+  <!-- Header -->
+  <text class="header" x="20" y="30">1. Throughput &amp; Environment</text>
+  <!-- Advanced toggle -->
+  <rect class="switch-on" x="400" y="16" width="36" height="18"/>
+  <circle class="switch-dot" cx="427" cy="25" r="7"/>
+  <text class="label" x="360" y="29">Advanced</text>
+  <!-- Row 1 -->
+  <text class="label" x="20" y="60">Datapoints/sec</text>
+  <rect class="input-bg" x="20" y="65" width="210" height="28"/>
+  <text class="value" x="30" y="84">50,000</text>
+  <text class="subtext" x="20" y="103">~100k dps/core. Most important sizing input.</text>
+
+  <text class="label" x="250" y="60">Unique metric names</text>
+  <rect class="input-bg" x="250" y="65" width="210" height="28"/>
+  <text class="value" x="260" y="84">1,000</text>
+  <text class="subtext" x="250" y="103">Each gets its own cardinality tracker.</text>
+
+  <!-- Row 2 -->
+  <text class="label" x="20" y="125">Avg cardinality per metric</text>
+  <rect class="input-bg" x="20" y="130" width="210" height="28"/>
+  <text class="value" x="30" y="149">100</text>
+  <text class="subtext" x="20" y="168">Unique label combos per metric.</text>
+
+  <text class="label" x="250" y="125">CPU cores available</text>
+  <rect class="input-bg" x="250" y="130" width="210" height="28"/>
+  <text class="value" x="260" y="149">4</text>
+  <text class="subtext" x="250" y="168">Total CPU cores for metrics-governor.</text>
+
+  <!-- Advanced section hint -->
+  <line x1="20" y1="185" x2="460" y2="185" stroke="#334155" stroke-width="1"/>
+  <text class="title" x="20" y="205">Advanced Tuning</text>
+  <!-- Mini inputs row -->
+  <text class="label" x="20" y="225">Cardinality mode</text>
+  <rect class="input-bg" x="20" y="230" width="130" height="24"/>
+  <text class="value" x="30" y="247">bloom</text>
+
+  <text class="label" x="170" y="225">Bloom FPR</text>
+  <rect class="input-bg" x="170" y="230" width="100" height="24"/>
+  <text class="value" x="180" y="247">0.01</text>
+
+  <text class="label" x="290" y="225">Queue type</text>
+  <rect class="input-bg" x="290" y="230" width="100" height="24"/>
+  <text class="value" x="300" y="247">disk</text>
+
+  <text class="label" x="410" y="225">Cloud</text>
+  <rect class="input-bg" x="410" y="230" width="50" height="24"/>
+  <text class="value" x="420" y="247">AWS</text>
+</svg>

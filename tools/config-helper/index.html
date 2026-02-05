@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>metrics-governor Configuration Helper</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+  <style>
+    :root { --status-green: #2ecc40; --status-yellow: #ffdc00; --status-red: #ff4136; }
+    .status-green { color: var(--status-green); } .status-yellow { color: var(--status-yellow); } .status-red { color: var(--status-red); }
+    .badge-green { background: var(--status-green); color: #fff; padding: 2px 8px; border-radius: 4px; font-size: .8em; }
+    .badge-yellow { background: var(--status-yellow); color: #333; padding: 2px 8px; border-radius: 4px; font-size: .8em; }
+    .badge-red { background: var(--status-red); color: #fff; padding: 2px 8px; border-radius: 4px; font-size: .8em; }
+    .est-card { border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 1rem; margin-bottom: .75rem; }
+    .est-card h4 { margin-bottom: .5rem; }
+    .est-val { font-size: 1.4em; font-weight: 700; }
+    .rule-card { border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 1rem; margin-bottom: .75rem; }
+    .rule-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+    .rule-header h4 { margin: 0; }
+    .label-pair { display: flex; gap: .5rem; align-items: center; margin-bottom: .25rem; }
+    .label-pair input { flex: 1; }
+    .tag { display: inline-block; background: var(--pico-primary-background); color: var(--pico-primary-inverse); padding: 2px 8px; border-radius: 12px; font-size: .85em; margin: 2px; cursor: pointer; }
+    .tag.selected { outline: 2px solid var(--pico-primary); }
+    pre.yaml-preview { background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 1rem; overflow-x: auto; max-height: 500px; white-space: pre; font-size: .85em; line-height: 1.4; }
+    .tab-bar { display: flex; gap: 0; border-bottom: 2px solid var(--pico-muted-border-color); margin-bottom: 1rem; }
+    .tab-btn { padding: .5rem 1rem; cursor: pointer; border: none; background: none; font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -2px; display: flex; align-items: center; gap: .4rem; }
+    .tab-btn.active { border-bottom-color: var(--pico-primary); color: var(--pico-primary); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .dot-green { background: var(--status-green); } .dot-red { background: var(--status-red); }
+    .btn-row { display: flex; gap: .5rem; margin-top: .5rem; }
+    .btn-row button { font-size: .85em; padding: .4rem .8rem; }
+    .help-tip { font-size: .85em; color: var(--pico-muted-color); margin-top: .1rem; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+    @media (max-width: 768px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+    summary { cursor: pointer; font-weight: 600; }
+    .copy-ok { color: var(--status-green); font-size: .85em; }
+    .storage-rec { background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: .75rem; margin-top: .5rem; }
+    .error-msg { color: var(--status-red); font-size: .85em; margin-top: .25rem; }
+    .section-title { display: flex; align-items: center; gap: .5rem; }
+    .theme-toggle { background: none; border: 1px solid var(--pico-muted-border-color); border-radius: 50%; width: 40px; height: 40px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; transition: border-color .2s; }
+    .theme-toggle:hover { border-color: var(--pico-primary); }
+    .theme-toggle svg { width: 20px; height: 20px; fill: var(--pico-color); transition: fill .2s; }
+    .header-row { display: flex; align-items: center; justify-content: space-between; }
+  </style>
+</head>
+<body x-data="configHelper()" class="container">
+
+<header>
+  <div class="header-row">
+    <h1 style="margin-bottom:0">metrics-governor Configuration Helper</h1>
+    <button class="theme-toggle" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'" :title="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
+      <!-- Sun icon (shown in dark mode) -->
+      <svg x-show="theme === 'dark'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-3a1 1 0 0 0 1-1V1a1 1 0 1 0-2 0v2a1 1 0 0 0 1 1zm0 18a1 1 0 0 0-1 1v2a1 1 0 1 0 2 0v-2a1 1 0 0 0-1-1zM4.22 5.64a1 1 0 0 0 1.42-1.42l-1.42-1.4a1 1 0 0 0-1.4 1.4l1.4 1.42zm15.56 12.72a1 1 0 0 0-1.42 1.42l1.42 1.4a1 1 0 0 0 1.4-1.4l-1.4-1.42zM4 12a1 1 0 0 0-1-1H1a1 1 0 1 0 0 2h2a1 1 0 0 0 1-1zm19-1h-2a1 1 0 1 0 0 2h2a1 1 0 1 0 0-2zM5.64 19.78a1 1 0 0 0-1.42 0l-1.4 1.42a1 1 0 1 0 1.4 1.4l1.42-1.4a1 1 0 0 0 0-1.42zM19.78 4.22l1.4-1.42a1 1 0 1 0-1.4-1.4l-1.42 1.4a1 1 0 1 0 1.42 1.42z"/></svg>
+      <!-- Moon icon (shown in light mode) -->
+      <svg x-show="theme === 'light'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.05 8.05 0 0 1-3.37.73A8.15 8.15 0 0 1 9.08 5.49a8.59 8.59 0 0 1 .25-2 1 1 0 0 0-.37-1 1 1 0 0 0-1.05-.17A10 10 0 1 0 22 17.29a1 1 0 0 0-.36-1.29zM12 20a8 8 0 0 1-6.95-12A9.94 9.94 0 0 0 19.19 16 8 8 0 0 1 12 20z"/></svg>
+    </button>
+  </div>
+  <p>Plan your deployment: estimate resources, build limits rules, and generate ready-to-use config files.</p>
+</header>
+
+<main>
+  <!-- ====== SECTION 1: INPUTS ====== -->
+  <section>
+    <div class="section-title">
+      <h2>1. Throughput &amp; Environment</h2>
+      <label style="margin-left:auto; display:flex; align-items:center; gap:.5rem; font-size:.9em;">
+        <input type="checkbox" x-model="advanced" role="switch"> Advanced
+      </label>
+    </div>
+
+    <div class="grid-2">
+      <label>
+        Datapoints/sec
+        <input type="number" x-model.number="dps" min="1" step="1000">
+        <small class="help-tip">Total incoming metric datapoints per second. ~100k dps/core. <a href="docs/performance.md#throughput" target="_blank">Docs</a></small>
+      </label>
+      <label>
+        Unique metric names
+        <input type="number" x-model.number="uniqueMetrics" min="1" step="100">
+        <small class="help-tip">Distinct __name__ values. Each gets its own cardinality tracker. <a href="docs/performance.md#cardinality" target="_blank">Docs</a></small>
+      </label>
+      <label>
+        Avg cardinality per metric
+        <input type="number" x-model.number="avgCardinality" min="1" step="100">
+        <small class="help-tip">Unique label combos per metric. High values (&gt;10k) increase memory. <a href="docs/limits.md" target="_blank">Docs</a></small>
+      </label>
+      <label>
+        CPU cores available
+        <input type="number" x-model.number="availableCores" min="1" step="1">
+        <small class="help-tip">Total CPU cores for metrics-governor. <a href="docs/performance.md#cpu" target="_blank">Docs</a></small>
+      </label>
+    </div>
+
+    <template x-if="advanced">
+      <div>
+        <hr>
+        <h4>Advanced Tuning</h4>
+        <div class="grid-3">
+          <label>
+            Avg labels per series
+            <input type="number" x-model.number="avgLabels" min="1" max="50" step="1">
+            <small class="help-tip">Label key-value pairs per series (typical 3-8). <a href="docs/performance.md#memory" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Avg label value length
+            <input type="number" x-model.number="avgLabelLen" min="1" max="256" step="5">
+            <small class="help-tip">Byte length of label values. Longer = more memory. <a href="docs/performance.md#memory" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Retention window
+            <input type="text" x-model="retentionWindow" placeholder="60s">
+            <small class="help-tip">How long trackers remember series. <a href="docs/limits.md#window" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Cardinality mode
+            <select x-model="cardinalityMode">
+              <option value="bloom">bloom (memory-efficient)</option>
+              <option value="exact">exact (precise, higher memory)</option>
+              <option value="hybrid">hybrid (bloom+HLL)</option>
+            </select>
+            <small class="help-tip"><a href="docs/performance.md#cardinality-modes" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Bloom FPR
+            <input type="number" x-model.number="bloomFPR" min="0.001" max="0.5" step="0.005">
+            <small class="help-tip">False positive rate (0.01 = 1%). Lower = more memory. <a href="docs/performance.md#bloom-filter" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            HLL threshold
+            <input type="number" x-model.number="hllThreshold" min="100" step="1000">
+            <small class="help-tip">Hybrid switch point Bloom&rarr;HLL. <a href="docs/performance.md#hybrid" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Buffer max size
+            <input type="number" x-model.number="bufferMaxSize" min="100" step="1000">
+            <small class="help-tip">Max write requests in buffer. <a href="docs/performance.md#buffer" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Buffer batch size
+            <input type="number" x-model.number="bufferBatchSize" min="100" step="100">
+            <small class="help-tip">Items per export batch. <a href="docs/performance.md#buffer" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Queue max retries
+            <input type="number" x-model.number="queueMaxRetries" min="0" max="100" step="1">
+            <small class="help-tip">Retries before data dropped. <a href="docs/performance.md#queue" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Queue type
+            <select x-model="queueType">
+              <option value="memory">memory (in-process)</option>
+              <option value="disk">disk (persistent)</option>
+            </select>
+            <small class="help-tip"><a href="docs/performance.md#queue" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Queue max size MB
+            <input type="number" x-model.number="queueMaxSizeMB" min="10" step="50">
+            <small class="help-tip">Max queue capacity in MB. <a href="docs/performance.md#queue" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            CPU cores per pod
+            <input type="number" x-model.number="coresPerPod" min="0.5" step="0.5">
+            <small class="help-tip">CPU per K8s pod. Determines pod count. <a href="docs/performance.md#scaling" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Cloud provider
+            <select x-model="cloudProvider">
+              <option value="none">None</option>
+              <option value="aws">AWS</option>
+              <option value="azure">Azure</option>
+              <option value="gcp">GCP</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </template>
+  </section>
+
+  <!-- ====== SECTION 2: RESOURCE ESTIMATION ====== -->
+  <section>
+    <h2>2. Resource Estimation</h2>
+
+    <div class="grid-3">
+      <!-- CPU -->
+      <div class="est-card">
+        <h4>CPU</h4>
+        <div class="est-val" :class="cpuStatusClass" x-text="estCores.toFixed(2) + ' cores'"></div>
+        <small x-text="'of ' + availableCores + ' available (' + cpuUtilPct + '%)'"></small>
+        <div><span :class="cpuBadgeClass" x-text="cpuStatusLabel"></span></div>
+      </div>
+
+      <!-- Memory -->
+      <div class="est-card">
+        <h4>Memory (Total)</h4>
+        <div class="est-val" x-text="fmtBytes(totalMemory)"></div>
+        <small>Trackers: <span x-text="fmtBytes(trackerMemory)"></span></small><br>
+        <small>Buffer: <span x-text="fmtBytes(bufferMemory)"></span></small><br>
+        <small>Base overhead: ~50 MB</small>
+        <template x-if="queueType === 'memory'">
+          <small><br>Queue (memory): <span x-text="queueMaxSizeMB + ' MB'"></span></small>
+        </template>
+      </div>
+
+      <!-- Queue / Disk -->
+      <div class="est-card">
+        <h4 x-text="queueType === 'disk' ? 'Queue (Disk I/O)' : 'Queue (Memory)'"></h4>
+        <template x-if="queueType === 'disk'">
+          <div>
+            <div class="est-val" x-text="fmtBytes(pvcSize * 1048576)"></div>
+            <small>PVC size (incl. 20% headroom)</small><br>
+            <small>Write IOPS: <span x-text="writeIOPS"></span></small><br>
+            <small>Read IOPS: <span x-text="readIOPS"></span></small><br>
+            <small>Total IOPS: <span x-text="totalIOPS"></span></small><br>
+            <small>Write throughput: <span x-text="fmtBytes(writeThroughput) + '/s'"></span></small>
+          </div>
+        </template>
+        <template x-if="queueType === 'memory'">
+          <div>
+            <div class="est-val" x-text="queueMaxSizeMB + ' MB'"></div>
+            <small>Added to RAM estimate</small>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Cloud Storage Recommendation -->
+    <template x-if="queueType === 'disk' && cloudProvider !== 'none'">
+      <div class="storage-rec">
+        <h4>Cloud Block Storage Recommendation (<span x-text="cloudProvider.toUpperCase()"></span>)</h4>
+        <table>
+          <thead><tr><th>Storage Class</th><th>Max IOPS</th><th>Max Throughput</th><th>Recommendation</th></tr></thead>
+          <tbody>
+            <template x-for="opt in storageOptions" :key="opt.name">
+              <tr :style="opt.recommended ? 'font-weight:700' : ''">
+                <td x-text="opt.name"></td>
+                <td x-text="opt.maxIOPS.toLocaleString()"></td>
+                <td x-text="opt.maxThroughput + ' MB/s'"></td>
+                <td>
+                  <template x-if="opt.recommended"><span class="badge-green">Recommended</span></template>
+                  <template x-if="!opt.recommended && opt.fits"><span style="font-size:.85em">Fits</span></template>
+                  <template x-if="!opt.fits"><span class="badge-red">Insufficient</span></template>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </template>
+
+    <!-- K8s Pod Sizing -->
+    <details open>
+      <summary>Kubernetes Pod Sizing</summary>
+      <div class="grid-4" style="margin-top:.75rem">
+        <div class="est-card">
+          <h4>Recommended Pods</h4>
+          <div class="est-val" x-text="recommendedPods"></div>
+        </div>
+        <div class="est-card">
+          <h4>Per-Pod CPU</h4>
+          <div class="est-val" x-text="perPodCpuReq + 'm'"></div>
+          <small x-text="'Limit: ' + perPodCpuLimit + 'm'"></small>
+        </div>
+        <div class="est-card">
+          <h4>Per-Pod Memory</h4>
+          <div class="est-val" x-text="fmtBytes(perPodMemReq)"></div>
+          <small x-text="'Limit: ' + fmtBytes(perPodMemLimit)"></small>
+        </div>
+        <div class="est-card">
+          <h4>Total Cluster</h4>
+          <small>CPU: <span x-text="totalClusterCpu + 'm'"></span></small><br>
+          <small>Memory: <span x-text="fmtBytes(totalClusterMem)"></span></small><br>
+          <template x-if="queueType === 'disk'">
+            <small>Disk: <span x-text="(recommendedPods * queueMaxSizeMB) + ' MB'"></span></small>
+          </template>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ====== SECTION 3: LIMITS RULES BUILDER ====== -->
+  <section>
+    <h2>3. Limits Rules Builder</h2>
+
+    <details open>
+      <summary>Defaults</summary>
+      <div class="grid-3" style="margin-top:.75rem">
+        <label>
+          Default max cardinality
+          <input type="number" x-model.number="defaultMaxCardinality" min="0" step="1000">
+        </label>
+        <label>
+          Default max datapoints rate
+          <input type="number" x-model.number="defaultMaxDpRate" min="0" step="10000">
+        </label>
+        <label>
+          Default action
+          <select x-model="defaultAction">
+            <option value="log">log</option>
+            <option value="drop">drop</option>
+            <option value="adaptive">adaptive</option>
+          </select>
+        </label>
+      </div>
+    </details>
+
+    <div style="margin-top:1rem">
+      <button @click="addRule()" class="outline">+ Add Rule</button>
+    </div>
+
+    <template x-for="(rule, idx) in rules" :key="rule.id">
+      <div class="rule-card" style="margin-top:.75rem">
+        <div class="rule-header" @click="rule.expanded = !rule.expanded">
+          <h4 x-text="rule.name || 'Untitled Rule #' + (idx + 1)"></h4>
+          <div style="display:flex;gap:.25rem;align-items:center">
+            <button class="outline secondary" style="padding:2px 8px;font-size:.8em" @click.stop="moveRule(idx, -1)" :disabled="idx === 0">&uarr;</button>
+            <button class="outline secondary" style="padding:2px 8px;font-size:.8em" @click.stop="moveRule(idx, 1)" :disabled="idx === rules.length - 1">&darr;</button>
+            <button class="outline" style="padding:2px 8px;font-size:.8em;color:var(--status-red)" @click.stop="rules.splice(idx, 1)">Delete</button>
+            <span x-text="rule.expanded ? '&#9660;' : '&#9654;'" style="font-size:.8em"></span>
+          </div>
+        </div>
+        <template x-if="rule.expanded">
+          <div style="margin-top:.75rem">
+            <div class="grid-2">
+              <label>
+                Name
+                <input type="text" x-model="rule.name" placeholder="e.g. high-cardinality-protection">
+              </label>
+              <label>
+                Match metric_name (regex)
+                <input type="text" x-model="rule.matchMetricName" placeholder="e.g. http_request_.*">
+              </label>
+            </div>
+
+            <fieldset>
+              <legend>Match Labels</legend>
+              <template x-for="(lbl, li) in rule.labels" :key="li">
+                <div class="label-pair">
+                  <input type="text" x-model="lbl.key" placeholder="key">
+                  <input type="text" x-model="lbl.value" placeholder="value">
+                  <button class="outline" style="padding:2px 8px;font-size:.8em;color:var(--status-red)" @click="rule.labels.splice(li, 1)">x</button>
+                </div>
+              </template>
+              <button class="outline secondary" style="font-size:.8em;padding:4px 10px" @click="rule.labels.push({key:'',value:''})">+ Label</button>
+            </fieldset>
+
+            <div class="grid-3">
+              <label>
+                Max cardinality
+                <input type="number" x-model.number="rule.maxCardinality" min="0" step="1000">
+              </label>
+              <label>
+                Max datapoints rate
+                <input type="number" x-model.number="rule.maxDpRate" min="0" step="10000">
+              </label>
+              <label>
+                Action
+                <select x-model="rule.action">
+                  <option value="log">log</option>
+                  <option value="drop">drop</option>
+                  <option value="adaptive">adaptive</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="grid-2">
+              <label>
+                Window
+                <input type="text" x-model="rule.window" placeholder="e.g. 60s">
+              </label>
+              <div>
+                <label>Group By</label>
+                <div>
+                  <template x-for="g in groupByOptions" :key="g">
+                    <span class="tag" :class="rule.groupBy.includes(g) ? 'selected' : ''" @click="toggleGroupBy(rule, g)" x-text="g"></span>
+                  </template>
+                  <input type="text" x-model="rule.customGroupBy" placeholder="custom..." style="width:120px;display:inline-block;font-size:.85em;padding:4px 8px" @keydown.enter="if(rule.customGroupBy.trim()){rule.groupBy.push(rule.customGroupBy.trim()); rule.customGroupBy=''}">
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </template>
+  </section>
+
+  <!-- ====== SECTION 4: LIVE CONFIG PREVIEW ====== -->
+  <section>
+    <h2>4. Config Preview &amp; Export</h2>
+
+    <div class="tab-bar">
+      <button class="tab-btn" :class="activeTab === 'helm' ? 'active' : ''" @click="activeTab = 'helm'">
+        <span class="dot" :class="helmValid ? 'dot-green' : 'dot-red'"></span> Helm values.yaml
+      </button>
+      <button class="tab-btn" :class="activeTab === 'app' ? 'active' : ''" @click="activeTab = 'app'">
+        <span class="dot" :class="appValid ? 'dot-green' : 'dot-red'"></span> App config.yaml
+      </button>
+      <button class="tab-btn" :class="activeTab === 'limits' ? 'active' : ''" @click="activeTab = 'limits'">
+        <span class="dot" :class="limitsValid ? 'dot-green' : 'dot-red'"></span> Limits rules YAML
+      </button>
+    </div>
+
+    <!-- Helm values.yaml -->
+    <template x-if="activeTab === 'helm'">
+      <div>
+        <pre class="yaml-preview" x-text="helmYaml"></pre>
+        <template x-if="!helmValid"><div class="error-msg" x-text="helmError"></div></template>
+        <div class="btn-row">
+          <button @click="copyToClipboard(helmYaml, 'helm')">Copy to Clipboard</button>
+          <button class="outline" @click="downloadFile(helmYaml, 'values.yaml')">Download values.yaml</button>
+          <span class="copy-ok" x-show="copyOk === 'helm'" x-transition>Copied!</span>
+        </div>
+      </div>
+    </template>
+
+    <!-- App config.yaml -->
+    <template x-if="activeTab === 'app'">
+      <div>
+        <pre class="yaml-preview" x-text="appYaml"></pre>
+        <template x-if="!appValid"><div class="error-msg" x-text="appError"></div></template>
+        <div class="btn-row">
+          <button @click="copyToClipboard(appYaml, 'app')">Copy to Clipboard</button>
+          <button class="outline" @click="downloadFile(appYaml, 'config.yaml')">Download config.yaml</button>
+          <span class="copy-ok" x-show="copyOk === 'app'" x-transition>Copied!</span>
+        </div>
+      </div>
+    </template>
+
+    <!-- Limits rules YAML -->
+    <template x-if="activeTab === 'limits'">
+      <div>
+        <pre class="yaml-preview" x-text="limitsYaml"></pre>
+        <template x-if="!limitsValid"><div class="error-msg" x-text="limitsError"></div></template>
+        <div class="btn-row">
+          <button @click="copyToClipboard(limitsYaml, 'limits')">Copy to Clipboard</button>
+          <button class="outline" @click="downloadFile(limitsYaml, 'limits.yaml')">Download limits.yaml</button>
+          <span class="copy-ok" x-show="copyOk === 'limits'" x-transition>Copied!</span>
+        </div>
+      </div>
+    </template>
+  </section>
+</main>
+
+<footer>
+  <small>metrics-governor Configuration Helper &mdash; open this file directly in your browser, no build step needed.</small>
+</footer>
+
+<script>
+function configHelper() {
+  return {
+    // ---- Theme ----
+    theme: localStorage.getItem('mg-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+    init() {
+      this.applyTheme();
+      this.$watch('theme', () => this.applyTheme());
+    },
+    applyTheme() {
+      document.documentElement.setAttribute('data-theme', this.theme);
+      localStorage.setItem('mg-theme', this.theme);
+    },
+    toggleTheme() {
+      this.theme = this.theme === 'dark' ? 'light' : 'dark';
+    },
+
+    // ---- Simple inputs ----
+    dps: 50000,
+    uniqueMetrics: 1000,
+    avgCardinality: 100,
+    availableCores: 4,
+
+    // ---- Advanced inputs ----
+    advanced: false,
+    avgLabels: 5,
+    avgLabelLen: 20,
+    retentionWindow: '60s',
+    cardinalityMode: 'bloom',
+    bloomFPR: 0.01,
+    hllThreshold: 10000,
+    bufferMaxSize: 5000,
+    bufferBatchSize: 1000,
+    queueMaxRetries: 3,
+    queueType: 'disk',
+    queueMaxSizeMB: 100,
+    coresPerPod: 2,
+    cloudProvider: 'aws',
+
+    // ---- Limits defaults ----
+    defaultMaxCardinality: 100000,
+    defaultMaxDpRate: 1000000,
+    defaultAction: 'log',
+
+    // ---- Rules ----
+    rules: [],
+    ruleIdCounter: 0,
+    groupByOptions: ['service', 'env', 'namespace'],
+
+    // ---- UI state ----
+    activeTab: 'helm',
+    copyOk: null,
+
+    // ---- Helpers ----
+    addRule() {
+      this.ruleIdCounter++;
+      this.rules.push({
+        id: this.ruleIdCounter,
+        name: '',
+        matchMetricName: '',
+        labels: [],
+        maxCardinality: 50000,
+        maxDpRate: 500000,
+        action: 'log',
+        groupBy: [],
+        customGroupBy: '',
+        window: '60s',
+        expanded: true,
+      });
+    },
+    moveRule(idx, dir) {
+      const target = idx + dir;
+      if (target < 0 || target >= this.rules.length) return;
+      const tmp = this.rules[idx];
+      this.rules[idx] = this.rules[target];
+      this.rules[target] = tmp;
+    },
+    toggleGroupBy(rule, g) {
+      const i = rule.groupBy.indexOf(g);
+      if (i >= 0) rule.groupBy.splice(i, 1);
+      else rule.groupBy.push(g);
+    },
+
+    // ---- Formatters ----
+    fmtBytes(b) {
+      if (b < 1024) return b + ' B';
+      if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+      if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+      return (b / 1073741824).toFixed(2) + ' GB';
+    },
+
+    // ---- CPU estimation ----
+    get estCores() { return this.dps / 100000; },
+    get cpuUtil() { return this.estCores / this.availableCores; },
+    get cpuUtilPct() { return (this.cpuUtil * 100).toFixed(0); },
+    get cpuStatusClass() {
+      if (this.cpuUtil <= 0.7) return 'status-green';
+      if (this.cpuUtil <= 0.9) return 'status-yellow';
+      return 'status-red';
+    },
+    get cpuBadgeClass() {
+      if (this.cpuUtil <= 0.7) return 'badge-green';
+      if (this.cpuUtil <= 0.9) return 'badge-yellow';
+      return 'badge-red';
+    },
+    get cpuStatusLabel() {
+      if (this.cpuUtil <= 0.7) return 'OK';
+      if (this.cpuUtil <= 0.9) return 'Warning';
+      return 'Over capacity';
+    },
+
+    // ---- Memory estimation ----
+    get totalSeries() { return this.uniqueMetrics * this.avgCardinality; },
+    get bloomBitsPerTracker() {
+      const n = this.avgCardinality;
+      const p = this.bloomFPR;
+      return Math.ceil(-n * Math.log(p) / (Math.log(2) * Math.log(2)));
+    },
+    get trackerMemory() {
+      const mode = this.cardinalityMode;
+      if (mode === 'exact') return this.totalSeries * 75;
+      if (mode === 'bloom') return this.uniqueMetrics * Math.ceil(this.bloomBitsPerTracker / 8);
+      // hybrid: bloom up to threshold, HLL (12KB) above
+      const bloomTrackers = Math.min(this.uniqueMetrics, Math.floor(this.uniqueMetrics * (this.hllThreshold / this.avgCardinality)));
+      const hllTrackers = this.uniqueMetrics - bloomTrackers;
+      return bloomTrackers * Math.ceil(this.bloomBitsPerTracker / 8) + hllTrackers * 12288;
+    },
+    get avgSeriesSize() { return this.avgLabels * (10 + this.avgLabelLen) + 16; },
+    get bufferMemory() { return this.bufferMaxSize * this.avgSeriesSize; },
+    get baseOverhead() { return 50 * 1048576; },
+    get queueMemoryAdd() { return this.queueType === 'memory' ? this.queueMaxSizeMB * 1048576 : 0; },
+    get totalMemory() { return this.trackerMemory + this.bufferMemory + this.baseOverhead + this.queueMemoryAdd; },
+
+    // ---- Queue disk estimation ----
+    get avgBatchBytes() { return this.bufferBatchSize * this.avgSeriesSize; },
+    get compressionRatio() { return 0.3; },
+    get writeThroughput() { return (this.dps / this.bufferBatchSize) * this.avgBatchBytes * this.compressionRatio; },
+    get writeIOPS() { return Math.ceil(this.dps / this.bufferBatchSize); },
+    get readIOPS() { return Math.ceil(this.writeIOPS * 0.1); },
+    get totalIOPS() { return this.writeIOPS + this.readIOPS; },
+    get pvcSize() { return Math.ceil(this.queueMaxSizeMB * 1.2); },
+
+    // ---- Cloud storage ----
+    get storageOptions() {
+      const iops = this.totalIOPS;
+      const tput = this.writeThroughput / 1048576; // MB/s
+      const tables = {
+        aws: [
+          { name: 'gp3', maxIOPS: 16000, maxThroughput: 1000 },
+          { name: 'io1/io2', maxIOPS: 64000, maxThroughput: 1000 },
+          { name: 'st1', maxIOPS: 500, maxThroughput: 500 },
+        ],
+        azure: [
+          { name: 'Premium SSD', maxIOPS: 20000, maxThroughput: 900 },
+          { name: 'Ultra Disk', maxIOPS: 160000, maxThroughput: 4000 },
+          { name: 'Standard SSD', maxIOPS: 6000, maxThroughput: 750 },
+        ],
+        gcp: [
+          { name: 'pd-ssd', maxIOPS: 100000, maxThroughput: 1200 },
+          { name: 'pd-balanced', maxIOPS: 80000, maxThroughput: 1200 },
+          { name: 'pd-standard', maxIOPS: 7500, maxThroughput: 400 },
+        ],
+      };
+      const opts = (tables[this.cloudProvider] || []).map(o => ({
+        ...o,
+        fits: iops <= o.maxIOPS && tput <= o.maxThroughput,
+        recommended: false,
+      }));
+      // First that fits is recommended
+      const rec = opts.find(o => o.fits);
+      if (rec) rec.recommended = true;
+      return opts;
+    },
+    get recommendedStorageClass() {
+      const rec = this.storageOptions.find(o => o.recommended);
+      if (!rec) return '';
+      const nameMap = {
+        'gp3': 'gp3', 'io1/io2': 'io2', 'st1': 'st1',
+        'Premium SSD': 'managed-premium', 'Ultra Disk': 'ultra-disk', 'Standard SSD': 'managed-standard',
+        'pd-ssd': 'pd-ssd', 'pd-balanced': 'pd-balanced', 'pd-standard': 'pd-standard',
+      };
+      return nameMap[rec.name] || rec.name;
+    },
+
+    // ---- K8s pod sizing ----
+    get maxThroughputPerPod() { return this.coresPerPod * 100000 * 0.7; },
+    get recommendedPods() { return Math.max(1, Math.ceil(this.dps / this.maxThroughputPerPod)); },
+    get perPodCpuReq() { return Math.ceil(this.dps / this.recommendedPods / 100000 * 1000); },
+    get perPodCpuLimit() { return Math.ceil(this.perPodCpuReq * 1.5); },
+    get perPodMemReq() { return Math.ceil(this.totalMemory / this.recommendedPods); },
+    get perPodMemLimit() { return Math.ceil(this.perPodMemReq * 1.3); },
+    get totalClusterCpu() { return this.recommendedPods * this.perPodCpuReq; },
+    get totalClusterMem() { return this.recommendedPods * this.perPodMemReq; },
+
+    // ---- YAML generation ----
+    get helmYaml() {
+      const csi = { aws: 'ebs.csi.aws.com', azure: 'disk.csi.azure.com', gcp: 'pd.csi.storage.gke.io' };
+      const diskTypes = { aws: 'gp3', azure: 'Premium_LRS', gcp: 'pd-ssd' };
+      let y = '';
+      y += `replicaCount: ${this.recommendedPods}\n`;
+      y += `\nresources:\n`;
+      y += `  requests:\n`;
+      y += `    cpu: "${this.perPodCpuReq}m"\n`;
+      y += `    memory: "${Math.ceil(this.perPodMemReq / 1048576)}Mi"\n`;
+      y += `  limits:\n`;
+      y += `    cpu: "${this.perPodCpuLimit}m"\n`;
+      y += `    memory: "${Math.ceil(this.perPodMemLimit / 1048576)}Mi"\n`;
+      y += `\nconfig:\n`;
+      y += `  grpcListen: ":4317"\n`;
+      y += `  httpListen: ":4318"\n`;
+      y += `  statsAddr: ":9090"\n`;
+      y += `  exporterEndpoint: "localhost:4317"\n`;
+      y += `  exporterProtocol: "grpc"\n`;
+      y += `  exporterInsecure: true\n`;
+      y += `  bufferSize: ${this.bufferMaxSize}\n`;
+      y += `  batchSize: ${this.bufferBatchSize}\n`;
+      y += `  flushInterval: "5s"\n`;
+      y += `\nlimits:\n`;
+      y += `  enabled: true\n`;
+      y += `  config: |\n`;
+      // Inline limits
+      const limitsLines = this.limitsYaml.split('\n');
+      for (const line of limitsLines) {
+        y += `    ${line}\n`;
+      }
+      y += `\nqueue:\n`;
+      y += `  enabled: true\n`;
+      y += `  path: "/data/queue"\n`;
+      y += `  maxSize: 10000\n`;
+      y += `  maxBytes: ${this.queueMaxSizeMB * 1048576}\n`;
+      y += `  retryInterval: "5s"\n`;
+      y += `  maxRetryDelay: "5m"\n`;
+      y += `  fullBehavior: "drop_oldest"\n`;
+      y += `\nperformance:\n`;
+      y += `  stringInterning: true\n`;
+      y += `  internMaxValueLength: 64\n`;
+      if (this.queueType === 'disk') {
+        y += `\npersistence:\n`;
+        y += `  enabled: true\n`;
+        y += `  storageClassName: "${this.recommendedStorageClass}"\n`;
+        y += `  accessModes:\n`;
+        y += `    - ReadWriteOnce\n`;
+        y += `  size: "${this.pvcSize}Mi"\n`;
+        if (this.cloudProvider !== 'none') {
+          const driver = csi[this.cloudProvider] || 'kubernetes.io/no-provisioner';
+          const dt = diskTypes[this.cloudProvider] || 'default';
+          y += `\n# StorageClass example (apply separately if needed)\n`;
+          y += `# ---\n`;
+          y += `# apiVersion: storage.k8s.io/v1\n`;
+          y += `# kind: StorageClass\n`;
+          y += `# metadata:\n`;
+          y += `#   name: metrics-governor-queue\n`;
+          y += `# provisioner: ${driver}\n`;
+          y += `# parameters:\n`;
+          y += `#   type: ${dt}\n`;
+          if (this.cloudProvider === 'aws') {
+            y += `#   iops: "${this.totalIOPS}"\n`;
+            y += `#   throughput: "${Math.ceil(this.writeThroughput / 1048576)}"\n`;
+          }
+          y += `# volumeBindingMode: WaitForFirstConsumer\n`;
+        }
+      }
+      return y;
+    },
+
+    get appYaml() {
+      let y = '';
+      y += `receiver:\n`;
+      y += `  grpc:\n`;
+      y += `    address: ":4317"\n`;
+      y += `  http:\n`;
+      y += `    address: ":4318"\n`;
+      y += `\nexporter:\n`;
+      y += `  endpoint: "localhost:4317"\n`;
+      y += `  protocol: "grpc"\n`;
+      y += `  insecure: true\n`;
+      y += `  timeout: 30s\n`;
+      y += `\nbuffer:\n`;
+      y += `  size: ${this.bufferMaxSize}\n`;
+      y += `  batch_size: ${this.bufferBatchSize}\n`;
+      y += `  flush_interval: 5s\n`;
+      y += `\nstats:\n`;
+      y += `  address: ":9090"\n`;
+      y += `\nlimits:\n`;
+      y += `  dry_run: false\n`;
+      y += `\nperformance:\n`;
+      y += `  cardinality_mode: "${this.cardinalityMode}"\n`;
+      y += `  bloom_fpr: ${this.bloomFPR}\n`;
+      y += `  string_interning: true\n`;
+      y += `  intern_max_value_length: 64\n`;
+      if (this.queueType === 'disk') {
+        y += `\nqueue:\n`;
+        y += `  enabled: true\n`;
+        y += `  type: disk\n`;
+        y += `  path: "/var/lib/metrics-governor/queue"\n`;
+        y += `  max_bytes: ${this.queueMaxSizeMB * 1048576}\n`;
+        y += `  retry_interval: 5s\n`;
+        y += `  max_retry_delay: 5m\n`;
+      } else {
+        y += `\nqueue:\n`;
+        y += `  enabled: true\n`;
+        y += `  type: memory\n`;
+        y += `  max_bytes: ${this.queueMaxSizeMB * 1048576}\n`;
+        y += `  retry_interval: 5s\n`;
+        y += `  max_retry_delay: 5m\n`;
+      }
+      return y;
+    },
+
+    get limitsYaml() {
+      let y = '';
+      y += `defaults:\n`;
+      y += `  max_cardinality: ${this.defaultMaxCardinality}\n`;
+      y += `  max_datapoints_rate: ${this.defaultMaxDpRate}\n`;
+      y += `  action: "${this.defaultAction}"\n`;
+      if (this.rules.length > 0) {
+        y += `\nrules:\n`;
+        for (const rule of this.rules) {
+          y += `  - name: "${this.escYaml(rule.name)}"\n`;
+          if (rule.matchMetricName || rule.labels.length > 0) {
+            y += `    match:\n`;
+            if (rule.matchMetricName) {
+              y += `      metric_name: "${this.escYaml(rule.matchMetricName)}"\n`;
+            }
+            const validLabels = rule.labels.filter(l => l.key.trim());
+            if (validLabels.length > 0) {
+              y += `      labels:\n`;
+              for (const lbl of validLabels) {
+                y += `        ${lbl.key}: "${this.escYaml(lbl.value)}"\n`;
+              }
+            }
+          }
+          if (rule.maxCardinality) y += `    max_cardinality: ${rule.maxCardinality}\n`;
+          if (rule.maxDpRate) y += `    max_datapoints_rate: ${rule.maxDpRate}\n`;
+          y += `    action: "${rule.action}"\n`;
+          if (rule.groupBy.length > 0) {
+            y += `    group_by: [${rule.groupBy.map(g => '"' + g + '"').join(', ')}]\n`;
+          }
+          if (rule.window) y += `    window: "${rule.window}"\n`;
+        }
+      } else {
+        y += `\nrules: []\n`;
+      }
+      return y;
+    },
+
+    escYaml(s) {
+      if (!s) return '';
+      return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    },
+
+    // ---- YAML validation (lightweight) ----
+    validateYaml(text) {
+      try {
+        // Basic structural validation
+        const lines = text.split('\n');
+        let indentStack = [0];
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (line.trim() === '' || line.trim().startsWith('#')) continue;
+          const indent = line.search(/\S/);
+          if (indent < 0) continue;
+          // Check for tabs
+          if (line.includes('\t')) return { valid: false, error: `Line ${i + 1}: Tab character found (YAML requires spaces)` };
+          // Check for basic key: value structure or list items
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('- ') && !trimmed.includes(':') && !trimmed.startsWith('|') && !trimmed.startsWith('>')) {
+            // Could be a continuation value, allow it
+          }
+        }
+        // Check balanced quotes
+        let inStr = false;
+        let quoteChar = '';
+        for (let i = 0; i < text.length; i++) {
+          const c = text[i];
+          if (!inStr && (c === '"' || c === "'")) { inStr = true; quoteChar = c; }
+          else if (inStr && c === quoteChar && text[i - 1] !== '\\') { inStr = false; }
+        }
+        if (inStr) return { valid: false, error: 'Unclosed string quote' };
+        return { valid: true, error: '' };
+      } catch (e) {
+        return { valid: false, error: e.message };
+      }
+    },
+
+    get helmValidation() { return this.validateYaml(this.helmYaml); },
+    get appValidation() { return this.validateYaml(this.appYaml); },
+    get limitsValidation() { return this.validateYaml(this.limitsYaml); },
+    get helmValid() { return this.helmValidation.valid; },
+    get appValid() { return this.appValidation.valid; },
+    get limitsValid() { return this.limitsValidation.valid; },
+    get helmError() { return this.helmValidation.error; },
+    get appError() { return this.appValidation.error; },
+    get limitsError() { return this.limitsValidation.error; },
+
+    // ---- Actions ----
+    copyToClipboard(text, label) {
+      navigator.clipboard.writeText(text).then(() => {
+        this.copyOk = label;
+        setTimeout(() => { this.copyOk = null; }, 2000);
+      });
+    },
+    downloadFile(text, filename) {
+      const blob = new Blob([text], { type: 'text/yaml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+  };
+}
+</script>
+</body>
+</html>

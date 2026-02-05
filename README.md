@@ -116,6 +116,33 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
 
 ---
 
+## 🖥️ Configuration Helper
+
+Plan your deployment in seconds. The **interactive Configuration Helper** estimates CPU, memory, disk I/O, and K8s pod sizing from your throughput inputs, builds limits rules visually, and generates ready-to-use Helm, app config, and limits YAML files — all in a single zero-dependency HTML page.
+
+**[Open Configuration Helper](https://szibis.github.io/metrics-governor/)** | [View source](tools/config-helper/)
+
+<table>
+<tr>
+<td width="33%" align="center">
+<a href="docs/images/config-helper-inputs.svg"><img src="docs/images/config-helper-inputs.svg" alt="Throughput inputs with simple/advanced toggle" width="100%"></a>
+<br><sub><b>Throughput Inputs</b> — Simple &amp; Advanced modes</sub>
+</td>
+<td width="33%" align="center">
+<a href="docs/images/config-helper-estimation.svg"><img src="docs/images/config-helper-estimation.svg" alt="Resource estimation with color-coded status" width="100%"></a>
+<br><sub><b>Resource Estimation</b> — CPU, memory, disk, K8s pods</sub>
+</td>
+<td width="33%" align="center">
+<a href="docs/images/config-helper-preview.svg"><img src="docs/images/config-helper-preview.svg" alt="Live YAML preview with copy and download" width="100%"></a>
+<br><sub><b>Live Config Preview</b> — Copy or download YAML</sub>
+</td>
+</tr>
+</table>
+
+> **No build tools, no server** — open `index.html` directly in your browser or use the [hosted version](https://szibis.github.io/metrics-governor/).
+
+---
+
 ## 📚 Documentation
 
 | | Guide | Description |

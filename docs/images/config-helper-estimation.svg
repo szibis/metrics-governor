@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="260" viewBox="0 0 480 260">
+  <defs>
+    <style>
+      .bg { fill: #1a1a2e; }
+      .card { fill: #16213e; stroke: #334155; stroke-width: 1; rx: 8; }
+      .title { fill: #e2e8f0; font-family: system-ui, sans-serif; font-size: 14px; font-weight: 700; }
+      .label { fill: #94a3b8; font-family: system-ui, sans-serif; font-size: 10px; }
+      .value-green { fill: #2ecc40; font-family: 'SF Mono', monospace; font-size: 18px; font-weight: 700; }
+      .value-yellow { fill: #ffdc00; font-family: 'SF Mono', monospace; font-size: 18px; font-weight: 700; }
+      .value-white { fill: #f1f5f9; font-family: 'SF Mono', monospace; font-size: 18px; font-weight: 700; }
+      .badge-green { fill: #2ecc40; rx: 4; }
+      .badge-text { fill: #fff; font-family: system-ui, sans-serif; font-size: 9px; font-weight: 600; }
+      .header { fill: #e2e8f0; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 700; }
+      .small { fill: #64748b; font-family: system-ui, sans-serif; font-size: 9px; }
+      .pod-val { fill: #818cf8; font-family: 'SF Mono', monospace; font-size: 22px; font-weight: 700; }
+    </style>
+  </defs>
+  <rect class="bg" width="480" height="260"/>
+  <text class="header" x="20" y="28">2. Resource Estimation</text>
+  <!-- CPU card -->
+  <rect class="card" x="15" y="40" width="145" height="100"/>
+  <text class="title" x="25" y="62">CPU</text>
+  <text class="value-green" x="25" y="88">0.50 cores</text>
+  <text class="label" x="25" y="104">of 4 available (13%)</text>
+  <rect class="badge-green" x="25" y="112" width="24" height="16"/>
+  <text class="badge-text" x="30" y="123">OK</text>
+
+  <!-- Memory card -->
+  <rect class="card" x="170" y="40" width="145" height="100"/>
+  <text class="title" x="180" y="62">Memory (Total)</text>
+  <text class="value-white" x="180" y="88">52.5 MB</text>
+  <text class="small" x="180" y="104">Trackers: 119.5 KB</text>
+  <text class="small" x="180" y="115">Buffer: 430.0 KB</text>
+  <text class="small" x="180" y="126">Base overhead: ~50 MB</text>
+
+  <!-- Queue card -->
+  <rect class="card" x="325" y="40" width="140" height="100"/>
+  <text class="title" x="335" y="62">Queue (Disk I/O)</text>
+  <text class="value-white" x="335" y="88">120 MB</text>
+  <text class="small" x="335" y="104">PVC size (20% headroom)</text>
+  <text class="small" x="335" y="115">Write IOPS: 50</text>
+  <text class="small" x="335" y="126">Total IOPS: 55</text>
+
+  <!-- K8s section -->
+  <text class="title" x="20" y="165">Kubernetes Pod Sizing</text>
+  <!-- Pod cards -->
+  <rect class="card" x="15" y="175" width="105" height="70"/>
+  <text class="label" x="25" y="195">Recommended Pods</text>
+  <text class="pod-val" x="50" y="228">1</text>
+
+  <rect class="card" x="130" y="175" width="105" height="70"/>
+  <text class="label" x="140" y="195">Per-Pod CPU</text>
+  <text class="pod-val" x="145" y="228">500m</text>
+
+  <rect class="card" x="245" y="175" width="105" height="70"/>
+  <text class="label" x="255" y="195">Per-Pod Memory</text>
+  <text class="pod-val" x="255" y="228">53Mi</text>
+
+  <rect class="card" x="360" y="175" width="105" height="70"/>
+  <text class="label" x="370" y="195">Total Cluster</text>
+  <text class="small" x="370" y="215">CPU: 500m</text>
+  <text class="small" x="370" y="228">Memory: 53Mi</text>
+  <text class="small" x="370" y="241">Disk: 100 MB</text>
+</svg>

@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="280" viewBox="0 0 480 280">
+  <defs>
+    <style>
+      .bg { fill: #1a1a2e; }
+      .card { fill: #16213e; stroke: #334155; stroke-width: 1; rx: 8; }
+      .title { fill: #e2e8f0; font-family: system-ui, sans-serif; font-size: 14px; font-weight: 700; }
+      .label { fill: #94a3b8; font-family: system-ui, sans-serif; font-size: 10px; }
+      .header { fill: #e2e8f0; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 700; }
+      .tab-active { fill: #16213e; stroke: #6366f1; stroke-width: 2; rx: 4; }
+      .tab-inactive { fill: #0f172a; stroke: #334155; stroke-width: 1; rx: 4; }
+      .tab-text { fill: #e2e8f0; font-family: system-ui, sans-serif; font-size: 11px; font-weight: 600; }
+      .tab-dim { fill: #64748b; font-family: system-ui, sans-serif; font-size: 11px; }
+      .dot-green { fill: #2ecc40; }
+      .code-bg { fill: #0f172a; stroke: #334155; stroke-width: 1; rx: 6; }
+      .code { fill: #a5b4fc; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 10px; }
+      .code-key { fill: #7dd3fc; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 10px; }
+      .code-val { fill: #86efac; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 10px; }
+      .code-num { fill: #fbbf24; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 10px; }
+      .btn { fill: #6366f1; rx: 4; }
+      .btn-outline { fill: none; stroke: #6366f1; stroke-width: 1; rx: 4; }
+      .btn-text { fill: #fff; font-family: system-ui, sans-serif; font-size: 10px; font-weight: 600; }
+      .btn-text-outline { fill: #6366f1; font-family: system-ui, sans-serif; font-size: 10px; font-weight: 600; }
+    </style>
+  </defs>
+  <rect class="bg" width="480" height="280"/>
+  <text class="header" x="20" y="28">4. Config Preview &amp; Export</text>
+
+  <!-- Tabs -->
+  <rect class="tab-active" x="15" y="38" width="130" height="28"/>
+  <circle class="dot-green" cx="28" cy="52" r="4"/>
+  <text class="tab-text" x="36" y="56">Helm values.yaml</text>
+
+  <rect class="tab-inactive" x="150" y="38" width="120" height="28"/>
+  <circle class="dot-green" cx="163" cy="52" r="4"/>
+  <text class="tab-dim" x="171" y="56">App config.yaml</text>
+
+  <rect class="tab-inactive" x="275" y="38" width="130" height="28"/>
+  <circle class="dot-green" cx="288" cy="52" r="4"/>
+  <text class="tab-dim" x="296" y="56">Limits rules YAML</text>
+
+  <!-- Code preview -->
+  <rect class="code-bg" x="15" y="72" width="450" height="170"/>
+  <text class="code-key" x="25" y="90">replicaCount:</text><text class="code-num" x="115" y="90"> 1</text>
+  <text class="code" x="25" y="106"></text>
+  <text class="code-key" x="25" y="106">resources:</text>
+  <text class="code-key" x="35" y="120">  requests:</text>
+  <text class="code-key" x="45" y="134">    cpu:</text><text class="code-val" x="80" y="134"> "500m"</text>
+  <text class="code-key" x="45" y="148">    memory:</text><text class="code-val" x="100" y="148"> "53Mi"</text>
+  <text class="code-key" x="35" y="162">  limits:</text>
+  <text class="code-key" x="45" y="176">    cpu:</text><text class="code-val" x="80" y="176"> "750m"</text>
+  <text class="code-key" x="45" y="190">    memory:</text><text class="code-val" x="100" y="190"> "69Mi"</text>
+  <text class="code" x="25" y="206"></text>
+  <text class="code-key" x="25" y="206">config:</text>
+  <text class="code-key" x="35" y="220">  grpcListen:</text><text class="code-val" x="115" y="220"> ":4317"</text>
+  <text class="code-key" x="35" y="234">  bufferSize:</text><text class="code-num" x="115" y="234"> 5000</text>
+
+  <!-- Buttons -->
+  <rect class="btn" x="15" y="250" width="120" height="24"/>
+  <text class="btn-text" x="32" y="266">Copy to Clipboard</text>
+  <rect class="btn-outline" x="145" y="250" width="130" height="24"/>
+  <text class="btn-text-outline" x="153" y="266">Download values.yaml</text>
+</svg>
