@@ -348,13 +348,14 @@
       <div class="storage-rec">
         <h4>Cloud Block Storage Recommendation (<span x-text="cloudProvider.toUpperCase()"></span>)</h4>
         <table>
-          <thead><tr><th>Storage Class</th><th>Max IOPS</th><th>Max Throughput</th><th>Recommendation</th></tr></thead>
+          <thead><tr><th>Storage Class</th><th>IOPS</th><th>Throughput</th><th>Note</th><th>Recommendation</th></tr></thead>
           <tbody>
             <template x-for="opt in storageOptions" :key="opt.name">
               <tr :style="opt.recommended ? 'font-weight:700' : ''">
                 <td x-text="opt.name"></td>
                 <td x-text="opt.maxIOPS.toLocaleString()"></td>
                 <td x-text="opt.maxThroughput + ' MB/s'"></td>
+                <td style="font-size:.8em;color:var(--pico-muted-color)" x-text="opt.note || ''"></td>
                 <td>
                   <template x-if="opt.recommended"><span class="badge-green">Recommended</span></template>
                   <template x-if="!opt.recommended && opt.fits"><span style="font-size:.85em">Fits</span></template>
@@ -992,23 +993,34 @@ function configHelper() {
     get storageOptions() {
       const iops = this.totalIOPS;
       const tput = this.writeThroughput / 1048576; // MB/s
+      const sizeGiB = Math.max(1, Math.ceil(this.pvcSize / 1024));
+      const sizeTiB = sizeGiB / 1024;
+
+      // AWS st1: baseline 40 MB/s per TiB, burst 250 MB/s per TiB, max 500 MB/s
+      const st1Base = Math.min(500, Math.max(5, Math.round(sizeTiB * 40)));
+      const st1Burst = Math.min(500, Math.max(31, Math.round(sizeTiB * 250)));
+      // GCP size-dependent write performance
+      const pdSsdIOPS = Math.min(100000, Math.max(300, sizeGiB * 30));
+      const pdBalIOPS = Math.min(80000, Math.max(3000, sizeGiB * 6));
+      const pdStdIOPS = Math.min(15000, Math.max(75, Math.round(sizeGiB * 1.5)));
+
       const tables = {
         aws: [
-          { name: 'gp3', maxIOPS: 80000, maxThroughput: 2000 },
-          { name: 'io2 Block Express', maxIOPS: 256000, maxThroughput: 4000 },
-          { name: 'io1', maxIOPS: 64000, maxThroughput: 1000 },
-          { name: 'st1 (HDD)', maxIOPS: 500, maxThroughput: 500 },
+          { name: 'gp3', maxIOPS: 80000, maxThroughput: 2000, note: '3K IOPS + 125 MB/s baseline included; provisionable' },
+          { name: 'io2 Block Express', maxIOPS: 256000, maxThroughput: 4000, note: 'Provisioned; up to 1000 IOPS/GiB' },
+          { name: 'io1', maxIOPS: 64000, maxThroughput: 1000, note: 'Provisioned; up to 50 IOPS/GiB' },
+          { name: 'st1 (HDD)', maxIOPS: 500, maxThroughput: st1Base, note: `Burst credits: ${st1Base} MB/s baseline, ${st1Burst} MB/s burst at ${sizeGiB} GiB` },
         ],
         azure: [
-          { name: 'Premium SSD v1', maxIOPS: 20000, maxThroughput: 900 },
-          { name: 'Premium SSD v2', maxIOPS: 80000, maxThroughput: 1200 },
-          { name: 'Ultra Disk', maxIOPS: 400000, maxThroughput: 10000 },
-          { name: 'Standard SSD', maxIOPS: 6000, maxThroughput: 750 },
+          { name: 'Premium SSD v1', maxIOPS: 20000, maxThroughput: 900, note: 'Tier-based; credit burst up to 30K IOPS/1000 MB/s' },
+          { name: 'Premium SSD v2', maxIOPS: 80000, maxThroughput: 1200, note: '3K IOPS + 125 MB/s baseline; provisionable' },
+          { name: 'Ultra Disk', maxIOPS: 400000, maxThroughput: 10000, note: 'Fully provisionable IOPS/throughput' },
+          { name: 'Standard SSD', maxIOPS: 6000, maxThroughput: 750, note: 'Tier-based; credit-based bursting' },
         ],
         gcp: [
-          { name: 'pd-ssd', maxIOPS: 100000, maxThroughput: 1200 },
-          { name: 'pd-balanced', maxIOPS: 80000, maxThroughput: 1200 },
-          { name: 'pd-standard', maxIOPS: 15000, maxThroughput: 400 },
+          { name: 'pd-ssd', maxIOPS: pdSsdIOPS, maxThroughput: 1200, note: `30 write IOPS/GiB \u2192 ${pdSsdIOPS.toLocaleString()} at ${sizeGiB} GiB` },
+          { name: 'pd-balanced', maxIOPS: pdBalIOPS, maxThroughput: 1200, note: `6 write IOPS/GiB \u2192 ${pdBalIOPS.toLocaleString()} at ${sizeGiB} GiB` },
+          { name: 'pd-standard', maxIOPS: pdStdIOPS, maxThroughput: 400, note: `1.5 write IOPS/GiB \u2192 ${pdStdIOPS.toLocaleString()} at ${sizeGiB} GiB` },
         ],
       };
       const opts = (tables[this.cloudProvider] || []).map(o => ({
