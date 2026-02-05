@@ -771,6 +771,10 @@
 
 <footer>
   <small>metrics-governor Configuration Helper &mdash; open this file directly in your browser, no build step needed.</small>
+  <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid var(--pico-muted-border-color);text-align:center">
+    <button style="background:var(--status-red);border-color:var(--status-red);color:#fff;font-size:.85em;padding:.4rem 1rem" @click="if(confirm('This will erase all saved settings and reload the page with defaults. Continue?')){localStorage.removeItem('mg-config-state');localStorage.removeItem('mg-theme');location.reload()}">Reset all settings to defaults</button>
+    <br><small style="color:var(--pico-muted-color)">Clears saved inputs, rules, and theme from browser storage and reloads with factory defaults.</small>
+  </div>
 </footer>
 
 <script type="application/json" id="config-meta">
