@@ -383,8 +383,9 @@
           <small>CPU: <span x-text="totalClusterCpu + 'm (' + (totalClusterCpu / 1000).toFixed(2) + ' cores)'"></span></small><br>
           <small>Memory: <span x-text="fmtBytes(totalClusterMem)"></span></small><br>
           <template x-if="queueType === 'disk'">
-            <small>Disk: <span x-text="(actualPods * queueMaxSizeMB) + ' MB'"></span></small>
+            <small>Disk: <span x-text="fmtBytes(actualPods * queueMaxSizeMB * 1048576)"></span></small>
           </template>
+          <br><small>Outage buffer: <span class="status-green" style="font-weight:700" x-text="queueRetentionStr"></span></small>
         </div>
       </div>
 
