@@ -120,9 +120,16 @@
         <small class="help-tip">Total CPU cores for metrics-governor. <a href="docs/performance.md#cpu" target="_blank">Docs</a></small>
       </label>
       <label>
-        Target outage buffer (min)
-        <input type="number" x-model.number="targetRetentionMin" min="1" step="5">
-        <small class="help-tip">Minutes of data the queue should hold during a backend outage. Queue size is auto-calculated.</small>
+        Target outage buffer
+        <div style="display:flex;gap:.25rem">
+          <input type="number" x-model.number="targetRetentionVal" min="1" :step="targetRetentionUnit === 'min' ? 5 : 1" style="flex:1">
+          <select x-model="targetRetentionUnit" style="width:auto;min-width:80px">
+            <option value="min">min</option>
+            <option value="hours">hours</option>
+            <option value="days">days</option>
+          </select>
+        </div>
+        <small class="help-tip">Data the queue should hold during a backend outage. Queue size is auto-calculated.</small>
       </label>
     </div>
 
@@ -189,9 +196,16 @@
             <small class="help-tip"><a href="docs/performance.md#queue" target="_blank">Docs</a></small>
           </label>
           <label>
-            Target outage buffer (min)
-            <input type="number" x-model.number="targetRetentionMin" min="1" step="5">
-            <small class="help-tip">How many minutes of data to buffer during backend outage. Auto-sizes queue below.</small>
+            Target outage buffer
+            <div style="display:flex;gap:.25rem">
+              <input type="number" x-model.number="targetRetentionVal" min="1" :step="targetRetentionUnit === 'min' ? 5 : 1" style="flex:1">
+              <select x-model="targetRetentionUnit" style="width:auto;min-width:80px">
+                <option value="min">min</option>
+                <option value="hours">hours</option>
+                <option value="days">days</option>
+              </select>
+            </div>
+            <small class="help-tip">How long to buffer data during backend outage. Auto-sizes queue below.</small>
           </label>
           <label>
             Queue max size MB
@@ -689,7 +703,7 @@ function configHelper() {
         'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
         'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
-        'queueType','queueMaxSizeMB','targetRetentionMin','coresPerPod','cloudProvider',
+        'queueType','queueMaxSizeMB','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
         'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
         'podOverride',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
@@ -702,7 +716,8 @@ function configHelper() {
         }, { deep: true });
       }
       // Auto-size queue when retention target or throughput changes
-      this.$watch('targetRetentionMin', () => this.autoSizeQueue());
+      this.$watch('targetRetentionVal', () => this.autoSizeQueue());
+      this.$watch('targetRetentionUnit', () => this.autoSizeQueue());
       this.$watch('dps', () => this.autoSizeQueue());
       this.$watch('bufferBatchSize', () => this.autoSizeQueue());
 
@@ -745,7 +760,7 @@ function configHelper() {
         'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
         'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
-        'queueType','queueMaxSizeMB','targetRetentionMin','coresPerPod','cloudProvider',
+        'queueType','queueMaxSizeMB','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
         'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
         'podOverride',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
@@ -791,7 +806,8 @@ function configHelper() {
     queueMaxRetries: 3,
     queueType: 'disk',
     queueMaxSizeMB: 100,
-    targetRetentionMin: 10,
+    targetRetentionVal: 10,
+    targetRetentionUnit: 'min',
     fitCpuVal: 4,
     fitCpuUnit: 'cores',
     fitMemVal: 512,
@@ -935,6 +951,11 @@ function configHelper() {
     },
 
     // ---- Fit check (normalized) ----
+    get targetRetentionMin() {
+      if (this.targetRetentionUnit === 'hours') return this.targetRetentionVal * 60;
+      if (this.targetRetentionUnit === 'days') return this.targetRetentionVal * 1440;
+      return this.targetRetentionVal;
+    },
     get fitCpuCores() { return this.fitCpuUnit === 'm' ? this.fitCpuVal / 1000 : this.fitCpuVal; },
     get fitMemMB() { return this.fitMemUnit === 'GB' ? this.fitMemVal * 1024 : this.fitMemVal; },
     get fitDiskMB() {
