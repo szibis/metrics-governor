@@ -637,6 +637,15 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "metrics_governor_rule_dropped_groups_total{rule=%q} %d\n", rule, len(dropped))
 	}
 
+	// Dropped groups info - shows which label combinations are currently blocked
+	fmt.Fprintf(w, "# HELP metrics_governor_dropped_group_info Currently dropped groups with their labels (value=1 means blocked)\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_dropped_group_info gauge\n")
+	for ruleName, groups := range e.droppedGroups {
+		for groupKey := range groups {
+			fmt.Fprintf(w, "metrics_governor_dropped_group_info{rule=%q,group=%q} 1\n", ruleName, groupKey)
+		}
+	}
+
 	// Rule configuration (thresholds) - useful for dashboard visualization
 	if e.config != nil {
 		fmt.Fprintf(w, "# HELP metrics_governor_rule_max_datapoints_rate Configured max datapoints rate per minute for rule\n")
