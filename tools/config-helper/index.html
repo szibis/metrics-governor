@@ -458,6 +458,31 @@
                 <td><code>request &times; 1.3</code></td>
                 <td>30% headroom for Go GC overhead and transient allocations</td>
               </tr>
+              <tr>
+                <td><b>PVC size</b></td>
+                <td><code>queue_max_bytes &times; 1.2</code></td>
+                <td>20% headroom over queue capacity for filesystem metadata and compaction</td>
+              </tr>
+              <tr>
+                <td><b>Write throughput</b></td>
+                <td><code>dps &times; series_size &times; compression_ratio</code></td>
+                <td>Sustained bytes/sec to disk; independent of batch size (batch size cancels out)</td>
+              </tr>
+              <tr>
+                <td><b>Write IOPS</b></td>
+                <td><code>ceil(dps / batch_size)</code></td>
+                <td>Each batch flush = 1 write I/O; larger batches reduce IOPS</td>
+              </tr>
+              <tr>
+                <td><b>Read IOPS</b></td>
+                <td><code>write_IOPS &times; 0.1</code></td>
+                <td>~10% read overhead for queue metadata, retry reads, and compaction</td>
+              </tr>
+              <tr>
+                <td><b>Total cluster disk</b></td>
+                <td><code>pods &times; PVC_size</code></td>
+                <td>Each pod gets its own PersistentVolumeClaim (ReadWriteOnce)</td>
+              </tr>
             </tbody>
           </table>
         </div>
