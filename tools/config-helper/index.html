@@ -65,14 +65,17 @@
 <main>
   <!-- ====== SECTION 1: INPUTS ====== -->
   <section>
-    <div class="section-title">
-      <h2>1. Throughput &amp; Environment</h2>
-      <label style="margin-left:auto; display:flex; align-items:center; gap:.5rem; font-size:.9em;">
-        <input type="checkbox" x-model="advanced" role="switch"> Advanced
-      </label>
-    </div>
+    <details open>
+      <summary>
+        <span style="display:inline-flex;align-items:center;gap:.75rem;width:100%">
+          <span style="font-size:1.25em;font-weight:700">1. Throughput &amp; Environment</span>
+          <label style="margin-left:auto;display:flex;align-items:center;gap:.5rem;font-size:.85em" @click.stop>
+            <input type="checkbox" x-model="advanced" role="switch"> Advanced
+          </label>
+        </span>
+      </summary>
 
-    <div class="grid-2">
+    <div class="grid-2" style="margin-top:.75rem">
       <label>
         Datapoints/sec
         <input type="number" x-model.number="dps" min="1" step="1000">
@@ -179,13 +182,15 @@
         </div>
       </div>
     </template>
+    </details>
   </section>
 
   <!-- ====== SECTION 2: RESOURCE ESTIMATION ====== -->
   <section>
-    <h2>2. Resource Estimation</h2>
+    <details open>
+      <summary style="font-size:1.25em;font-weight:700">2. Resource Estimation</summary>
 
-    <div class="grid-3">
+    <div class="grid-3" style="margin-top:.75rem">
       <!-- CPU -->
       <div class="est-card">
         <h4>CPU</h4>
@@ -280,13 +285,15 @@
         </div>
       </div>
     </details>
+    </details>
   </section>
 
   <!-- ====== SECTION 3: LIMITS RULES BUILDER ====== -->
   <section>
-    <h2>3. Limits Rules Builder</h2>
-
     <details open>
+      <summary style="font-size:1.25em;font-weight:700">3. Limits Rules Builder</summary>
+
+    <details open style="margin-top:.75rem">
       <summary>Global Defaults</summary>
       <div class="grid-3" style="margin-top:.75rem">
         <label>
@@ -396,11 +403,13 @@
         </template>
       </div>
     </template>
+    </details>
   </section>
 
   <!-- ====== SECTION 4: LIVE CONFIG PREVIEW ====== -->
   <section>
-    <h2>4. Config Preview &amp; Export</h2>
+    <details open>
+      <summary style="font-size:1.25em;font-weight:700">4. Config Preview &amp; Export</summary>
 
     <div class="tab-bar">
       <button class="tab-btn" :class="activeTab === 'helm' ? 'active' : ''" @click="activeTab = 'helm'">
@@ -452,6 +461,7 @@
         </div>
       </div>
     </template>
+    </details>
   </section>
 </main>
 
@@ -467,6 +477,46 @@ function configHelper() {
     init() {
       this.applyTheme();
       this.$watch('theme', () => this.applyTheme());
+      this.loadState();
+      // Auto-save all reactive state on any change (debounced)
+      let saveTimer = null;
+      const fields = [
+        'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
+        'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
+        'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
+        'queueType','queueMaxSizeMB','coresPerPod','cloudProvider',
+        'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
+        'rules','activeTab',
+      ];
+      for (const f of fields) {
+        this.$watch(f, () => {
+          clearTimeout(saveTimer);
+          saveTimer = setTimeout(() => this.saveState(), 300);
+        }, { deep: true });
+      }
+    },
+    saveState() {
+      const state = {};
+      const fields = [
+        'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
+        'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
+        'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
+        'queueType','queueMaxSizeMB','coresPerPod','cloudProvider',
+        'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
+        'rules','activeTab','ruleIdCounter',
+      ];
+      for (const f of fields) state[f] = this[f];
+      try { localStorage.setItem('mg-config-state', JSON.stringify(state)); } catch(e) {}
+    },
+    loadState() {
+      try {
+        const raw = localStorage.getItem('mg-config-state');
+        if (!raw) return;
+        const state = JSON.parse(raw);
+        for (const [k, v] of Object.entries(state)) {
+          if (v !== undefined && v !== null && k in this) this[k] = v;
+        }
+      } catch(e) {}
     },
     applyTheme() {
       document.documentElement.setAttribute('data-theme', this.theme);
