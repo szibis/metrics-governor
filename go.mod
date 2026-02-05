@@ -1,6 +1,6 @@
 module github.com/szibis/metrics-governor
 
-go 1.25.6
+go 1.25.7
 
 require (
 	github.com/KimMachineGun/automemlimit v0.7.5
