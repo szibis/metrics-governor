@@ -1062,6 +1062,12 @@ function configHelper() {
       // Reverse: queue size changes → update target outage buffer
       this.$watch('queueMaxSizeVal', () => this.autoSizeRetention());
       this.$watch('queueMaxSizeUnit', () => this.autoSizeRetention());
+      // Auto-sync Fit Check from main inputs
+      this.$watch('availableCores', (val) => {
+        this.fitCpuVal = this.fitCpuUnit === 'm' ? val * 1000 : val;
+      });
+      this.$watch('totalMemory', () => this.autoSizeFitMem());
+      this.$watch('perPodPvcSize', () => this.autoSizeFitDisk());
 
       // Initialize textarea content from generated YAML
       this.helmText = this.helmYaml;
@@ -1110,6 +1116,17 @@ function configHelper() {
       else if (this.targetRetentionUnit === 'hours') this.targetRetentionVal = Math.round(retentionMin / 60 * 100) / 100;
       else this.targetRetentionVal = Math.max(1, Math.round(retentionMin));
       this.$nextTick(() => { this._queueSyncDirection = null; });
+    },
+    autoSizeFitMem() {
+      const memMB = this.totalMemory / 1048576;
+      if (memMB >= 1024) { this.fitMemUnit = 'GB'; this.fitMemVal = Math.round(memMB / 1024 * 10) / 10; }
+      else { this.fitMemUnit = 'MB'; this.fitMemVal = Math.ceil(memMB); }
+    },
+    autoSizeFitDisk() {
+      if (this.queueType !== 'disk') return;
+      const diskMB = this.perPodPvcSize;
+      if (diskMB >= 1024) { this.fitDiskUnit = 'GB'; this.fitDiskVal = Math.round(diskMB / 1024 * 10) / 10; }
+      else { this.fitDiskUnit = 'MB'; this.fitDiskVal = Math.ceil(diskMB); }
     },
     saveState() {
       const state = {};
@@ -1263,6 +1280,13 @@ function configHelper() {
       if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
       if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
       return (b / 1073741824).toFixed(2) + ' GB';
+    },
+    fmtBytesYaml(b) {
+      if (b >= 1073741824 && b % 1073741824 === 0) return (b / 1073741824) + 'Gi';
+      if (b >= 1048576 && b % 1048576 === 0) return (b / 1048576) + 'Mi';
+      if (b >= 1048576) return (b / 1048576).toFixed(1) + 'Mi';
+      if (b >= 1024 && b % 1024 === 0) return (b / 1024) + 'Ki';
+      return b;
     },
 
     // ---- CPU estimation ----
@@ -1489,10 +1513,10 @@ function configHelper() {
       y += `\nresources:\n`;
       y += `  requests:\n`;
       y += `    cpu: "${this.perPodCpuReq}m"\n`;
-      y += `    memory: "${Math.ceil(this.perPodMemReq / 1048576)}Mi"\n`;
+      y += `    memory: "${this.fmtBytesYaml(this.perPodMemReq)}"\n`;
       y += `  limits:\n`;
       y += `    cpu: "${this.perPodCpuLimit}m"\n`;
-      y += `    memory: "${Math.ceil(this.perPodMemLimit / 1048576)}Mi"\n`;
+      y += `    memory: "${this.fmtBytesYaml(this.perPodMemLimit)}"\n`;
       y += `\nconfig:\n`;
       y += `  grpcListen: ":4317"\n`;
       y += `  httpListen: ":4318"\n`;
@@ -1515,9 +1539,9 @@ function configHelper() {
       y += `  enabled: true\n`;
       y += `  path: "/data/queue"\n`;
       y += `  maxSize: 10000\n`;
-      y += `  maxBytes: ${this.perPodQueueMB * 1048576}  # per-pod (${this.fmtBytes(this.queueMaxSizeMB * 1048576)} total \u00f7 ${this.actualPods} pods)\n`;
+      y += `  maxBytes: "${this.fmtBytesYaml(this.perPodQueueMB * 1048576)}"  # per-pod (${this.fmtBytes(this.queueMaxSizeMB * 1048576)} total \u00f7 ${this.actualPods} pods)\n`;
       y += `  compression: "${this.queueCompression ? 'snappy' : 'none'}"\n`;
-      y += `  writeBufferSize: 262144\n`;
+      y += `  writeBufferSize: "${this.fmtBytesYaml(262144)}"\n`;
       y += `  retryInterval: "5s"\n`;
       y += `  maxRetryDelay: "5m"\n`;
       y += `  fullBehavior: "drop_oldest"\n`;
@@ -1583,18 +1607,18 @@ function configHelper() {
         y += `  enabled: true\n`;
         y += `  type: disk\n`;
         y += `  path: "/var/lib/metrics-governor/queue"\n`;
-        y += `  max_bytes: ${this.perPodQueueMB * 1048576}  # per-pod (${this.fmtBytes(this.queueMaxSizeMB * 1048576)} total \u00f7 ${this.actualPods} pods)\n`;
+        y += `  max_bytes: "${this.fmtBytesYaml(this.perPodQueueMB * 1048576)}"  # per-pod (${this.fmtBytes(this.queueMaxSizeMB * 1048576)} total \u00f7 ${this.actualPods} pods)\n`;
         y += `  compression: ${this.queueCompression ? 'snappy' : 'none'}\n`;
-        y += `  write_buffer_size: 262144\n`;
+        y += `  write_buffer_size: "${this.fmtBytesYaml(262144)}"\n`;
         y += `  retry_interval: 5s\n`;
         y += `  max_retry_delay: 5m\n`;
       } else {
         y += `\nqueue:\n`;
         y += `  enabled: true\n`;
         y += `  type: memory\n`;
-        y += `  max_bytes: ${this.perPodQueueMB * 1048576}  # per-pod (${this.fmtBytes(this.queueMaxSizeMB * 1048576)} total \u00f7 ${this.actualPods} pods)\n`;
+        y += `  max_bytes: "${this.fmtBytesYaml(this.perPodQueueMB * 1048576)}"  # per-pod (${this.fmtBytes(this.queueMaxSizeMB * 1048576)} total \u00f7 ${this.actualPods} pods)\n`;
         y += `  compression: ${this.queueCompression ? 'snappy' : 'none'}\n`;
-        y += `  write_buffer_size: 262144\n`;
+        y += `  write_buffer_size: "${this.fmtBytesYaml(262144)}"\n`;
         y += `  retry_interval: 5s\n`;
         y += `  max_retry_delay: 5m\n`;
       }
@@ -1688,16 +1712,19 @@ function configHelper() {
       return parseFloat(s) * 1000;
     },
 
-    parseSizeToMB(val) {
+    parseSizeToBytes(val) {
       if (val === undefined) return undefined;
       const s = String(val).trim();
-      if (s.endsWith('Mi')) return parseFloat(s);
-      if (s.endsWith('Gi')) return parseFloat(s) * 1024;
-      if (s.endsWith('Ti')) return parseFloat(s) * 1048576;
-      // Plain number → assume bytes
-      const n = parseFloat(s);
-      if (!isNaN(n) && n > 1048576) return Math.ceil(n / 1048576);
-      return n;
+      if (s.endsWith('Ti')) return parseFloat(s) * 1099511627776;
+      if (s.endsWith('Gi')) return parseFloat(s) * 1073741824;
+      if (s.endsWith('Mi')) return parseFloat(s) * 1048576;
+      if (s.endsWith('Ki')) return parseFloat(s) * 1024;
+      return parseFloat(s);
+    },
+    parseSizeToMB(val) {
+      const b = this.parseSizeToBytes(val);
+      if (b === undefined || isNaN(b)) return undefined;
+      return Math.ceil(b / 1048576);
     },
 
     applyHelmText(text) {
@@ -1713,8 +1740,8 @@ function configHelper() {
           if (v !== undefined) this.bufferBatchSize = v;
         }
         if (m['queue.maxBytes'] !== undefined) {
-          const v = this.parseYamlNum(m['queue.maxBytes']);
-          if (v !== undefined) this.setQueueMaxSizeMB(Math.ceil(v / 1048576));
+          const b = this.parseSizeToBytes(m['queue.maxBytes']);
+          if (b !== undefined && !isNaN(b)) this.setQueueMaxSizeMB(Math.max(10, Math.ceil(b / 1048576)));
         }
         if (m['queue.compression'] !== undefined) {
           this.queueCompression = m['queue.compression'] !== 'none';
@@ -1771,8 +1798,8 @@ function configHelper() {
           if (['memory', 'disk'].includes(v)) this.queueType = v;
         }
         if (m['queue.max_bytes'] !== undefined) {
-          const v = this.parseYamlNum(m['queue.max_bytes']);
-          if (v !== undefined) this.setQueueMaxSizeMB(Math.max(10, Math.ceil(v / 1048576)));
+          const b = this.parseSizeToBytes(m['queue.max_bytes']);
+          if (b !== undefined && !isNaN(b)) this.setQueueMaxSizeMB(Math.max(10, Math.ceil(b / 1048576)));
         }
         if (m['queue.compression'] !== undefined) {
           this.queueCompression = m['queue.compression'] !== 'none';
