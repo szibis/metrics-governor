@@ -68,12 +68,17 @@ func main() {
 		Mode:              cardinality.ParseMode(cardinalityCfg.Mode),
 		ExpectedItems:     cardinalityCfg.ExpectedItems,
 		FalsePositiveRate: cardinalityCfg.FPRate,
+		HLLThreshold:      cardinalityCfg.HLLThreshold,
 	}
-	logging.Info("cardinality tracking initialized", logging.F(
+	logFields := logging.F(
 		"mode", cardinalityCfg.Mode,
 		"expected_items", cardinalityCfg.ExpectedItems,
 		"fp_rate", cardinalityCfg.FPRate,
-	))
+	)
+	if cardinalityCfg.Mode == "hybrid" {
+		logFields["hll_threshold"] = cardinalityCfg.HLLThreshold
+	}
+	logging.Info("cardinality tracking initialized", logFields)
 
 	// Initialize bloom filter persistence if enabled
 	bloomPersistenceCfg := cfg.BloomPersistenceConfig()
