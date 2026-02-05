@@ -43,7 +43,9 @@
     .section-title { display: flex; align-items: center; gap: .5rem; }
     .theme-toggle { background: none; border: 1px solid var(--pico-muted-border-color); border-radius: 50%; width: 40px; height: 40px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; transition: border-color .2s; }
     .theme-toggle:hover { border-color: var(--pico-primary); }
-    .theme-toggle svg { width: 20px; height: 20px; fill: var(--pico-color); transition: fill .2s; }
+    .theme-toggle svg { width: 20px; height: 20px; transition: fill .2s; }
+    [data-theme="dark"] .theme-toggle svg { fill: #fbbf24; }
+    [data-theme="light"] .theme-toggle svg { fill: #475569; }
     .header-row { display: flex; align-items: center; justify-content: space-between; }
   </style>
 </head>
@@ -53,10 +55,14 @@
   <div class="header-row">
     <h1 style="margin-bottom:0">metrics-governor Configuration Helper</h1>
     <button class="theme-toggle" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'" :title="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
-      <!-- Sun icon (shown in dark mode) -->
-      <svg x-show="theme === 'dark'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-3a1 1 0 0 0 1-1V1a1 1 0 1 0-2 0v2a1 1 0 0 0 1 1zm0 18a1 1 0 0 0-1 1v2a1 1 0 1 0 2 0v-2a1 1 0 0 0-1-1zM4.22 5.64a1 1 0 0 0 1.42-1.42l-1.42-1.4a1 1 0 0 0-1.4 1.4l1.4 1.42zm15.56 12.72a1 1 0 0 0-1.42 1.42l1.42 1.4a1 1 0 0 0 1.4-1.4l-1.4-1.42zM4 12a1 1 0 0 0-1-1H1a1 1 0 1 0 0 2h2a1 1 0 0 0 1-1zm19-1h-2a1 1 0 1 0 0 2h2a1 1 0 1 0 0-2zM5.64 19.78a1 1 0 0 0-1.42 0l-1.4 1.42a1 1 0 1 0 1.4 1.4l1.42-1.4a1 1 0 0 0 0-1.42zM19.78 4.22l1.4-1.42a1 1 0 1 0-1.4-1.4l-1.42 1.4a1 1 0 1 0 1.42 1.42z"/></svg>
-      <!-- Moon icon (shown in light mode) -->
-      <svg x-show="theme === 'light'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.05 8.05 0 0 1-3.37.73A8.15 8.15 0 0 1 9.08 5.49a8.59 8.59 0 0 1 .25-2 1 1 0 0 0-.37-1 1 1 0 0 0-1.05-.17A10 10 0 1 0 22 17.29a1 1 0 0 0-.36-1.29zM12 20a8 8 0 0 1-6.95-12A9.94 9.94 0 0 0 19.19 16 8 8 0 0 1 12 20z"/></svg>
+      <!-- Sun icon (shown in dark mode → click to go light) -->
+      <template x-if="theme === 'dark'">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-3a1 1 0 0 0 1-1V1a1 1 0 1 0-2 0v2a1 1 0 0 0 1 1zm0 18a1 1 0 0 0-1 1v2a1 1 0 1 0 2 0v-2a1 1 0 0 0-1-1zM4.22 5.64a1 1 0 0 0 1.42-1.42l-1.42-1.4a1 1 0 0 0-1.4 1.4l1.4 1.42zm15.56 12.72a1 1 0 0 0-1.42 1.42l1.42 1.4a1 1 0 0 0 1.4-1.4l-1.4-1.42zM4 12a1 1 0 0 0-1-1H1a1 1 0 1 0 0 2h2a1 1 0 0 0 1-1zm19-1h-2a1 1 0 1 0 0 2h2a1 1 0 1 0 0-2zM5.64 19.78a1 1 0 0 0-1.42 0l-1.4 1.42a1 1 0 1 0 1.4 1.4l1.42-1.4a1 1 0 0 0 0-1.42zM19.78 4.22l1.4-1.42a1 1 0 1 0-1.4-1.4l-1.42 1.4a1 1 0 1 0 1.42 1.42z"/></svg>
+      </template>
+      <!-- Moon icon (shown in light mode → click to go dark) -->
+      <template x-if="theme === 'light'">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.05 8.05 0 0 1-3.37.73A8.15 8.15 0 0 1 9.08 5.49a8.59 8.59 0 0 1 .25-2 1 1 0 0 0-.37-1 1 1 0 0 0-1.05-.17A10 10 0 1 0 22 17.29a1 1 0 0 0-.36-1.29zM12 20a8 8 0 0 1-6.95-12A9.94 9.94 0 0 0 19.19 16 8 8 0 0 1 12 20z"/></svg>
+      </template>
     </button>
   </div>
   <p>Plan your deployment: estimate resources, build limits rules, and generate ready-to-use config files.</p>
