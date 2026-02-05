@@ -149,10 +149,102 @@ jobs:
           fi
           exit $EXIT_CODE
 
-  benchmark-alloc-compare:
+  race-condition-tests:
     needs: [ci-filter]
     runs-on: ubuntu-latest
     if: >-
+      needs.ci-filter.outputs.skip_memory != 'true' &&
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
+    outputs:
+      success: ${{ steps.run.outputs.success }}
+      total: ${{ steps.run.outputs.total }}
+      passed: ${{ steps.run.outputs.passed }}
+      failed: ${{ steps.run.outputs.failed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run race condition tests
+        id: run
+        run: |
+          set +e
+          go test -race -run 'TestRace_' -count=1 -timeout=10m -v ./internal/... 2>&1 | tee results.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
+          FAILED_TESTS=$(grep -c '^--- FAIL:' results.txt)
+          TOTAL_TESTS=$((PASSED_TESTS + FAILED_TESTS))
+
+          echo "total=${TOTAL_TESTS}" >> $GITHUB_OUTPUT
+          echo "passed=${PASSED_TESTS}" >> $GITHUB_OUTPUT
+          echo "failed=${FAILED_TESTS}" >> $GITHUB_OUTPUT
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+          fi
+          exit $EXIT_CODE
+
+  memory-leak-tests:
+    needs: [ci-filter]
+    runs-on: ubuntu-latest
+    if: >-
+      needs.ci-filter.outputs.skip_memory != 'true' &&
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
+    outputs:
+      success: ${{ steps.run.outputs.success }}
+      total: ${{ steps.run.outputs.total }}
+      passed: ${{ steps.run.outputs.passed }}
+      failed: ${{ steps.run.outputs.failed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run memory leak tests
+        id: run
+        run: |
+          set +e
+          go test -run 'TestMemLeak_' -count=1 -timeout=10m -v ./internal/... 2>&1 | tee results.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
+          FAILED_TESTS=$(grep -c '^--- FAIL:' results.txt)
+          TOTAL_TESTS=$((PASSED_TESTS + FAILED_TESTS))
+
+          echo "total=${TOTAL_TESTS}" >> $GITHUB_OUTPUT
+          echo "passed=${PASSED_TESTS}" >> $GITHUB_OUTPUT
+          echo "failed=${FAILED_TESTS}" >> $GITHUB_OUTPUT
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+          fi
+          exit $EXIT_CODE
+
+  benchmark-alloc-compare:
+    # Run after required jobs so it doesn't compete for runner slots
+    needs: [ci-filter, resource-tests, goroutine-leak-check, memory-stress-test, race-condition-tests, memory-leak-tests]
+    runs-on: ubuntu-latest
+    if: >-
+      always() &&
       needs.ci-filter.outputs.skip_memory != 'true' &&
       !(
         github.event_name == 'pull_request' &&
@@ -253,7 +345,7 @@ jobs:
             }
 
   memory-check-comment:
-    needs: [ci-filter, resource-tests, goroutine-leak-check, memory-stress-test]
+    needs: [ci-filter, resource-tests, goroutine-leak-check, memory-stress-test, race-condition-tests, memory-leak-tests]
     runs-on: ubuntu-latest
     if: >-
       always() &&
@@ -292,13 +384,31 @@ jobs:
           STRESS_FAILED="${{ needs.memory-stress-test.outputs.failed }}"
           STRESS_FAILED="${STRESS_FAILED:-0}"
 
+          RACE_SUCCESS="${{ needs.race-condition-tests.outputs.success }}"
+          RACE_SUCCESS="${RACE_SUCCESS:-false}"
+          RACE_TOTAL="${{ needs.race-condition-tests.outputs.total }}"
+          RACE_TOTAL="${RACE_TOTAL:-0}"
+          RACE_PASSED="${{ needs.race-condition-tests.outputs.passed }}"
+          RACE_PASSED="${RACE_PASSED:-0}"
+          RACE_FAILED="${{ needs.race-condition-tests.outputs.failed }}"
+          RACE_FAILED="${RACE_FAILED:-0}"
+
+          MEMLEAK_SUCCESS="${{ needs.memory-leak-tests.outputs.success }}"
+          MEMLEAK_SUCCESS="${MEMLEAK_SUCCESS:-false}"
+          MEMLEAK_TOTAL="${{ needs.memory-leak-tests.outputs.total }}"
+          MEMLEAK_TOTAL="${MEMLEAK_TOTAL:-0}"
+          MEMLEAK_PASSED="${{ needs.memory-leak-tests.outputs.passed }}"
+          MEMLEAK_PASSED="${MEMLEAK_PASSED:-0}"
+          MEMLEAK_FAILED="${{ needs.memory-leak-tests.outputs.failed }}"
+          MEMLEAK_FAILED="${MEMLEAK_FAILED:-0}"
+
           # Compute totals
-          TOTAL_TESTS=$((RESOURCE_TOTAL + LEAK_TOTAL + STRESS_TOTAL))
-          TOTAL_PASSED=$((RESOURCE_PASSED + LEAK_PASSED + STRESS_PASSED))
-          TOTAL_FAILED=$((RESOURCE_FAILED + LEAK_FAILED + STRESS_FAILED))
+          TOTAL_TESTS=$((RESOURCE_TOTAL + LEAK_TOTAL + STRESS_TOTAL + RACE_TOTAL + MEMLEAK_TOTAL))
+          TOTAL_PASSED=$((RESOURCE_PASSED + LEAK_PASSED + STRESS_PASSED + RACE_PASSED + MEMLEAK_PASSED))
+          TOTAL_FAILED=$((RESOURCE_FAILED + LEAK_FAILED + STRESS_FAILED + RACE_FAILED + MEMLEAK_FAILED))
 
           # Overall status
-          if [ "$RESOURCE_SUCCESS" = "true" ] && [ "$LEAK_SUCCESS" = "true" ] && [ "$STRESS_SUCCESS" = "true" ]; then
+          if [ "$RESOURCE_SUCCESS" = "true" ] && [ "$LEAK_SUCCESS" = "true" ] && [ "$STRESS_SUCCESS" = "true" ] && [ "$RACE_SUCCESS" = "true" ] && [ "$MEMLEAK_SUCCESS" = "true" ]; then
             OVERALL_STATUS="PASS"
             OVERALL_ICON="✅"
           else
@@ -328,6 +438,8 @@ jobs:
           | Resource Tests | ${RESOURCE_TOTAL} | ${RESOURCE_PASSED} | ${RESOURCE_FAILED} | $(status_icon "$RESOURCE_SUCCESS") |
           | Goroutine Leak Tests | ${LEAK_TOTAL} | ${LEAK_PASSED} | ${LEAK_FAILED} | $(status_icon "$LEAK_SUCCESS") |
           | Memory Stress Tests | ${STRESS_TOTAL} | ${STRESS_PASSED} | ${STRESS_FAILED} | $(status_icon "$STRESS_SUCCESS") |
+          | Race Condition Tests | ${RACE_TOTAL} | ${RACE_PASSED} | ${RACE_FAILED} | $(status_icon "$RACE_SUCCESS") |
+          | Memory Leak Tests | ${MEMLEAK_TOTAL} | ${MEMLEAK_PASSED} | ${MEMLEAK_FAILED} | $(status_icon "$MEMLEAK_SUCCESS") |
           | **Total** | **${TOTAL_TESTS}** | **${TOTAL_PASSED}** | **${TOTAL_FAILED}** | ${OVERALL_ICON} |
 
           <details>
@@ -336,6 +448,8 @@ jobs:
           - **Resource Tests**: Verify components release memory after shutdown
           - **Goroutine Leak Tests**: Verify no goroutines leaked after component lifecycle (using goleak)
           - **Memory Stress Tests**: Verify memory growth stays bounded under sustained load
+          - **Race Condition Tests**: Verify concurrent access patterns are data-race free (using -race detector)
+          - **Memory Leak Tests**: Verify heap growth is bounded after repeated create/destroy and reset cycles
 
           </details>
           COMMENT_EOF
