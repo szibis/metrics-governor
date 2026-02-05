@@ -198,6 +198,14 @@
             <small class="help-tip"><a href="docs/performance.md#queue" target="_blank">Docs</a></small>
           </label>
           <label>
+            Disk queue compression
+            <div style="display:flex;align-items:center;gap:.5rem;margin-top:.25rem">
+              <input type="checkbox" x-model="queueCompression" role="switch">
+              <span x-text="queueCompression ? 'snappy (recommended)' : 'disabled'" :style="queueCompression ? 'color:var(--status-green)' : 'color:var(--pico-muted-color)'" style="font-size:.9em"></span>
+            </div>
+            <small class="help-tip">Snappy compression reduces disk I/O ~70%. <a href="docs/performance.md#queue" target="_blank">Docs</a></small>
+          </label>
+          <label>
             Target outage buffer
             <div style="display:flex;gap:.25rem">
               <input type="number" x-model.number="targetRetentionVal" min="1" :step="targetRetentionUnit === 'min' ? 5 : 1" style="flex:1">
@@ -284,10 +292,19 @@
           <div>
             <div class="est-val" x-text="fmtBytes(pvcSize * 1048576)"></div>
             <small>PVC size (incl. 20% headroom)</small><br>
+            <small>Compression: <span :style="queueCompression ? 'color:var(--status-green)' : 'color:var(--pico-muted-color)'" x-text="queueCompression ? 'snappy (0.3x)' : 'off'"></span></small><br>
             <small>Write IOPS: <span x-text="writeIOPS"></span></small><br>
             <small>Read IOPS: <span x-text="readIOPS"></span></small><br>
             <small>Total IOPS: <span x-text="totalIOPS"></span></small><br>
-            <small>Write throughput: <span x-text="fmtBytes(writeThroughput) + '/s'"></span></small>
+            <template x-if="queueCompression">
+              <span>
+                <small>Raw throughput: <span x-text="fmtBytes(writeThroughput / compressionRatio) + '/s'"></span></small><br>
+                <small>Effective (compressed): <b x-text="fmtBytes(writeThroughput) + '/s'"></b></small>
+              </span>
+            </template>
+            <template x-if="!queueCompression">
+              <small>Write throughput: <span x-text="fmtBytes(writeThroughput) + '/s'"></span></small>
+            </template>
           </div>
         </template>
         <template x-if="queueType === 'memory'">
@@ -466,7 +483,7 @@
               <tr>
                 <td><b>Write throughput</b></td>
                 <td><code>dps &times; series_size &times; compression_ratio</code></td>
-                <td>Sustained bytes/sec to disk during queuing. Batch size cancels out algebraically, but achieving this throughput requires the disk to support the IOPS below</td>
+                <td>Sustained bytes/sec to disk during queuing. compression_ratio = 0.3 with snappy, 1.0 without. Batch size cancels out algebraically, but achieving this throughput requires the disk to support the IOPS below</td>
               </tr>
               <tr>
                 <td><b>Write IOPS</b></td>
@@ -970,6 +987,7 @@ function configHelper() {
       this.bloomFPR = meta.defaults.bloom_fpr;
       this.hllThreshold = meta.defaults.hll_threshold;
       this.retentionWindow = meta.defaults.retention_window;
+      this.queueCompression = meta.defaults.queue_compression !== 'none';
 
       this.applyTheme();
       this.$watch('theme', () => this.applyTheme());
@@ -980,7 +998,7 @@ function configHelper() {
         'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
         'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
-        'queueType','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
+        'queueType','queueCompression','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
         'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
         'podOverride',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
@@ -999,6 +1017,7 @@ function configHelper() {
       this.$watch('bufferBatchSize', () => this.autoSizeQueue());
       this.$watch('avgLabels', () => this.autoSizeQueue());
       this.$watch('avgLabelLen', () => this.autoSizeQueue());
+      this.$watch('queueCompression', () => this.autoSizeQueue());
       // Reverse: queue size changes → update target outage buffer
       this.$watch('queueMaxSizeVal', () => this.autoSizeRetention());
       this.$watch('queueMaxSizeUnit', () => this.autoSizeRetention());
@@ -1034,7 +1053,7 @@ function configHelper() {
     autoSizeQueue() {
       if (this._queueSyncDirection === 'queue') return;
       this._queueSyncDirection = 'retention';
-      const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (this._est.label_key_overhead_bytes + this.avgLabelLen) + this._est.series_base_overhead_bytes)) * this._est.compression_ratio;
+      const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (this._est.label_key_overhead_bytes + this.avgLabelLen) + this._est.series_base_overhead_bytes)) * this.compressionRatio;
       const needed = Math.ceil(bytesPerSec * this.targetRetentionMin * 60 / 1048576);
       this.setQueueMaxSizeMB(Math.max(10, needed));
       this.$nextTick(() => { this._queueSyncDirection = null; });
@@ -1042,7 +1061,7 @@ function configHelper() {
     autoSizeRetention() {
       if (this._queueSyncDirection === 'retention') return;
       this._queueSyncDirection = 'queue';
-      const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (this._est.label_key_overhead_bytes + this.avgLabelLen) + this._est.series_base_overhead_bytes)) * this._est.compression_ratio;
+      const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (this._est.label_key_overhead_bytes + this.avgLabelLen) + this._est.series_base_overhead_bytes)) * this.compressionRatio;
       if (bytesPerSec <= 0) { this._queueSyncDirection = null; return; }
       const retentionSec = (this.queueMaxSizeMB * 1048576) / bytesPerSec;
       const retentionMin = retentionSec / 60;
@@ -1057,7 +1076,7 @@ function configHelper() {
         'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
         'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
-        'queueType','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
+        'queueType','queueCompression','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
         'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
         'podOverride',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
@@ -1076,7 +1095,7 @@ function configHelper() {
           'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
           'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
           'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
-          'queueType','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
+          'queueType','queueCompression','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
           'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
           'podOverride',
           'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
@@ -1123,6 +1142,7 @@ function configHelper() {
     bufferBatchSize: 1000,
     queueMaxRetries: 3,
     queueType: 'memory',
+    queueCompression: true,
     queueMaxSizeVal: 1,
     queueMaxSizeUnit: 'GB',
     targetRetentionVal: 10,
@@ -1258,7 +1278,7 @@ function configHelper() {
     },
     // ---- Queue disk estimation ----
     get avgBatchBytes() { return this.bufferBatchSize * this.avgSeriesSize; },
-    get compressionRatio() { return this._est.compression_ratio; },
+    get compressionRatio() { return this.queueCompression ? this._est.compression_ratio : 1.0; },
     get writeThroughput() { return (this.dps / this.bufferBatchSize) * this.avgBatchBytes * this.compressionRatio; },
     get writeIOPS() { return Math.ceil(this.dps / this.bufferBatchSize); },
     get readIOPS() { return Math.ceil(this.writeIOPS * this._est.read_iops_ratio); },
@@ -1446,6 +1466,8 @@ function configHelper() {
       y += `  path: "/data/queue"\n`;
       y += `  maxSize: 10000\n`;
       y += `  maxBytes: ${this.queueMaxSizeMB * 1048576}\n`;
+      y += `  compression: "${this.queueCompression ? 'snappy' : 'none'}"\n`;
+      y += `  writeBufferSize: 262144\n`;
       y += `  retryInterval: "5s"\n`;
       y += `  maxRetryDelay: "5m"\n`;
       y += `  fullBehavior: "drop_oldest"\n`;
@@ -1512,6 +1534,8 @@ function configHelper() {
         y += `  type: disk\n`;
         y += `  path: "/var/lib/metrics-governor/queue"\n`;
         y += `  max_bytes: ${this.queueMaxSizeMB * 1048576}\n`;
+        y += `  compression: ${this.queueCompression ? 'snappy' : 'none'}\n`;
+        y += `  write_buffer_size: 262144\n`;
         y += `  retry_interval: 5s\n`;
         y += `  max_retry_delay: 5m\n`;
       } else {
@@ -1519,6 +1543,8 @@ function configHelper() {
         y += `  enabled: true\n`;
         y += `  type: memory\n`;
         y += `  max_bytes: ${this.queueMaxSizeMB * 1048576}\n`;
+        y += `  compression: ${this.queueCompression ? 'snappy' : 'none'}\n`;
+        y += `  write_buffer_size: 262144\n`;
         y += `  retry_interval: 5s\n`;
         y += `  max_retry_delay: 5m\n`;
       }
@@ -1640,6 +1666,9 @@ function configHelper() {
           const v = this.parseYamlNum(m['queue.maxBytes']);
           if (v !== undefined) this.setQueueMaxSizeMB(Math.ceil(v / 1048576));
         }
+        if (m['queue.compression'] !== undefined) {
+          this.queueCompression = m['queue.compression'] !== 'none';
+        }
         if (m['replicaCount'] !== undefined) {
           const pods = this.parseYamlNum(m['replicaCount']);
           if (pods !== undefined && pods >= 1) {
@@ -1694,6 +1723,9 @@ function configHelper() {
         if (m['queue.max_bytes'] !== undefined) {
           const v = this.parseYamlNum(m['queue.max_bytes']);
           if (v !== undefined) this.setQueueMaxSizeMB(Math.max(10, Math.ceil(v / 1048576)));
+        }
+        if (m['queue.compression'] !== undefined) {
+          this.queueCompression = m['queue.compression'] !== 'none';
         }
       } finally {
         this.$nextTick(() => { this._updatingFromYaml = false; });
