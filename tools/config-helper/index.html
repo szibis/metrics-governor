@@ -23,12 +23,15 @@
     .tag { display: inline-block; background: var(--pico-primary-background); color: var(--pico-primary-inverse); padding: 2px 8px; border-radius: 12px; font-size: .85em; margin: 2px; cursor: pointer; }
     .tag.selected { outline: 2px solid var(--pico-primary); }
     pre.yaml-preview { background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 1rem; overflow-x: auto; max-height: 500px; white-space: pre; font-size: .85em; line-height: 1.4; }
+    .yaml-edit { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace; font-size: .85em; line-height: 1.5; min-height: 300px; resize: vertical; width: 100%; tab-size: 2; white-space: pre; overflow-x: auto; }
+    .yaml-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: .25rem; }
+    .yaml-toolbar small { color: var(--pico-muted-color); }
     .tab-bar { display: flex; gap: 0; border-bottom: 2px solid var(--pico-muted-border-color); margin-bottom: 1rem; }
     .tab-btn { padding: .5rem 1rem; cursor: pointer; border: none; background: none; font-weight: 600; font-size: .95em; color: var(--pico-muted-color); border-bottom: 2px solid transparent; margin-bottom: -2px; display: flex; align-items: center; gap: .4rem; }
     .tab-btn:hover { color: var(--pico-color); }
     .tab-btn.active { border-bottom-color: var(--pico-primary); color: var(--pico-primary); }
     .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-    .dot-green { background: var(--status-green); } .dot-red { background: var(--status-red); }
+    .dot-green { background: var(--status-green); } .dot-yellow { background: var(--status-yellow); } .dot-red { background: var(--status-red); }
     .btn-row { display: flex; gap: .5rem; margin-top: .5rem; }
     .btn-row button { font-size: .85em; padding: .4rem .8rem; }
     .help-tip { font-size: .85em; color: var(--pico-muted-color); margin-top: .1rem; }
@@ -41,6 +44,14 @@
     .copy-ok { color: var(--status-green); font-size: .85em; }
     .storage-rec { background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: .75rem; margin-top: .5rem; }
     .error-msg { color: var(--status-red); font-size: .85em; margin-top: .25rem; }
+    .warn-msg { color: var(--status-yellow); font-size: .85em; margin-top: .25rem; }
+    .lint-panel { background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: .75rem; margin-top: .5rem; font-size: .85em; }
+    .lint-item { display: flex; align-items: flex-start; gap: .4rem; margin-bottom: .25rem; }
+    .lint-item:last-child { margin-bottom: 0; }
+    .lint-icon { font-weight: 700; min-width: 16px; text-align: center; }
+    .lint-error .lint-icon { color: var(--status-red); }
+    .lint-warn .lint-icon { color: var(--status-yellow); }
+    .lint-ok .lint-icon { color: var(--status-green); }
     .section-title { display: flex; align-items: center; gap: .5rem; }
     .theme-toggle { background: none; border: 1px solid var(--pico-muted-border-color); border-radius: 50%; width: 40px; height: 40px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; transition: border-color .2s; }
     .theme-toggle:hover { border-color: var(--pico-primary); }
@@ -48,13 +59,18 @@
     [data-theme="dark"] .theme-toggle svg { fill: #fbbf24; }
     [data-theme="light"] .theme-toggle svg { fill: #475569; }
     .header-row { display: flex; align-items: center; justify-content: space-between; }
+    .logo-title { display: flex; align-items: center; gap: .75rem; }
+    .logo-title img { width: 48px; height: 48px; }
   </style>
 </head>
 <body x-data="configHelper()" class="container">
 
 <header>
   <div class="header-row">
-    <h1 style="margin-bottom:0">metrics-governor Configuration Helper</h1>
+    <div class="logo-title">
+      <img src="docs/images/logo.svg" alt="metrics-governor logo" onerror="this.style.display='none'">
+      <h1 style="margin-bottom:0">metrics-governor Configuration Helper</h1>
+    </div>
     <button class="theme-toggle" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'" :title="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
       <!-- Sun icon (shown in dark mode → click to go light) -->
       <template x-if="theme === 'dark'">
@@ -265,7 +281,7 @@
     </div>
 
     <!-- Fit Check -->
-    <details style="margin-top:.5rem">
+    <details open style="margin-top:.5rem">
       <summary style="font-size:.95em">Fit Check &mdash; does it fit your cluster?</summary>
       <div style="margin-top:.5rem">
         <small class="help-tip" style="display:block;margin-bottom:.5rem">Enter your actual available resources to check if the estimated sizing fits. Status shows green when estimates are within budget.</small>
@@ -560,24 +576,35 @@
 
     <div class="tab-bar">
       <button class="tab-btn" :class="activeTab === 'helm' ? 'active' : ''" @click="activeTab = 'helm'">
-        <span class="dot" :class="helmValid ? 'dot-green' : 'dot-red'"></span> Helm values.yaml
+        <span class="dot" :class="!helmValid ? 'dot-red' : helmHasWarns ? 'dot-yellow' : 'dot-green'"></span> Helm values.yaml
       </button>
       <button class="tab-btn" :class="activeTab === 'app' ? 'active' : ''" @click="activeTab = 'app'">
-        <span class="dot" :class="appValid ? 'dot-green' : 'dot-red'"></span> App config.yaml
+        <span class="dot" :class="!appValid ? 'dot-red' : appHasWarns ? 'dot-yellow' : 'dot-green'"></span> App config.yaml
       </button>
       <button class="tab-btn" :class="activeTab === 'limits' ? 'active' : ''" @click="activeTab = 'limits'">
-        <span class="dot" :class="limitsValid ? 'dot-green' : 'dot-red'"></span> Limits rules YAML
+        <span class="dot" :class="!limitsValid ? 'dot-red' : limitsHasWarns ? 'dot-yellow' : 'dot-green'"></span> Limits rules YAML
       </button>
     </div>
 
     <!-- Helm values.yaml -->
     <template x-if="activeTab === 'helm'">
       <div>
-        <pre class="yaml-preview" x-text="helmYaml"></pre>
-        <template x-if="!helmValid"><div class="error-msg" x-text="helmError"></div></template>
+        <div class="yaml-toolbar">
+          <small>Edit YAML directly — changes reflect in inputs and estimations</small>
+          <button class="outline secondary" style="font-size:.8em;padding:2px 10px;margin:0" @click="resetYamlText('helm')">Reset to generated</button>
+        </div>
+        <textarea class="yaml-edit" x-model.debounce.500ms="helmText" @focus="editingTab='helm'" @blur="editingTab=null" spellcheck="false"></textarea>
+        <div class="lint-panel">
+          <template x-for="issue in helmLint" :key="issue.msg">
+            <div class="lint-item" :class="'lint-' + issue.type">
+              <span class="lint-icon" x-text="issue.type === 'error' ? '\u2716' : issue.type === 'warn' ? '\u26A0' : '\u2714'"></span>
+              <span x-text="issue.msg"></span>
+            </div>
+          </template>
+        </div>
         <div class="btn-row">
-          <button @click="copyToClipboard(helmYaml, 'helm')">Copy to Clipboard</button>
-          <button class="outline" @click="downloadFile(helmYaml, 'values.yaml')">Download values.yaml</button>
+          <button @click="copyToClipboard(helmText, 'helm')">Copy to Clipboard</button>
+          <button class="outline" @click="downloadFile(helmText, 'values.yaml')">Download values.yaml</button>
           <span class="copy-ok" x-show="copyOk === 'helm'" x-transition>Copied!</span>
         </div>
       </div>
@@ -586,11 +613,22 @@
     <!-- App config.yaml -->
     <template x-if="activeTab === 'app'">
       <div>
-        <pre class="yaml-preview" x-text="appYaml"></pre>
-        <template x-if="!appValid"><div class="error-msg" x-text="appError"></div></template>
+        <div class="yaml-toolbar">
+          <small>Edit YAML directly — changes reflect in inputs and estimations</small>
+          <button class="outline secondary" style="font-size:.8em;padding:2px 10px;margin:0" @click="resetYamlText('app')">Reset to generated</button>
+        </div>
+        <textarea class="yaml-edit" x-model.debounce.500ms="appText" @focus="editingTab='app'" @blur="editingTab=null" spellcheck="false"></textarea>
+        <div class="lint-panel">
+          <template x-for="issue in appLint" :key="issue.msg">
+            <div class="lint-item" :class="'lint-' + issue.type">
+              <span class="lint-icon" x-text="issue.type === 'error' ? '\u2716' : issue.type === 'warn' ? '\u26A0' : '\u2714'"></span>
+              <span x-text="issue.msg"></span>
+            </div>
+          </template>
+        </div>
         <div class="btn-row">
-          <button @click="copyToClipboard(appYaml, 'app')">Copy to Clipboard</button>
-          <button class="outline" @click="downloadFile(appYaml, 'config.yaml')">Download config.yaml</button>
+          <button @click="copyToClipboard(appText, 'app')">Copy to Clipboard</button>
+          <button class="outline" @click="downloadFile(appText, 'config.yaml')">Download config.yaml</button>
           <span class="copy-ok" x-show="copyOk === 'app'" x-transition>Copied!</span>
         </div>
       </div>
@@ -599,11 +637,22 @@
     <!-- Limits rules YAML -->
     <template x-if="activeTab === 'limits'">
       <div>
-        <pre class="yaml-preview" x-text="limitsYaml"></pre>
-        <template x-if="!limitsValid"><div class="error-msg" x-text="limitsError"></div></template>
+        <div class="yaml-toolbar">
+          <small>Edit YAML directly — changes reflect in inputs and estimations</small>
+          <button class="outline secondary" style="font-size:.8em;padding:2px 10px;margin:0" @click="resetYamlText('limits')">Reset to generated</button>
+        </div>
+        <textarea class="yaml-edit" x-model.debounce.500ms="limitsText" @focus="editingTab='limits'" @blur="editingTab=null" spellcheck="false"></textarea>
+        <div class="lint-panel">
+          <template x-for="issue in limitsLint" :key="issue.msg">
+            <div class="lint-item" :class="'lint-' + issue.type">
+              <span class="lint-icon" x-text="issue.type === 'error' ? '\u2716' : issue.type === 'warn' ? '\u26A0' : '\u2714'"></span>
+              <span x-text="issue.msg"></span>
+            </div>
+          </template>
+        </div>
         <div class="btn-row">
-          <button @click="copyToClipboard(limitsYaml, 'limits')">Copy to Clipboard</button>
-          <button class="outline" @click="downloadFile(limitsYaml, 'limits.yaml')">Download limits.yaml</button>
+          <button @click="copyToClipboard(limitsText, 'limits')">Copy to Clipboard</button>
+          <button class="outline" @click="downloadFile(limitsText, 'limits.yaml')">Download limits.yaml</button>
           <span class="copy-ok" x-show="copyOk === 'limits'" x-transition>Copied!</span>
         </div>
       </div>
@@ -646,6 +695,33 @@ function configHelper() {
       this.$watch('targetRetentionMin', () => this.autoSizeQueue());
       this.$watch('dps', () => this.autoSizeQueue());
       this.$watch('bufferBatchSize', () => this.autoSizeQueue());
+
+      // Initialize textarea content from generated YAML
+      this.helmText = this.helmYaml;
+      this.appText = this.appYaml;
+      this.limitsText = this.limitsYaml;
+
+      // Inputs → Textarea: sync generated YAML to textarea when textarea is not focused
+      this.$watch('helmYaml', (val) => {
+        if (this.editingTab !== 'helm' && !this._updatingFromYaml) this.helmText = val;
+      });
+      this.$watch('appYaml', (val) => {
+        if (this.editingTab !== 'app' && !this._updatingFromYaml) this.appText = val;
+      });
+      this.$watch('limitsYaml', (val) => {
+        if (this.editingTab !== 'limits' && !this._updatingFromYaml) this.limitsText = val;
+      });
+
+      // Textarea → Inputs: parse edited YAML back into state (debounced via x-model.debounce)
+      this.$watch('helmText', (val) => {
+        if (!this._updatingFromYaml && this.editingTab === 'helm') this.applyHelmText(val);
+      });
+      this.$watch('appText', (val) => {
+        if (!this._updatingFromYaml && this.editingTab === 'app') this.applyAppText(val);
+      });
+      this.$watch('limitsText', (val) => {
+        if (!this._updatingFromYaml && this.editingTab === 'limits') this.applyLimitsText(val);
+      });
     },
     autoSizeQueue() {
       // queueMaxSizeMB = writeThroughput (bytes/sec) * targetRetentionMin * 60 / 1MB
@@ -728,6 +804,13 @@ function configHelper() {
     middleTab: 'estimation',
     activeTab: 'helm',
     copyOk: null,
+
+    // ---- Bidirectional YAML editing state ----
+    helmText: '',
+    appText: '',
+    limitsText: '',
+    editingTab: null,
+    _updatingFromYaml: false,
 
     // ---- Helpers ----
     addRule() {
@@ -1081,49 +1164,287 @@ function configHelper() {
       return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     },
 
-    // ---- YAML validation (lightweight) ----
-    validateYaml(text) {
+    // ---- Bidirectional YAML parsing ----
+    parseYamlToMap(text) {
+      const map = {};
+      const lines = text.split('\n');
+      const indentStack = [{ indent: -1, prefix: '' }];
+      for (const line of lines) {
+        if (line.trim() === '' || line.trim().startsWith('#')) continue;
+        const match = line.match(/^(\s*)([\w_.-]+):\s*(.*)/);
+        if (!match) continue;
+        const indent = match[1].length;
+        const key = match[2];
+        let val = match[3].trim();
+        // Pop stack to find parent
+        while (indentStack.length > 1 && indentStack[indentStack.length - 1].indent >= indent) {
+          indentStack.pop();
+        }
+        const parent = indentStack[indentStack.length - 1].prefix;
+        const fullKey = parent ? parent + '.' + key : key;
+        if (val === '' || val === '|' || val === '>') {
+          // This is a parent node
+          indentStack.push({ indent, prefix: fullKey });
+        } else {
+          // Strip quotes
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+          map[fullKey] = val;
+        }
+      }
+      return map;
+    },
+
+    parseYamlNum(val) {
+      if (val === undefined || val === null) return undefined;
+      const n = Number(val);
+      return isNaN(n) ? undefined : n;
+    },
+
+    parseCpuToMillicores(val) {
+      if (val === undefined) return undefined;
+      const s = String(val).trim();
+      if (s.endsWith('m')) return parseFloat(s);
+      return parseFloat(s) * 1000;
+    },
+
+    parseSizeToMB(val) {
+      if (val === undefined) return undefined;
+      const s = String(val).trim();
+      if (s.endsWith('Mi')) return parseFloat(s);
+      if (s.endsWith('Gi')) return parseFloat(s) * 1024;
+      if (s.endsWith('Ti')) return parseFloat(s) * 1048576;
+      // Plain number → assume bytes
+      const n = parseFloat(s);
+      if (!isNaN(n) && n > 1048576) return Math.ceil(n / 1048576);
+      return n;
+    },
+
+    applyHelmText(text) {
+      this._updatingFromYaml = true;
       try {
-        // Basic structural validation
-        const lines = text.split('\n');
-        let indentStack = [0];
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          if (line.trim() === '' || line.trim().startsWith('#')) continue;
-          const indent = line.search(/\S/);
-          if (indent < 0) continue;
-          // Check for tabs
-          if (line.includes('\t')) return { valid: false, error: `Line ${i + 1}: Tab character found (YAML requires spaces)` };
-          // Check for basic key: value structure or list items
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('- ') && !trimmed.includes(':') && !trimmed.startsWith('|') && !trimmed.startsWith('>')) {
-            // Could be a continuation value, allow it
+        const m = this.parseYamlToMap(text);
+        if (m['config.bufferSize'] !== undefined) {
+          const v = this.parseYamlNum(m['config.bufferSize']);
+          if (v !== undefined) this.bufferMaxSize = v;
+        }
+        if (m['config.batchSize'] !== undefined) {
+          const v = this.parseYamlNum(m['config.batchSize']);
+          if (v !== undefined) this.bufferBatchSize = v;
+        }
+        if (m['queue.maxBytes'] !== undefined) {
+          const v = this.parseYamlNum(m['queue.maxBytes']);
+          if (v !== undefined) this.queueMaxSizeMB = Math.ceil(v / 1048576);
+        }
+        if (m['replicaCount'] !== undefined) {
+          const pods = this.parseYamlNum(m['replicaCount']);
+          if (pods !== undefined && pods >= 1) {
+            // reverse: pods = ceil(dps / (coresPerPod * 100000 * 0.7))
+            // → coresPerPod = dps / (pods * 100000 * 0.7)
+            const cpp = this.dps / (pods * 100000 * 0.7);
+            this.coresPerPod = Math.max(0.5, Math.round(cpp * 2) / 2); // round to nearest 0.5
           }
         }
-        // Check balanced quotes
-        let inStr = false;
-        let quoteChar = '';
-        for (let i = 0; i < text.length; i++) {
-          const c = text[i];
-          if (!inStr && (c === '"' || c === "'")) { inStr = true; quoteChar = c; }
-          else if (inStr && c === quoteChar && text[i - 1] !== '\\') { inStr = false; }
+        if (m['resources.requests.cpu'] !== undefined) {
+          const mc = this.parseCpuToMillicores(m['resources.requests.cpu']);
+          if (mc !== undefined && mc > 0) {
+            // reverse: perPodCpuReq = ceil(dps / pods / 100000 * 1000) → dps = mc * pods * 100
+            const pods = this.recommendedPods;
+            const newDps = Math.round(mc * pods * 100);
+            if (newDps > 0) this.dps = newDps;
+          }
         }
-        if (inStr) return { valid: false, error: 'Unclosed string quote' };
-        return { valid: true, error: '' };
-      } catch (e) {
-        return { valid: false, error: e.message };
+        if (m['persistence.size'] !== undefined) {
+          const mb = this.parseSizeToMB(m['persistence.size']);
+          if (mb !== undefined) {
+            // pvcSize = queueMaxSizeMB * 1.2 → queueMaxSizeMB = pvcSize / 1.2
+            this.queueMaxSizeMB = Math.max(10, Math.round(mb / 1.2));
+          }
+        }
+      } finally {
+        this.$nextTick(() => { this._updatingFromYaml = false; });
       }
     },
 
-    get helmValidation() { return this.validateYaml(this.helmYaml); },
-    get appValidation() { return this.validateYaml(this.appYaml); },
-    get limitsValidation() { return this.validateYaml(this.limitsYaml); },
-    get helmValid() { return this.helmValidation.valid; },
-    get appValid() { return this.appValidation.valid; },
-    get limitsValid() { return this.limitsValidation.valid; },
-    get helmError() { return this.helmValidation.error; },
-    get appError() { return this.appValidation.error; },
-    get limitsError() { return this.limitsValidation.error; },
+    applyAppText(text) {
+      this._updatingFromYaml = true;
+      try {
+        const m = this.parseYamlToMap(text);
+        if (m['buffer.size'] !== undefined) {
+          const v = this.parseYamlNum(m['buffer.size']);
+          if (v !== undefined) this.bufferMaxSize = v;
+        }
+        if (m['buffer.batch_size'] !== undefined) {
+          const v = this.parseYamlNum(m['buffer.batch_size']);
+          if (v !== undefined) this.bufferBatchSize = v;
+        }
+        if (m['performance.cardinality_mode'] !== undefined) {
+          const v = m['performance.cardinality_mode'];
+          if (['bloom', 'exact', 'hybrid'].includes(v)) this.cardinalityMode = v;
+        }
+        if (m['performance.bloom_fpr'] !== undefined) {
+          const v = this.parseYamlNum(m['performance.bloom_fpr']);
+          if (v !== undefined && v > 0 && v < 1) this.bloomFPR = v;
+        }
+        if (m['queue.type'] !== undefined) {
+          const v = m['queue.type'];
+          if (['memory', 'disk'].includes(v)) this.queueType = v;
+        }
+        if (m['queue.max_bytes'] !== undefined) {
+          const v = this.parseYamlNum(m['queue.max_bytes']);
+          if (v !== undefined) this.queueMaxSizeMB = Math.max(10, Math.ceil(v / 1048576));
+        }
+      } finally {
+        this.$nextTick(() => { this._updatingFromYaml = false; });
+      }
+    },
+
+    applyLimitsText(text) {
+      this._updatingFromYaml = true;
+      try {
+        const m = this.parseYamlToMap(text);
+        // Defaults
+        if (m['defaults.max_cardinality'] !== undefined) {
+          const v = this.parseYamlNum(m['defaults.max_cardinality']);
+          if (v !== undefined) this.defaultMaxCardinality = v;
+        }
+        if (m['defaults.max_datapoints_rate'] !== undefined) {
+          const v = this.parseYamlNum(m['defaults.max_datapoints_rate']);
+          if (v !== undefined) this.defaultMaxDpRate = v;
+        }
+        if (m['defaults.action'] !== undefined) {
+          const v = m['defaults.action'];
+          if (['log', 'drop', 'adaptive'].includes(v)) this.defaultAction = v;
+        }
+
+        // Parse rules from raw text (more complex — need array handling)
+        const rulesSection = text.match(/\nrules:\s*\n([\s\S]*?)(?=\n\S|\n*$)/);
+        if (rulesSection) {
+          const rulesText = rulesSection[1];
+          const ruleBlocks = rulesText.split(/\n  - /).filter(b => b.trim());
+          const newRules = [];
+          for (const block of ruleBlocks) {
+            const clean = block.startsWith('- ') ? block.slice(2) : block;
+            const rm = this.parseYamlToMap(clean);
+            const rule = {
+              id: ++this.ruleIdCounter,
+              name: rm['name'] || '',
+              matchMetricName: rm['match.metric_name'] || '',
+              labels: [],
+              maxCardinality: this.parseYamlNum(rm['max_cardinality']) || 50000,
+              maxDpRate: this.parseYamlNum(rm['max_datapoints_rate']) || 500000,
+              action: rm['action'] || 'log',
+              groupBy: [],
+              customGroupBy: '',
+              window: rm['window'] || '60s',
+              expanded: false,
+            };
+            // Parse match labels
+            for (const [k, v] of Object.entries(rm)) {
+              if (k.startsWith('match.labels.')) {
+                rule.labels.push({ key: k.replace('match.labels.', ''), value: v });
+              }
+            }
+            // Parse group_by: [...]
+            const gbMatch = clean.match(/group_by:\s*\[([^\]]*)\]/);
+            if (gbMatch) {
+              rule.groupBy = gbMatch[1].split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+            }
+            newRules.push(rule);
+          }
+          this.rules = newRules;
+        } else if (/rules:\s*\[\s*\]/.test(text)) {
+          this.rules = [];
+        }
+      } finally {
+        this.$nextTick(() => { this._updatingFromYaml = false; });
+      }
+    },
+
+    resetYamlText(tab) {
+      if (tab === 'helm') this.helmText = this.helmYaml;
+      else if (tab === 'app') this.appText = this.appYaml;
+      else if (tab === 'limits') this.limitsText = this.limitsYaml;
+    },
+
+    // ---- YAML validation & semantic linting ----
+    validateYamlSyntax(text) {
+      const issues = [];
+      const lines = text.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.trim() === '' || line.trim().startsWith('#')) continue;
+        if (line.includes('\t')) {
+          issues.push({ type: 'error', msg: `Line ${i + 1}: Tab character found (YAML requires spaces)` });
+        }
+      }
+      // Check balanced quotes
+      let inStr = false, quoteChar = '';
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (!inStr && (c === '"' || c === "'")) { inStr = true; quoteChar = c; }
+        else if (inStr && c === quoteChar && text[i - 1] !== '\\') { inStr = false; }
+      }
+      if (inStr) issues.push({ type: 'error', msg: 'Unclosed string quote' });
+      return issues;
+    },
+
+    lintHelm() {
+      const issues = this.validateYamlSyntax(this.helmText);
+      // Semantic checks
+      if (this.recommendedPods < 1) issues.push({ type: 'error', msg: 'replicaCount must be >= 1' });
+      if (this.perPodCpuReq <= 0) issues.push({ type: 'error', msg: 'CPU request must be > 0' });
+      if (this.perPodCpuLimit < this.perPodCpuReq) issues.push({ type: 'error', msg: 'CPU limit should be >= CPU request' });
+      if (this.perPodMemReq <= 0) issues.push({ type: 'error', msg: 'Memory request must be > 0' });
+      if (this.perPodMemLimit < this.perPodMemReq) issues.push({ type: 'error', msg: 'Memory limit should be >= memory request' });
+      if (this.bufferBatchSize > this.bufferMaxSize) issues.push({ type: 'warn', msg: 'batchSize exceeds bufferSize - batches will never fill completely' });
+      if (this.queueMaxSizeMB < 10) issues.push({ type: 'warn', msg: 'Queue size < 10 MB may not provide meaningful outage buffering' });
+      if (this.recommendedPods > 10) issues.push({ type: 'warn', msg: `High pod count (${this.recommendedPods}) - consider increasing cores per pod` });
+      if (this.cpuUtil > 0.9) issues.push({ type: 'warn', msg: 'CPU utilization > 90% - may experience throttling under load spikes' });
+      if (this.queueType === 'disk' && this.pvcSize > 10240) issues.push({ type: 'warn', msg: 'PVC size > 10 GB - verify cloud storage limits for your tier' });
+      if (issues.length === 0) issues.push({ type: 'ok', msg: 'Valid - no issues found' });
+      return issues;
+    },
+
+    lintApp() {
+      const issues = this.validateYamlSyntax(this.appText);
+      if (this.bufferMaxSize < 100) issues.push({ type: 'warn', msg: 'Buffer size < 100 may cause excessive flush cycles' });
+      if (this.bufferBatchSize > this.bufferMaxSize) issues.push({ type: 'error', msg: 'batch_size exceeds buffer size' });
+      if (this.bloomFPR <= 0 || this.bloomFPR >= 1) issues.push({ type: 'error', msg: 'bloom_fpr must be between 0 and 1 (exclusive)' });
+      if (this.bloomFPR > 0.1) issues.push({ type: 'warn', msg: 'bloom_fpr > 0.1 may cause inaccurate cardinality tracking' });
+      if (this.cardinalityMode === 'exact' && this.totalSeries > 500000) issues.push({ type: 'warn', msg: `Exact mode with ${(this.totalSeries/1000).toFixed(0)}k series uses significant memory - consider bloom or hybrid` });
+      if (issues.length === 0) issues.push({ type: 'ok', msg: 'Valid - no issues found' });
+      return issues;
+    },
+
+    lintLimits() {
+      const issues = this.validateYamlSyntax(this.limitsText);
+      if (this.defaultMaxCardinality <= 0) issues.push({ type: 'error', msg: 'defaults.max_cardinality must be > 0' });
+      if (this.defaultMaxDpRate <= 0) issues.push({ type: 'error', msg: 'defaults.max_datapoints_rate must be > 0' });
+      for (const rule of this.rules) {
+        if (!rule.name.trim()) issues.push({ type: 'error', msg: `Rule #${this.rules.indexOf(rule) + 1}: name is required` });
+        if (rule.name && /["\n\\]/.test(rule.name)) issues.push({ type: 'warn', msg: `Rule "${rule.name}": name contains special characters that may need escaping` });
+        if (rule.action === 'adaptive' && rule.groupBy.length === 0) issues.push({ type: 'warn', msg: `Rule "${rule.name || '#' + (this.rules.indexOf(rule) + 1)}": adaptive action without group_by will not identify offenders` });
+        if (rule.maxCardinality && rule.maxCardinality < 10) issues.push({ type: 'warn', msg: `Rule "${rule.name || '#' + (this.rules.indexOf(rule) + 1)}": max_cardinality < 10 is unusually low` });
+        if (!rule.matchMetricName && rule.labels.filter(l => l.key.trim()).length === 0) issues.push({ type: 'warn', msg: `Rule "${rule.name || '#' + (this.rules.indexOf(rule) + 1)}": no match criteria - rule matches all metrics` });
+        for (const lbl of rule.labels) {
+          if (lbl.key.trim() && !lbl.value.trim()) issues.push({ type: 'warn', msg: `Rule "${rule.name || '#' + (this.rules.indexOf(rule) + 1)}": label "${lbl.key}" has empty value` });
+        }
+      }
+      if (issues.length === 0) issues.push({ type: 'ok', msg: 'Valid - no issues found' });
+      return issues;
+    },
+
+    get helmLint() { return this.lintHelm(); },
+    get appLint() { return this.lintApp(); },
+    get limitsLint() { return this.lintLimits(); },
+    get helmValid() { return !this.helmLint.some(i => i.type === 'error'); },
+    get appValid() { return !this.appLint.some(i => i.type === 'error'); },
+    get limitsValid() { return !this.limitsLint.some(i => i.type === 'error'); },
+    get helmHasWarns() { return this.helmLint.some(i => i.type === 'warn'); },
+    get appHasWarns() { return this.appLint.some(i => i.type === 'warn'); },
+    get limitsHasWarns() { return this.limitsLint.some(i => i.type === 'warn'); },
 
     // ---- Actions ----
     copyToClipboard(text, label) {
