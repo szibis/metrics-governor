@@ -11,6 +11,11 @@ const (
 	// ModeExact uses map[string]struct{} for 100% accurate tracking.
 	// Higher memory usage but no false positives.
 	ModeExact
+
+	// ModeHybrid starts with Bloom filter and auto-switches to HyperLogLog
+	// when cardinality exceeds HLLThreshold. Provides membership testing at
+	// low cardinality and fixed ~12KB memory at high cardinality.
+	ModeHybrid
 )
 
 // String returns the string representation of the mode.
@@ -20,6 +25,8 @@ func (m Mode) String() string {
 		return "bloom"
 	case ModeExact:
 		return "exact"
+	case ModeHybrid:
+		return "hybrid"
 	default:
 		return "unknown"
 	}
@@ -30,6 +37,8 @@ func ParseMode(s string) Mode {
 	switch s {
 	case "exact":
 		return ModeExact
+	case "hybrid":
+		return ModeHybrid
 	default:
 		return ModeBloom
 	}
@@ -37,7 +46,7 @@ func ParseMode(s string) Mode {
 
 // Config holds configuration for cardinality tracking.
 type Config struct {
-	// Mode determines tracking implementation (bloom or exact).
+	// Mode determines tracking implementation (bloom, exact, or hybrid).
 	Mode Mode
 
 	// ExpectedItems is the expected number of unique items per tracker.
@@ -48,6 +57,10 @@ type Config struct {
 	// 0.01 = 1% false positive rate (default).
 	// Lower values use more memory but are more accurate.
 	FalsePositiveRate float64
+
+	// HLLThreshold is the cardinality at which hybrid mode switches from Bloom to HLL.
+	// Only used when Mode is ModeHybrid. Default: 10000.
+	HLLThreshold int64
 }
 
 // DefaultConfig returns sensible defaults for metrics tracking.
@@ -56,6 +69,7 @@ func DefaultConfig() Config {
 		Mode:              ModeBloom,
 		ExpectedItems:     100000, // 100K unique series per group
 		FalsePositiveRate: 0.01,   // 1% false positive rate
+		HLLThreshold:      10000,  // Switch to HLL at 10K unique items
 	}
 }
 
@@ -69,10 +83,14 @@ var GlobalTrackerStore *TrackerStore
 
 // NewTracker creates a tracker based on the provided config.
 func NewTracker(cfg Config) Tracker {
-	if cfg.Mode == ModeExact {
+	switch cfg.Mode {
+	case ModeExact:
 		return NewExactTracker()
+	case ModeHybrid:
+		return NewHybridTracker(cfg, cfg.HLLThreshold)
+	default:
+		return NewBloomTracker(cfg)
 	}
-	return NewBloomTracker(cfg)
 }
 
 // NewTrackerFromGlobal creates a tracker based on global config.

@@ -91,6 +91,12 @@ services:
       - "-queue-circuit-breaker-reset-timeout=20s"
       # Rule cache
       - "-rule-cache-max-size=35000"
+      # Hybrid cardinality tracking (auto Bloom→HLL)
+      - "-cardinality-mode=hybrid"
+      - "-cardinality-hll-threshold=5000"
+      # Structured logging
+      - "-stats-log-interval=10s"
+      - "-limits-log-interval=10s"
       # Memory limit
       - "-memory-limit-ratio=0.85"
     volumes:

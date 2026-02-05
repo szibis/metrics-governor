@@ -592,12 +592,15 @@ func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_memory_bytes gauge\n")
 	fmt.Fprintf(w, "metrics_governor_cardinality_memory_bytes %d\n", totalMemoryBytes)
 
-	fmt.Fprintf(w, "# HELP metrics_governor_cardinality_mode Cardinality tracking mode (1=bloom, 0=exact)\n")
+	fmt.Fprintf(w, "# HELP metrics_governor_cardinality_mode Cardinality tracking mode (1=active)\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_mode gauge\n")
-	if cardinality.GlobalConfig.Mode == cardinality.ModeBloom {
+	switch cardinality.GlobalConfig.Mode {
+	case cardinality.ModeBloom:
 		fmt.Fprintf(w, "metrics_governor_cardinality_mode{mode=\"bloom\"} 1\n")
-	} else {
+	case cardinality.ModeExact:
 		fmt.Fprintf(w, "metrics_governor_cardinality_mode{mode=\"exact\"} 1\n")
+	case cardinality.ModeHybrid:
+		fmt.Fprintf(w, "metrics_governor_cardinality_mode{mode=\"hybrid\"} 1\n")
 	}
 
 	fmt.Fprintf(w, "# HELP metrics_governor_cardinality_config_expected_items Configured expected items per tracker\n")

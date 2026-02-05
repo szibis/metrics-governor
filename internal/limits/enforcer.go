@@ -17,8 +17,15 @@ import (
 // groupStats tracks statistics for a specific label combination (group).
 type groupStats struct {
 	datapoints  int64               // Total datapoints in current window
-	cardinality cardinality.Tracker // Unique series keys (Bloom filter or exact)
+	cardinality cardinality.Tracker // Unique series keys (Bloom filter, exact, or hybrid)
 	windowEnd   time.Time           // When the current window expires
+}
+
+// trackerModeInfo tracks the mode of a hybrid tracker for metrics.
+type trackerModeInfo struct {
+	mode        cardinality.TrackerMode
+	switchCount int64
+	sampleRate  float64
 }
 
 // ruleStats tracks all groups for a specific rule.
@@ -51,6 +58,12 @@ type Enforcer struct {
 
 	// LRU cache for metric-name-to-rule lookups
 	ruleMatchCache *ruleCache
+
+	// Hybrid tracker mode tracking (rule -> group -> info)
+	trackerModes map[string]map[string]*trackerModeInfo
+
+	// Total mode switch counter
+	totalSwitches atomic.Int64
 }
 
 // ViolationMetrics tracks limit violation counts.
@@ -82,6 +95,7 @@ func NewEnforcer(config *Config, dryRun bool, ruleCacheMaxSize int) *Enforcer {
 		dryRun:         dryRun,
 		logAggregator:  NewLogAggregator(10 * time.Second), // Aggregate logs every 10s
 		ruleMatchCache: newRuleCache(ruleCacheMaxSize),
+		trackerModes:   make(map[string]map[string]*trackerModeInfo),
 	}
 }
 
@@ -301,9 +315,18 @@ func (e *Enforcer) updateAndCheckLimits(rule *Rule, groupKey string, m *metricsp
 		if len(rs.groups) >= maxGroupsPerRule {
 			return false, ""
 		}
+		tracker := cardinality.NewTrackerFromGlobal()
 		rs.groups[groupKey] = &groupStats{
-			cardinality: cardinality.NewTrackerFromGlobal(),
+			cardinality: tracker,
 			windowEnd:   rs.windowEnd,
+		}
+		// Set up mode switch callback for hybrid trackers
+		if ht, ok := tracker.(*cardinality.HybridTracker); ok {
+			ruleName := rule.Name
+			gk := groupKey
+			ht.OnModeSwitch = func(previous, current cardinality.TrackerMode, cardinalityAtSwitch int64) {
+				e.recordTrackerModeSwitch(ruleName, gk, previous, current, cardinalityAtSwitch)
+			}
 		}
 	}
 	gs := rs.groups[groupKey]
@@ -351,19 +374,31 @@ func (e *Enforcer) updateAndCheckLimits(rule *Rule, groupKey string, m *metricsp
 func (e *Enforcer) handleViolation(rule *Rule, groupKey string, m *metricspb.Metric, resourceAttrs map[string]string, reason string) *metricspb.Metric {
 	datapointsCount := countDatapoints(m)
 
+	// Check if the tracker is in HLL mode for sampling-aware behavior
+	trackerMode := e.getTrackerMode(rule.Name, groupKey)
+	sampleRate := e.calculateSampleRate(rule, groupKey)
+
 	// Aggregate the violation log (key: rule+group+reason+action)
 	logKey := fmt.Sprintf("violation:%s:%s:%s:%s", rule.Name, groupKey, reason, rule.Action)
-	e.logAggregator.Warn(logKey, "limit exceeded", map[string]interface{}{
+	logFields := map[string]interface{}{
 		"rule":    rule.Name,
 		"metric":  m.Name,
 		"group":   groupKey,
 		"reason":  reason,
 		"action":  string(rule.Action),
 		"dry_run": e.dryRun,
-	}, int64(datapointsCount))
+	}
+	if trackerMode == cardinality.TrackerModeHLL {
+		logFields["tracker_mode"] = "hll"
+		logFields["sample_rate"] = sampleRate
+	}
+	e.logAggregator.Warn(logKey, "limit exceeded", logFields, int64(datapointsCount))
 
 	// Record violation
 	e.recordViolation(rule.Name, reason)
+
+	// Update tracker mode info
+	e.updateTrackerModeInfo(rule.Name, groupKey, trackerMode, sampleRate)
 
 	switch rule.Action {
 	case ActionLog:
@@ -372,7 +407,11 @@ func (e *Enforcer) handleViolation(rule *Rule, groupKey string, m *metricspb.Met
 		return injectDatapointLabels(m, "log", rule.Name)
 
 	case ActionDrop:
-		// Drop everything for this metric
+		if trackerMode == cardinality.TrackerModeHLL {
+			// HLL mode: sample ALL traffic deterministically
+			return e.handleHLLSampling(rule, groupKey, m, resourceAttrs, sampleRate, datapointsCount)
+		}
+		// Bloom mode: drop new series
 		e.recordDrop(rule.Name, datapointsCount, false)
 		if e.dryRun {
 			return injectDatapointLabels(m, "drop", rule.Name)
@@ -380,12 +419,194 @@ func (e *Enforcer) handleViolation(rule *Rule, groupKey string, m *metricspb.Met
 		return nil
 
 	case ActionAdaptive:
-		// Adaptive: identify and drop top offenders
+		if trackerMode == cardinality.TrackerModeHLL {
+			// HLL mode: sample worst offender groups
+			return e.handleAdaptiveHLL(rule, groupKey, m, resourceAttrs, reason, sampleRate, datapointsCount)
+		}
+		// Bloom mode: identify and drop top offenders
 		return e.handleAdaptive(rule, groupKey, m, resourceAttrs, reason, datapointsCount)
 
 	default:
 		return m
 	}
+}
+
+// handleHLLSampling applies deterministic hash-based sampling in HLL mode.
+func (e *Enforcer) handleHLLSampling(rule *Rule, groupKey string, m *metricspb.Metric, resourceAttrs map[string]string, sampleRate float64, datapointsCount int) *metricspb.Metric {
+	e.mu.RLock()
+	rs := e.ruleStats[rule.Name]
+	var gs *groupStats
+	if rs != nil {
+		gs = rs.groups[groupKey]
+	}
+	e.mu.RUnlock()
+
+	if gs == nil {
+		return m
+	}
+
+	ht, ok := gs.cardinality.(*cardinality.HybridTracker)
+	if !ok {
+		// Not a hybrid tracker, fall back to normal drop
+		e.recordDrop(rule.Name, datapointsCount, false)
+		if e.dryRun {
+			return injectDatapointLabels(m, "drop", rule.Name)
+		}
+		return nil
+	}
+
+	// Build series key for sampling decision
+	dpAttrs := extractDatapointAttributes(m)
+	if len(dpAttrs) > 0 {
+		merged := mergeAttrs(resourceAttrs, dpAttrs[0])
+		seriesKey := buildSeriesKey(merged)
+		if ht.ShouldSample([]byte(seriesKey), sampleRate) {
+			e.recordPass(rule.Name, datapointsCount)
+			return injectDatapointLabels(m, "sampled_keep", rule.Name)
+		}
+	}
+
+	e.recordDrop(rule.Name, datapointsCount, false)
+	if e.dryRun {
+		return injectDatapointLabels(m, "sampled_drop", rule.Name)
+	}
+	return nil
+}
+
+// handleAdaptiveHLL applies adaptive sampling based on group cardinality in HLL mode.
+func (e *Enforcer) handleAdaptiveHLL(rule *Rule, groupKey string, m *metricspb.Metric, resourceAttrs map[string]string, reason string, sampleRate float64, datapointsCount int) *metricspb.Metric {
+	// For adaptive in HLL mode, sample the worst offender groups
+	// Calculate per-group sample rate based on contribution
+	e.mu.RLock()
+	rs := e.ruleStats[rule.Name]
+	var gs *groupStats
+	if rs != nil {
+		gs = rs.groups[groupKey]
+	}
+	e.mu.RUnlock()
+
+	if gs == nil {
+		return m
+	}
+
+	ht, ok := gs.cardinality.(*cardinality.HybridTracker)
+	if !ok {
+		// Fall back to standard adaptive
+		return e.handleAdaptive(rule, groupKey, m, resourceAttrs, reason, datapointsCount)
+	}
+
+	// Sample based on how much this group exceeds the limit
+	dpAttrs := extractDatapointAttributes(m)
+	if len(dpAttrs) > 0 {
+		merged := mergeAttrs(resourceAttrs, dpAttrs[0])
+		seriesKey := buildSeriesKey(merged)
+		if ht.ShouldSample([]byte(seriesKey), sampleRate) {
+			e.recordPass(rule.Name, datapointsCount)
+			return injectDatapointLabels(m, "adaptive_keep", rule.Name)
+		}
+	}
+
+	e.recordDrop(rule.Name, datapointsCount, false)
+	if e.dryRun {
+		return injectDatapointLabels(m, "adaptive_drop", rule.Name)
+	}
+	return nil
+}
+
+// getTrackerMode returns the current mode of the tracker for a rule/group.
+func (e *Enforcer) getTrackerMode(ruleName, groupKey string) cardinality.TrackerMode {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	rs := e.ruleStats[ruleName]
+	if rs == nil {
+		return cardinality.TrackerModeBloom
+	}
+	gs := rs.groups[groupKey]
+	if gs == nil {
+		return cardinality.TrackerModeBloom
+	}
+
+	if ht, ok := gs.cardinality.(*cardinality.HybridTracker); ok {
+		return ht.Mode()
+	}
+	return cardinality.TrackerModeBloom
+}
+
+// calculateSampleRate returns min(1.0, limit/count) for the given rule/group.
+func (e *Enforcer) calculateSampleRate(rule *Rule, groupKey string) float64 {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	rs := e.ruleStats[rule.Name]
+	if rs == nil {
+		return 1.0
+	}
+	gs := rs.groups[groupKey]
+	if gs == nil {
+		return 1.0
+	}
+
+	count := gs.cardinality.Count()
+	if count <= 0 {
+		return 1.0
+	}
+
+	limit := rule.MaxCardinality
+	if limit <= 0 {
+		return 1.0
+	}
+
+	rate := float64(limit) / float64(count)
+	if rate >= 1.0 {
+		return 1.0
+	}
+	return rate
+}
+
+// recordTrackerModeSwitch records a Bloom→HLL mode switch event.
+func (e *Enforcer) recordTrackerModeSwitch(ruleName, groupKey string, previous, current cardinality.TrackerMode, cardinalityAtSwitch int64) {
+	e.totalSwitches.Add(1)
+
+	e.mu.Lock()
+	if _, ok := e.trackerModes[ruleName]; !ok {
+		e.trackerModes[ruleName] = make(map[string]*trackerModeInfo)
+	}
+	e.trackerModes[ruleName][groupKey] = &trackerModeInfo{
+		mode:        current,
+		switchCount: 1,
+	}
+	e.mu.Unlock()
+
+	e.logAggregator.Info(
+		fmt.Sprintf("mode_switch:%s:%s", ruleName, groupKey),
+		"tracker mode switched",
+		map[string]interface{}{
+			"rule":                  ruleName,
+			"group":                 groupKey,
+			"previous_mode":         previous.String(),
+			"current_mode":          current.String(),
+			"cardinality_at_switch": cardinalityAtSwitch,
+		},
+		cardinalityAtSwitch,
+	)
+}
+
+// updateTrackerModeInfo updates the tracker mode info for metrics reporting.
+func (e *Enforcer) updateTrackerModeInfo(ruleName, groupKey string, mode cardinality.TrackerMode, sampleRate float64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if _, ok := e.trackerModes[ruleName]; !ok {
+		e.trackerModes[ruleName] = make(map[string]*trackerModeInfo)
+	}
+	info, ok := e.trackerModes[ruleName][groupKey]
+	if !ok {
+		info = &trackerModeInfo{}
+		e.trackerModes[ruleName][groupKey] = info
+	}
+	info.mode = mode
+	info.sampleRate = sampleRate
 }
 
 func (e *Enforcer) handleAdaptive(rule *Rule, groupKey string, m *metricspb.Metric, _ map[string]string, reason string, datapointsCount int) *metricspb.Metric {
@@ -769,6 +990,29 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "# HELP metrics_governor_rule_cache_negative_entries Cached no-match entries\n")
 		fmt.Fprintf(w, "# TYPE metrics_governor_rule_cache_negative_entries gauge\n")
 		fmt.Fprintf(w, "metrics_governor_rule_cache_negative_entries %d\n", e.ruleMatchCache.NegativeEntries())
+	}
+
+	// Hybrid tracker mode metrics
+	fmt.Fprintf(w, "# HELP metrics_governor_tracker_mode Current tracker mode per rule/group (0=bloom, 1=hll)\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_tracker_mode gauge\n")
+	for ruleName, groups := range e.trackerModes {
+		for groupKey, info := range groups {
+			fmt.Fprintf(w, "metrics_governor_tracker_mode{rule=%q,group=%q} %d\n", ruleName, groupKey, int(info.mode))
+		}
+	}
+
+	fmt.Fprintf(w, "# HELP metrics_governor_tracker_switches_total Total Bloom to HLL mode switch events\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_tracker_switches_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_tracker_switches_total %d\n", e.totalSwitches.Load())
+
+	fmt.Fprintf(w, "# HELP metrics_governor_tracker_sample_rate HLL sample rate per rule/group (1.0=no sampling)\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_tracker_sample_rate gauge\n")
+	for ruleName, groups := range e.trackerModes {
+		for groupKey, info := range groups {
+			if info.mode == cardinality.TrackerModeHLL {
+				fmt.Fprintf(w, "metrics_governor_tracker_sample_rate{rule=%q,group=%q} %f\n", ruleName, groupKey, info.sampleRate)
+			}
+		}
 	}
 
 	// Series key pool metrics

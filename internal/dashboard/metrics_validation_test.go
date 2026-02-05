@@ -141,6 +141,11 @@ var knownMetrics = []string{
 	"metrics_governor_cardinality_config_expected_items",
 	"metrics_governor_cardinality_config_fp_rate",
 
+	// Hybrid tracker metrics (limits/enforcer.go)
+	"metrics_governor_tracker_mode",
+	"metrics_governor_tracker_switches_total",
+	"metrics_governor_tracker_sample_rate",
+
 	// Rule cache metrics (limits/enforcer.go)
 	"metrics_governor_rule_cache_evictions_total",
 	"metrics_governor_rule_cache_hit_ratio",
@@ -458,6 +463,8 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_limit",
 		"metrics_governor_rule",
 		"metrics_governor_limits",
+		"metrics_governor_dropped_",
+		"metrics_governor_tracker",
 		"metrics_governor_cardinality",
 		// Caching & pool metrics prefixes
 		"metrics_governor_compression",

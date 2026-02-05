@@ -242,6 +242,7 @@ func TestParseMode(t *testing.T) {
 	}{
 		{"bloom", ModeBloom},
 		{"exact", ModeExact},
+		{"hybrid", ModeHybrid},
 		{"unknown", ModeBloom}, // Default to bloom
 		{"", ModeBloom},
 	}
@@ -261,6 +262,7 @@ func TestModeString(t *testing.T) {
 	}{
 		{ModeBloom, "bloom"},
 		{ModeExact, "exact"},
+		{ModeHybrid, "hybrid"},
 		{Mode(99), "unknown"},
 	}
 
@@ -290,6 +292,17 @@ func TestNewTracker(t *testing.T) {
 	if _, ok := exactTracker.(*ExactTracker); !ok {
 		t.Error("NewTracker with ModeExact should return *ExactTracker")
 	}
+
+	hybridCfg := Config{
+		Mode:              ModeHybrid,
+		ExpectedItems:     1000,
+		FalsePositiveRate: 0.01,
+		HLLThreshold:      500,
+	}
+	hybridTracker := NewTracker(hybridCfg)
+	if _, ok := hybridTracker.(*HybridTracker); !ok {
+		t.Error("NewTracker with ModeHybrid should return *HybridTracker")
+	}
 }
 
 func TestNewTrackerFromGlobal(t *testing.T) {
@@ -312,6 +325,18 @@ func TestNewTrackerFromGlobal(t *testing.T) {
 	tracker = NewTrackerFromGlobal()
 	if _, ok := tracker.(*ExactTracker); !ok {
 		t.Error("NewTrackerFromGlobal with ModeExact should return *ExactTracker")
+	}
+
+	// Test with hybrid mode
+	GlobalConfig = Config{
+		Mode:              ModeHybrid,
+		ExpectedItems:     1000,
+		FalsePositiveRate: 0.01,
+		HLLThreshold:      500,
+	}
+	tracker = NewTrackerFromGlobal()
+	if _, ok := tracker.(*HybridTracker); !ok {
+		t.Error("NewTrackerFromGlobal with ModeHybrid should return *HybridTracker")
 	}
 
 	// Restore original config

@@ -188,9 +188,16 @@ type Config struct {
 	InternMaxValueLength int
 
 	// Cardinality tracking settings
-	CardinalityMode          string  // "bloom" or "exact"
+	CardinalityMode          string  // "bloom", "exact", or "hybrid"
 	CardinalityExpectedItems uint    // Expected unique items per tracker
 	CardinalityFPRate        float64 // False positive rate for Bloom filter
+	CardinalityHLLThreshold  int64   // Cardinality at which hybrid mode switches Bloom→HLL
+	CardinalityHLLPrecision  uint    // HLL precision (registers = 2^precision)
+
+	// Structured logging settings
+	StatsLogInterval    time.Duration // Operational stats log interval (0 = disabled)
+	LimitsLogInterval   time.Duration // Limits enforcement summary log interval (0 = disabled)
+	LimitsLogIndividual bool          // Log individual limit violations (high volume)
 
 	// Bloom persistence settings
 	BloomPersistenceEnabled          bool
@@ -387,9 +394,16 @@ func ParseFlags() *Config {
 	flag.IntVar(&cfg.InternMaxValueLength, "intern-max-value-length", 64, "Max length for value interning (longer values not interned)")
 
 	// Cardinality tracking flags
-	flag.StringVar(&cfg.CardinalityMode, "cardinality-mode", "bloom", "Cardinality tracking mode: bloom (memory-efficient) or exact (100% accurate)")
+	flag.StringVar(&cfg.CardinalityMode, "cardinality-mode", "bloom", "Cardinality tracking mode: bloom (memory-efficient), exact (100% accurate), or hybrid (auto-switch Bloom→HLL)")
 	flag.UintVar(&cfg.CardinalityExpectedItems, "cardinality-expected-items", 100000, "Expected unique items per tracker for Bloom filter sizing")
 	flag.Float64Var(&cfg.CardinalityFPRate, "cardinality-fp-rate", 0.01, "Bloom filter false positive rate (0.01 = 1%)")
+	flag.Int64Var(&cfg.CardinalityHLLThreshold, "cardinality-hll-threshold", 10000, "Cardinality at which hybrid mode switches from Bloom to HLL")
+	flag.UintVar(&cfg.CardinalityHLLPrecision, "cardinality-hll-precision", 14, "HyperLogLog precision (registers = 2^precision, 14 = ~12KB)")
+
+	// Structured logging flags
+	flag.DurationVar(&cfg.StatsLogInterval, "stats-log-interval", 10*time.Second, "Operational stats log interval (0 = disabled)")
+	flag.DurationVar(&cfg.LimitsLogInterval, "limits-log-interval", 10*time.Second, "Limits enforcement summary log interval (0 = disabled)")
+	flag.BoolVar(&cfg.LimitsLogIndividual, "limits-log-individual", false, "Log individual limit violations (high volume, default: false)")
 
 	// Bloom persistence flags
 	flag.BoolVar(&cfg.BloomPersistenceEnabled, "bloom-persistence-enabled", false, "Enable bloom filter state persistence")
@@ -833,6 +847,28 @@ func applyFlagOverrides(cfg *Config) {
 					cfg.CardinalityFPRate = fv
 				}
 			}
+		case "cardinality-hll-threshold":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int64); ok {
+					cfg.CardinalityHLLThreshold = i
+				}
+			}
+		case "cardinality-hll-precision":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(uint); ok {
+					cfg.CardinalityHLLPrecision = i
+				}
+			}
+		case "stats-log-interval":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.StatsLogInterval = d
+			}
+		case "limits-log-interval":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.LimitsLogInterval = d
+			}
+		case "limits-log-individual":
+			cfg.LimitsLogIndividual = f.Value.String() == "true"
 		case "bloom-persistence-enabled":
 			cfg.BloomPersistenceEnabled = f.Value.String() == "true"
 		case "bloom-persistence-path":
@@ -1077,12 +1113,16 @@ func (c *Config) PerformanceConfig() PerformanceConfig {
 
 // CardinalityConfig holds cardinality tracking configuration.
 type CardinalityConfig struct {
-	// Mode is the tracking mode: "bloom" or "exact"
+	// Mode is the tracking mode: "bloom", "exact", or "hybrid"
 	Mode string
 	// ExpectedItems is the expected unique items per tracker (for Bloom sizing)
 	ExpectedItems uint
 	// FPRate is the false positive rate for Bloom filters (e.g., 0.01 = 1%)
 	FPRate float64
+	// HLLThreshold is the cardinality at which hybrid mode switches Bloom→HLL
+	HLLThreshold int64
+	// HLLPrecision is the HLL precision (registers = 2^precision)
+	HLLPrecision uint
 }
 
 // CardinalityConfig returns the cardinality tracking configuration.
@@ -1091,6 +1131,8 @@ func (c *Config) CardinalityConfig() CardinalityConfig {
 		Mode:          c.CardinalityMode,
 		ExpectedItems: c.CardinalityExpectedItems,
 		FPRate:        c.CardinalityFPRate,
+		HLLThreshold:  c.CardinalityHLLThreshold,
+		HLLPrecision:  c.CardinalityHLLPrecision,
 	}
 }
 
@@ -1317,9 +1359,16 @@ OPTIONS:
         -rule-cache-max-size <n>         Maximum entries in the rule matching LRU cache (default: 10000, 0 disables)
 
     Cardinality Tracking:
-        -cardinality-mode <mode>         Tracking mode: bloom (memory-efficient) or exact (100%% accurate) (default: bloom)
+        -cardinality-mode <mode>         Tracking mode: bloom, exact, or hybrid (auto Bloom→HLL) (default: bloom)
         -cardinality-expected-items <n>  Expected unique items per tracker for Bloom sizing (default: 100000)
         -cardinality-fp-rate <rate>      Bloom filter false positive rate (default: 0.01 = 1%%)
+        -cardinality-hll-threshold <n>   Cardinality at which hybrid switches Bloom→HLL (default: 10000)
+        -cardinality-hll-precision <n>   HyperLogLog precision (registers = 2^n) (default: 14 = ~12KB)
+
+    Structured Logging:
+        -stats-log-interval <dur>        Operational stats log interval (default: 10s, 0=disabled)
+        -limits-log-interval <dur>       Limits enforcement summary log interval (default: 10s, 0=disabled)
+        -limits-log-individual           Log individual limit violations (default: false)
 
     Bloom Persistence:
         -bloom-persistence-enabled                Enable bloom filter state persistence (default: false)
@@ -1553,6 +1602,12 @@ func DefaultConfig() *Config {
 		CardinalityMode:          "bloom",
 		CardinalityExpectedItems: 100000,
 		CardinalityFPRate:        0.01,
+		CardinalityHLLThreshold:  10000,
+		CardinalityHLLPrecision:  14,
+		// Structured logging defaults
+		StatsLogInterval:    10 * time.Second,
+		LimitsLogInterval:   10 * time.Second,
+		LimitsLogIndividual: false,
 		// Bloom persistence defaults
 		BloomPersistenceEnabled:          false,
 		BloomPersistencePath:             "./bloom-state",
