@@ -42,20 +42,19 @@ func (c *ruleCache) Get(metricName string) (*Rule, bool) {
 	if c == nil {
 		return nil, false
 	}
-	c.mu.RLock()
+	c.mu.Lock()
 	elem, ok := c.entries[metricName]
-	c.mu.RUnlock()
 	if !ok {
+		c.mu.Unlock()
 		c.misses.Add(1)
 		return nil, false
 	}
-	// Move to front (promote)
-	c.mu.Lock()
+	// Move to front (promote) and read value under the same lock
 	c.order.MoveToFront(elem)
+	rule := elem.Value.(*ruleCacheEntry).rule
 	c.mu.Unlock()
 	c.hits.Add(1)
-	entry := elem.Value.(*ruleCacheEntry)
-	return entry.rule, true
+	return rule, true
 }
 
 // Put adds or updates a cache entry.
