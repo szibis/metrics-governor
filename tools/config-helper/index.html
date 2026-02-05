@@ -728,6 +728,11 @@ function configHelper() {
       this.$watch('targetRetentionUnit', () => this.autoSizeQueue());
       this.$watch('dps', () => this.autoSizeQueue());
       this.$watch('bufferBatchSize', () => this.autoSizeQueue());
+      this.$watch('avgLabels', () => this.autoSizeQueue());
+      this.$watch('avgLabelLen', () => this.autoSizeQueue());
+      // Reverse: queue size changes → update target outage buffer
+      this.$watch('queueMaxSizeVal', () => this.autoSizeRetention());
+      this.$watch('queueMaxSizeUnit', () => this.autoSizeRetention());
 
       // Initialize textarea content from generated YAML
       this.helmText = this.helmYaml;
@@ -756,11 +761,26 @@ function configHelper() {
         if (!this._updatingFromYaml && this.editingTab === 'limits') this.applyLimitsText(val);
       });
     },
+    _queueSyncDirection: null, // 'retention' or 'queue' — prevents sync loops
     autoSizeQueue() {
-      // queueMaxSizeMB = writeThroughput (bytes/sec) * targetRetentionMin * 60 / 1MB
+      if (this._queueSyncDirection === 'queue') return;
+      this._queueSyncDirection = 'retention';
       const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (10 + this.avgLabelLen) + 16)) * 0.3;
       const needed = Math.ceil(bytesPerSec * this.targetRetentionMin * 60 / 1048576);
       this.setQueueMaxSizeMB(Math.max(10, needed));
+      this.$nextTick(() => { this._queueSyncDirection = null; });
+    },
+    autoSizeRetention() {
+      if (this._queueSyncDirection === 'retention') return;
+      this._queueSyncDirection = 'queue';
+      const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (10 + this.avgLabelLen) + 16)) * 0.3;
+      if (bytesPerSec <= 0) { this._queueSyncDirection = null; return; }
+      const retentionSec = (this.queueMaxSizeMB * 1048576) / bytesPerSec;
+      const retentionMin = retentionSec / 60;
+      if (this.targetRetentionUnit === 'days') this.targetRetentionVal = Math.round(retentionMin / 1440 * 100) / 100;
+      else if (this.targetRetentionUnit === 'hours') this.targetRetentionVal = Math.round(retentionMin / 60 * 100) / 100;
+      else this.targetRetentionVal = Math.max(1, Math.round(retentionMin));
+      this.$nextTick(() => { this._queueSyncDirection = null; });
     },
     saveState() {
       const state = {};
