@@ -1,0 +1,44 @@
+name: Deploy Configuration Helper
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/config-helper/**'
+      - 'docs/images/logo.svg'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build site
+        run: |
+          mkdir -p _site/docs/images
+          cp tools/config-helper/index.html _site/index.html
+          cp docs/images/logo.svg _site/docs/images/logo.svg 2>/dev/null || true
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

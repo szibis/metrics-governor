@@ -1,11 +1,14 @@
 package queue
 
 import (
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/szibis/metrics-governor/internal/compression"
 )
 
 func TestNewFastQueue(t *testing.T) {
@@ -958,4 +961,469 @@ func containsHelper(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// --- Compression tests ---
+
+func TestFastQueue_CompressionRoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := FastQueueConfig{
+		Path:               tmpDir,
+		MaxInmemoryBlocks:  2, // Force disk spill
+		ChunkFileSize:      1024 * 1024,
+		MetaSyncInterval:   100 * time.Millisecond,
+		StaleFlushInterval: time.Hour,
+		MaxSize:            100,
+		Compression:        compression.TypeSnappy,
+	}
+
+	fq, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create FastQueue: %v", err)
+	}
+	defer fq.Close()
+
+	// Push various payloads
+	payloads := []string{
+		"hello world",
+		"this is a test of snappy compression in the queue",
+		string(make([]byte, 4096)), // 4KB zeros (highly compressible)
+	}
+
+	for _, p := range payloads {
+		if err := fq.Push([]byte(p)); err != nil {
+			t.Fatalf("Failed to push: %v", err)
+		}
+	}
+
+	// Pop and verify data matches
+	for i, expected := range payloads {
+		data, err := fq.Pop()
+		if err != nil {
+			t.Fatalf("Failed to pop %d: %v", i, err)
+		}
+		if string(data) != expected {
+			t.Errorf("Entry %d: expected len=%d, got len=%d", i, len(expected), len(data))
+		}
+	}
+}
+
+func TestFastQueue_CompressionNone(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := FastQueueConfig{
+		Path:               tmpDir,
+		MaxInmemoryBlocks:  2,
+		ChunkFileSize:      1024 * 1024,
+		MetaSyncInterval:   100 * time.Millisecond,
+		StaleFlushInterval: time.Hour,
+		MaxSize:            100,
+		Compression:        compression.TypeNone,
+	}
+
+	fq, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create FastQueue: %v", err)
+	}
+	defer fq.Close()
+
+	testData := []byte("uncompressed data payload")
+	if err := fq.Push(testData); err != nil {
+		t.Fatalf("Failed to push: %v", err)
+	}
+
+	data, err := fq.Pop()
+	if err != nil {
+		t.Fatalf("Failed to pop: %v", err)
+	}
+	if string(data) != string(testData) {
+		t.Errorf("Expected %q, got %q", testData, data)
+	}
+}
+
+func TestFastQueue_CompressionBackwardCompat(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write data WITHOUT compression
+	cfg := FastQueueConfig{
+		Path:               tmpDir,
+		MaxInmemoryBlocks:  2,
+		ChunkFileSize:      1024 * 1024,
+		MetaSyncInterval:   10 * time.Millisecond,
+		StaleFlushInterval: time.Hour,
+		MaxSize:            100,
+		Compression:        compression.TypeNone,
+	}
+
+	fq1, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create FastQueue: %v", err)
+	}
+
+	for i := 0; i < 5; i++ {
+		if err := fq1.Push([]byte("uncompressed-data")); err != nil {
+			t.Fatalf("Failed to push: %v", err)
+		}
+	}
+
+	fq1.mu.Lock()
+	fq1.flushInmemoryBlocksLocked()
+	fq1.syncMetadataLocked()
+	fq1.mu.Unlock()
+	time.Sleep(50 * time.Millisecond)
+	fq1.Close()
+
+	// Reopen WITH compression enabled — should still read old uncompressed data
+	cfg.Compression = compression.TypeSnappy
+	fq2, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to reopen FastQueue: %v", err)
+	}
+	defer fq2.Close()
+
+	if fq2.Len() != 5 {
+		t.Errorf("Expected 5 entries after recovery, got %d", fq2.Len())
+	}
+
+	for i := 0; i < 5; i++ {
+		data, err := fq2.Pop()
+		if err != nil {
+			t.Fatalf("Failed to pop %d: %v", i, err)
+		}
+		if string(data) != "uncompressed-data" {
+			t.Errorf("Expected 'uncompressed-data', got %q", data)
+		}
+	}
+}
+
+func TestFastQueue_CompressionHeaderFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := FastQueueConfig{
+		Path:               tmpDir,
+		MaxInmemoryBlocks:  1, // Force immediate disk write
+		ChunkFileSize:      1024 * 1024,
+		MetaSyncInterval:   time.Hour,
+		StaleFlushInterval: time.Hour,
+		MaxSize:            100,
+		Compression:        compression.TypeSnappy,
+	}
+
+	fq, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create FastQueue: %v", err)
+	}
+
+	testData := []byte("test-compression-header-flag")
+	if err := fq.Push(testData); err != nil {
+		t.Fatalf("Failed to push: %v", err)
+	}
+
+	// Force flush
+	fq.mu.Lock()
+	fq.flushInmemoryBlocksLocked()
+	if fq.writerBuf != nil {
+		fq.writerBuf.Flush()
+	}
+	fq.mu.Unlock()
+
+	fq.Close()
+
+	// Read raw chunk file and check header
+	entries, _ := os.ReadDir(tmpDir)
+	for _, e := range entries {
+		if len(e.Name()) == 16 { // chunk file
+			data, err := os.ReadFile(filepath.Join(tmpDir, e.Name()))
+			if err != nil {
+				t.Fatalf("Failed to read chunk: %v", err)
+			}
+			if len(data) < blockHeaderSize {
+				continue
+			}
+			lengthField := binary.LittleEndian.Uint64(data[:blockHeaderSize])
+			if lengthField&compressionFlagBit == 0 {
+				t.Error("Expected compression flag bit to be set for snappy-compressed block")
+			}
+			actualLen := lengthField & lengthMask
+			if int(actualLen) >= len(data) {
+				t.Error("Compressed data length should be less than file size")
+			}
+		}
+	}
+}
+
+// --- Buffered writer tests ---
+
+func TestFastQueue_BufferedWriter(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := FastQueueConfig{
+		Path:               tmpDir,
+		MaxInmemoryBlocks:  2,
+		ChunkFileSize:      1024 * 1024,
+		MetaSyncInterval:   100 * time.Millisecond,
+		StaleFlushInterval: time.Hour,
+		MaxSize:            100,
+		WriteBufferSize:    4096, // Small buffer
+		Compression:        compression.TypeNone,
+	}
+
+	fq, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create FastQueue: %v", err)
+	}
+	defer fq.Close()
+
+	// Push many small items to test buffered writes
+	for i := 0; i < 20; i++ {
+		if err := fq.Push([]byte("buffered-write-test")); err != nil {
+			t.Fatalf("Failed to push %d: %v", i, err)
+		}
+	}
+
+	// Verify data integrity
+	for i := 0; i < 20; i++ {
+		data, err := fq.Pop()
+		if err != nil {
+			t.Fatalf("Failed to pop %d: %v", i, err)
+		}
+		if string(data) != "buffered-write-test" {
+			t.Errorf("Expected 'buffered-write-test', got %q", data)
+		}
+	}
+}
+
+func TestFastQueue_BufferedWriterFlushOnClose(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := FastQueueConfig{
+		Path:               tmpDir,
+		MaxInmemoryBlocks:  2,
+		ChunkFileSize:      1024 * 1024,
+		MetaSyncInterval:   10 * time.Millisecond,
+		StaleFlushInterval: time.Hour,
+		MaxSize:            100,
+		WriteBufferSize:    65536, // Large buffer to keep data buffered
+		Compression:        compression.TypeNone,
+	}
+
+	fq, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create FastQueue: %v", err)
+	}
+
+	// Push data that stays in bufio.Writer buffer
+	for i := 0; i < 5; i++ {
+		if err := fq.Push([]byte("flush-on-close-test")); err != nil {
+			t.Fatalf("Failed to push: %v", err)
+		}
+	}
+
+	fq.mu.Lock()
+	fq.flushInmemoryBlocksLocked()
+	fq.syncMetadataLocked()
+	fq.mu.Unlock()
+	time.Sleep(50 * time.Millisecond)
+
+	// Close should flush buffer
+	fq.Close()
+
+	// Reopen and verify all data recovered
+	fq2, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to reopen: %v", err)
+	}
+	defer fq2.Close()
+
+	if fq2.Len() != 5 {
+		t.Errorf("Expected 5 entries after reopen, got %d", fq2.Len())
+	}
+
+	for i := 0; i < 5; i++ {
+		data, err := fq2.Pop()
+		if err != nil {
+			t.Fatalf("Failed to pop %d: %v", i, err)
+		}
+		if string(data) != "flush-on-close-test" {
+			t.Errorf("Expected 'flush-on-close-test', got %q", data)
+		}
+	}
+}
+
+// --- Write coalescing tests ---
+
+func TestFastQueue_WriteCoalescing(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := FastQueueConfig{
+		Path:               tmpDir,
+		MaxInmemoryBlocks:  100, // Keep blocks in memory
+		ChunkFileSize:      1024 * 1024,
+		MetaSyncInterval:   time.Hour,
+		StaleFlushInterval: time.Hour,
+		MaxSize:            1000,
+		Compression:        compression.TypeNone,
+	}
+
+	fq, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create FastQueue: %v", err)
+	}
+	defer fq.Close()
+
+	// Push blocks into channel
+	for i := 0; i < 50; i++ {
+		if err := fq.Push([]byte("coalesce-test")); err != nil {
+			t.Fatalf("Failed to push %d: %v", i, err)
+		}
+	}
+
+	// Manually trigger flush — all blocks should be coalesced
+	fq.mu.Lock()
+	err = fq.flushInmemoryBlocksLocked()
+	fq.mu.Unlock()
+	if err != nil {
+		t.Fatalf("Flush failed: %v", err)
+	}
+
+	// Verify all data is readable
+	for i := 0; i < 50; i++ {
+		data, err := fq.Pop()
+		if err != nil {
+			t.Fatalf("Failed to pop %d: %v", i, err)
+		}
+		if string(data) != "coalesce-test" {
+			t.Errorf("Expected 'coalesce-test', got %q", data)
+		}
+	}
+}
+
+// --- Updated defaults test ---
+
+func TestFastQueue_UpdatedDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := FastQueueConfig{
+		Path: tmpDir,
+	}
+
+	fq, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create FastQueue: %v", err)
+	}
+	defer fq.Close()
+
+	if fq.cfg.MaxInmemoryBlocks != 2048 {
+		t.Errorf("Expected default inmemory blocks 2048, got %d", fq.cfg.MaxInmemoryBlocks)
+	}
+	if fq.cfg.StaleFlushInterval != 30*time.Second {
+		t.Errorf("Expected default stale flush 30s, got %v", fq.cfg.StaleFlushInterval)
+	}
+	if fq.cfg.WriteBufferSize != 262144 {
+		t.Errorf("Expected default write buffer 262144, got %d", fq.cfg.WriteBufferSize)
+	}
+	if fq.cfg.Compression != compression.TypeSnappy {
+		t.Errorf("Expected default compression 'snappy', got '%s'", fq.cfg.Compression)
+	}
+}
+
+// --- Increased inmemory blocks test ---
+
+func TestFastQueue_IncreasedInmemoryBlocks(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := FastQueueConfig{
+		Path:               tmpDir,
+		MaxInmemoryBlocks:  2048,
+		ChunkFileSize:      1024 * 1024,
+		MetaSyncInterval:   time.Hour,
+		StaleFlushInterval: time.Hour,
+		MaxSize:            10000,
+		Compression:        compression.TypeNone,
+	}
+
+	fq, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create FastQueue: %v", err)
+	}
+	defer fq.Close()
+
+	// Push 1000 blocks — all should stay in memory (< 2048)
+	for i := 0; i < 1000; i++ {
+		if err := fq.Push([]byte("inmem-test")); err != nil {
+			t.Fatalf("Failed to push %d: %v", i, err)
+		}
+	}
+
+	// All should be in-memory (no disk spill)
+	if fq.diskBytes.Load() != 0 {
+		t.Errorf("Expected 0 disk bytes with 1000 blocks in 2048-size channel, got %d", fq.diskBytes.Load())
+	}
+
+	// Verify all data
+	for i := 0; i < 1000; i++ {
+		data, err := fq.Pop()
+		if err != nil {
+			t.Fatalf("Failed to pop %d: %v", i, err)
+		}
+		if string(data) != "inmem-test" {
+			t.Errorf("Expected 'inmem-test', got %q", data)
+		}
+	}
+}
+
+// --- Compression + persistence test ---
+
+func TestFastQueue_CompressionPersistence(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := FastQueueConfig{
+		Path:               tmpDir,
+		MaxInmemoryBlocks:  2,
+		ChunkFileSize:      1024 * 1024,
+		MetaSyncInterval:   10 * time.Millisecond,
+		StaleFlushInterval: time.Hour,
+		MaxSize:            100,
+		Compression:        compression.TypeSnappy,
+	}
+
+	// Write compressed data, close, reopen, verify
+	fq1, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create: %v", err)
+	}
+
+	for i := 0; i < 10; i++ {
+		if err := fq1.Push([]byte("compressed-persistent-data")); err != nil {
+			t.Fatalf("Failed to push: %v", err)
+		}
+	}
+
+	fq1.mu.Lock()
+	fq1.flushInmemoryBlocksLocked()
+	fq1.syncMetadataLocked()
+	fq1.mu.Unlock()
+	time.Sleep(50 * time.Millisecond)
+	fq1.Close()
+
+	fq2, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("Failed to reopen: %v", err)
+	}
+	defer fq2.Close()
+
+	if fq2.Len() != 10 {
+		t.Errorf("Expected 10 entries, got %d", fq2.Len())
+	}
+
+	for i := 0; i < 10; i++ {
+		data, err := fq2.Pop()
+		if err != nil {
+			t.Fatalf("Failed to pop %d: %v", i, err)
+		}
+		if string(data) != "compressed-persistent-data" {
+			t.Errorf("Expected 'compressed-persistent-data', got %q", data)
+		}
+	}
 }

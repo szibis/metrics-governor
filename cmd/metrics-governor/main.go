@@ -142,6 +142,8 @@ func main() {
 				ChunkSize:                  cfg.QueueChunkSize,
 				MetaSyncInterval:           cfg.QueueMetaSyncInterval,
 				StaleFlushInterval:         cfg.QueueStaleFlushInterval,
+				WriteBufferSize:            cfg.QueueWriteBufferSize,
+				Compression:                cfg.QueueCompression,
 			},
 		}
 
@@ -186,6 +188,8 @@ func main() {
 				ChunkSize:                  cfg.QueueChunkSize,
 				MetaSyncInterval:           cfg.QueueMetaSyncInterval,
 				StaleFlushInterval:         cfg.QueueStaleFlushInterval,
+				WriteBufferSize:            cfg.QueueWriteBufferSize,
+				Compression:                cfg.QueueCompression,
 			}
 
 			queuedExp, queueErr := exporter.NewQueued(exp, queueCfg)

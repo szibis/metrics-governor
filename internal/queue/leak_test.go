@@ -87,3 +87,86 @@ func TestLeakCheck_FastQueue(t *testing.T) {
 		t.Fatalf("Close() error = %v", err)
 	}
 }
+
+func TestLeakCheck_FastQueue_Compression(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	tmpDir, err := os.MkdirTemp("", "fq-compression-leak-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := FastQueueConfig{
+		Path:               tmpDir,
+		MaxInmemoryBlocks:  64,
+		ChunkFileSize:      1024 * 1024,
+		MetaSyncInterval:   100 * time.Millisecond,
+		StaleFlushInterval: 100 * time.Millisecond,
+		MaxSize:            1000,
+		Compression:        "snappy",
+	}
+
+	fq, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("NewFastQueue() error = %v", err)
+	}
+
+	for i := 0; i < 10; i++ {
+		if err := fq.Push([]byte("compressed-leak-test")); err != nil {
+			t.Fatalf("Push failed: %v", err)
+		}
+	}
+
+	for i := 0; i < 10; i++ {
+		if _, err := fq.Pop(); err != nil {
+			t.Fatalf("Pop failed: %v", err)
+		}
+	}
+
+	if err := fq.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+}
+
+func TestLeakCheck_FastQueue_BufferedWriter(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	tmpDir, err := os.MkdirTemp("", "fq-buffered-leak-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := FastQueueConfig{
+		Path:               tmpDir,
+		MaxInmemoryBlocks:  64,
+		ChunkFileSize:      1024 * 1024,
+		MetaSyncInterval:   100 * time.Millisecond,
+		StaleFlushInterval: 100 * time.Millisecond,
+		MaxSize:            1000,
+		WriteBufferSize:    262144,
+		Compression:        "none",
+	}
+
+	fq, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("NewFastQueue() error = %v", err)
+	}
+
+	for i := 0; i < 10; i++ {
+		if err := fq.Push([]byte("buffered-leak-test")); err != nil {
+			t.Fatalf("Push failed: %v", err)
+		}
+	}
+
+	for i := 0; i < 10; i++ {
+		if _, err := fq.Pop(); err != nil {
+			t.Fatalf("Pop failed: %v", err)
+		}
+	}
+
+	if err := fq.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+}

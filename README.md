@@ -33,7 +33,7 @@
 - **Consistent Sharding** - Automatic endpoint discovery from Kubernetes headless services with consistent hashing ensures the same time-series always route to the same backend (works for both OTLP and PRW)
 - **Pipeline Parity** - OTLP and PRW pipelines have identical resilience: persistent disk queue, split-on-error, circuit breaker, exponential backoff, and failover drain
 - **Production-Ready** - Byte-aware batch splitting, concurrent exports, failover queue, FastQueue durable persistence with circuit breaker and exponential backoff, auto memory limits, TLS/mTLS, authentication, compression (gzip/zstd/snappy), and Helm chart included
-- **High-Performance Optimizations** - String interning reduces allocations by 76%, concurrency limiting prevents goroutine explosion, Bloom filters reduce cardinality tracking memory by 98% (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
+- **High-Performance Optimizations** - String interning reduces allocations by 76%, concurrency limiting prevents goroutine explosion. Three cardinality modes: Bloom filters (98% less memory), HyperLogLog (constant memory), and Hybrid auto-switching (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
 - **Zero Configuration Start** - Works out of the box with sensible defaults; add limits and sharding when needed
 
 ## Architecture
@@ -170,8 +170,10 @@ Plan your deployment in seconds. The **interactive Configuration Helper** estima
 | 📝 | [**Logging**](docs/logging.md) | JSON structured logging, log aggregation |
 | 🧪 | [**Testing**](docs/testing.md) | Test environment, Docker Compose, verification |
 | 🛠️ | [**Development**](docs/development.md) | Building, project structure, contributing |
-| ⚡ | [**Performance**](docs/performance.md) | Bloom filters, string interning, queue optimization |
+| ⚡ | [**Performance**](docs/performance.md) | Bloom filters, string interning, queue I/O optimization |
 | 🛡️ | [**Resilience**](docs/resilience.md) | Circuit breaker, exponential backoff, memory limits |
+| 💾 | [**Bloom Persistence**](docs/bloom-persistence.md) | Save/restore bloom filter state across restarts |
+| 🖥️ | [**Configuration Helper**](docs/config-helper.md) | Interactive browser tool for deployment planning |
 
 ---
 
@@ -179,19 +181,24 @@ Plan your deployment in seconds. The **interactive Configuration Helper** estima
 
 | Capability | Description |
 |------------|-------------|
-| **OTLP Protocol** | Full gRPC and HTTP receiver/exporter with TLS and authentication |
-| **PRW Protocol** | Prometheus Remote Write 1.0/2.0 with native histograms, VictoriaMetrics mode |
+| **OTLP Protocol** | Full gRPC and HTTP receiver/exporter with TLS, mTLS, and authentication (bearer token, basic auth) |
+| **PRW Protocol** | Prometheus Remote Write 1.0/2.0 with native histograms, VictoriaMetrics mode, custom endpoint paths |
 | **Intelligent Buffering** | Configurable buffer with byte-aware batch splitting, concurrent export workers, and failover queue (both OTLP and PRW) |
-| **Adaptive Limits** | Per-group tracking with smart dropping of top offenders only |
-| **Real-time Statistics** | Per-metric cardinality, datapoints, and limit violation tracking |
-| **Prometheus Integration** | Native `/metrics` endpoint for monitoring the proxy itself |
-| **Consistent Sharding** | Distribute metrics across multiple backends via DNS discovery (OTLP and PRW) |
-| **Persistent Queue** | FastQueue disk-backed queue with circuit breaker, exponential backoff, automatic retry, and split-on-error — identical for both OTLP and PRW pipelines |
+| **Adaptive Limits** | Per-group tracking with smart dropping of top offenders only, dry-run mode for safe rollouts |
+| **Real-time Statistics** | Per-metric cardinality, datapoints, and limit violation tracking with Prometheus metrics |
+| **Consistent Sharding** | Distribute metrics across multiple backends via K8s DNS discovery with virtual nodes (OTLP and PRW) |
+| **Persistent Queue** | FastQueue disk-backed queue with snappy compression, 256KB buffered I/O, write coalescing, circuit breaker, exponential backoff, automatic retry, and split-on-error — identical for both OTLP and PRW pipelines |
+| **Disk I/O Optimizations** | Buffered writer (256KB), write coalescing, per-block snappy compression toggle — reduces syscalls ~128x and disk I/O ~70% |
 | **Failover Queue** | Memory or disk-backed safety net catches all export failures with automatic drain loop — data is never silently dropped |
 | **Split-on-Error** | Oversized batches automatically split in half and retry on HTTP 413 and "too big" errors from backends like VictoriaMetrics, Thanos, Mimir, and Cortex |
-| **Memory Optimized** | Bloom filter cardinality tracking uses 98% less memory (1.2MB vs 75MB per 1M series) |
-| **Performance Optimized** | String interning and concurrency limiting for high-throughput workloads |
-| **Production Ready** | Helm chart, multi-arch Docker images, graceful shutdown |
+| **Cardinality Tracking** | Three modes: **Bloom filter** (98% less memory, 1.2MB vs 75MB per 1M series), **HyperLogLog** (constant ~12KB per tracker, ideal for high-cardinality metrics), and **Hybrid** (auto-switches Bloom→HLL at configurable threshold) |
+| **Bloom Persistence** | Save and restore Bloom/HLL filter state across pod restarts — eliminates cold-start re-learning period with configurable save intervals and TTL |
+| **Performance Optimized** | String interning (76% fewer allocations), concurrency limiting, and configurable cardinality mode selection |
+| **Human-Readable Config** | CLI flags and YAML config accept Mi/Gi/Ti notation for all byte-size values (e.g. `--queue-max-bytes 2Gi`) |
+| **Configuration Helper** | Interactive browser-based tool for deployment planning — estimates CPU, memory, disk I/O, K8s pod sizing, per-pod traffic splitting, and generates ready-to-use YAML |
+| **Cloud Storage Guidance** | Auto-recommends AWS, Azure, and GCP block storage classes based on calculated per-pod IOPS and throughput requirements |
+| **Graceful Shutdown** | Configurable timeout drains in-flight exports and persists queue state before termination |
+| **Production Ready** | Helm chart, multi-arch Docker images, 880+ tests including pipeline integrity, durability, and resilience test suites |
 
 ---
 

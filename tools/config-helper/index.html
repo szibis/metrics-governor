@@ -35,10 +35,12 @@
     .btn-row { display: flex; gap: .5rem; margin-top: .5rem; }
     .btn-row button { font-size: .85em; padding: .4rem .8rem; }
     .help-tip { font-size: .85em; color: var(--pico-muted-color); margin-top: .1rem; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
-    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
-    .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .75rem; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .4rem .6rem; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem .75rem; }
+    .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: .5rem .75rem; }
+    .grid-3 label, .grid-2 label { margin-bottom: 0; }
+    .grid-3 input, .grid-3 select, .grid-2 input, .grid-2 select { margin-bottom: .15rem; padding: .4rem .5rem; }
     @media (max-width: 768px) { .grid-2, .grid-3, .grid-4, .grid-5 { grid-template-columns: 1fr; } }
     @media (min-width: 769px) and (max-width: 1100px) { .grid-5 { grid-template-columns: repeat(3, 1fr); } }
     summary { cursor: pointer; font-weight: 600; }
@@ -70,7 +72,14 @@
 <header>
   <div class="header-row">
     <div class="logo-title">
-      <img src="docs/images/logo.svg" alt="metrics-governor logo" onerror="this.style.display='none'">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="48" height="48" style="width:48px;height:48px">
+        <defs><linearGradient id="sg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#4f46e5"/><stop offset="100%" stop-color="#7c3aed"/></linearGradient><linearGradient id="sf" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#4f46e5" stop-opacity="0.18"/><stop offset="100%" stop-color="#7c3aed" stop-opacity="0.08"/></linearGradient><linearGradient id="b1" x1="0%" y1="100%" x2="0%" y2="0%"><stop offset="0%" stop-color="#0891b2"/><stop offset="100%" stop-color="#22d3ee"/></linearGradient><linearGradient id="b2" x1="0%" y1="100%" x2="0%" y2="0%"><stop offset="0%" stop-color="#059669"/><stop offset="100%" stop-color="#34d399"/></linearGradient><linearGradient id="br" x1="0%" y1="100%" x2="0%" y2="0%"><stop offset="0%" stop-color="#dc2626"/><stop offset="100%" stop-color="#f87171"/></linearGradient><linearGradient id="hh" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#f1f5f9"/><stop offset="100%" stop-color="#94a3b8"/></linearGradient><linearGradient id="hw" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#92400e"/><stop offset="100%" stop-color="#78350f"/></linearGradient><filter id="ds"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000" flood-opacity="0.35"/></filter><clipPath id="sc"><path d="M256 44 L444 108 Q452 112 452 120 L452 256 Q452 346 352 412 L264 468 Q256 472 248 468 L160 412 Q60 346 60 256 L60 120 Q60 112 68 108 Z"/></clipPath></defs>
+        <path d="M256 24 L460 96 Q470 100 470 110 L470 262 Q470 366 360 438 L264 500 Q256 504 248 500 L152 438 Q42 366 42 262 L42 110 Q42 100 52 96 Z" fill="none" stroke="#4f46e5" stroke-width="4" stroke-linejoin="round" opacity="0.15"/>
+        <path d="M256 30 L458 100 Q468 104 468 114 L468 262 Q468 364 360 436 L264 498 Q256 502 248 498 L152 436 Q44 364 44 262 L44 114 Q44 104 54 100 Z" fill="url(#sf)"/><path d="M256 30 L458 100 Q468 104 468 114 L468 262 Q468 364 360 436 L264 498 Q256 502 248 498 L152 436 Q44 364 44 262 L44 114 Q44 104 54 100 Z" fill="none" stroke="url(#sg)" stroke-width="18" stroke-linejoin="round"/>
+        <path d="M256 58 L434 118 Q440 121 440 126 L440 252 Q440 334 344 398 L264 452 Q256 456 248 452 L168 398 Q72 334 72 252 L72 126 Q72 121 78 118 Z" fill="none" stroke="url(#sg)" stroke-width="3.5" stroke-linejoin="round" opacity="0.25"/>
+        <g clip-path="url(#sc)"><rect x="120" y="300" width="64" height="120" rx="8" ry="8" fill="url(#b1)" filter="url(#ds)"/><rect x="210" y="268" width="64" height="152" rx="8" ry="8" fill="url(#b2)" filter="url(#ds)"/><rect x="310" y="155" width="64" height="265" rx="8" ry="8" fill="url(#br)" filter="url(#ds)" opacity="0.85"/><line x1="306" y1="232" x2="378" y2="212" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity="0.7"/><line x1="306" y1="248" x2="378" y2="228" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity="0.5"/><line x1="324" y1="218" x2="350" y2="248" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity="0.4"/><line x1="80" y1="260" x2="440" y2="260" stroke="#dc2626" stroke-width="5" stroke-dasharray="16,8" opacity="0.75"/></g>
+        <g transform="translate(130, 68) rotate(38, 110, 90)" filter="url(#ds)"><rect x="96" y="126" width="28" height="130" rx="7" ry="7" fill="url(#hw)" stroke="#713f12" stroke-width="3"/><rect x="14" y="52" width="192" height="80" rx="12" ry="12" fill="url(#hh)" stroke="#64748b" stroke-width="4"/><rect x="0" y="58" width="26" height="66" rx="7" ry="7" fill="#e2e8f0" stroke="#94a3b8" stroke-width="3"/><rect x="194" y="58" width="26" height="66" rx="7" ry="7" fill="#e2e8f0" stroke="#94a3b8" stroke-width="3"/><rect x="36" y="60" width="148" height="10" rx="5" ry="5" fill="#fff" opacity="0.3"/></g>
+      </svg>
       <h1 style="margin-bottom:0">metrics-governor Configuration Helper</h1>
     </div>
     <button class="theme-toggle" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'" :title="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
@@ -100,7 +109,7 @@
         </span>
       </summary>
 
-    <div class="grid-2" style="margin-top:.75rem">
+    <div class="grid-2" style="margin-top:.5rem">
       <label>
         Datapoints/sec
         <input type="number" x-model.number="dps" min="1" step="1000">
@@ -133,12 +142,20 @@
         </div>
         <small class="help-tip">Data the queue should hold during a backend outage. Queue size is auto-calculated.</small>
       </label>
+      <label>
+        Disk queue compression
+        <div style="display:flex;align-items:center;gap:.5rem;margin-top:.25rem">
+          <input type="checkbox" x-model="queueCompression" role="switch">
+          <span x-text="queueCompression ? 'snappy (recommended)' : 'disabled'" :style="queueCompression ? 'color:var(--status-green)' : 'color:var(--pico-muted-color)'" style="font-size:.9em"></span>
+        </div>
+        <small class="help-tip">Snappy reduces disk I/O ~70% and storage ~3x. <a href="docs/performance.md#queue" target="_blank">Docs</a></small>
+      </label>
     </div>
 
     <template x-if="advanced">
       <div>
-        <hr>
-        <h4>Advanced Tuning</h4>
+        <hr style="margin:.5rem 0">
+        <h4 style="margin-bottom:.35rem;font-size:.95em">Advanced Tuning</h4>
         <div class="grid-3">
           <label>
             Avg labels per series
@@ -196,6 +213,14 @@
               <option value="disk">disk (persistent)</option>
             </select>
             <small class="help-tip"><a href="docs/performance.md#queue" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Disk queue compression
+            <div style="display:flex;align-items:center;gap:.5rem;margin-top:.25rem">
+              <input type="checkbox" x-model="queueCompression" role="switch">
+              <span x-text="queueCompression ? 'snappy (recommended)' : 'disabled'" :style="queueCompression ? 'color:var(--status-green)' : 'color:var(--pico-muted-color)'" style="font-size:.9em"></span>
+            </div>
+            <small class="help-tip">Snappy compression reduces disk I/O ~70%. <a href="docs/performance.md#queue" target="_blank">Docs</a></small>
           </label>
           <label>
             Target outage buffer
@@ -263,17 +288,22 @@
         <div class="est-val" :class="cpuStatusClass" x-text="estCores >= 1 ? estCores.toFixed(2) + ' cores' : Math.ceil(estCores * 1000) + 'm'"></div>
         <small x-text="(estCores >= 1 ? Math.ceil(estCores * 1000) + 'm' : estCores.toFixed(2) + ' cores') + ' \u2014 ' + availableCores + ' available (' + cpuUtilPct + '%)'"></small>
         <div><span :class="cpuBadgeClass" x-text="cpuStatusLabel"></span></div>
+        <small class="help-tip" x-text="'At ~' + (_est.dps_per_core/1000) + 'k dps/core, ' + (dps/1000) + 'k dps needs ' + estCores.toFixed(1) + ' of ' + availableCores + ' cores (' + cpuUtilPct + '% utilization). Target: <' + Math.round(_est.cpu_target_utilization*100) + '%.'"></small>
       </div>
 
       <!-- Memory -->
       <div class="est-card">
         <h4>Memory (Total)</h4>
         <div class="est-val" x-text="fmtBytes(totalMemory)"></div>
-        <small>Trackers: <span x-text="fmtBytes(trackerMemory)"></span></small><br>
-        <small>Buffer: <span x-text="fmtBytes(bufferMemory)"></span></small><br>
+        <small>Trackers: <span x-text="fmtBytes(trackerMemory)"></span></small>
+        <small class="help-tip" x-text="' (' + uniqueMetrics + ' metrics \u00d7 ' + cardinalityMode + ' tracker)'"></small><br>
+        <small>Buffer: <span x-text="fmtBytes(bufferMemory)"></span></small>
+        <small class="help-tip" x-text="' (' + bufferMaxSize + ' slots \u00d7 ' + avgSeriesSize + ' B/series)'"></small><br>
         <small>Base overhead: ~50 MB</small>
+        <small class="help-tip"> (Go runtime, gRPC, HTTP server, Prometheus metrics)</small>
         <template x-if="queueType === 'memory'">
-          <small><br>Queue (memory): <span x-text="fmtBytes(queueMaxSizeMB * 1048576)"></span></small>
+          <span><br><small>Queue (memory): <span x-text="fmtBytes(queueMaxSizeMB * 1048576)"></span></small>
+          <small class="help-tip"> (in-process buffer for retries)</small></span>
         </template>
       </div>
 
@@ -283,11 +313,26 @@
         <template x-if="queueType === 'disk'">
           <div>
             <div class="est-val" x-text="fmtBytes(pvcSize * 1048576)"></div>
-            <small>PVC size (incl. 20% headroom)</small><br>
-            <small>Write IOPS: <span x-text="writeIOPS"></span></small><br>
+            <small>PVC size (incl. 20% headroom)</small>
+            <small class="help-tip"> &mdash; <span x-text="fmtBytes(queueMaxSizeMB * 1048576)"></span> data + 20% for filesystem overhead and metadata. <a href="docs/performance.md#queue" target="_blank">Docs</a></small><br>
+            <small>Compression: <span :style="queueCompression ? 'color:var(--status-green)' : 'color:var(--pico-muted-color)'" x-text="queueCompression ? 'snappy (' + compressionRatio + 'x ratio)' : 'off'"></span></small><br>
+            <small>Write IOPS: <span x-text="writeIOPS"></span></small>
+            <small class="help-tip"> (buffered, ~128x fewer syscalls)</small><br>
             <small>Read IOPS: <span x-text="readIOPS"></span></small><br>
             <small>Total IOPS: <span x-text="totalIOPS"></span></small><br>
-            <small>Write throughput: <span x-text="fmtBytes(writeThroughput) + '/s'"></span></small>
+            <template x-if="queueCompression">
+              <span>
+                <small>Raw throughput: <span x-text="fmtBytes(writeThroughput / compressionRatio) + '/s'"></span></small><br>
+                <small>Effective (compressed): <b x-text="fmtBytes(writeThroughput) + '/s'"></b></small>
+              </span>
+            </template>
+            <template x-if="!queueCompression">
+              <small>Write throughput: <span x-text="fmtBytes(writeThroughput) + '/s'"></span></small>
+            </template>
+            <div style="margin-top:.35rem;padding-top:.35rem;border-top:1px dashed var(--pico-muted-border-color)">
+              <small class="help-tip"><b>Per pod</b> (traffic split by LB): <span x-text="fmtBytes(perPodPvcSize * 1048576)"></span> PVC, <span x-text="perPodWriteIOPS"></span> IOPS, <span x-text="fmtBytes(perPodWriteThroughput) + '/s'"></span> &mdash; <span x-text="(perPodDps >= 1000 ? (perPodDps/1000).toFixed(1) + 'k' : perPodDps) + ' dps/pod'"></span></small><br>
+              <small class="help-tip"><b>I/O optimizations:</b> 256KB buffered writer, write coalescing, <span x-text="queueCompression ? 'snappy compression' : 'compression disabled'"></span>. <a href="docs/performance.md#queue" target="_blank">Details</a></small>
+            </div>
           </div>
         </template>
         <template x-if="queueType === 'memory'">
@@ -396,6 +441,7 @@
           <small x-text="(perPodCpuReq / 1000).toFixed(2) + ' cores'"></small><br>
           <small x-text="'Limit: ' + perPodCpuLimit + 'm (' + (perPodCpuLimit / 1000).toFixed(2) + ' cores)'"></small>
           <br><small class="help-tip">Limit = request &times; 1.5</small>
+          <br><small class="help-tip" x-text="'Traffic per pod: ' + (perPodDps >= 1000 ? (perPodDps/1000).toFixed(1) + 'k' : perPodDps) + ' dps (' + (dps >= 1000 ? (dps/1000).toFixed(0) + 'k' : dps) + ' total \u00f7 ' + actualPods + ' pods)'"></small>
         </div>
         <div class="est-card">
           <h4>Per-Pod Memory</h4>
@@ -407,8 +453,12 @@
           <h4>Per-Pod Disk</h4>
           <template x-if="queueType === 'disk'">
             <div>
-              <div class="est-val" x-text="fmtBytes(pvcSize * 1048576)"></div>
-              <small>PVC size (incl. 20% headroom)</small>
+              <div class="est-val" x-text="fmtBytes(perPodPvcSize * 1048576)"></div>
+              <small>PVC size (incl. 20% headroom)</small><br>
+              <small>Queue: <span x-text="fmtBytes(perPodQueueMB * 1048576)"></span></small><br>
+              <small>Write IOPS: <span x-text="perPodWriteIOPS"></span></small><br>
+              <small>Throughput: <span x-text="fmtBytes(perPodWriteThroughput) + '/s'"></span></small>
+              <small class="help-tip" x-text="'Traffic: ' + (perPodDps >= 1000 ? (perPodDps/1000).toFixed(1) + 'k' : perPodDps) + ' dps/pod'"></small>
             </div>
           </template>
           <template x-if="queueType === 'memory'">
@@ -420,9 +470,10 @@
           <small>CPU: <span x-text="totalClusterCpu + 'm (' + (totalClusterCpu / 1000).toFixed(2) + ' cores)'"></span></small><br>
           <small>Memory: <span x-text="fmtBytes(totalClusterMem)"></span></small><br>
           <template x-if="queueType === 'disk'">
-            <small>Disk: <span x-text="fmtBytes(actualPods * pvcSize * 1048576)"></span></small>
+            <small>Disk: <span x-text="fmtBytes(actualPods * perPodPvcSize * 1048576)"></span></small>
           </template>
           <br><small>Outage buffer: <span class="status-green" style="font-weight:700" x-text="queueRetentionStr"></span></small>
+          <small class="help-tip" x-text="actualPods + ' pods \u00d7 ' + (perPodDps >= 1000 ? (perPodDps/1000).toFixed(1) + 'k' : perPodDps) + ' dps each'"></small>
         </div>
       </div>
 
@@ -459,19 +510,29 @@
                 <td>30% headroom for Go GC overhead and transient allocations</td>
               </tr>
               <tr>
+                <td><b>Per-pod DPS</b></td>
+                <td><code>ceil(total_dps / pods)</code></td>
+                <td>Traffic split evenly across pods via load balancer</td>
+              </tr>
+              <tr>
+                <td><b>Per-pod queue</b></td>
+                <td><code>ceil(total_queue_bytes / pods)</code></td>
+                <td>Each pod only buffers its fraction of total traffic during outage</td>
+              </tr>
+              <tr>
                 <td><b>PVC size</b></td>
-                <td><code>queue_max_bytes &times; 1.2</code></td>
-                <td>20% headroom over queue capacity for filesystem metadata and compaction</td>
+                <td><code>per_pod_queue_bytes &times; 1.2</code></td>
+                <td>20% headroom over per-pod queue capacity for filesystem metadata and compaction</td>
               </tr>
               <tr>
                 <td><b>Write throughput</b></td>
-                <td><code>dps &times; series_size &times; compression_ratio</code></td>
-                <td>Sustained bytes/sec to disk during queuing. Batch size cancels out algebraically, but achieving this throughput requires the disk to support the IOPS below</td>
+                <td><code>per_pod_dps &times; series_size &times; compression_ratio</code></td>
+                <td>Sustained bytes/sec per pod to disk. compression_ratio = 0.3 with snappy, 1.0 without</td>
               </tr>
               <tr>
                 <td><b>Write IOPS</b></td>
-                <td><code>ceil(dps / batch_size)</code></td>
-                <td>Each batch flush = 1 write I/O. Smaller batches &rarr; more IOPS needed &rarr; can become the bottleneck that limits effective throughput. Increase batch size to reduce IOPS pressure</td>
+                <td><code>ceil(per_pod_dps / batch_size)</code></td>
+                <td>Per-pod batch flushes. Smaller batches &rarr; more IOPS. Increase batch size to reduce IOPS pressure</td>
               </tr>
               <tr>
                 <td><b>Read IOPS</b></td>
@@ -480,7 +541,7 @@
               </tr>
               <tr>
                 <td><b>Total cluster disk</b></td>
-                <td><code>pods &times; PVC_size</code></td>
+                <td><code>pods &times; per_pod_PVC_size</code></td>
                 <td>Each pod gets its own PersistentVolumeClaim (ReadWriteOnce)</td>
               </tr>
             </tbody>
@@ -734,13 +795,17 @@
 
 <footer>
   <small>metrics-governor Configuration Helper &mdash; open this file directly in your browser, no build step needed.</small>
+  <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid var(--pico-muted-border-color);text-align:center">
+    <button style="background:var(--status-red);border-color:var(--status-red);color:#fff;font-size:.85em;padding:.4rem 1rem" @click="if(confirm('This will erase all saved settings and reload the page with defaults. Continue?')){localStorage.removeItem('mg-config-state');localStorage.removeItem('mg-theme');location.reload()}">Reset all settings to defaults</button>
+    <br><small style="color:var(--pico-muted-color)">Clears saved inputs, rules, and theme from browser storage and reloads with factory defaults.</small>
+  </div>
 </footer>
 
 <script type="application/json" id="config-meta">
 {
   "defaults": {
     "bloom_fpr": 0.01,
-    "buffer_batch_size": 1000,
+    "buffer_batch_size": 5000,
     "buffer_size": 10000,
     "cardinality_mode": "bloom",
     "exporter_endpoint": "localhost:4317",
@@ -751,12 +816,16 @@
     "hll_threshold": 10000,
     "http_listen": ":4318",
     "intern_max_value_length": 64,
+    "queue_compression": "snappy",
     "queue_full_behavior": "drop_oldest",
+    "queue_inmemory_blocks": 2048,
     "queue_max_bytes": 1073741824,
     "queue_max_retries": 3,
     "queue_max_retry_delay": "5m",
     "queue_retry_interval": "5s",
+    "queue_stale_flush": "30s",
     "queue_type": "memory",
+    "queue_write_buffer_size": 262144,
     "retention_window": "60s",
     "stats_addr": ":9090",
     "string_interning": true
@@ -966,6 +1035,7 @@ function configHelper() {
       this.bloomFPR = meta.defaults.bloom_fpr;
       this.hllThreshold = meta.defaults.hll_threshold;
       this.retentionWindow = meta.defaults.retention_window;
+      this.queueCompression = meta.defaults.queue_compression !== 'none';
 
       this.applyTheme();
       this.$watch('theme', () => this.applyTheme());
@@ -976,7 +1046,7 @@ function configHelper() {
         'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
         'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
-        'queueType','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
+        'queueType','queueCompression','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
         'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
         'podOverride',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
@@ -995,9 +1065,16 @@ function configHelper() {
       this.$watch('bufferBatchSize', () => this.autoSizeQueue());
       this.$watch('avgLabels', () => this.autoSizeQueue());
       this.$watch('avgLabelLen', () => this.autoSizeQueue());
+      this.$watch('queueCompression', () => this.autoSizeQueue());
       // Reverse: queue size changes → update target outage buffer
       this.$watch('queueMaxSizeVal', () => this.autoSizeRetention());
       this.$watch('queueMaxSizeUnit', () => this.autoSizeRetention());
+      // Auto-sync Fit Check from main inputs
+      this.$watch('availableCores', (val) => {
+        this.fitCpuVal = this.fitCpuUnit === 'm' ? val * 1000 : val;
+      });
+      this.$watch('totalMemory', () => this.autoSizeFitMem());
+      this.$watch('perPodPvcSize', () => this.autoSizeFitDisk());
 
       // Initialize textarea content from generated YAML
       this.helmText = this.helmYaml;
@@ -1030,7 +1107,7 @@ function configHelper() {
     autoSizeQueue() {
       if (this._queueSyncDirection === 'queue') return;
       this._queueSyncDirection = 'retention';
-      const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (this._est.label_key_overhead_bytes + this.avgLabelLen) + this._est.series_base_overhead_bytes)) * this._est.compression_ratio;
+      const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (this._est.label_key_overhead_bytes + this.avgLabelLen) + this._est.series_base_overhead_bytes)) * this.compressionRatio;
       const needed = Math.ceil(bytesPerSec * this.targetRetentionMin * 60 / 1048576);
       this.setQueueMaxSizeMB(Math.max(10, needed));
       this.$nextTick(() => { this._queueSyncDirection = null; });
@@ -1038,7 +1115,7 @@ function configHelper() {
     autoSizeRetention() {
       if (this._queueSyncDirection === 'retention') return;
       this._queueSyncDirection = 'queue';
-      const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (this._est.label_key_overhead_bytes + this.avgLabelLen) + this._est.series_base_overhead_bytes)) * this._est.compression_ratio;
+      const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (this._est.label_key_overhead_bytes + this.avgLabelLen) + this._est.series_base_overhead_bytes)) * this.compressionRatio;
       if (bytesPerSec <= 0) { this._queueSyncDirection = null; return; }
       const retentionSec = (this.queueMaxSizeMB * 1048576) / bytesPerSec;
       const retentionMin = retentionSec / 60;
@@ -1047,13 +1124,24 @@ function configHelper() {
       else this.targetRetentionVal = Math.max(1, Math.round(retentionMin));
       this.$nextTick(() => { this._queueSyncDirection = null; });
     },
+    autoSizeFitMem() {
+      const memMB = this.totalMemory / 1048576;
+      if (memMB >= 1024) { this.fitMemUnit = 'GB'; this.fitMemVal = Math.round(memMB / 1024 * 10) / 10; }
+      else { this.fitMemUnit = 'MB'; this.fitMemVal = Math.ceil(memMB); }
+    },
+    autoSizeFitDisk() {
+      if (this.queueType !== 'disk') return;
+      const diskMB = this.perPodPvcSize;
+      if (diskMB >= 1024) { this.fitDiskUnit = 'GB'; this.fitDiskVal = Math.round(diskMB / 1024 * 10) / 10; }
+      else { this.fitDiskUnit = 'MB'; this.fitDiskVal = Math.ceil(diskMB); }
+    },
     saveState() {
       const state = {};
       const fields = [
         'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
         'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
-        'queueType','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
+        'queueType','queueCompression','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
         'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
         'podOverride',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
@@ -1072,7 +1160,7 @@ function configHelper() {
           'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
           'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
           'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
-          'queueType','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
+          'queueType','queueCompression','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
           'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
           'podOverride',
           'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
@@ -1119,6 +1207,7 @@ function configHelper() {
     bufferBatchSize: 1000,
     queueMaxRetries: 3,
     queueType: 'memory',
+    queueCompression: true,
     queueMaxSizeVal: 1,
     queueMaxSizeUnit: 'GB',
     targetRetentionVal: 10,
@@ -1199,6 +1288,13 @@ function configHelper() {
       if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
       return (b / 1073741824).toFixed(2) + ' GB';
     },
+    fmtBytesYaml(b) {
+      if (b >= 1073741824 && b % 1073741824 === 0) return (b / 1073741824) + 'Gi';
+      if (b >= 1048576 && b % 1048576 === 0) return (b / 1048576) + 'Mi';
+      if (b >= 1048576) return (b / 1048576).toFixed(1) + 'Mi';
+      if (b >= 1024 && b % 1024 === 0) return (b / 1024) + 'Ki';
+      return b;
+    },
 
     // ---- CPU estimation ----
     get estCores() { return this.dps / this._est.dps_per_core; },
@@ -1252,14 +1348,23 @@ function configHelper() {
       else if (this.queueMaxSizeUnit === 'GB') this.queueMaxSizeVal = Math.round(mb / 1024 * 100) / 100;
       else this.queueMaxSizeVal = Math.max(10, Math.ceil(mb));
     },
-    // ---- Queue disk estimation ----
+    // ---- Queue disk estimation (global / total) ----
     get avgBatchBytes() { return this.bufferBatchSize * this.avgSeriesSize; },
-    get compressionRatio() { return this._est.compression_ratio; },
+    get compressionRatio() { return this.queueCompression ? this._est.compression_ratio : 1.0; },
     get writeThroughput() { return (this.dps / this.bufferBatchSize) * this.avgBatchBytes * this.compressionRatio; },
     get writeIOPS() { return Math.ceil(this.dps / this.bufferBatchSize); },
     get readIOPS() { return Math.ceil(this.writeIOPS * this._est.read_iops_ratio); },
     get totalIOPS() { return this.writeIOPS + this.readIOPS; },
     get pvcSize() { return Math.ceil(this.queueMaxSizeMB * this._est.pvc_headroom_factor); },
+
+    // ---- Per-pod queue estimation (traffic split evenly via load balancer) ----
+    get perPodDps() { return Math.ceil(this.dps / this.actualPods); },
+    get perPodQueueMB() { return Math.max(10, Math.ceil(this.queueMaxSizeMB / this.actualPods)); },
+    get perPodPvcSize() { return Math.ceil(this.perPodQueueMB * this._est.pvc_headroom_factor); },
+    get perPodWriteThroughput() { return this.perPodDps * this.avgSeriesSize * this.compressionRatio; },
+    get perPodWriteIOPS() { return Math.ceil(this.perPodDps / this.bufferBatchSize); },
+    get perPodReadIOPS() { return Math.ceil(this.perPodWriteIOPS * this._est.read_iops_ratio); },
+    get perPodTotalIOPS() { return this.perPodWriteIOPS + this.perPodReadIOPS; },
 
     // ---- Queue retention ----
     get queueRetentionSec() {
@@ -1289,7 +1394,7 @@ function configHelper() {
       return this.fitDiskVal;
     },
     get estMemMB() { return this.totalMemory / 1048576; },
-    get estDiskMB() { return this.queueType === 'disk' ? this.pvcSize : 0; },
+    get estDiskMB() { return this.queueType === 'disk' ? this.perPodPvcSize : 0; },
     get fitCpuOk() { return this.estCores <= this.fitCpuCores; },
     get fitMemOk() { return this.estMemMB <= this.fitMemMB; },
     get fitDiskOk() { return this.estDiskMB <= this.fitDiskMB; },
@@ -1343,9 +1448,9 @@ function configHelper() {
       return { effIOPS, effTput, burstTput, burstIOPS, volGiB };
     },
     get storageOptions() {
-      const iops = this.totalIOPS;
-      const tput = this.writeThroughput / 1048576; // MB/s
-      const sizeGiB = Math.max(1, Math.ceil(this.pvcSize / 1024));
+      const iops = this.perPodTotalIOPS;
+      const tput = this.perPodWriteThroughput / 1048576; // MB/s per pod
+      const sizeGiB = Math.max(1, Math.ceil(this.perPodPvcSize / 1024));
       const disks = this._storage[this.cloudProvider] || [];
 
       return disks.map(disk => {
@@ -1415,10 +1520,10 @@ function configHelper() {
       y += `\nresources:\n`;
       y += `  requests:\n`;
       y += `    cpu: "${this.perPodCpuReq}m"\n`;
-      y += `    memory: "${Math.ceil(this.perPodMemReq / 1048576)}Mi"\n`;
+      y += `    memory: "${this.fmtBytesYaml(this.perPodMemReq)}"\n`;
       y += `  limits:\n`;
       y += `    cpu: "${this.perPodCpuLimit}m"\n`;
-      y += `    memory: "${Math.ceil(this.perPodMemLimit / 1048576)}Mi"\n`;
+      y += `    memory: "${this.fmtBytesYaml(this.perPodMemLimit)}"\n`;
       y += `\nconfig:\n`;
       y += `  grpcListen: ":4317"\n`;
       y += `  httpListen: ":4318"\n`;
@@ -1441,7 +1546,9 @@ function configHelper() {
       y += `  enabled: true\n`;
       y += `  path: "/data/queue"\n`;
       y += `  maxSize: 10000\n`;
-      y += `  maxBytes: ${this.queueMaxSizeMB * 1048576}\n`;
+      y += `  maxBytes: "${this.fmtBytesYaml(this.perPodQueueMB * 1048576)}"  # per-pod (${this.fmtBytes(this.queueMaxSizeMB * 1048576)} total \u00f7 ${this.actualPods} pods)\n`;
+      y += `  compression: "${this.queueCompression ? 'snappy' : 'none'}"\n`;
+      y += `  writeBufferSize: "${this.fmtBytesYaml(262144)}"\n`;
       y += `  retryInterval: "5s"\n`;
       y += `  maxRetryDelay: "5m"\n`;
       y += `  fullBehavior: "drop_oldest"\n`;
@@ -1454,7 +1561,7 @@ function configHelper() {
         y += `  storageClassName: "${this.recommendedStorageClass}"\n`;
         y += `  accessModes:\n`;
         y += `    - ReadWriteOnce\n`;
-        y += `  size: "${this.pvcSize}Mi"\n`;
+        y += `  size: "${this.perPodPvcSize}Mi"  # per-pod queue + 20% headroom\n`;
         if (this.cloudProvider !== 'none') {
           const driver = csi[this.cloudProvider] || 'kubernetes.io/no-provisioner';
           const dt = recDiskType || 'default';
@@ -1468,8 +1575,8 @@ function configHelper() {
           y += `# parameters:\n`;
           y += `#   type: ${dt}\n`;
           if (this.cloudProvider === 'aws') {
-            y += `#   iops: "${this.totalIOPS}"\n`;
-            y += `#   throughput: "${Math.ceil(this.writeThroughput / 1048576)}"\n`;
+            y += `#   iops: "${this.perPodTotalIOPS}"\n`;
+            y += `#   throughput: "${Math.ceil(this.perPodWriteThroughput / 1048576)}"\n`;
           }
           y += `# volumeBindingMode: WaitForFirstConsumer\n`;
         }
@@ -1507,14 +1614,18 @@ function configHelper() {
         y += `  enabled: true\n`;
         y += `  type: disk\n`;
         y += `  path: "/var/lib/metrics-governor/queue"\n`;
-        y += `  max_bytes: ${this.queueMaxSizeMB * 1048576}\n`;
+        y += `  max_bytes: "${this.fmtBytesYaml(this.perPodQueueMB * 1048576)}"  # per-pod (${this.fmtBytes(this.queueMaxSizeMB * 1048576)} total \u00f7 ${this.actualPods} pods)\n`;
+        y += `  compression: ${this.queueCompression ? 'snappy' : 'none'}\n`;
+        y += `  write_buffer_size: "${this.fmtBytesYaml(262144)}"\n`;
         y += `  retry_interval: 5s\n`;
         y += `  max_retry_delay: 5m\n`;
       } else {
         y += `\nqueue:\n`;
         y += `  enabled: true\n`;
         y += `  type: memory\n`;
-        y += `  max_bytes: ${this.queueMaxSizeMB * 1048576}\n`;
+        y += `  max_bytes: "${this.fmtBytesYaml(this.perPodQueueMB * 1048576)}"  # per-pod (${this.fmtBytes(this.queueMaxSizeMB * 1048576)} total \u00f7 ${this.actualPods} pods)\n`;
+        y += `  compression: ${this.queueCompression ? 'snappy' : 'none'}\n`;
+        y += `  write_buffer_size: "${this.fmtBytesYaml(262144)}"\n`;
         y += `  retry_interval: 5s\n`;
         y += `  max_retry_delay: 5m\n`;
       }
@@ -1608,16 +1719,19 @@ function configHelper() {
       return parseFloat(s) * 1000;
     },
 
-    parseSizeToMB(val) {
+    parseSizeToBytes(val) {
       if (val === undefined) return undefined;
       const s = String(val).trim();
-      if (s.endsWith('Mi')) return parseFloat(s);
-      if (s.endsWith('Gi')) return parseFloat(s) * 1024;
-      if (s.endsWith('Ti')) return parseFloat(s) * 1048576;
-      // Plain number → assume bytes
-      const n = parseFloat(s);
-      if (!isNaN(n) && n > 1048576) return Math.ceil(n / 1048576);
-      return n;
+      if (s.endsWith('Ti')) return parseFloat(s) * 1099511627776;
+      if (s.endsWith('Gi')) return parseFloat(s) * 1073741824;
+      if (s.endsWith('Mi')) return parseFloat(s) * 1048576;
+      if (s.endsWith('Ki')) return parseFloat(s) * 1024;
+      return parseFloat(s);
+    },
+    parseSizeToMB(val) {
+      const b = this.parseSizeToBytes(val);
+      if (b === undefined || isNaN(b)) return undefined;
+      return Math.ceil(b / 1048576);
     },
 
     applyHelmText(text) {
@@ -1633,8 +1747,11 @@ function configHelper() {
           if (v !== undefined) this.bufferBatchSize = v;
         }
         if (m['queue.maxBytes'] !== undefined) {
-          const v = this.parseYamlNum(m['queue.maxBytes']);
-          if (v !== undefined) this.setQueueMaxSizeMB(Math.ceil(v / 1048576));
+          const b = this.parseSizeToBytes(m['queue.maxBytes']);
+          if (b !== undefined && !isNaN(b)) this.setQueueMaxSizeMB(Math.max(10, Math.ceil(b / 1048576)));
+        }
+        if (m['queue.compression'] !== undefined) {
+          this.queueCompression = m['queue.compression'] !== 'none';
         }
         if (m['replicaCount'] !== undefined) {
           const pods = this.parseYamlNum(m['replicaCount']);
@@ -1688,8 +1805,11 @@ function configHelper() {
           if (['memory', 'disk'].includes(v)) this.queueType = v;
         }
         if (m['queue.max_bytes'] !== undefined) {
-          const v = this.parseYamlNum(m['queue.max_bytes']);
-          if (v !== undefined) this.setQueueMaxSizeMB(Math.max(10, Math.ceil(v / 1048576)));
+          const b = this.parseSizeToBytes(m['queue.max_bytes']);
+          if (b !== undefined && !isNaN(b)) this.setQueueMaxSizeMB(Math.max(10, Math.ceil(b / 1048576)));
+        }
+        if (m['queue.compression'] !== undefined) {
+          this.queueCompression = m['queue.compression'] !== 'none';
         }
       } finally {
         this.$nextTick(() => { this._updatingFromYaml = false; });
@@ -1796,7 +1916,7 @@ function configHelper() {
       if (this.perPodMemLimit < this.perPodMemReq) issues.push({ type: 'error', msg: 'Memory limit should be >= memory request' });
       if (this.bufferBatchSize > this.bufferMaxSize) issues.push({ type: 'warn', msg: 'batchSize exceeds bufferSize - batches will never fill completely' });
       if (this.queueMaxSizeMB < 10) issues.push({ type: 'warn', msg: 'Queue size < 10 MB may not provide meaningful outage buffering' });
-      if (this.actualPods > 10) issues.push({ type: 'warn', msg: `High pod count (${this.actualPods}) - consider increasing cores per pod` });
+      if (this.actualPods > 10) issues.push({ type: 'warn', msg: `High pod count (${this.actualPods}) - this may be driven by memory, I/O, or cardinality requirements rather than CPU. Consider adjusting batch size, compression, or cardinality mode` });
       if (this.cpuUtil > 0.9) issues.push({ type: 'warn', msg: 'CPU utilization > 90% - may experience throttling under load spikes' });
       if (this.queueType === 'disk' && this.pvcSize > 10240) issues.push({ type: 'warn', msg: 'PVC size > 10 GB - verify cloud storage limits for your tier' });
       if (issues.length === 0) issues.push({ type: 'ok', msg: 'Valid - no issues found' });

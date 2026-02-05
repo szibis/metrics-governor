@@ -31,8 +31,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.FlushInterval != 5*time.Second {
 		t.Errorf("expected FlushInterval 5s, got %v", cfg.FlushInterval)
 	}
-	if cfg.MaxBatchSize != 1000 {
-		t.Errorf("expected MaxBatchSize 1000, got %d", cfg.MaxBatchSize)
+	if cfg.MaxBatchSize != 5000 {
+		t.Errorf("expected MaxBatchSize 5000, got %d", cfg.MaxBatchSize)
 	}
 	if cfg.StatsAddr != ":9090" {
 		t.Errorf("expected StatsAddr ':9090', got '%s'", cfg.StatsAddr)
@@ -558,4 +558,80 @@ func TestQueueConfig(t *testing.T) {
 	if queueCfg.TargetUtilization != 0.9 {
 		t.Errorf("expected TargetUtilization 0.9, got %v", queueCfg.TargetUtilization)
 	}
+}
+
+func TestByteSizeFlagTypes(t *testing.T) {
+	// Test byteSizeFlag (int64)
+	t.Run("byteSizeFlag", func(t *testing.T) {
+		var val int64
+		f := &byteSizeFlag{target: &val}
+
+		tests := []struct {
+			input string
+			want  int64
+		}{
+			{"1Gi", 1073741824},
+			{"512Mi", 536870912},
+			{"256Ki", 262144},
+			{"1073741824", 1073741824},
+			{"1.5Gi", 1610612736},
+		}
+		for _, tc := range tests {
+			if err := f.Set(tc.input); err != nil {
+				t.Fatalf("Set(%q) error: %v", tc.input, err)
+			}
+			if val != tc.want {
+				t.Errorf("Set(%q): got %d, want %d", tc.input, val, tc.want)
+			}
+			got := f.Get().(int64)
+			if got != tc.want {
+				t.Errorf("Get() after Set(%q): got %d, want %d", tc.input, got, tc.want)
+			}
+		}
+		// Verify String() returns human-readable format
+		f.Set("1Gi")
+		if s := f.String(); s != "1Gi" {
+			t.Errorf("String() after Set(1Gi): got %q, want %q", s, "1Gi")
+		}
+	})
+
+	// Test byteSizeIntFlag (int)
+	t.Run("byteSizeIntFlag", func(t *testing.T) {
+		var val int
+		f := &byteSizeIntFlag{target: &val}
+
+		if err := f.Set("256Ki"); err != nil {
+			t.Fatalf("Set(256Ki) error: %v", err)
+		}
+		if val != 262144 {
+			t.Errorf("Set(256Ki): got %d, want 262144", val)
+		}
+		got := f.Get().(int)
+		if got != 262144 {
+			t.Errorf("Get() = %d, want 262144", got)
+		}
+		if s := f.String(); s != "256Ki" {
+			t.Errorf("String() = %q, want %q", s, "256Ki")
+		}
+	})
+
+	// Test that these flags work with Go's flag package
+	t.Run("flag_integration", func(t *testing.T) {
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		var maxBytes int64 = 1073741824
+		var bufSize = 262144
+
+		fs.Var(&byteSizeFlag{target: &maxBytes}, "max-bytes", "test")
+		fs.Var(&byteSizeIntFlag{target: &bufSize}, "buf-size", "test")
+
+		if err := fs.Parse([]string{"-max-bytes", "2Gi", "-buf-size", "512Ki"}); err != nil {
+			t.Fatalf("Parse error: %v", err)
+		}
+		if maxBytes != 2*1073741824 {
+			t.Errorf("max-bytes = %d, want %d", maxBytes, 2*1073741824)
+		}
+		if bufSize != 512*1024 {
+			t.Errorf("buf-size = %d, want %d", bufSize, 512*1024)
+		}
+	})
 }

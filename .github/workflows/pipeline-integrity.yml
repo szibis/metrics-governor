@@ -1,0 +1,337 @@
+name: Pipeline Integrity
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  ci-filter:
+    uses: ./.github/workflows/ci-filter.yml
+
+  data-integrity-tests:
+    needs: [ci-filter]
+    runs-on: ubuntu-latest
+    if: >-
+      needs.ci-filter.outputs.skip_tests != 'true' &&
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
+    outputs:
+      success: ${{ steps.run.outputs.success }}
+      total: ${{ steps.run.outputs.total }}
+      passed: ${{ steps.run.outputs.passed }}
+      failed: ${{ steps.run.outputs.failed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run data integrity tests
+        id: run
+        run: |
+          set +e
+          go test -race -run 'TestDataIntegrity_' -count=1 -timeout=5m -v ./internal/... 2>&1 | tee results.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
+          FAILED_TESTS=$(grep -c '^--- FAIL:' results.txt)
+          TOTAL_TESTS=$((PASSED_TESTS + FAILED_TESTS))
+
+          echo "total=${TOTAL_TESTS}" >> $GITHUB_OUTPUT
+          echo "passed=${PASSED_TESTS}" >> $GITHUB_OUTPUT
+          echo "failed=${FAILED_TESTS}" >> $GITHUB_OUTPUT
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+          fi
+          exit $EXIT_CODE
+
+  durability-tests:
+    needs: [ci-filter]
+    runs-on: ubuntu-latest
+    if: >-
+      needs.ci-filter.outputs.skip_tests != 'true' &&
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
+    outputs:
+      success: ${{ steps.run.outputs.success }}
+      total: ${{ steps.run.outputs.total }}
+      passed: ${{ steps.run.outputs.passed }}
+      failed: ${{ steps.run.outputs.failed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run durability tests
+        id: run
+        run: |
+          set +e
+          go test -race -run 'TestDurability_' -count=1 -timeout=5m -v ./internal/... 2>&1 | tee results.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
+          FAILED_TESTS=$(grep -c '^--- FAIL:' results.txt)
+          TOTAL_TESTS=$((PASSED_TESTS + FAILED_TESTS))
+
+          echo "total=${TOTAL_TESTS}" >> $GITHUB_OUTPUT
+          echo "passed=${PASSED_TESTS}" >> $GITHUB_OUTPUT
+          echo "failed=${FAILED_TESTS}" >> $GITHUB_OUTPUT
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+          fi
+          exit $EXIT_CODE
+
+  resilience-tests:
+    needs: [ci-filter]
+    runs-on: ubuntu-latest
+    if: >-
+      needs.ci-filter.outputs.skip_tests != 'true' &&
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
+    outputs:
+      success: ${{ steps.run.outputs.success }}
+      total: ${{ steps.run.outputs.total }}
+      passed: ${{ steps.run.outputs.passed }}
+      failed: ${{ steps.run.outputs.failed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run resilience tests
+        id: run
+        run: |
+          set +e
+          go test -race -run 'TestResilience_' -count=1 -timeout=5m -v ./internal/... 2>&1 | tee results.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
+          FAILED_TESTS=$(grep -c '^--- FAIL:' results.txt)
+          TOTAL_TESTS=$((PASSED_TESTS + FAILED_TESTS))
+
+          echo "total=${TOTAL_TESTS}" >> $GITHUB_OUTPUT
+          echo "passed=${PASSED_TESTS}" >> $GITHUB_OUTPUT
+          echo "failed=${FAILED_TESTS}" >> $GITHUB_OUTPUT
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+          fi
+          exit $EXIT_CODE
+
+  consistency-tests:
+    needs: [ci-filter]
+    runs-on: ubuntu-latest
+    if: >-
+      needs.ci-filter.outputs.skip_tests != 'true' &&
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
+    outputs:
+      success: ${{ steps.run.outputs.success }}
+      total: ${{ steps.run.outputs.total }}
+      passed: ${{ steps.run.outputs.passed }}
+      failed: ${{ steps.run.outputs.failed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run consistency tests
+        id: run
+        run: |
+          set +e
+          go test -race -run 'TestConsistency_' -count=1 -timeout=5m -v ./internal/... 2>&1 | tee results.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
+          FAILED_TESTS=$(grep -c '^--- FAIL:' results.txt)
+          TOTAL_TESTS=$((PASSED_TESTS + FAILED_TESTS))
+
+          echo "total=${TOTAL_TESTS}" >> $GITHUB_OUTPUT
+          echo "passed=${PASSED_TESTS}" >> $GITHUB_OUTPUT
+          echo "failed=${FAILED_TESTS}" >> $GITHUB_OUTPUT
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+          fi
+          exit $EXIT_CODE
+
+  pipeline-integrity-comment:
+    needs: [ci-filter, data-integrity-tests, durability-tests, resilience-tests, consistency-tests]
+    runs-on: ubuntu-latest
+    if: >-
+      always() &&
+      needs.ci-filter.outputs.skip_tests != 'true' &&
+      github.event_name == 'pull_request' &&
+      !contains(github.event.pull_request.labels.*.name, 'release:skip')
+    steps:
+      - name: Generate pipeline integrity report
+        id: report
+        run: |
+          # Collect results with defaults
+          DI_SUCCESS="${{ needs.data-integrity-tests.outputs.success }}"
+          DI_SUCCESS="${DI_SUCCESS:-false}"
+          DI_TOTAL="${{ needs.data-integrity-tests.outputs.total }}"
+          DI_TOTAL="${DI_TOTAL:-0}"
+          DI_PASSED="${{ needs.data-integrity-tests.outputs.passed }}"
+          DI_PASSED="${DI_PASSED:-0}"
+          DI_FAILED="${{ needs.data-integrity-tests.outputs.failed }}"
+          DI_FAILED="${DI_FAILED:-0}"
+
+          DUR_SUCCESS="${{ needs.durability-tests.outputs.success }}"
+          DUR_SUCCESS="${DUR_SUCCESS:-false}"
+          DUR_TOTAL="${{ needs.durability-tests.outputs.total }}"
+          DUR_TOTAL="${DUR_TOTAL:-0}"
+          DUR_PASSED="${{ needs.durability-tests.outputs.passed }}"
+          DUR_PASSED="${DUR_PASSED:-0}"
+          DUR_FAILED="${{ needs.durability-tests.outputs.failed }}"
+          DUR_FAILED="${DUR_FAILED:-0}"
+
+          RES_SUCCESS="${{ needs.resilience-tests.outputs.success }}"
+          RES_SUCCESS="${RES_SUCCESS:-false}"
+          RES_TOTAL="${{ needs.resilience-tests.outputs.total }}"
+          RES_TOTAL="${RES_TOTAL:-0}"
+          RES_PASSED="${{ needs.resilience-tests.outputs.passed }}"
+          RES_PASSED="${RES_PASSED:-0}"
+          RES_FAILED="${{ needs.resilience-tests.outputs.failed }}"
+          RES_FAILED="${RES_FAILED:-0}"
+
+          CON_SUCCESS="${{ needs.consistency-tests.outputs.success }}"
+          CON_SUCCESS="${CON_SUCCESS:-false}"
+          CON_TOTAL="${{ needs.consistency-tests.outputs.total }}"
+          CON_TOTAL="${CON_TOTAL:-0}"
+          CON_PASSED="${{ needs.consistency-tests.outputs.passed }}"
+          CON_PASSED="${CON_PASSED:-0}"
+          CON_FAILED="${{ needs.consistency-tests.outputs.failed }}"
+          CON_FAILED="${CON_FAILED:-0}"
+
+          # Compute totals
+          TOTAL_TESTS=$((DI_TOTAL + DUR_TOTAL + RES_TOTAL + CON_TOTAL))
+          TOTAL_PASSED=$((DI_PASSED + DUR_PASSED + RES_PASSED + CON_PASSED))
+          TOTAL_FAILED=$((DI_FAILED + DUR_FAILED + RES_FAILED + CON_FAILED))
+
+          # Overall status
+          if [ "$DI_SUCCESS" = "true" ] && [ "$DUR_SUCCESS" = "true" ] && [ "$RES_SUCCESS" = "true" ] && [ "$CON_SUCCESS" = "true" ]; then
+            OVERALL_STATUS="PASS"
+            OVERALL_ICON="✅"
+          else
+            OVERALL_STATUS="FAIL"
+            OVERALL_ICON="❌"
+          fi
+
+          # Status helpers
+          status_icon() {
+            if [ "$1" = "true" ]; then echo "✅ Passed"; else echo "❌ Failed"; fi
+          }
+
+          cat > pipeline-comment.md << COMMENT_EOF
+          ## 🔬 Pipeline Integrity Report
+
+          | Status | Result |
+          |--------|--------|
+          | **Overall** | ${OVERALL_ICON} **${OVERALL_STATUS}** |
+          | **Total Tests** | ${TOTAL_TESTS} |
+          | **Passed** | ${TOTAL_PASSED} |
+          | **Failed** | ${TOTAL_FAILED} |
+
+          ### Test Results
+
+          | Suite | Tests | Passed | Failed | Status |
+          |-------|:-----:|:------:|:------:|--------|
+          | Data Integrity | ${DI_TOTAL} | ${DI_PASSED} | ${DI_FAILED} | $(status_icon "$DI_SUCCESS") |
+          | Durability | ${DUR_TOTAL} | ${DUR_PASSED} | ${DUR_FAILED} | $(status_icon "$DUR_SUCCESS") |
+          | Resilience | ${RES_TOTAL} | ${RES_PASSED} | ${RES_FAILED} | $(status_icon "$RES_SUCCESS") |
+          | Consistency | ${CON_TOTAL} | ${CON_PASSED} | ${CON_FAILED} | $(status_icon "$CON_SUCCESS") |
+          | **Total** | **${TOTAL_TESTS}** | **${TOTAL_PASSED}** | **${TOTAL_FAILED}** | ${OVERALL_ICON} |
+
+          <details>
+          <summary>What these tests check</summary>
+
+          - **Data Integrity**: End-to-end datapoint accounting — every metric pushed into the pipeline comes out through the exporter
+          - **Durability**: FIFO ordering, crash recovery, corruption tolerance, mixed compression, graceful shutdown preservation
+          - **Resilience**: Network failure recovery, circuit breaker lifecycle, drain-on-shutdown, split-on-error, concurrent failure races
+          - **Consistency**: Batch splitting correctness, byte-split limits, flush count accuracy, metadata state consistency
+
+          </details>
+          COMMENT_EOF
+
+          cat pipeline-comment.md
+
+      - name: Post pipeline integrity comment
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            let comment = fs.readFileSync('pipeline-comment.md', 'utf8');
+
+            // Add timestamp
+            const timestamp = new Date().toISOString();
+            comment += `\n\n_Last updated: ${timestamp}_`;
+
+            // Find existing pipeline integrity comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c =>
+              (c.user.login === 'github-actions[bot]' || c.user.login === 'github-actions') &&
+              c.body.includes('Pipeline Integrity Report')
+            );
+
+            if (botComment) {
+              console.log(`Updating existing comment ${botComment.id}`);
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              console.log('Creating new pipeline integrity comment');
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            }

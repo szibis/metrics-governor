@@ -352,8 +352,8 @@ func TestApplyDefaults(t *testing.T) {
 	if cfg.Buffer.Size != 10000 {
 		t.Errorf("expected default buffer size 10000, got %d", cfg.Buffer.Size)
 	}
-	if cfg.Buffer.BatchSize != 1000 {
-		t.Errorf("expected default batch size 1000, got %d", cfg.Buffer.BatchSize)
+	if cfg.Buffer.BatchSize != 5000 {
+		t.Errorf("expected default batch size 5000, got %d", cfg.Buffer.BatchSize)
 	}
 	if cfg.Stats.Address != ":9090" {
 		t.Errorf("expected default stats address ':9090', got %s", cfg.Stats.Address)
@@ -540,8 +540,8 @@ func TestApplyDefaultsFastQueue(t *testing.T) {
 	cfg := &YAMLConfig{}
 	cfg.ApplyDefaults()
 
-	if cfg.Exporter.Queue.InmemoryBlocks != 256 {
-		t.Errorf("expected default inmemory_blocks 256, got %d", cfg.Exporter.Queue.InmemoryBlocks)
+	if cfg.Exporter.Queue.InmemoryBlocks != 2048 {
+		t.Errorf("expected default inmemory_blocks 2048, got %d", cfg.Exporter.Queue.InmemoryBlocks)
 	}
 	if cfg.Exporter.Queue.ChunkSize != 512*1024*1024 {
 		t.Errorf("expected default chunk_size 512MB, got %d", cfg.Exporter.Queue.ChunkSize)
@@ -549,8 +549,14 @@ func TestApplyDefaultsFastQueue(t *testing.T) {
 	if time.Duration(cfg.Exporter.Queue.MetaSyncInterval) != time.Second {
 		t.Errorf("expected default meta_sync_interval 1s, got %v", cfg.Exporter.Queue.MetaSyncInterval)
 	}
-	if time.Duration(cfg.Exporter.Queue.StaleFlushInterval) != 5*time.Second {
-		t.Errorf("expected default stale_flush_interval 5s, got %v", cfg.Exporter.Queue.StaleFlushInterval)
+	if time.Duration(cfg.Exporter.Queue.StaleFlushInterval) != 30*time.Second {
+		t.Errorf("expected default stale_flush_interval 30s, got %v", cfg.Exporter.Queue.StaleFlushInterval)
+	}
+	if cfg.Exporter.Queue.WriteBufferSize != 262144 {
+		t.Errorf("expected default write_buffer_size 262144, got %d", cfg.Exporter.Queue.WriteBufferSize)
+	}
+	if cfg.Exporter.Queue.Compression != "snappy" {
+		t.Errorf("expected default compression 'snappy', got '%s'", cfg.Exporter.Queue.Compression)
 	}
 }
 
@@ -699,5 +705,278 @@ memory:
 	// Verify memory
 	if cfg.Memory.LimitRatio != 0.8 {
 		t.Errorf("expected limit_ratio 0.8, got %f", cfg.Memory.LimitRatio)
+	}
+}
+
+// --- ByteSize tests ---
+
+func TestParseByteSize(t *testing.T) {
+	tests := []struct {
+		input string
+		want  int64
+		err   bool
+	}{
+		// Raw integers
+		{"0", 0, false},
+		{"1024", 1024, false},
+		{"262144", 262144, false},
+		{"1073741824", 1073741824, false},
+
+		// Ki (1024)
+		{"1Ki", 1024, false},
+		{"256Ki", 262144, false},
+		{"512Ki", 524288, false},
+
+		// Mi (1048576)
+		{"1Mi", 1048576, false},
+		{"8Mi", 8388608, false},
+		{"256Mi", 268435456, false},
+		{"512Mi", 536870912, false},
+
+		// Gi (1073741824)
+		{"1Gi", 1073741824, false},
+		{"2Gi", 2147483648, false},
+		{"10Gi", 10737418240, false},
+
+		// Ti (1099511627776)
+		{"1Ti", 1099511627776, false},
+
+		// Fractional values
+		{"1.5Gi", 1610612736, false},
+		{"0.5Mi", 524288, false},
+		{"2.5Mi", 2621440, false},
+
+		// Whitespace
+		{"  256Mi  ", 268435456, false},
+		{"", 0, false},
+
+		// Invalid
+		{"abc", 0, true},
+		{"Mi", 0, true},
+		{"256MB", 0, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			got, err := ParseByteSize(tc.input)
+			if tc.err {
+				if err == nil {
+					t.Fatalf("ParseByteSize(%q) expected error, got %d", tc.input, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseByteSize(%q) unexpected error: %v", tc.input, err)
+			}
+			if got != tc.want {
+				t.Errorf("ParseByteSize(%q) = %d, want %d", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFormatByteSize(t *testing.T) {
+	tests := []struct {
+		input int64
+		want  string
+	}{
+		{0, "0"},
+		{512, "512"},
+		{1024, "1Ki"},
+		{262144, "256Ki"},
+		{1048576, "1Mi"},
+		{8388608, "8Mi"},
+		{268435456, "256Mi"},
+		{536870912, "512Mi"},
+		{1073741824, "1Gi"},
+		{2147483648, "2Gi"},
+		{1099511627776, "1Ti"},
+		// Non-aligned values stay as bytes
+		{1000, "1000"},
+		{1500000, "1500000"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.want, func(t *testing.T) {
+			got := FormatByteSize(tc.input)
+			if got != tc.want {
+				t.Errorf("FormatByteSize(%d) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestByteSizeRoundTrip(t *testing.T) {
+	// Verify ParseByteSize(FormatByteSize(x)) == x for common sizes
+	sizes := []int64{
+		0, 1024, 262144, 1048576, 8388608, 268435456,
+		536870912, 1073741824, 2147483648, 1099511627776,
+	}
+	for _, s := range sizes {
+		formatted := FormatByteSize(s)
+		parsed, err := ParseByteSize(formatted)
+		if err != nil {
+			t.Fatalf("ParseByteSize(%q) error: %v (original: %d)", formatted, err, s)
+		}
+		if parsed != s {
+			t.Errorf("round-trip failed: %d -> %q -> %d", s, formatted, parsed)
+		}
+	}
+}
+
+func TestByteSizeYAMLUnmarshal(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want int64
+	}{
+		{
+			name: "raw_integer",
+			yaml: `
+exporter:
+  endpoint: "test:4317"
+  queue:
+    max_bytes: 1073741824
+`,
+			want: 1073741824,
+		},
+		{
+			name: "gi_notation",
+			yaml: `
+exporter:
+  endpoint: "test:4317"
+  queue:
+    max_bytes: "1Gi"
+`,
+			want: 1073741824,
+		},
+		{
+			name: "mi_notation",
+			yaml: `
+exporter:
+  endpoint: "test:4317"
+  queue:
+    max_bytes: "256Mi"
+`,
+			want: 268435456,
+		},
+		{
+			name: "ki_notation",
+			yaml: `
+exporter:
+  endpoint: "test:4317"
+  queue:
+    write_buffer_size: "256Ki"
+`,
+			want: 262144,
+		},
+		{
+			name: "fractional_gi",
+			yaml: `
+exporter:
+  endpoint: "test:4317"
+  queue:
+    max_bytes: "1.5Gi"
+`,
+			want: 1610612736,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := ParseYAML([]byte(tc.yaml))
+			if err != nil {
+				t.Fatalf("ParseYAML error: %v", err)
+			}
+			cfg.ApplyDefaults()
+
+			switch tc.name {
+			case "ki_notation":
+				if int64(cfg.Exporter.Queue.WriteBufferSize) != tc.want {
+					t.Errorf("WriteBufferSize = %d, want %d", cfg.Exporter.Queue.WriteBufferSize, tc.want)
+				}
+			default:
+				if int64(cfg.Exporter.Queue.MaxBytes) != tc.want {
+					t.Errorf("MaxBytes = %d, want %d", cfg.Exporter.Queue.MaxBytes, tc.want)
+				}
+			}
+		})
+	}
+}
+
+func TestByteSizeYAMLAllFields(t *testing.T) {
+	yaml := `
+receiver:
+  http:
+    server:
+      max_request_body_size: "10Mi"
+exporter:
+  endpoint: "test:4317"
+  queue:
+    max_bytes: "2Gi"
+    chunk_size: "512Mi"
+    write_buffer_size: "256Ki"
+buffer:
+  max_batch_bytes: "8Mi"
+`
+	cfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("ParseYAML error: %v", err)
+	}
+	cfg.ApplyDefaults()
+
+	if int64(cfg.Receiver.HTTP.Server.MaxRequestBodySize) != 10*1048576 {
+		t.Errorf("MaxRequestBodySize = %d, want %d", cfg.Receiver.HTTP.Server.MaxRequestBodySize, 10*1048576)
+	}
+	if int64(cfg.Exporter.Queue.MaxBytes) != 2*1073741824 {
+		t.Errorf("MaxBytes = %d, want %d", cfg.Exporter.Queue.MaxBytes, 2*1073741824)
+	}
+	if int64(cfg.Exporter.Queue.ChunkSize) != 512*1048576 {
+		t.Errorf("ChunkSize = %d, want %d", cfg.Exporter.Queue.ChunkSize, 512*1048576)
+	}
+	if int64(cfg.Exporter.Queue.WriteBufferSize) != 256*1024 {
+		t.Errorf("WriteBufferSize = %d, want %d", cfg.Exporter.Queue.WriteBufferSize, 256*1024)
+	}
+	if int64(cfg.Buffer.MaxBatchBytes) != 8*1048576 {
+		t.Errorf("MaxBatchBytes = %d, want %d", cfg.Buffer.MaxBatchBytes, 8*1048576)
+	}
+}
+
+func TestByteSizeBackwardCompatRawIntegers(t *testing.T) {
+	// Existing configs with raw byte integers must still work
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+  queue:
+    max_bytes: 536870912
+    chunk_size: 268435456
+    write_buffer_size: 262144
+buffer:
+  max_batch_bytes: 8388608
+receiver:
+  http:
+    server:
+      max_request_body_size: 10485760
+`
+	cfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("ParseYAML error: %v", err)
+	}
+	cfg.ApplyDefaults()
+
+	if int64(cfg.Exporter.Queue.MaxBytes) != 536870912 {
+		t.Errorf("MaxBytes = %d, want 536870912", cfg.Exporter.Queue.MaxBytes)
+	}
+	if int64(cfg.Exporter.Queue.ChunkSize) != 268435456 {
+		t.Errorf("ChunkSize = %d, want 268435456", cfg.Exporter.Queue.ChunkSize)
+	}
+	if int64(cfg.Exporter.Queue.WriteBufferSize) != 262144 {
+		t.Errorf("WriteBufferSize = %d, want 262144", cfg.Exporter.Queue.WriteBufferSize)
+	}
+	if int64(cfg.Buffer.MaxBatchBytes) != 8388608 {
+		t.Errorf("MaxBatchBytes = %d, want 8388608", cfg.Buffer.MaxBatchBytes)
+	}
+	if int64(cfg.Receiver.HTTP.Server.MaxRequestBodySize) != 10485760 {
+		t.Errorf("MaxRequestBodySize = %d, want 10485760", cfg.Receiver.HTTP.Server.MaxRequestBodySize)
 	}
 }

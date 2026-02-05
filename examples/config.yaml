@@ -85,10 +85,12 @@ exporter:
     adaptive_enabled: true             # enable adaptive sizing based on disk space
 
     # Storage settings (advanced tuning)
-    inmemory_blocks: 256               # in-memory channel size before spilling to disk
+    inmemory_blocks: 2048              # in-memory channel size before spilling to disk
     chunk_size: 536870912              # chunk file size (512MB)
     meta_sync_interval: 1s             # metadata sync interval (max data loss window)
-    stale_flush_interval: 5s           # flush stale in-memory data to disk
+    stale_flush_interval: 30s          # flush stale in-memory data to disk
+    compression: "snappy"              # queue block compression: none, snappy
+    write_buffer_size: 262144          # buffered writer size (256KB)
 
     # Exponential backoff - increases delay between retries on repeated failures
     # Prevents overwhelming a struggling backend with rapid retry attempts
@@ -108,7 +110,7 @@ exporter:
 # Buffer configuration - internal metrics buffering
 buffer:
   size: 10000                          # max metrics to buffer
-  batch_size: 1000                     # max metrics per export batch
+  batch_size: 5000                     # max metrics per export batch
   flush_interval: 5s                   # how often to flush
 
 # Stats endpoint configuration
