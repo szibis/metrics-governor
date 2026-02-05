@@ -374,11 +374,21 @@
               </label>
               <div>
                 <label>Group By</label>
-                <div>
-                  <template x-for="g in groupByOptions" :key="g">
-                    <span class="tag" :class="rule.groupBy.includes(g) ? 'selected' : ''" @click="toggleGroupBy(rule, g)" x-text="g"></span>
+                <div style="border:1px solid var(--pico-muted-border-color);border-radius:8px;padding:.5rem;min-height:42px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">
+                  <template x-for="(g, gi) in rule.groupBy" :key="gi">
+                    <span class="tag" style="display:inline-flex;align-items:center;gap:2px">
+                      <span x-text="g"></span>
+                      <span style="cursor:pointer;font-weight:700;margin-left:2px" @click="rule.groupBy.splice(gi, 1)">&times;</span>
+                    </span>
                   </template>
-                  <input type="text" x-model="rule.customGroupBy" placeholder="custom..." style="width:120px;display:inline-block;font-size:.85em;padding:4px 8px" @keydown.enter="if(rule.customGroupBy.trim()){rule.groupBy.push(rule.customGroupBy.trim()); rule.customGroupBy=''}">
+                  <input type="text" x-model="rule.customGroupBy" placeholder="type label, press Enter" style="border:none;outline:none;background:transparent;flex:1;min-width:120px;font-size:.85em;padding:4px;margin:0" @keydown.enter.prevent="addGroupByLabel(rule)" @keydown.comma.prevent="addGroupByLabel(rule)" @keydown.backspace="if(!rule.customGroupBy && rule.groupBy.length) rule.groupBy.pop()">
+                </div>
+                <div style="margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                  <small class="help-tip" style="margin:0">Quick add:</small>
+                  <template x-for="s in groupByOptions" :key="s">
+                    <button class="outline secondary" style="font-size:.75em;padding:2px 8px;margin:0;border-radius:12px" @click="if(!rule.groupBy.includes(s)) rule.groupBy.push(s)" x-text="'+ ' + s" :disabled="rule.groupBy.includes(s)"></button>
+                  </template>
+                  <small class="help-tip" style="margin:0">Labels used to track &amp; identify top offenders for adaptive action.</small>
                 </div>
               </div>
             </div>
@@ -496,7 +506,7 @@ function configHelper() {
     // ---- Rules ----
     rules: [],
     ruleIdCounter: 0,
-    groupByOptions: ['service', 'env', 'namespace'],
+    groupByOptions: ['service', 'env', 'namespace', 'cluster', 'job', 'instance'],
 
     // ---- UI state ----
     activeTab: 'helm',
@@ -530,6 +540,13 @@ function configHelper() {
       const i = rule.groupBy.indexOf(g);
       if (i >= 0) rule.groupBy.splice(i, 1);
       else rule.groupBy.push(g);
+    },
+    addGroupByLabel(rule) {
+      const val = rule.customGroupBy.replace(/,/g, '').trim();
+      if (val && !rule.groupBy.includes(val)) {
+        rule.groupBy.push(val);
+      }
+      rule.customGroupBy = '';
     },
 
     // ---- Formatters ----
