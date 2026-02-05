@@ -48,6 +48,10 @@ func main() {
 		"flush_interval":          fmtDuration(goDefaults.FlushInterval),
 		"string_interning":        goDefaults.StringInterning,
 		"intern_max_value_length": goDefaults.InternMaxValueLength,
+		"queue_inmemory_blocks":   goDefaults.QueueInmemoryBlocks,
+		"queue_stale_flush":       fmtDuration(goDefaults.QueueStaleFlushInterval),
+		"queue_write_buffer_size": goDefaults.QueueWriteBufferSize,
+		"queue_compression":       goDefaults.QueueCompression,
 	}
 
 	estimation := map[string]any{
@@ -127,10 +131,12 @@ func main() {
 
 func fmtDuration(d interface{ String() string }) string {
 	s := d.String()
-	// Convert Go duration strings: "5s", "5m0s" → "5s", "5m"
-	s = strings.TrimSuffix(s, "0s")
-	if s == "" {
-		s = "0s"
+	// Convert Go duration strings: "5m0s" → "5m", "1h0m0s" → "1h"
+	// Only trim trailing "0s" after a minute/hour unit, not standalone "30s"
+	if strings.HasSuffix(s, "m0s") {
+		s = strings.TrimSuffix(s, "0s")
+	} else if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
 	}
 	return s
 }

@@ -186,7 +186,7 @@ Plan your deployment in seconds. The **interactive Configuration Helper** estima
 | **Real-time Statistics** | Per-metric cardinality, datapoints, and limit violation tracking |
 | **Prometheus Integration** | Native `/metrics` endpoint for monitoring the proxy itself |
 | **Consistent Sharding** | Distribute metrics across multiple backends via DNS discovery (OTLP and PRW) |
-| **Persistent Queue** | FastQueue disk-backed queue with circuit breaker, exponential backoff, automatic retry, and split-on-error — identical for both OTLP and PRW pipelines |
+| **Persistent Queue** | FastQueue disk-backed queue with snappy compression, buffered I/O, circuit breaker, exponential backoff, automatic retry, and split-on-error — identical for both OTLP and PRW pipelines |
 | **Failover Queue** | Memory or disk-backed safety net catches all export failures with automatic drain loop — data is never silently dropped |
 | **Split-on-Error** | Oversized batches automatically split in half and retry on HTTP 413 and "too big" errors from backends like VictoriaMetrics, Thanos, Mimir, and Cortex |
 | **Memory Optimized** | Bloom filter cardinality tracking uses 98% less memory (1.2MB vs 75MB per 1M series) |

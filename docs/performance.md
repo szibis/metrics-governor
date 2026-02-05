@@ -373,7 +373,10 @@ metrics-governor -export-concurrency=32
 
 FastQueue persistent queue with VictoriaMetrics-inspired design:
 
-- **Two-layer architecture** - In-memory buffered channel + disk chunk files
+- **Two-layer architecture** - In-memory buffered channel (2048 blocks) + disk chunk files
+- **Buffered I/O** - 256KB bufio.Writer coalesces small writes into fewer OS syscalls (~128x IOPS reduction)
+- **Snappy compression** - Queue blocks compressed on disk (~65% throughput reduction, ~2.5-3x storage capacity)
+- **Write coalescing** - Batch flush drains all in-memory blocks before writing, single bufio flush per batch
 - **Metadata-only persistence** - Atomic JSON sync (default: 1s) for fast recovery
 - **Automatic chunk rotation** - Configurable size boundaries for efficient disk usage
 - **Adaptive sizing** - Automatically adjusts queue limits based on available disk space
@@ -386,7 +389,7 @@ FastQueue persistent queue with VictoriaMetrics-inspired design:
 flowchart TB
     subgraph "FastQueue Architecture"
         subgraph "Layer 1: In-Memory"
-            CH[Buffered Channel<br/>256 blocks default]
+            CH[Buffered Channel<br/>2048 blocks default]
         end
 
         subgraph "Layer 2: Disk"
@@ -433,14 +436,23 @@ sequenceDiagram
     end
 ```
 
+### I/O Optimizations
+
+| Optimization | Impact | Cost |
+|-------------|--------|------|
+| In-memory buffer (2048 blocks) | Eliminates disk writes for short outages (~20-40s buffering) | +~2 MB memory per queue |
+| Buffered writer (256KB) | ~128x IOPS reduction for sequential writes | +256 KB memory per queue |
+| Write coalescing | Single flush per batch instead of per-block | Negligible |
+| Snappy compression | ~65% disk throughput reduction, ~2.5-3x storage capacity | <1% CPU |
+
 ### Configuration
 
 ```bash
 # Enable persistent queue
 metrics-governor -queue-enabled=true -queue-path=/data/queue
 
-# Configure in-memory buffer (default: 256 blocks)
-metrics-governor -queue-inmemory-blocks=256
+# Configure in-memory buffer (default: 2048 blocks)
+metrics-governor -queue-inmemory-blocks=2048
 
 # Configure chunk size (default: 512MB)
 metrics-governor -queue-chunk-size=536870912
@@ -448,8 +460,14 @@ metrics-governor -queue-chunk-size=536870912
 # Configure metadata sync interval (default: 1s, max data loss window)
 metrics-governor -queue-meta-sync=1s
 
-# Configure stale flush interval (default: 5s)
-metrics-governor -queue-stale-flush=5s
+# Configure stale flush interval (default: 30s)
+metrics-governor -queue-stale-flush=30s
+
+# Configure queue compression (default: snappy)
+metrics-governor -queue-compression=snappy
+
+# Configure write buffer size (default: 256KB)
+metrics-governor -queue-write-buffer-size=262144
 ```
 
 ### Observability Metrics

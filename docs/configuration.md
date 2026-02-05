@@ -198,10 +198,12 @@ The queue uses a high-performance FastQueue implementation inspired by VictoriaM
 | `-queue-full-behavior` | `drop_oldest` | Queue full behavior: `drop_oldest`, `drop_newest`, or `block` |
 | `-queue-adaptive-enabled` | `true` | Enable adaptive queue sizing (disk mode only) |
 | `-queue-target-utilization` | `0.85` | Target disk utilization (0.0-1.0, disk mode only) |
-| `-queue-inmemory-blocks` | `256` | In-memory channel size for fast path (disk mode only) |
+| `-queue-inmemory-blocks` | `2048` | In-memory channel size for fast path (disk mode only) |
 | `-queue-chunk-size` | `536870912` | Chunk file size in bytes (512MB, disk mode only) |
 | `-queue-meta-sync` | `1s` | Metadata sync interval (max data loss window, disk mode only) |
-| `-queue-stale-flush` | `5s` | Interval to flush stale in-memory blocks to disk (disk mode only) |
+| `-queue-stale-flush` | `30s` | Interval to flush stale in-memory blocks to disk (disk mode only) |
+| `-queue-write-buffer-size` | `262144` | Buffered writer size in bytes (256KB, disk mode only) |
+| `-queue-compression` | `snappy` | Queue block compression: `none`, `snappy` (disk mode only) |
 | `-queue-backoff-enabled` | `true` | Enable exponential backoff for retries |
 | `-queue-backoff-multiplier` | `2.0` | Backoff delay multiplier on each failure |
 | `-queue-circuit-breaker-enabled` | `true` | Enable circuit breaker pattern |
