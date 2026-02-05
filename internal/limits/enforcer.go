@@ -547,54 +547,71 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	e.violations.mu.RLock()
 	defer e.violations.mu.RUnlock()
 
+	// Helper to get action for a rule
+	getAction := func(ruleName string) string {
+		if e.config != nil {
+			for _, r := range e.config.Rules {
+				if r.Name == ruleName {
+					return string(r.Action)
+				}
+			}
+		}
+		return "unknown"
+	}
+
 	// Datapoints rate exceeded
 	fmt.Fprintf(w, "# HELP metrics_governor_limit_datapoints_exceeded_total Times datapoints rate limit was exceeded\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_limit_datapoints_exceeded_total counter\n")
 	if len(e.violations.datapointsExceeded) == 0 {
-		fmt.Fprintf(w, "metrics_governor_limit_datapoints_exceeded_total{rule=\"none\"} 0\n")
+		fmt.Fprintf(w, "metrics_governor_limit_datapoints_exceeded_total{rule=\"none\",action=\"none\"} 0\n")
 	}
 	for rule, counter := range e.violations.datapointsExceeded {
-		fmt.Fprintf(w, "metrics_governor_limit_datapoints_exceeded_total{rule=%q} %d\n", rule, counter.Load())
+		action := getAction(rule)
+		fmt.Fprintf(w, "metrics_governor_limit_datapoints_exceeded_total{rule=%q,action=%q} %d\n", rule, action, counter.Load())
 	}
 
 	// Cardinality exceeded
 	fmt.Fprintf(w, "# HELP metrics_governor_limit_cardinality_exceeded_total Times cardinality limit was exceeded\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_limit_cardinality_exceeded_total counter\n")
 	if len(e.violations.cardinalityExceeded) == 0 {
-		fmt.Fprintf(w, "metrics_governor_limit_cardinality_exceeded_total{rule=\"none\"} 0\n")
+		fmt.Fprintf(w, "metrics_governor_limit_cardinality_exceeded_total{rule=\"none\",action=\"none\"} 0\n")
 	}
 	for rule, counter := range e.violations.cardinalityExceeded {
-		fmt.Fprintf(w, "metrics_governor_limit_cardinality_exceeded_total{rule=%q} %d\n", rule, counter.Load())
+		action := getAction(rule)
+		fmt.Fprintf(w, "metrics_governor_limit_cardinality_exceeded_total{rule=%q,action=%q} %d\n", rule, action, counter.Load())
 	}
 
 	// Datapoints dropped
 	fmt.Fprintf(w, "# HELP metrics_governor_limit_datapoints_dropped_total Datapoints dropped due to limits\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_limit_datapoints_dropped_total counter\n")
 	if len(e.violations.datapointsDropped) == 0 {
-		fmt.Fprintf(w, "metrics_governor_limit_datapoints_dropped_total{rule=\"none\"} 0\n")
+		fmt.Fprintf(w, "metrics_governor_limit_datapoints_dropped_total{rule=\"none\",action=\"none\"} 0\n")
 	}
 	for rule, counter := range e.violations.datapointsDropped {
-		fmt.Fprintf(w, "metrics_governor_limit_datapoints_dropped_total{rule=%q} %d\n", rule, counter.Load())
+		action := getAction(rule)
+		fmt.Fprintf(w, "metrics_governor_limit_datapoints_dropped_total{rule=%q,action=%q} %d\n", rule, action, counter.Load())
 	}
 
 	// Datapoints passed
 	fmt.Fprintf(w, "# HELP metrics_governor_limit_datapoints_passed_total Datapoints passed through (within limits)\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_limit_datapoints_passed_total counter\n")
 	if len(e.violations.datapointsPassed) == 0 {
-		fmt.Fprintf(w, "metrics_governor_limit_datapoints_passed_total{rule=\"none\"} 0\n")
+		fmt.Fprintf(w, "metrics_governor_limit_datapoints_passed_total{rule=\"none\",action=\"none\"} 0\n")
 	}
 	for rule, counter := range e.violations.datapointsPassed {
-		fmt.Fprintf(w, "metrics_governor_limit_datapoints_passed_total{rule=%q} %d\n", rule, counter.Load())
+		action := getAction(rule)
+		fmt.Fprintf(w, "metrics_governor_limit_datapoints_passed_total{rule=%q,action=%q} %d\n", rule, action, counter.Load())
 	}
 
 	// Groups dropped (adaptive)
 	fmt.Fprintf(w, "# HELP metrics_governor_limit_groups_dropped_total Groups (label combinations) dropped by adaptive limiting\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_limit_groups_dropped_total counter\n")
 	if len(e.violations.groupsDropped) == 0 {
-		fmt.Fprintf(w, "metrics_governor_limit_groups_dropped_total{rule=\"none\"} 0\n")
+		fmt.Fprintf(w, "metrics_governor_limit_groups_dropped_total{rule=\"none\",action=\"none\"} 0\n")
 	}
 	for rule, counter := range e.violations.groupsDropped {
-		fmt.Fprintf(w, "metrics_governor_limit_groups_dropped_total{rule=%q} %d\n", rule, counter.Load())
+		action := getAction(rule)
+		fmt.Fprintf(w, "metrics_governor_limit_groups_dropped_total{rule=%q,action=%q} %d\n", rule, action, counter.Load())
 	}
 
 	// Current tracking stats
