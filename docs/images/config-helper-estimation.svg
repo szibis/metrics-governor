@@ -2,34 +2,30 @@
   <defs>
     <style>
       .bg { fill: #1a1a2e; }
-      .card { fill: #16213e; stroke: #334155; stroke-width: 1; rx: 8; }
-      .title { fill: #e2e8f0; font-family: system-ui, sans-serif; font-size: 14px; font-weight: 700; }
-      .label { fill: #94a3b8; font-family: system-ui, sans-serif; font-size: 10px; }
-      .value-green { fill: #2ecc40; font-family: 'SF Mono', monospace; font-size: 18px; font-weight: 700; }
-      .value-white { fill: #f1f5f9; font-family: 'SF Mono', monospace; font-size: 18px; font-weight: 700; }
-      .badge-green { fill: #2ecc40; rx: 4; }
-      .badge-text { fill: #fff; font-family: system-ui, sans-serif; font-size: 9px; font-weight: 600; }
-      .header { fill: #e2e8f0; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 700; }
-      .small { fill: #64748b; font-family: system-ui, sans-serif; font-size: 9px; }
-      .pod-val { fill: #818cf8; font-family: 'SF Mono', monospace; font-size: 22px; font-weight: 700; }
-      .input-bg { fill: #0f172a; stroke: #334155; stroke-width: 1; rx: 4; }
-      .value-sm { fill: #f1f5f9; font-family: 'SF Mono', monospace; font-size: 11px; }
-      .dot-green { fill: #2ecc40; }
-      .status-green { fill: #2ecc40; font-family: system-ui, sans-serif; font-size: 8px; }
+      .title { fill: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 700; }
+      .label { fill: #94a3b8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 10px; }
+      .value-green { fill: #2ecc40; font-family: ui-monospace, 'Cascadia Code', monospace; font-size: 18px; font-weight: 700; }
+      .value-white { fill: #f1f5f9; font-family: ui-monospace, 'Cascadia Code', monospace; font-size: 18px; font-weight: 700; }
+      .header { fill: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 16px; font-weight: 700; }
+      .small { fill: #64748b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 9px; }
+      .pod-val { fill: #818cf8; font-family: ui-monospace, 'Cascadia Code', monospace; font-size: 22px; font-weight: 700; }
+      .value-sm { fill: #f1f5f9; font-family: ui-monospace, 'Cascadia Code', monospace; font-size: 11px; }
+      .status-green { fill: #2ecc40; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 8px; }
     </style>
   </defs>
   <rect class="bg" width="480" height="320"/>
   <text class="header" x="20" y="28">2. Resource Estimation</text>
+
   <!-- CPU card -->
-  <rect class="card" x="15" y="40" width="145" height="100"/>
+  <rect x="15" y="40" width="145" height="100" rx="8" ry="8" fill="#16213e" stroke="#334155"/>
   <text class="title" x="25" y="62">CPU</text>
   <text class="value-green" x="25" y="88">0.50 cores</text>
   <text class="label" x="25" y="104">of 4 available (13%)</text>
-  <rect class="badge-green" x="25" y="112" width="24" height="16"/>
-  <text class="badge-text" x="30" y="123">OK</text>
+  <rect x="25" y="112" width="24" height="16" rx="4" ry="4" fill="#2ecc40"/>
+  <text x="30" y="123" fill="#fff" font-family="-apple-system, sans-serif" font-size="9" font-weight="600">OK</text>
 
   <!-- Memory card -->
-  <rect class="card" x="170" y="40" width="145" height="100"/>
+  <rect x="170" y="40" width="145" height="100" rx="8" ry="8" fill="#16213e" stroke="#334155"/>
   <text class="title" x="180" y="62">Memory (Total)</text>
   <text class="value-white" x="180" y="88">52.5 MB</text>
   <text class="small" x="180" y="104">Trackers: 119.5 KB</text>
@@ -37,7 +33,7 @@
   <text class="small" x="180" y="126">Base overhead: ~50 MB</text>
 
   <!-- Queue card -->
-  <rect class="card" x="325" y="40" width="140" height="100"/>
+  <rect x="325" y="40" width="140" height="100" rx="8" ry="8" fill="#16213e" stroke="#334155"/>
   <text class="title" x="335" y="62">Queue (Disk I/O)</text>
   <text class="value-white" x="335" y="88">120 MB</text>
   <text class="small" x="335" y="104">PVC size (20% headroom)</text>
@@ -47,46 +43,46 @@
   <!-- Fit Check -->
   <text class="title" x="20" y="162">Fit Check</text>
   <text class="small" x="100" y="162">does it fit your cluster?</text>
-  <rect class="card" x="15" y="170" width="450" height="50"/>
+  <rect x="15" y="170" width="450" height="50" rx="8" ry="8" fill="#16213e" stroke="#334155"/>
   <!-- Pod Override -->
   <text class="label" x="25" y="185">Pod Override</text>
-  <circle class="dot-green" cx="90" cy="182" r="3"/>
-  <rect class="input-bg" x="25" y="190" width="75" height="22"/>
+  <circle cx="90" cy="182" r="3" fill="#2ecc40"/>
+  <rect x="25" y="190" width="75" height="22" rx="4" ry="4" fill="#0f172a" stroke="#334155"/>
   <text class="value-sm" x="35" y="205">0 (auto)</text>
   <!-- CPU -->
   <text class="label" x="120" y="185">Available CPU</text>
-  <circle class="dot-green" cx="188" cy="182" r="3"/>
-  <rect class="input-bg" x="120" y="190" width="70" height="22"/>
+  <circle cx="188" cy="182" r="3" fill="#2ecc40"/>
+  <rect x="120" y="190" width="70" height="22" rx="4" ry="4" fill="#0f172a" stroke="#334155"/>
   <text class="value-sm" x="130" y="205">4 cores</text>
   <!-- Memory -->
   <text class="label" x="210" y="185">Available Memory</text>
-  <circle class="dot-green" cx="293" cy="182" r="3"/>
-  <rect class="input-bg" x="210" y="190" width="80" height="22"/>
+  <circle cx="293" cy="182" r="3" fill="#2ecc40"/>
+  <rect x="210" y="190" width="80" height="22" rx="4" ry="4" fill="#0f172a" stroke="#334155"/>
   <text class="value-sm" x="220" y="205">512 MB</text>
   <!-- Disk -->
   <text class="label" x="310" y="185">Available Disk</text>
-  <circle class="dot-green" cx="378" cy="182" r="3"/>
-  <rect class="input-bg" x="310" y="190" width="70" height="22"/>
+  <circle cx="378" cy="182" r="3" fill="#2ecc40"/>
+  <rect x="310" y="190" width="70" height="22" rx="4" ry="4" fill="#0f172a" stroke="#334155"/>
   <text class="value-sm" x="320" y="205">500 MB</text>
-  <!-- Status text -->
+  <!-- Status -->
   <text class="status-green" x="400" y="205">All OK</text>
 
   <!-- K8s section -->
   <text class="title" x="20" y="243">Kubernetes Pod Sizing</text>
-  <!-- Pod cards -->
-  <rect class="card" x="15" y="253" width="105" height="60"/>
+
+  <rect x="15" y="253" width="105" height="60" rx="8" ry="8" fill="#16213e" stroke="#334155"/>
   <text class="label" x="25" y="270">Recommended Pods</text>
   <text class="pod-val" x="50" y="300">1</text>
 
-  <rect class="card" x="130" y="253" width="105" height="60"/>
+  <rect x="130" y="253" width="105" height="60" rx="8" ry="8" fill="#16213e" stroke="#334155"/>
   <text class="label" x="140" y="270">Per-Pod CPU</text>
   <text class="pod-val" x="145" y="300">500m</text>
 
-  <rect class="card" x="245" y="253" width="105" height="60"/>
+  <rect x="245" y="253" width="105" height="60" rx="8" ry="8" fill="#16213e" stroke="#334155"/>
   <text class="label" x="255" y="270">Per-Pod Memory</text>
   <text class="pod-val" x="255" y="300">53Mi</text>
 
-  <rect class="card" x="360" y="253" width="105" height="60"/>
+  <rect x="360" y="253" width="105" height="60" rx="8" ry="8" fill="#16213e" stroke="#334155"/>
   <text class="label" x="370" y="270">Total Cluster</text>
   <text class="small" x="370" y="288">CPU: 500m</text>
   <text class="small" x="370" y="300">Memory: 53Mi</text>

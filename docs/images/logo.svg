@@ -1,114 +1,112 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#6366f1"/>
-      <stop offset="50%" style="stop-color:#4f46e5"/>
-      <stop offset="100%" style="stop-color:#7c3aed"/>
+    <linearGradient id="sg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
     </linearGradient>
-    <linearGradient id="shieldFill" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:0.15"/>
-      <stop offset="100%" style="stop-color:#7c3aed;stop-opacity:0.08"/>
+    <linearGradient id="sf" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#7c3aed" stop-opacity="0.08"/>
     </linearGradient>
-    <linearGradient id="barGrad1" x1="0%" y1="100%" x2="0%" y2="0%">
-      <stop offset="0%" style="stop-color:#06b6d4"/>
-      <stop offset="100%" style="stop-color:#22d3ee"/>
+    <linearGradient id="b1" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#0891b2"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
     </linearGradient>
-    <linearGradient id="barGrad2" x1="0%" y1="100%" x2="0%" y2="0%">
-      <stop offset="0%" style="stop-color:#10b981"/>
-      <stop offset="100%" style="stop-color:#34d399"/>
+    <linearGradient id="b2" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#34d399"/>
     </linearGradient>
-    <linearGradient id="spikeGrad" x1="0%" y1="100%" x2="0%" y2="0%">
-      <stop offset="0%" style="stop-color:#ef4444"/>
-      <stop offset="60%" style="stop-color:#f97316"/>
-      <stop offset="100%" style="stop-color:#fbbf24"/>
+    <linearGradient id="br" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#dc2626"/>
+      <stop offset="100%" stop-color="#f87171"/>
     </linearGradient>
-    <linearGradient id="limitLine" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#ef4444"/>
-      <stop offset="100%" style="stop-color:#dc2626"/>
+    <linearGradient id="hh" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f1f5f9"/>
+      <stop offset="100%" stop-color="#94a3b8"/>
     </linearGradient>
-    <linearGradient id="hammerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#e2e8f0"/>
-      <stop offset="100%" style="stop-color:#94a3b8"/>
+    <linearGradient id="hw" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#92400e"/>
+      <stop offset="100%" stop-color="#78350f"/>
     </linearGradient>
-    <linearGradient id="handleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#78716c"/>
-      <stop offset="100%" style="stop-color:#57534e"/>
-    </linearGradient>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    <filter id="ds">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000" flood-opacity="0.35"/>
     </filter>
-    <filter id="redGlow">
-      <feGaussianBlur stdDeviation="3" result="blur"/>
-      <feFlood flood-color="#ef4444" flood-opacity="0.5" result="color"/>
-      <feComposite in="color" in2="blur" operator="in" result="glow"/>
-      <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    <filter id="ig">
+      <feGaussianBlur stdDeviation="5" result="b"/>
+      <feFlood flood-color="#fbbf24" flood-opacity="0.5" result="c"/>
+      <feComposite in="c" in2="b" operator="in" result="g"/>
+      <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
-    <filter id="dropShadow">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.3"/>
-    </filter>
-    <clipPath id="shieldClip">
-      <path d="M256 32 L456 102 Q464 106 464 114 L464 256 Q464 354 358 424 L264 484 Q256 488 248 484 L154 424 Q48 354 48 256 L48 114 Q48 106 56 102 Z"/>
+    <clipPath id="sc">
+      <path d="M256 44 L444 108 Q452 112 452 120 L452 256 Q452 346 352 412 L264 468 Q256 472 248 468 L160 412 Q60 346 60 256 L60 120 Q60 112 68 108 Z"/>
     </clipPath>
   </defs>
 
+  <!-- Shield outer glow for light theme visibility -->
+  <path d="M256 24 L460 96 Q470 100 470 110 L470 262 Q470 366 360 438 L264 500 Q256 504 248 500 L152 438 Q42 366 42 262 L42 110 Q42 100 52 96 Z" fill="none" stroke="#4f46e5" stroke-width="4" stroke-linejoin="round" opacity="0.15"/>
+
   <!-- Shield body -->
-  <path d="M256 32 L456 102 Q464 106 464 114 L464 256 Q464 354 358 424 L264 484 Q256 488 248 484 L154 424 Q48 354 48 256 L48 114 Q48 106 56 102 Z" fill="url(#shieldFill)"/>
-  <path d="M256 32 L456 102 Q464 106 464 114 L464 256 Q464 354 358 424 L264 484 Q256 488 248 484 L154 424 Q48 354 48 256 L48 114 Q48 106 56 102 Z" fill="none" stroke="url(#shieldGrad)" stroke-width="12" stroke-linejoin="round"/>
+  <path d="M256 30 L458 100 Q468 104 468 114 L468 262 Q468 364 360 436 L264 498 Q256 502 248 498 L152 436 Q44 364 44 262 L44 114 Q44 104 54 100 Z" fill="url(#sf)"/>
+  <path d="M256 30 L458 100 Q468 104 468 114 L468 262 Q468 364 360 436 L264 498 Q256 502 248 498 L152 436 Q44 364 44 262 L44 114 Q44 104 54 100 Z" fill="none" stroke="url(#sg)" stroke-width="18" stroke-linejoin="round"/>
 
-  <!-- Inner shield accent line -->
-  <path d="M256 60 L430 120 Q436 123 436 128 L436 252 Q436 336 342 398 L264 452 Q256 456 248 452 L170 398 Q76 336 76 252 L76 128 Q76 123 82 120 Z" fill="none" stroke="url(#shieldGrad)" stroke-width="2.5" stroke-linejoin="round" opacity="0.35"/>
+  <!-- Inner accent stroke -->
+  <path d="M256 58 L434 118 Q440 121 440 126 L440 252 Q440 334 344 398 L264 452 Q256 456 248 452 L168 398 Q72 334 72 252 L72 126 Q72 121 78 118 Z" fill="none" stroke="url(#sg)" stroke-width="3.5" stroke-linejoin="round" opacity="0.25"/>
 
-  <!-- Content clipped to shield -->
-  <g clip-path="url(#shieldClip)">
+  <!-- Clipped chart content -->
+  <g clip-path="url(#sc)">
 
-    <!-- Metric bars: good metrics (within limits) -->
-    <rect x="108" y="310" width="44" height="100" rx="4" fill="url(#barGrad1)" filter="url(#dropShadow)"/>
-    <rect x="168" y="280" width="44" height="130" rx="4" fill="url(#barGrad2)" filter="url(#dropShadow)"/>
-    <rect x="228" y="295" width="44" height="115" rx="4" fill="url(#barGrad1)" filter="url(#dropShadow)"/>
+    <!-- Good bar 1 (cyan) -->
+    <rect x="130" y="300" width="64" height="120" rx="8" ry="8" fill="url(#b1)" filter="url(#ds)"/>
 
-    <!-- Spiking bar: violating limit (tall, red/orange, gets cut) -->
-    <rect x="298" y="140" width="44" height="270" rx="4" fill="url(#spikeGrad)" filter="url(#dropShadow)" opacity="0.85"/>
-    <!-- Diagonal cut marks on the spike (showing it being cut down) -->
-    <line x1="294" y1="248" x2="346" y2="232" stroke="#fff" stroke-width="3" opacity="0.6"/>
-    <line x1="294" y1="260" x2="346" y2="244" stroke="#fff" stroke-width="2" opacity="0.4"/>
+    <!-- Good bar 2 (green) -->
+    <rect x="220" y="265" width="64" height="155" rx="8" ry="8" fill="url(#b2)" filter="url(#ds)"/>
 
-    <!-- Another smaller violation -->
-    <rect x="358" y="200" width="44" height="210" rx="4" fill="url(#spikeGrad)" filter="url(#dropShadow)" opacity="0.55"/>
-    <line x1="354" y1="248" x2="406" y2="236" stroke="#fff" stroke-width="2" opacity="0.4"/>
+    <!-- Red spiking bar — being smashed -->
+    <rect x="320" y="150" width="64" height="270" rx="8" ry="8" fill="url(#br)" filter="url(#ds)" opacity="0.85"/>
+    <!-- Cracks -->
+    <line x1="316" y1="240" x2="388" y2="218" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity="0.7"/>
+    <line x1="316" y1="256" x2="388" y2="234" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+    <line x1="330" y1="222" x2="356" y2="252" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity="0.4"/>
 
-    <!-- HARD LIMIT LINE — bold red slash across the chart -->
-    <line x1="80" y1="250" x2="440" y2="250" stroke="url(#limitLine)" stroke-width="5" stroke-dasharray="12,6" filter="url(#redGlow)"/>
-    <!-- "LIMIT" label on the line -->
-    <rect x="88" y="237" width="52" height="16" rx="3" fill="#dc2626"/>
-    <text x="94" y="250" fill="#fff" font-family="system-ui, sans-serif" font-size="11" font-weight="800" letter-spacing="1">LIMIT</text>
+    <!-- Debris -->
+    <rect x="382" y="195" width="14" height="18" rx="3" ry="3" fill="#f87171" opacity="0.7" transform="rotate(25,389,204)"/>
+    <rect x="394" y="220" width="10" height="13" rx="2" ry="2" fill="#ef4444" opacity="0.5" transform="rotate(-20,399,226)"/>
+    <rect x="304" y="200" width="12" height="15" rx="3" ry="3" fill="#fca5a5" opacity="0.6" transform="rotate(35,310,207)"/>
+
+    <!-- Limit line (dashed, no text) -->
+    <line x1="80" y1="260" x2="440" y2="260" stroke="#dc2626" stroke-width="5" stroke-dasharray="16,8" opacity="0.75"/>
 
   </g>
 
-  <!-- Gavel / hammer — enforcement symbol, top-right area -->
-  <g transform="translate(340, 80) rotate(-30, 40, 40)" filter="url(#dropShadow)">
-    <!-- Hammer head -->
-    <rect x="10" y="22" width="60" height="28" rx="5" fill="url(#hammerGrad)" stroke="#64748b" stroke-width="2"/>
-    <!-- Hammer head end caps (wider striking surfaces) -->
-    <rect x="4" y="25" width="12" height="22" rx="3" fill="#cbd5e1" stroke="#94a3b8" stroke-width="1.5"/>
-    <rect x="64" y="25" width="12" height="22" rx="3" fill="#cbd5e1" stroke="#94a3b8" stroke-width="1.5"/>
+  <!-- HAMMER — large and prominent -->
+  <g transform="translate(272, 30) rotate(-38, 80, 80)" filter="url(#ds)">
     <!-- Handle -->
-    <rect x="35" y="48" width="10" height="50" rx="3" fill="url(#handleGrad)" stroke="#57534e" stroke-width="1.5"/>
+    <rect x="70" y="96" width="22" height="110" rx="6" ry="6" fill="url(#hw)" stroke="#713f12" stroke-width="2.5"/>
+    <!-- Head -->
+    <rect x="10" y="42" width="142" height="60" rx="10" ry="10" fill="url(#hh)" stroke="#64748b" stroke-width="3.5"/>
+    <!-- Left face -->
+    <rect x="0" y="48" width="20" height="48" rx="6" ry="6" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2.5"/>
+    <!-- Right face -->
+    <rect x="142" y="48" width="20" height="48" rx="6" ry="6" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2.5"/>
+    <!-- Highlight -->
+    <rect x="28" y="50" width="106" height="8" rx="4" ry="4" fill="#fff" opacity="0.3"/>
   </g>
 
-  <!-- Impact lines from gavel (action/enforcement) -->
-  <g opacity="0.7">
-    <line x1="364" y1="154" x2="348" y2="170" stroke="#fbbf24" stroke-width="3" stroke-linecap="round"/>
-    <line x1="378" y1="160" x2="370" y2="178" stroke="#fbbf24" stroke-width="2.5" stroke-linecap="round"/>
-    <line x1="354" y1="148" x2="336" y2="158" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
-    <!-- Small spark dots -->
-    <circle cx="340" cy="168" r="3" fill="#fbbf24" opacity="0.8"/>
-    <circle cx="376" cy="176" r="2.5" fill="#f59e0b" opacity="0.7"/>
+  <!-- Impact sparks -->
+  <g filter="url(#ig)">
+    <line x1="350" y1="180" x2="318" y2="210" stroke="#fbbf24" stroke-width="5.5" stroke-linecap="round"/>
+    <line x1="372" y1="190" x2="354" y2="218" stroke="#fbbf24" stroke-width="4.5" stroke-linecap="round"/>
+    <line x1="334" y1="170" x2="304" y2="190" stroke="#f59e0b" stroke-width="4" stroke-linecap="round"/>
+    <line x1="366" y1="172" x2="388" y2="200" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="310" cy="204" r="6" fill="#fbbf24"/>
+    <circle cx="380" cy="212" r="5" fill="#f59e0b"/>
+    <circle cx="296" cy="190" r="4" fill="#fcd34d"/>
+    <circle cx="392" cy="194" r="3.5" fill="#fcd34d"/>
   </g>
 
-  <!-- Down arrow on the cut spike — "dropped" indicator -->
-  <g transform="translate(320, 160)" opacity="0.9">
-    <polygon points="0,-12 8,0 4,0 4,14 -4,14 -4,0 -8,0" fill="#ef4444"/>
+  <!-- Down arrow — dropped -->
+  <g transform="translate(352, 155)">
+    <polygon points="0,-20 16,0 8,0 8,24 -8,24 -8,0 -16,0" fill="#dc2626"/>
   </g>
 
 </svg>

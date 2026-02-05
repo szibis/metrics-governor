@@ -2,56 +2,43 @@
   <defs>
     <style>
       .bg { fill: #1a1a2e; }
-      .card { fill: #16213e; stroke: #334155; stroke-width: 1; rx: 8; }
-      .title { fill: #e2e8f0; font-family: system-ui, sans-serif; font-size: 14px; font-weight: 700; }
-      .label { fill: #94a3b8; font-family: system-ui, sans-serif; font-size: 10px; }
-      .header { fill: #e2e8f0; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 700; }
-      .tab-active { fill: #16213e; stroke: #6366f1; stroke-width: 2; rx: 4; }
-      .tab-inactive { fill: #0f172a; stroke: #334155; stroke-width: 1; rx: 4; }
-      .tab-text { fill: #e2e8f0; font-family: system-ui, sans-serif; font-size: 11px; font-weight: 600; }
-      .tab-dim { fill: #64748b; font-family: system-ui, sans-serif; font-size: 11px; }
-      .dot-green { fill: #2ecc40; }
-      .code-bg { fill: #0f172a; stroke: #6366f1; stroke-width: 1.5; rx: 6; }
-      .code-key { fill: #7dd3fc; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 10px; }
-      .code-val { fill: #86efac; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 10px; }
-      .code-num { fill: #fbbf24; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 10px; }
-      .btn { fill: #6366f1; rx: 4; }
-      .btn-outline { fill: none; stroke: #6366f1; stroke-width: 1; rx: 4; }
-      .btn-text { fill: #fff; font-family: system-ui, sans-serif; font-size: 10px; font-weight: 600; }
-      .btn-text-outline { fill: #6366f1; font-family: system-ui, sans-serif; font-size: 10px; font-weight: 600; }
-      .hint { fill: #64748b; font-family: system-ui, sans-serif; font-size: 9px; }
-      .btn-reset { fill: none; stroke: #64748b; stroke-width: 1; rx: 4; }
-      .btn-reset-text { fill: #94a3b8; font-family: system-ui, sans-serif; font-size: 9px; }
-      .lint-ok { fill: #2ecc40; font-family: system-ui, sans-serif; font-size: 10px; }
-      .lint-icon { fill: #2ecc40; font-family: system-ui, sans-serif; font-size: 12px; font-weight: 700; }
-      .cursor { fill: #e2e8f0; }
+      .title { fill: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 700; }
+      .label { fill: #94a3b8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 10px; }
+      .header { fill: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 16px; font-weight: 700; }
+      .tab-text { fill: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 11px; font-weight: 600; }
+      .tab-dim { fill: #64748b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 11px; }
+      .code-key { fill: #7dd3fc; font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace; font-size: 10px; }
+      .code-val { fill: #86efac; font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace; font-size: 10px; }
+      .code-num { fill: #fbbf24; font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace; font-size: 10px; }
+      .hint { fill: #64748b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 9px; }
+      .lint-ok { fill: #2ecc40; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 10px; }
     </style>
   </defs>
   <rect class="bg" width="480" height="310"/>
   <text class="header" x="20" y="28">4. Config Preview &amp; Export</text>
 
   <!-- Tabs -->
-  <rect class="tab-active" x="15" y="38" width="130" height="28"/>
-  <circle class="dot-green" cx="28" cy="52" r="4"/>
+  <rect x="15" y="38" width="130" height="28" rx="4" ry="4" fill="#16213e" stroke="#6366f1" stroke-width="2"/>
+  <circle cx="28" cy="52" r="4" fill="#2ecc40"/>
   <text class="tab-text" x="36" y="56">Helm values.yaml</text>
 
-  <rect class="tab-inactive" x="150" y="38" width="120" height="28"/>
-  <circle class="dot-green" cx="163" cy="52" r="4"/>
+  <rect x="150" y="38" width="120" height="28" rx="4" ry="4" fill="#0f172a" stroke="#334155"/>
+  <circle cx="163" cy="52" r="4" fill="#2ecc40"/>
   <text class="tab-dim" x="171" y="56">App config.yaml</text>
 
-  <rect class="tab-inactive" x="275" y="38" width="130" height="28"/>
-  <circle class="dot-green" cx="288" cy="52" r="4"/>
+  <rect x="275" y="38" width="130" height="28" rx="4" ry="4" fill="#0f172a" stroke="#334155"/>
+  <circle cx="288" cy="52" r="4" fill="#2ecc40"/>
   <text class="tab-dim" x="296" y="56">Limits rules YAML</text>
 
   <!-- Toolbar -->
-  <text class="hint" x="15" y="80">Edit YAML directly — changes reflect in inputs and estimations</text>
-  <rect class="btn-reset" x="370" y="70" width="95" height="18"/>
-  <text class="btn-reset-text" x="379" y="82">Reset to generated</text>
+  <text class="hint" x="15" y="80">Edit YAML directly &#x2014; changes reflect in inputs and estimations</text>
+  <rect x="370" y="70" width="95" height="18" rx="4" ry="4" fill="none" stroke="#64748b"/>
+  <text x="379" y="82" fill="#94a3b8" font-family="-apple-system, sans-serif" font-size="9">Reset to generated</text>
 
-  <!-- Editable textarea (highlighted border) -->
-  <rect class="code-bg" x="15" y="90" width="450" height="155"/>
-  <!-- Blinking cursor hint -->
-  <rect class="cursor" x="115" y="102" width="1.5" height="12" opacity=".7"/>
+  <!-- Editable textarea -->
+  <rect x="15" y="90" width="450" height="155" rx="6" ry="6" fill="#0f172a" stroke="#6366f1" stroke-width="1.5"/>
+  <!-- Cursor -->
+  <rect x="115" y="102" width="1.5" height="12" fill="#e2e8f0" opacity=".7"/>
 
   <text class="code-key" x="25" y="110">replicaCount:</text><text class="code-num" x="115" y="110"> 1</text>
   <text class="code-key" x="25" y="126">resources:</text>
@@ -65,13 +52,13 @@
   <text class="code-key" x="35" y="240">  bufferSize:</text><text class="code-num" x="115" y="240"> 5000</text>
 
   <!-- Lint panel -->
-  <rect class="card" x="15" y="250" width="450" height="22"/>
-  <text class="lint-icon" x="22" y="265">&check;</text>
-  <text class="lint-ok" x="36" y="264">Valid — no issues found</text>
+  <rect x="15" y="250" width="450" height="22" rx="8" ry="8" fill="#16213e" stroke="#334155"/>
+  <text x="22" y="265" fill="#2ecc40" font-family="-apple-system, sans-serif" font-size="12" font-weight="700">&#x2714;</text>
+  <text class="lint-ok" x="38" y="264">Valid &#x2014; no issues found</text>
 
   <!-- Buttons -->
-  <rect class="btn" x="15" y="280" width="120" height="24"/>
-  <text class="btn-text" x="32" y="296">Copy to Clipboard</text>
-  <rect class="btn-outline" x="145" y="280" width="130" height="24"/>
-  <text class="btn-text-outline" x="153" y="296">Download values.yaml</text>
+  <rect x="15" y="280" width="120" height="24" rx="4" ry="4" fill="#6366f1"/>
+  <text x="32" y="296" fill="#fff" font-family="-apple-system, sans-serif" font-size="10" font-weight="600">Copy to Clipboard</text>
+  <rect x="145" y="280" width="130" height="24" rx="4" ry="4" fill="none" stroke="#6366f1"/>
+  <text x="153" y="296" fill="#6366f1" font-family="-apple-system, sans-serif" font-size="10" font-weight="600">Download values.yaml</text>
 </svg>
