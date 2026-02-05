@@ -240,9 +240,11 @@ jobs:
           exit $EXIT_CODE
 
   benchmark-alloc-compare:
-    needs: [ci-filter]
+    # Run after required jobs so it doesn't compete for runner slots
+    needs: [ci-filter, resource-tests, goroutine-leak-check, memory-stress-test, race-condition-tests, memory-leak-tests]
     runs-on: ubuntu-latest
     if: >-
+      always() &&
       needs.ci-filter.outputs.skip_memory != 'true' &&
       !(
         github.event_name == 'pull_request' &&
