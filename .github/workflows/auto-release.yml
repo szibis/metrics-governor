@@ -662,11 +662,70 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
+          VERSION_NUM="${{ steps.version.outputs.VERSION_NUM }}"
+          PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | grep -v "^${VERSION}$" | head -n1)
 
           echo "Creating release $VERSION..."
+          echo "Previous tag: $PREV_TAG"
+
+          # Extract changelog entry for this version from CHANGELOG.md
+          # Look for ## [VERSION_NUM] and extract until next ## [
+          CHANGELOG_ENTRY=$(awk "/^## \[${VERSION_NUM}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md)
+
+          # Generate "What's Changed" section with PR links and authors
+          WHATS_CHANGED=""
+          if [ -n "$PREV_TAG" ]; then
+            # Get PRs merged between tags
+            PR_LIST=$(gh pr list --state merged --base main --json number,title,author,url \
+              --jq '.[] | "* \(.title) by @\(.author.login) in \(.url)"' \
+              2>/dev/null | head -20 || echo "")
+
+            # Filter to PRs merged after prev tag (approximate via commit history)
+            COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"%s" 2>/dev/null || echo "")
+            FILTERED_PRS=""
+            while IFS= read -r pr_line; do
+              # Extract PR number from the line
+              PR_NUM=$(echo "$pr_line" | grep -oE '/pull/[0-9]+' | grep -oE '[0-9]+' || echo "")
+              if [ -n "$PR_NUM" ] && echo "$COMMITS" | grep -q "(#${PR_NUM})"; then
+                FILTERED_PRS="${FILTERED_PRS}${pr_line}\n"
+              fi
+            done <<< "$PR_LIST"
+
+            if [ -n "$FILTERED_PRS" ]; then
+              WHATS_CHANGED=$(echo -e "\n## What's Changed\n${FILTERED_PRS}")
+            fi
+          fi
+
+          # Build release notes
+          cat > /tmp/release_notes.md << 'NOTES_EOF'
+          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+
+          NOTES_EOF
+
+          # Add changelog entry if found
+          if [ -n "$CHANGELOG_ENTRY" ]; then
+            echo "## Changes in ${VERSION}" >> /tmp/release_notes.md
+            echo "" >> /tmp/release_notes.md
+            echo "$CHANGELOG_ENTRY" >> /tmp/release_notes.md
+          fi
+
+          # Add What's Changed section
+          if [ -n "$WHATS_CHANGED" ]; then
+            echo -e "$WHATS_CHANGED" >> /tmp/release_notes.md
+          fi
+
+          # Add full changelog link
+          if [ -n "$PREV_TAG" ]; then
+            echo "" >> /tmp/release_notes.md
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION}" >> /tmp/release_notes.md
+          fi
+
+          echo "Release notes:"
+          cat /tmp/release_notes.md
+
           gh release create "$VERSION" \
             --title "Release $VERSION" \
-            --notes "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details." \
+            --notes-file /tmp/release_notes.md \
             bin/metrics-governor-*.tar.gz bin/checksums.txt bin/metrics-governor-*.tgz
 
   # Job 4: Build and push Docker images

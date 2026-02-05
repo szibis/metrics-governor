@@ -96,6 +96,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
+          VERSION_NUM="${{ steps.version.outputs.VERSION_NUM }}"
           PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | sed -n '2p')
 
           if gh release view "$VERSION" >/dev/null 2>&1; then
@@ -103,10 +104,36 @@ jobs:
             gh release upload "$VERSION" bin/metrics-governor-*.tar.gz bin/checksums.txt bin/metrics-governor-*.tgz --clobber
           else
             echo "Creating release $VERSION..."
+
+            # Extract changelog entry for this version from CHANGELOG.md
+            CHANGELOG_ENTRY=$(awk "/^## \[${VERSION_NUM}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md)
+
+            # Build release notes
+            cat > /tmp/release_notes.md << 'NOTES_EOF'
+          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+
+          NOTES_EOF
+
+            # Add changelog entry if found
+            if [ -n "$CHANGELOG_ENTRY" ]; then
+              echo "## Changes in ${VERSION}" >> /tmp/release_notes.md
+              echo "" >> /tmp/release_notes.md
+              echo "$CHANGELOG_ENTRY" >> /tmp/release_notes.md
+            fi
+
+            # Generate What's Changed using GitHub's auto-generated notes
+            echo "" >> /tmp/release_notes.md
+            gh api "repos/${{ github.repository }}/releases/generate-notes" \
+              -f tag_name="$VERSION" \
+              -f previous_tag_name="$PREV_TAG" \
+              --jq '.body' >> /tmp/release_notes.md 2>/dev/null || true
+
+            echo "Release notes:"
+            cat /tmp/release_notes.md
+
             gh release create "$VERSION" \
               --title "Release $VERSION" \
-              --generate-notes \
-              --notes-start-tag "$PREV_TAG" \
+              --notes-file /tmp/release_notes.md \
               bin/metrics-governor-*.tar.gz bin/checksums.txt bin/metrics-governor-*.tgz
           fi
 
