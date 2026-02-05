@@ -323,6 +323,7 @@
               <small>Write throughput: <span x-text="fmtBytes(writeThroughput) + '/s'"></span></small>
             </template>
             <div style="margin-top:.35rem;padding-top:.35rem;border-top:1px dashed var(--pico-muted-border-color)">
+              <small class="help-tip"><b>Per pod</b> (traffic split by LB): <span x-text="fmtBytes(perPodPvcSize * 1048576)"></span> PVC, <span x-text="perPodWriteIOPS"></span> IOPS, <span x-text="fmtBytes(perPodWriteThroughput) + '/s'"></span> &mdash; <span x-text="(perPodDps >= 1000 ? (perPodDps/1000).toFixed(1) + 'k' : perPodDps) + ' dps/pod'"></span></small><br>
               <small class="help-tip"><b>I/O optimizations:</b> 256KB buffered writer, write coalescing, <span x-text="queueCompression ? 'snappy compression' : 'compression disabled'"></span>. <a href="docs/performance.md#queue" target="_blank">Details</a></small>
             </div>
           </div>
@@ -433,6 +434,7 @@
           <small x-text="(perPodCpuReq / 1000).toFixed(2) + ' cores'"></small><br>
           <small x-text="'Limit: ' + perPodCpuLimit + 'm (' + (perPodCpuLimit / 1000).toFixed(2) + ' cores)'"></small>
           <br><small class="help-tip">Limit = request &times; 1.5</small>
+          <br><small class="help-tip" x-text="'Traffic per pod: ' + (perPodDps >= 1000 ? (perPodDps/1000).toFixed(1) + 'k' : perPodDps) + ' dps (' + (dps >= 1000 ? (dps/1000).toFixed(0) + 'k' : dps) + ' total \u00f7 ' + actualPods + ' pods)'"></small>
         </div>
         <div class="est-card">
           <h4>Per-Pod Memory</h4>
@@ -444,8 +446,12 @@
           <h4>Per-Pod Disk</h4>
           <template x-if="queueType === 'disk'">
             <div>
-              <div class="est-val" x-text="fmtBytes(pvcSize * 1048576)"></div>
-              <small>PVC size (incl. 20% headroom)</small>
+              <div class="est-val" x-text="fmtBytes(perPodPvcSize * 1048576)"></div>
+              <small>PVC size (incl. 20% headroom)</small><br>
+              <small>Queue: <span x-text="fmtBytes(perPodQueueMB * 1048576)"></span></small><br>
+              <small>Write IOPS: <span x-text="perPodWriteIOPS"></span></small><br>
+              <small>Throughput: <span x-text="fmtBytes(perPodWriteThroughput) + '/s'"></span></small>
+              <small class="help-tip" x-text="'Traffic: ' + (perPodDps >= 1000 ? (perPodDps/1000).toFixed(1) + 'k' : perPodDps) + ' dps/pod'"></small>
             </div>
           </template>
           <template x-if="queueType === 'memory'">
@@ -457,9 +463,10 @@
           <small>CPU: <span x-text="totalClusterCpu + 'm (' + (totalClusterCpu / 1000).toFixed(2) + ' cores)'"></span></small><br>
           <small>Memory: <span x-text="fmtBytes(totalClusterMem)"></span></small><br>
           <template x-if="queueType === 'disk'">
-            <small>Disk: <span x-text="fmtBytes(actualPods * pvcSize * 1048576)"></span></small>
+            <small>Disk: <span x-text="fmtBytes(actualPods * perPodPvcSize * 1048576)"></span></small>
           </template>
           <br><small>Outage buffer: <span class="status-green" style="font-weight:700" x-text="queueRetentionStr"></span></small>
+          <small class="help-tip" x-text="actualPods + ' pods \u00d7 ' + (perPodDps >= 1000 ? (perPodDps/1000).toFixed(1) + 'k' : perPodDps) + ' dps each'"></small>
         </div>
       </div>
 
@@ -496,19 +503,29 @@
                 <td>30% headroom for Go GC overhead and transient allocations</td>
               </tr>
               <tr>
+                <td><b>Per-pod DPS</b></td>
+                <td><code>ceil(total_dps / pods)</code></td>
+                <td>Traffic split evenly across pods via load balancer</td>
+              </tr>
+              <tr>
+                <td><b>Per-pod queue</b></td>
+                <td><code>ceil(total_queue_bytes / pods)</code></td>
+                <td>Each pod only buffers its fraction of total traffic during outage</td>
+              </tr>
+              <tr>
                 <td><b>PVC size</b></td>
-                <td><code>queue_max_bytes &times; 1.2</code></td>
-                <td>20% headroom over queue capacity for filesystem metadata and compaction</td>
+                <td><code>per_pod_queue_bytes &times; 1.2</code></td>
+                <td>20% headroom over per-pod queue capacity for filesystem metadata and compaction</td>
               </tr>
               <tr>
                 <td><b>Write throughput</b></td>
-                <td><code>dps &times; series_size &times; compression_ratio</code></td>
-                <td>Sustained bytes/sec to disk during queuing. compression_ratio = 0.3 with snappy, 1.0 without. Batch size cancels out algebraically, but achieving this throughput requires the disk to support the IOPS below</td>
+                <td><code>per_pod_dps &times; series_size &times; compression_ratio</code></td>
+                <td>Sustained bytes/sec per pod to disk. compression_ratio = 0.3 with snappy, 1.0 without</td>
               </tr>
               <tr>
                 <td><b>Write IOPS</b></td>
-                <td><code>ceil(dps / batch_size)</code></td>
-                <td>Each batch flush = 1 write I/O. Smaller batches &rarr; more IOPS needed &rarr; can become the bottleneck that limits effective throughput. Increase batch size to reduce IOPS pressure</td>
+                <td><code>ceil(per_pod_dps / batch_size)</code></td>
+                <td>Per-pod batch flushes. Smaller batches &rarr; more IOPS. Increase batch size to reduce IOPS pressure</td>
               </tr>
               <tr>
                 <td><b>Read IOPS</b></td>
@@ -517,7 +534,7 @@
               </tr>
               <tr>
                 <td><b>Total cluster disk</b></td>
-                <td><code>pods &times; PVC_size</code></td>
+                <td><code>pods &times; per_pod_PVC_size</code></td>
                 <td>Each pod gets its own PersistentVolumeClaim (ReadWriteOnce)</td>
               </tr>
             </tbody>
@@ -1300,7 +1317,7 @@ function configHelper() {
       else if (this.queueMaxSizeUnit === 'GB') this.queueMaxSizeVal = Math.round(mb / 1024 * 100) / 100;
       else this.queueMaxSizeVal = Math.max(10, Math.ceil(mb));
     },
-    // ---- Queue disk estimation ----
+    // ---- Queue disk estimation (global / total) ----
     get avgBatchBytes() { return this.bufferBatchSize * this.avgSeriesSize; },
     get compressionRatio() { return this.queueCompression ? this._est.compression_ratio : 1.0; },
     get writeThroughput() { return (this.dps / this.bufferBatchSize) * this.avgBatchBytes * this.compressionRatio; },
@@ -1308,6 +1325,15 @@ function configHelper() {
     get readIOPS() { return Math.ceil(this.writeIOPS * this._est.read_iops_ratio); },
     get totalIOPS() { return this.writeIOPS + this.readIOPS; },
     get pvcSize() { return Math.ceil(this.queueMaxSizeMB * this._est.pvc_headroom_factor); },
+
+    // ---- Per-pod queue estimation (traffic split evenly via load balancer) ----
+    get perPodDps() { return Math.ceil(this.dps / this.actualPods); },
+    get perPodQueueMB() { return Math.max(10, Math.ceil(this.queueMaxSizeMB / this.actualPods)); },
+    get perPodPvcSize() { return Math.ceil(this.perPodQueueMB * this._est.pvc_headroom_factor); },
+    get perPodWriteThroughput() { return this.perPodDps * this.avgSeriesSize * this.compressionRatio; },
+    get perPodWriteIOPS() { return Math.ceil(this.perPodDps / this.bufferBatchSize); },
+    get perPodReadIOPS() { return Math.ceil(this.perPodWriteIOPS * this._est.read_iops_ratio); },
+    get perPodTotalIOPS() { return this.perPodWriteIOPS + this.perPodReadIOPS; },
 
     // ---- Queue retention ----
     get queueRetentionSec() {
@@ -1337,7 +1363,7 @@ function configHelper() {
       return this.fitDiskVal;
     },
     get estMemMB() { return this.totalMemory / 1048576; },
-    get estDiskMB() { return this.queueType === 'disk' ? this.pvcSize : 0; },
+    get estDiskMB() { return this.queueType === 'disk' ? this.perPodPvcSize : 0; },
     get fitCpuOk() { return this.estCores <= this.fitCpuCores; },
     get fitMemOk() { return this.estMemMB <= this.fitMemMB; },
     get fitDiskOk() { return this.estDiskMB <= this.fitDiskMB; },
@@ -1391,9 +1417,9 @@ function configHelper() {
       return { effIOPS, effTput, burstTput, burstIOPS, volGiB };
     },
     get storageOptions() {
-      const iops = this.totalIOPS;
-      const tput = this.writeThroughput / 1048576; // MB/s
-      const sizeGiB = Math.max(1, Math.ceil(this.pvcSize / 1024));
+      const iops = this.perPodTotalIOPS;
+      const tput = this.perPodWriteThroughput / 1048576; // MB/s per pod
+      const sizeGiB = Math.max(1, Math.ceil(this.perPodPvcSize / 1024));
       const disks = this._storage[this.cloudProvider] || [];
 
       return disks.map(disk => {
@@ -1489,7 +1515,7 @@ function configHelper() {
       y += `  enabled: true\n`;
       y += `  path: "/data/queue"\n`;
       y += `  maxSize: 10000\n`;
-      y += `  maxBytes: ${this.queueMaxSizeMB * 1048576}\n`;
+      y += `  maxBytes: ${this.perPodQueueMB * 1048576}  # per-pod (${this.fmtBytes(this.queueMaxSizeMB * 1048576)} total \u00f7 ${this.actualPods} pods)\n`;
       y += `  compression: "${this.queueCompression ? 'snappy' : 'none'}"\n`;
       y += `  writeBufferSize: 262144\n`;
       y += `  retryInterval: "5s"\n`;
@@ -1504,7 +1530,7 @@ function configHelper() {
         y += `  storageClassName: "${this.recommendedStorageClass}"\n`;
         y += `  accessModes:\n`;
         y += `    - ReadWriteOnce\n`;
-        y += `  size: "${this.pvcSize}Mi"\n`;
+        y += `  size: "${this.perPodPvcSize}Mi"  # per-pod queue + 20% headroom\n`;
         if (this.cloudProvider !== 'none') {
           const driver = csi[this.cloudProvider] || 'kubernetes.io/no-provisioner';
           const dt = recDiskType || 'default';
@@ -1518,8 +1544,8 @@ function configHelper() {
           y += `# parameters:\n`;
           y += `#   type: ${dt}\n`;
           if (this.cloudProvider === 'aws') {
-            y += `#   iops: "${this.totalIOPS}"\n`;
-            y += `#   throughput: "${Math.ceil(this.writeThroughput / 1048576)}"\n`;
+            y += `#   iops: "${this.perPodTotalIOPS}"\n`;
+            y += `#   throughput: "${Math.ceil(this.perPodWriteThroughput / 1048576)}"\n`;
           }
           y += `# volumeBindingMode: WaitForFirstConsumer\n`;
         }
@@ -1557,7 +1583,7 @@ function configHelper() {
         y += `  enabled: true\n`;
         y += `  type: disk\n`;
         y += `  path: "/var/lib/metrics-governor/queue"\n`;
-        y += `  max_bytes: ${this.queueMaxSizeMB * 1048576}\n`;
+        y += `  max_bytes: ${this.perPodQueueMB * 1048576}  # per-pod (${this.fmtBytes(this.queueMaxSizeMB * 1048576)} total \u00f7 ${this.actualPods} pods)\n`;
         y += `  compression: ${this.queueCompression ? 'snappy' : 'none'}\n`;
         y += `  write_buffer_size: 262144\n`;
         y += `  retry_interval: 5s\n`;
@@ -1566,7 +1592,7 @@ function configHelper() {
         y += `\nqueue:\n`;
         y += `  enabled: true\n`;
         y += `  type: memory\n`;
-        y += `  max_bytes: ${this.queueMaxSizeMB * 1048576}\n`;
+        y += `  max_bytes: ${this.perPodQueueMB * 1048576}  # per-pod (${this.fmtBytes(this.queueMaxSizeMB * 1048576)} total \u00f7 ${this.actualPods} pods)\n`;
         y += `  compression: ${this.queueCompression ? 'snappy' : 'none'}\n`;
         y += `  write_buffer_size: 262144\n`;
         y += `  retry_interval: 5s\n`;
@@ -1856,7 +1882,7 @@ function configHelper() {
       if (this.perPodMemLimit < this.perPodMemReq) issues.push({ type: 'error', msg: 'Memory limit should be >= memory request' });
       if (this.bufferBatchSize > this.bufferMaxSize) issues.push({ type: 'warn', msg: 'batchSize exceeds bufferSize - batches will never fill completely' });
       if (this.queueMaxSizeMB < 10) issues.push({ type: 'warn', msg: 'Queue size < 10 MB may not provide meaningful outage buffering' });
-      if (this.actualPods > 10) issues.push({ type: 'warn', msg: `High pod count (${this.actualPods}) - consider increasing cores per pod` });
+      if (this.actualPods > 10) issues.push({ type: 'warn', msg: `High pod count (${this.actualPods}) - this may be driven by memory, I/O, or cardinality requirements rather than CPU. Consider adjusting batch size, compression, or cardinality mode` });
       if (this.cpuUtil > 0.9) issues.push({ type: 'warn', msg: 'CPU utilization > 90% - may experience throttling under load spikes' });
       if (this.queueType === 'disk' && this.pvcSize > 10240) issues.push({ type: 'warn', msg: 'PVC size > 10 GB - verify cloud storage limits for your tier' });
       if (issues.length === 0) issues.push({ type: 'ok', msg: 'Valid - no issues found' });
