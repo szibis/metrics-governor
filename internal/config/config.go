@@ -220,6 +220,57 @@ type Config struct {
 	ShowVersion bool
 }
 
+// byteSizeFlag implements flag.Value and flag.Getter for human-readable byte sizes.
+// Accepts values like "1Gi", "256Mi", "512Ki", or plain integers (bytes).
+type byteSizeFlag struct {
+	target *int64
+}
+
+func (b *byteSizeFlag) String() string {
+	if b.target == nil {
+		return "0"
+	}
+	return FormatByteSize(*b.target)
+}
+
+func (b *byteSizeFlag) Set(s string) error {
+	v, err := ParseByteSize(s)
+	if err != nil {
+		return err
+	}
+	*b.target = v
+	return nil
+}
+
+func (b *byteSizeFlag) Get() interface{} {
+	return *b.target
+}
+
+// byteSizeIntFlag is like byteSizeFlag but targets an int field.
+type byteSizeIntFlag struct {
+	target *int
+}
+
+func (b *byteSizeIntFlag) String() string {
+	if b.target == nil {
+		return "0"
+	}
+	return FormatByteSize(int64(*b.target))
+}
+
+func (b *byteSizeIntFlag) Set(s string) error {
+	v, err := ParseByteSize(s)
+	if err != nil {
+		return err
+	}
+	*b.target = int(v)
+	return nil
+}
+
+func (b *byteSizeIntFlag) Get() interface{} {
+	return *b.target
+}
+
 // ParseFlags parses command line flags and returns the configuration.
 func ParseFlags() *Config {
 	cfg := DefaultConfig()
@@ -282,7 +333,7 @@ func ParseFlags() *Config {
 	flag.DurationVar(&cfg.ExporterHTTP2PingTimeout, "exporter-http2-ping-timeout", 0, "HTTP/2 ping timeout")
 
 	// Receiver HTTP server flags
-	flag.Int64Var(&cfg.ReceiverMaxRequestBodySize, "receiver-max-request-body-size", 0, "Maximum request body size in bytes (0 = no limit)")
+	flag.CommandLine.Var(&byteSizeFlag{target: &cfg.ReceiverMaxRequestBodySize}, "receiver-max-request-body-size", "Maximum request body size (0 = no limit). Accepts: 10Mi, 1Gi, or plain bytes")
 	flag.DurationVar(&cfg.ReceiverReadTimeout, "receiver-read-timeout", 0, "HTTP server read timeout (0 = no timeout)")
 	flag.DurationVar(&cfg.ReceiverReadHeaderTimeout, "receiver-read-header-timeout", 1*time.Minute, "HTTP server read header timeout")
 	flag.DurationVar(&cfg.ReceiverWriteTimeout, "receiver-write-timeout", 30*time.Second, "HTTP server write timeout")
@@ -293,7 +344,7 @@ func ParseFlags() *Config {
 	flag.IntVar(&cfg.BufferSize, "buffer-size", 10000, "Maximum number of metrics to buffer")
 	flag.DurationVar(&cfg.FlushInterval, "flush-interval", 5*time.Second, "Buffer flush interval")
 	flag.IntVar(&cfg.MaxBatchSize, "batch-size", 5000, "Maximum batch size for export")
-	flag.IntVar(&cfg.MaxBatchBytes, "max-batch-bytes", 8388608, "Maximum batch size in bytes for export (0 = no limit)")
+	flag.CommandLine.Var(&byteSizeIntFlag{target: &cfg.MaxBatchBytes}, "max-batch-bytes", "Maximum batch size for export, 0 = no limit (default 8Mi). Accepts: 8Mi, 1Gi, or plain bytes")
 
 	// Stats flags
 	flag.StringVar(&cfg.StatsAddr, "stats-addr", ":9090", "Stats/metrics HTTP endpoint address")
@@ -309,7 +360,7 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.QueueType, "queue-type", "memory", "Queue type: memory (bounded in-memory, fast) or disk (FastQueue, persistent)")
 	flag.StringVar(&cfg.QueuePath, "queue-path", "./queue", "Queue storage directory")
 	flag.IntVar(&cfg.QueueMaxSize, "queue-max-size", 10000, "Maximum number of batches in queue")
-	flag.Int64Var(&cfg.QueueMaxBytes, "queue-max-bytes", 1073741824, "Maximum total queue size in bytes (1GB default)")
+	flag.CommandLine.Var(&byteSizeFlag{target: &cfg.QueueMaxBytes}, "queue-max-bytes", "Maximum total queue size (default 1Gi). Accepts: 1Gi, 512Mi, or plain bytes")
 	flag.DurationVar(&cfg.QueueRetryInterval, "queue-retry-interval", 5*time.Second, "Initial retry interval")
 	flag.DurationVar(&cfg.QueueMaxRetryDelay, "queue-max-retry-delay", 5*time.Minute, "Maximum retry backoff delay")
 	flag.StringVar(&cfg.QueueFullBehavior, "queue-full-behavior", "drop_oldest", "Queue full behavior: drop_oldest, drop_newest, or block")
@@ -318,10 +369,10 @@ func ParseFlags() *Config {
 	flag.Float64Var(&cfg.QueueCompactThreshold, "queue-compact-threshold", 0.5, "Ratio of consumed entries before compaction (0.0-1.0)")
 	// FastQueue flags
 	flag.IntVar(&cfg.QueueInmemoryBlocks, "queue-inmemory-blocks", 2048, "In-memory channel size for FastQueue")
-	flag.Int64Var(&cfg.QueueChunkSize, "queue-chunk-size", 536870912, "Chunk file size in bytes (512MB default)")
+	flag.CommandLine.Var(&byteSizeFlag{target: &cfg.QueueChunkSize}, "queue-chunk-size", "Chunk file size (default 512Mi). Accepts: 512Mi, 1Gi, or plain bytes")
 	flag.DurationVar(&cfg.QueueMetaSyncInterval, "queue-meta-sync", 1*time.Second, "Metadata sync interval (max data loss window)")
 	flag.DurationVar(&cfg.QueueStaleFlushInterval, "queue-stale-flush", 30*time.Second, "Interval to flush stale in-memory blocks to disk")
-	flag.IntVar(&cfg.QueueWriteBufferSize, "queue-write-buffer-size", 262144, "Write buffer size in bytes for disk queue (256KB default)")
+	flag.CommandLine.Var(&byteSizeIntFlag{target: &cfg.QueueWriteBufferSize}, "queue-write-buffer-size", "Write buffer size for disk queue (default 256Ki). Accepts: 256Ki, 1Mi, or plain bytes")
 	flag.StringVar(&cfg.QueueCompression, "queue-compression", "snappy", "Queue block compression: none, snappy")
 	// Backoff flags
 	flag.BoolVar(&cfg.QueueBackoffEnabled, "queue-backoff-enabled", true, "Enable exponential backoff for retries")
@@ -383,7 +434,7 @@ func ParseFlags() *Config {
 	flag.BoolVar(&cfg.PRWQueueEnabled, "prw-queue-enabled", false, "Enable persistent queue for PRW retries")
 	flag.StringVar(&cfg.PRWQueuePath, "prw-queue-path", "./prw-queue", "PRW queue storage directory")
 	flag.IntVar(&cfg.PRWQueueMaxSize, "prw-queue-max-size", 10000, "Maximum PRW entries in queue")
-	flag.Int64Var(&cfg.PRWQueueMaxBytes, "prw-queue-max-bytes", 1073741824, "Maximum PRW queue size in bytes")
+	flag.CommandLine.Var(&byteSizeFlag{target: &cfg.PRWQueueMaxBytes}, "prw-queue-max-bytes", "Maximum PRW queue size (default 1Gi). Accepts: 1Gi, 512Mi, or plain bytes")
 	flag.DurationVar(&cfg.PRWQueueRetryInterval, "prw-queue-retry-interval", 5*time.Second, "PRW queue retry interval")
 	flag.DurationVar(&cfg.PRWQueueMaxRetryDelay, "prw-queue-max-retry-delay", 5*time.Minute, "Maximum PRW retry delay")
 
@@ -415,8 +466,8 @@ func ParseFlags() *Config {
 	flag.DurationVar(&cfg.BloomPersistenceSaveInterval, "bloom-persistence-save-interval", 30*time.Second, "Interval between periodic saves")
 	flag.DurationVar(&cfg.BloomPersistenceStateTTL, "bloom-persistence-state-ttl", time.Hour, "Time after which unused trackers are cleaned up")
 	flag.DurationVar(&cfg.BloomPersistenceCleanupInterval, "bloom-persistence-cleanup-interval", 5*time.Minute, "Interval between cleanup runs")
-	flag.Int64Var(&cfg.BloomPersistenceMaxSize, "bloom-persistence-max-size", 524288000, "Max disk space for bloom state in bytes (500MB)")
-	flag.Int64Var(&cfg.BloomPersistenceMaxMemory, "bloom-persistence-max-memory", 268435456, "Max memory for in-memory bloom filters in bytes (256MB)")
+	flag.CommandLine.Var(&byteSizeFlag{target: &cfg.BloomPersistenceMaxSize}, "bloom-persistence-max-size", "Max disk space for bloom state (default 500Mi). Accepts: 500Mi, 1Gi, or plain bytes")
+	flag.CommandLine.Var(&byteSizeFlag{target: &cfg.BloomPersistenceMaxMemory}, "bloom-persistence-max-memory", "Max memory for in-memory bloom filters (default 256Mi). Accepts: 256Mi, 1Gi, or plain bytes")
 	flag.BoolVar(&cfg.BloomPersistenceCompression, "bloom-persistence-compression", true, "Enable gzip compression for bloom state files")
 	flag.IntVar(&cfg.BloomPersistenceCompressionLevel, "bloom-persistence-compression-level", 1, "Gzip compression level (1=fast, 9=best)")
 
@@ -1510,7 +1561,7 @@ EXAMPLES:
     # Configure HTTP receiver server timeouts
     metrics-governor -receiver-read-timeout 30s \
         -receiver-write-timeout 1m \
-        -receiver-max-request-body-size 10485760
+        -receiver-max-request-body-size 10Mi
 
     # Enable persistent queue for export retries
     metrics-governor -queue-enabled \

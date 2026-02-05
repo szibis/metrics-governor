@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -56,7 +57,7 @@ type HTTPReceiverYAMLConfig struct {
 
 // HTTPServerYAMLConfig holds HTTP server timeout settings.
 type HTTPServerYAMLConfig struct {
-	MaxRequestBodySize int64    `yaml:"max_request_body_size"`
+	MaxRequestBodySize ByteSize `yaml:"max_request_body_size"`
 	ReadTimeout        Duration `yaml:"read_timeout"`
 	ReadHeaderTimeout  Duration `yaml:"read_header_timeout"`
 	WriteTimeout       Duration `yaml:"write_timeout"`
@@ -112,7 +113,7 @@ type QueueYAMLConfig struct {
 	Enabled           *bool    `yaml:"enabled"`
 	Path              string   `yaml:"path"`
 	MaxSize           int      `yaml:"max_size"`
-	MaxBytes          int64    `yaml:"max_bytes"`
+	MaxBytes          ByteSize `yaml:"max_bytes"`
 	RetryInterval     Duration `yaml:"retry_interval"`
 	MaxRetryDelay     Duration `yaml:"max_retry_delay"`
 	FullBehavior      string   `yaml:"full_behavior"`
@@ -121,10 +122,10 @@ type QueueYAMLConfig struct {
 	CompactThreshold  float64  `yaml:"compact_threshold"`
 	// FastQueue settings
 	InmemoryBlocks     int      `yaml:"inmemory_blocks"`
-	ChunkSize          int64    `yaml:"chunk_size"`
+	ChunkSize          ByteSize `yaml:"chunk_size"`
 	MetaSyncInterval   Duration `yaml:"meta_sync_interval"`
 	StaleFlushInterval Duration `yaml:"stale_flush_interval"`
-	WriteBufferSize    int      `yaml:"write_buffer_size"`
+	WriteBufferSize    ByteSize `yaml:"write_buffer_size"`
 	Compression        string   `yaml:"compression"`
 	// Backoff settings
 	Backoff BackoffYAMLConfig `yaml:"backoff"`
@@ -185,7 +186,7 @@ type HTTPClientYAMLConfig struct {
 type BufferYAMLConfig struct {
 	Size          int      `yaml:"size"`
 	BatchSize     int      `yaml:"batch_size"`
-	MaxBatchBytes int      `yaml:"max_batch_bytes"`
+	MaxBatchBytes ByteSize `yaml:"max_batch_bytes"`
 	FlushInterval Duration `yaml:"flush_interval"`
 }
 
@@ -225,6 +226,99 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 // MarshalYAML implements yaml.Marshaler for Duration.
 func (d Duration) MarshalYAML() (interface{}, error) {
 	return time.Duration(d).String(), nil
+}
+
+// ByteSize is a wrapper for int64 that supports human-readable YAML values.
+// Accepted formats: raw integer (bytes), or suffixed: Ki, Mi, Gi, Ti.
+type ByteSize int64
+
+// UnmarshalYAML implements yaml.Unmarshaler for ByteSize.
+func (b *ByteSize) UnmarshalYAML(value *yaml.Node) error {
+	// Try integer first
+	var n int64
+	if err := value.Decode(&n); err == nil {
+		*b = ByteSize(n)
+		return nil
+	}
+	// Try string with unit suffix
+	var s string
+	if err := value.Decode(&s); err != nil {
+		return err
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		*b = 0
+		return nil
+	}
+	parsed, err := ParseByteSize(s)
+	if err != nil {
+		return err
+	}
+	*b = ByteSize(parsed)
+	return nil
+}
+
+// MarshalYAML implements yaml.Marshaler for ByteSize.
+func (b ByteSize) MarshalYAML() (interface{}, error) {
+	return FormatByteSize(int64(b)), nil
+}
+
+// ParseByteSize parses a human-readable byte size string.
+// Accepted suffixes: Ki (1024), Mi (1048576), Gi (1073741824), Ti (1099511627776).
+// Plain integers are treated as bytes.
+func ParseByteSize(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+	type suffix struct {
+		name string
+		mult int64
+	}
+	suffixes := []suffix{
+		{"Ti", 1099511627776},
+		{"Gi", 1073741824},
+		{"Mi", 1048576},
+		{"Ki", 1024},
+	}
+	for _, sf := range suffixes {
+		if strings.HasSuffix(s, sf.name) {
+			numStr := strings.TrimSpace(strings.TrimSuffix(s, sf.name))
+			// Support float values like "1.5Gi"
+			var f float64
+			if _, err := fmt.Sscanf(numStr, "%f", &f); err != nil {
+				return 0, fmt.Errorf("invalid byte size: %q", s)
+			}
+			return int64(f * float64(sf.mult)), nil
+		}
+	}
+	// Plain integer — reject strings with non-numeric trailing characters (e.g. "256MB")
+	var n int64
+	var trail string
+	if _, err := fmt.Sscanf(s, "%d%s", &n, &trail); err == nil && trail != "" {
+		return 0, fmt.Errorf("invalid byte size: %q (use Ki, Mi, Gi, or Ti suffixes)", s)
+	}
+	if _, err := fmt.Sscanf(s, "%d", &n); err != nil {
+		return 0, fmt.Errorf("invalid byte size: %q", s)
+	}
+	return n, nil
+}
+
+// FormatByteSize formats bytes as a human-readable string with binary suffix.
+func FormatByteSize(b int64) string {
+	if b >= 1099511627776 && b%1099511627776 == 0 {
+		return fmt.Sprintf("%dTi", b/1099511627776)
+	}
+	if b >= 1073741824 && b%1073741824 == 0 {
+		return fmt.Sprintf("%dGi", b/1073741824)
+	}
+	if b >= 1048576 && b%1048576 == 0 {
+		return fmt.Sprintf("%dMi", b/1048576)
+	}
+	if b >= 1024 && b%1024 == 0 {
+		return fmt.Sprintf("%dKi", b/1024)
+	}
+	return fmt.Sprintf("%d", b)
 }
 
 // LoadYAML loads configuration from a YAML file.
@@ -459,7 +553,7 @@ func (y *YAMLConfig) ToConfig() *Config {
 		ReceiverAuthBasicPassword: y.Receiver.Auth.BasicPassword,
 
 		// Receiver HTTP Server
-		ReceiverMaxRequestBodySize: y.Receiver.HTTP.Server.MaxRequestBodySize,
+		ReceiverMaxRequestBodySize: int64(y.Receiver.HTTP.Server.MaxRequestBodySize),
 		ReceiverReadTimeout:        time.Duration(y.Receiver.HTTP.Server.ReadTimeout),
 		ReceiverReadHeaderTimeout:  time.Duration(y.Receiver.HTTP.Server.ReadHeaderTimeout),
 		ReceiverWriteTimeout:       time.Duration(y.Receiver.HTTP.Server.WriteTimeout),
@@ -504,7 +598,7 @@ func (y *YAMLConfig) ToConfig() *Config {
 		BufferSize:    y.Buffer.Size,
 		FlushInterval: time.Duration(y.Buffer.FlushInterval),
 		MaxBatchSize:  y.Buffer.BatchSize,
-		MaxBatchBytes: y.Buffer.MaxBatchBytes,
+		MaxBatchBytes: int(y.Buffer.MaxBatchBytes),
 
 		// Stats
 		StatsAddr:   y.Stats.Address,
@@ -519,7 +613,7 @@ func (y *YAMLConfig) ToConfig() *Config {
 		QueueEnabled:           *y.Exporter.Queue.Enabled,
 		QueuePath:              y.Exporter.Queue.Path,
 		QueueMaxSize:           y.Exporter.Queue.MaxSize,
-		QueueMaxBytes:          y.Exporter.Queue.MaxBytes,
+		QueueMaxBytes:          int64(y.Exporter.Queue.MaxBytes),
 		QueueRetryInterval:     time.Duration(y.Exporter.Queue.RetryInterval),
 		QueueMaxRetryDelay:     time.Duration(y.Exporter.Queue.MaxRetryDelay),
 		QueueFullBehavior:      y.Exporter.Queue.FullBehavior,
@@ -528,10 +622,10 @@ func (y *YAMLConfig) ToConfig() *Config {
 		QueueCompactThreshold:  y.Exporter.Queue.CompactThreshold,
 		// FastQueue settings
 		QueueInmemoryBlocks:     y.Exporter.Queue.InmemoryBlocks,
-		QueueChunkSize:          y.Exporter.Queue.ChunkSize,
+		QueueChunkSize:          int64(y.Exporter.Queue.ChunkSize),
 		QueueMetaSyncInterval:   time.Duration(y.Exporter.Queue.MetaSyncInterval),
 		QueueStaleFlushInterval: time.Duration(y.Exporter.Queue.StaleFlushInterval),
-		QueueWriteBufferSize:    y.Exporter.Queue.WriteBufferSize,
+		QueueWriteBufferSize:    int(y.Exporter.Queue.WriteBufferSize),
 		QueueCompression:        y.Exporter.Queue.Compression,
 		// Backoff settings
 		QueueBackoffEnabled:    *y.Exporter.Queue.Backoff.Enabled,
