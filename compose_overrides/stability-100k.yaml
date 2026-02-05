@@ -4,12 +4,12 @@
 # This override provides stable 100k datapoints/s for investigating rate behavior:
 # - Stable mode enabled (predictable, no random variation)
 # - All spikes/bursts disabled
-# - 100ms interval with 10,000 datapoints per interval = 100k/s
+# - 1s interval with 100,000 datapoints per interval = 100k/s
 #
-# Expected metrics per interval (100ms):
-# - 1000 metrics * 10 series * 1 datapoint = 10,000 datapoints/interval
-# - At 100ms intervals = 100,000 datapoints/second
-# - Total cardinality: 10,000 unique series (stable, no growth)
+# Expected metrics per interval (1s):
+# - 10000 metrics * 10 series * 1 datapoint = 100,000 datapoints/interval
+# - At 1s intervals = 100,000 datapoints/second
+# - Total cardinality: 100,000 unique series (stable, no growth)
 #
 # Run for 20+ minutes to observe rate stability
 
@@ -19,7 +19,7 @@ services:
       - OTLP_ENDPOINT=otel-collector:4317
       # Use low-memory temporality to reduce memory usage
       - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=lowmemory
-      - METRICS_INTERVAL=100ms           # 100ms intervals
+      - METRICS_INTERVAL=1s              # 1s intervals
       - SERVICES=stability-test          # Single service
       - ENVIRONMENTS=prod                # Single environment
       # Disable ALL variable traffic features
@@ -36,8 +36,10 @@ services:
       - TARGET_DATAPOINTS_PER_SEC=100000
       - METRICS_PORT=9091
       # Stable mode - exact predictable output
+      # 10000 metrics * 10 series * 1 datapoint = 100,000 per interval
+      # At 1s intervals = 100,000 datapoints/second
       - ENABLE_STABLE_MODE=true
-      - STABLE_METRIC_COUNT=1000         # 1000 unique metric names
+      - STABLE_METRIC_COUNT=10000        # 10000 unique metric names
       - STABLE_CARDINALITY=10            # 10 series per metric
       - STABLE_DATAPOINTS=1              # 1 datapoint per series per interval
       # Spike scenarios DISABLED
@@ -45,8 +47,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
-          cpus: "1"
+          memory: 4G
+          cpus: "2"
 
   metrics-governor:
     command:
