@@ -5,7 +5,7 @@ LDFLAGS=-ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/
 
 BUILD_DIR=bin
 
-.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all lint lint-dockerfile lint-yaml lint-helm lint-all ship ship-dry-run tag compose-up compose-down compose-light compose-stable compose-perf compose-queue compose-persistence compose-sharding compose-logs
+.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all lint lint-dockerfile lint-yaml lint-helm lint-all validate-config-helper generate-config-meta ship ship-dry-run tag compose-up compose-down compose-light compose-stable compose-perf compose-queue compose-persistence compose-sharding compose-logs
 
 all: darwin-arm64 linux-arm64 linux-amd64
 
@@ -133,8 +133,16 @@ lint-helm:
 	@command -v helm >/dev/null 2>&1 || { echo "helm not installed. Install from: https://helm.sh/docs/intro/install/"; exit 1; }
 	helm lint helm/metrics-governor
 
-lint-all: lint lint-dockerfile lint-yaml lint-helm
+lint-all: lint lint-dockerfile lint-yaml lint-helm validate-config-helper
 	@echo "All lints passed!"
+
+generate-config-meta:
+	@echo "Generating config-meta from Go defaults + storage-specs.json..."
+	go run ./tools/config-helper/cmd/generate
+
+validate-config-helper:
+	@echo "Validating config helper against Go defaults..."
+	go test -v ./tools/config-helper/...
 
 # Ship targets - creates PR-based releases
 # Usage: make ship VERSION=0.5.2 MESSAGE="Add new feature"
@@ -269,6 +277,8 @@ help:
 	@echo "  lint-yaml        - Lint YAML files with yamllint"
 	@echo "  lint-helm        - Lint Helm chart"
 	@echo "  lint-all         - Run all linters"
+	@echo "  generate-config-meta - Regenerate config-meta JSON in config helper HTML"
+	@echo "  validate-config-helper - Validate config helper HTML against Go defaults"
 	@echo "  build-release    - Run tests, lint, and build all platforms"
 	@echo "  ship VERSION=X.Y.Z MESSAGE='...' - Create release PR with auto-merge"
 	@echo "  ship-dry-run VERSION=X.Y.Z MESSAGE='...' - Preview release changes"
