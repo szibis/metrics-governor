@@ -202,12 +202,22 @@
     </details>
   </section>
 
-  <!-- ====== SECTION 2: RESOURCE ESTIMATION ====== -->
+  <!-- ====== SECTION 2+3: ESTIMATION & RULES ====== -->
   <section>
-    <details open>
-      <summary style="font-size:1.25em;font-weight:700">2. Resource Estimation</summary>
+    <div class="tab-bar" style="margin-bottom:0">
+      <button class="tab-btn" :class="middleTab === 'estimation' ? 'active' : ''" @click="middleTab = 'estimation'">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 16H5V5h14v14zM7 10h2v7H7zm4-3h2v10h-2zm4 6h2v4h-2z"/></svg>
+        2. Resource Estimation
+      </button>
+      <button class="tab-btn" :class="middleTab === 'builder' ? 'active' : ''" @click="middleTab = 'builder'">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+        3. Limits Rules Builder
+      </button>
+    </div>
 
-    <div class="grid-3" style="margin-top:.75rem">
+    <template x-if="middleTab === 'estimation'">
+    <div style="margin-top:1rem">
+    <div class="grid-3">
       <!-- CPU -->
       <div class="est-card">
         <h4>CPU</h4>
@@ -404,15 +414,13 @@
         </div>
       </details>
     </details>
-    </details>
-  </section>
+    </div>
+    </template>
 
-  <!-- ====== SECTION 3: LIMITS RULES BUILDER ====== -->
-  <section>
+    <template x-if="middleTab === 'builder'">
+    <div style="margin-top:1rem">
+
     <details open>
-      <summary style="font-size:1.25em;font-weight:700">3. Limits Rules Builder</summary>
-
-    <details open style="margin-top:.75rem">
       <summary>Global Defaults</summary>
       <div class="grid-3" style="margin-top:.75rem">
         <label>
@@ -522,7 +530,8 @@
         </template>
       </div>
     </template>
-    </details>
+    </div>
+    </template>
   </section>
 
   <!-- ====== SECTION 4: LIVE CONFIG PREVIEW ====== -->
@@ -606,7 +615,7 @@ function configHelper() {
         'queueType','queueMaxSizeMB','targetRetentionMin','coresPerPod','cloudProvider',
         'fitCpuCores','fitMemoryMB','fitDiskMB',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
-        'rules','activeTab',
+        'rules','middleTab','activeTab',
       ];
       for (const f of fields) {
         this.$watch(f, () => {
@@ -634,7 +643,7 @@ function configHelper() {
         'queueType','queueMaxSizeMB','targetRetentionMin','coresPerPod','cloudProvider',
         'fitCpuCores','fitMemoryMB','fitDiskMB',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
-        'rules','activeTab','ruleIdCounter',
+        'rules','middleTab','activeTab','ruleIdCounter',
       ];
       for (const f of fields) state[f] = this[f];
       try { localStorage.setItem('mg-config-state', JSON.stringify(state)); } catch(e) {}
@@ -694,6 +703,7 @@ function configHelper() {
     groupByOptions: ['service', 'env', 'namespace', 'cluster', 'job', 'instance'],
 
     // ---- UI state ----
+    middleTab: 'estimation',
     activeTab: 'helm',
     copyOk: null,
 
