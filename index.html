@@ -38,7 +38,9 @@
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
     .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
     .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
-    @media (max-width: 768px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+    .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; }
+    @media (max-width: 768px) { .grid-2, .grid-3, .grid-4, .grid-5 { grid-template-columns: 1fr; } }
+    @media (min-width: 769px) and (max-width: 1100px) { .grid-5 { grid-template-columns: repeat(3, 1fr); } }
     summary { cursor: pointer; font-weight: 600; }
     details details > summary { font-size: 1.1em; font-weight: 700; }
     .copy-ok { color: var(--status-green); font-size: .85em; }
@@ -355,13 +357,14 @@
       <div class="storage-rec">
         <h4>Cloud Block Storage Recommendation (<span x-text="cloudProvider.toUpperCase()"></span>)</h4>
         <table>
-          <thead><tr><th>Storage Class</th><th>IOPS</th><th>Throughput</th><th>Note</th><th>Recommendation</th></tr></thead>
+          <thead><tr><th>Storage Class</th><th>Effective IOPS</th><th>Sustained MB/s</th><th>Burst MB/s</th><th>Note</th><th>Fit</th></tr></thead>
           <tbody>
             <template x-for="opt in storageOptions" :key="opt.name">
               <tr :style="opt.recommended ? 'font-weight:700' : ''">
                 <td x-text="opt.name"></td>
                 <td x-text="opt.maxIOPS.toLocaleString()"></td>
                 <td x-text="opt.maxThroughput + ' MB/s'"></td>
+                <td x-text="opt.burstThroughput ? opt.burstThroughput + ' MB/s' : '\u2014'"></td>
                 <td style="font-size:.8em;color:var(--pico-muted-color)" x-text="opt.note || ''"></td>
                 <td>
                   <template x-if="opt.recommended"><span class="badge-green">Recommended</span></template>
@@ -378,7 +381,7 @@
     <!-- K8s Pod Sizing -->
     <details open>
       <summary>Kubernetes Pod Sizing</summary>
-      <div class="grid-4" style="margin-top:.75rem">
+      <div class="grid-5" style="margin-top:.75rem">
         <div class="est-card">
           <h4 x-text="podOverride > 0 ? 'Pods (overridden)' : 'Recommended Pods'"></h4>
           <div class="est-val" x-text="actualPods"></div>
@@ -401,11 +404,23 @@
           <br><small class="help-tip">Limit = request &times; 1.3</small>
         </div>
         <div class="est-card">
+          <h4>Per-Pod Disk</h4>
+          <template x-if="queueType === 'disk'">
+            <div>
+              <div class="est-val" x-text="fmtBytes(pvcSize * 1048576)"></div>
+              <small>PVC size (incl. 20% headroom)</small>
+            </div>
+          </template>
+          <template x-if="queueType === 'memory'">
+            <div><small>N/A — memory queue</small></div>
+          </template>
+        </div>
+        <div class="est-card">
           <h4>Total Cluster</h4>
           <small>CPU: <span x-text="totalClusterCpu + 'm (' + (totalClusterCpu / 1000).toFixed(2) + ' cores)'"></span></small><br>
           <small>Memory: <span x-text="fmtBytes(totalClusterMem)"></span></small><br>
           <template x-if="queueType === 'disk'">
-            <small>Disk: <span x-text="fmtBytes(actualPods * queueMaxSizeMB * 1048576)"></span></small>
+            <small>Disk: <span x-text="fmtBytes(actualPods * pvcSize * 1048576)"></span></small>
           </template>
           <br><small>Outage buffer: <span class="status-green" style="font-weight:700" x-text="queueRetentionStr"></span></small>
         </div>
@@ -696,12 +711,237 @@
   <small>metrics-governor Configuration Helper &mdash; open this file directly in your browser, no build step needed.</small>
 </footer>
 
+<script type="application/json" id="config-meta">
+{
+  "defaults": {
+    "bloom_fpr": 0.01,
+    "buffer_batch_size": 1000,
+    "buffer_size": 10000,
+    "cardinality_mode": "bloom",
+    "exporter_endpoint": "localhost:4317",
+    "exporter_insecure": true,
+    "exporter_protocol": "grpc",
+    "flush_interval": "5s",
+    "grpc_listen": ":4317",
+    "hll_threshold": 10000,
+    "http_listen": ":4318",
+    "intern_max_value_length": 64,
+    "queue_full_behavior": "drop_oldest",
+    "queue_max_bytes": 1073741824,
+    "queue_max_retries": 3,
+    "queue_max_retry_delay": "5m",
+    "queue_retry_interval": "5s",
+    "queue_type": "memory",
+    "retention_window": "60s",
+    "stats_addr": ":9090",
+    "string_interning": true
+  },
+  "estimation": {
+    "base_overhead_bytes": 52428800,
+    "compression_ratio": 0.3,
+    "cpu_limit_factor": 1.5,
+    "cpu_target_utilization": 0.7,
+    "dps_per_core": 100000,
+    "exact_mode_bytes_per_series": 75,
+    "hll_memory_bytes": 12288,
+    "label_key_overhead_bytes": 10,
+    "mem_limit_factor": 1.3,
+    "pvc_headroom_factor": 1.2,
+    "read_iops_ratio": 0.1,
+    "series_base_overhead_bytes": 16
+  },
+  "storage": {
+    "aws": [
+      {
+        "name": "gp3",
+        "class": "gp3",
+        "disk_type": "gp3",
+        "min_gib": 1,
+        "max_gib": 16384,
+        "baseline_iops": 3000,
+        "iops_per_gib": 0,
+        "max_iops": 80000,
+        "baseline_tput_mbs": 125,
+        "tput_per_gib_mbs": 0,
+        "max_tput_mbs": 2000,
+        "burst_model": "provisioned"
+      },
+      {
+        "name": "io2 Block Express",
+        "class": "io2",
+        "disk_type": "io2",
+        "min_gib": 4,
+        "max_gib": 65536,
+        "baseline_iops": 100,
+        "iops_per_gib": 1000,
+        "max_iops": 256000,
+        "baseline_tput_mbs": 0,
+        "tput_per_gib_mbs": 0.256,
+        "max_tput_mbs": 4000,
+        "burst_model": "provisioned"
+      },
+      {
+        "name": "io1",
+        "class": "io1",
+        "disk_type": "io1",
+        "min_gib": 4,
+        "max_gib": 16384,
+        "baseline_iops": 100,
+        "iops_per_gib": 50,
+        "max_iops": 64000,
+        "baseline_tput_mbs": 0,
+        "tput_per_gib_mbs": 0.016,
+        "max_tput_mbs": 1000,
+        "burst_model": "provisioned"
+      },
+      {
+        "name": "st1 (HDD)",
+        "class": "st1",
+        "disk_type": "st1",
+        "min_gib": 125,
+        "max_gib": 16384,
+        "baseline_iops": 500,
+        "iops_per_gib": 0,
+        "max_iops": 500,
+        "baseline_tput_mbs": 0,
+        "tput_per_tib_mbs": 40,
+        "burst_tput_per_tib_mbs": 250,
+        "max_tput_mbs": 500,
+        "burst_model": "credit"
+      }
+    ],
+    "azure": [
+      {
+        "name": "Premium SSD v1",
+        "class": "managed-premium",
+        "disk_type": "Premium_LRS",
+        "min_gib": 4,
+        "max_gib": 32768,
+        "baseline_iops": 120,
+        "iops_per_gib": 120,
+        "max_iops": 20000,
+        "baseline_tput_mbs": 25,
+        "tput_per_gib_mbs": 0.15,
+        "max_tput_mbs": 900,
+        "burst_iops": 3500,
+        "burst_tput_mbs": 170,
+        "burst_model": "credit"
+      },
+      {
+        "name": "Premium SSD v2",
+        "class": "managed-premium-v2",
+        "disk_type": "PremiumV2_LRS",
+        "min_gib": 1,
+        "max_gib": 65536,
+        "baseline_iops": 3000,
+        "iops_per_gib": 1,
+        "max_iops": 80000,
+        "baseline_tput_mbs": 125,
+        "tput_per_gib_mbs": 0,
+        "max_tput_mbs": 1200,
+        "burst_model": "provisioned"
+      },
+      {
+        "name": "Ultra Disk",
+        "class": "ultra-disk",
+        "disk_type": "UltraSSD_LRS",
+        "min_gib": 4,
+        "max_gib": 65536,
+        "baseline_iops": 0,
+        "iops_per_gib": 1000,
+        "max_iops": 400000,
+        "baseline_tput_mbs": 0,
+        "tput_per_iops_mbs": 0.25,
+        "max_tput_mbs": 10000,
+        "burst_model": "provisioned"
+      },
+      {
+        "name": "Standard SSD",
+        "class": "managed-standard",
+        "disk_type": "StandardSSD_LRS",
+        "min_gib": 4,
+        "max_gib": 32768,
+        "baseline_iops": 500,
+        "iops_per_gib": 0,
+        "max_iops": 6000,
+        "baseline_tput_mbs": 60,
+        "tput_per_gib_mbs": 0,
+        "max_tput_mbs": 750,
+        "burst_iops": 6000,
+        "burst_tput_mbs": 750,
+        "burst_model": "credit"
+      }
+    ],
+    "gcp": [
+      {
+        "name": "pd-ssd",
+        "class": "pd-ssd",
+        "disk_type": "pd-ssd",
+        "min_gib": 10,
+        "max_gib": 65536,
+        "baseline_iops": 0,
+        "iops_per_gib": 30,
+        "max_iops": 100000,
+        "baseline_tput_mbs": 0,
+        "tput_per_gib_mbs": 0.48,
+        "max_tput_mbs": 1200,
+        "burst_model": "none"
+      },
+      {
+        "name": "pd-balanced",
+        "class": "pd-balanced",
+        "disk_type": "pd-balanced",
+        "min_gib": 10,
+        "max_gib": 65536,
+        "baseline_iops": 3000,
+        "iops_per_gib": 6,
+        "max_iops": 80000,
+        "baseline_tput_mbs": 0,
+        "tput_per_gib_mbs": 0.28,
+        "max_tput_mbs": 1200,
+        "burst_model": "none"
+      },
+      {
+        "name": "pd-standard",
+        "class": "pd-standard",
+        "disk_type": "pd-standard",
+        "min_gib": 10,
+        "max_gib": 65536,
+        "baseline_iops": 0,
+        "iops_per_gib": 1.5,
+        "max_iops": 15000,
+        "baseline_tput_mbs": 0,
+        "tput_per_gib_mbs": 0.12,
+        "max_tput_mbs": 400,
+        "burst_model": "none"
+      }
+    ]
+  }
+}
+</script>
+
 <script>
 function configHelper() {
   return {
     // ---- Theme ----
     theme: localStorage.getItem('mg-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
     init() {
+      // Load config-meta JSON (single source of truth from Go defaults)
+      const meta = JSON.parse(document.getElementById('config-meta').textContent);
+      this._meta = meta;
+      this._est = meta.estimation;
+      this._storage = meta.storage;
+      // Apply Go-sourced defaults (before loadState which may override)
+      this.bufferMaxSize = meta.defaults.buffer_size;
+      this.bufferBatchSize = meta.defaults.buffer_batch_size;
+      this.queueType = meta.defaults.queue_type;
+      this.queueMaxSizeVal = Math.round(meta.defaults.queue_max_bytes / 1073741824 * 100) / 100;
+      this.queueMaxSizeUnit = 'GB';
+      this.cardinalityMode = meta.defaults.cardinality_mode;
+      this.bloomFPR = meta.defaults.bloom_fpr;
+      this.hllThreshold = meta.defaults.hll_threshold;
+      this.retentionWindow = meta.defaults.retention_window;
+
       this.applyTheme();
       this.$watch('theme', () => this.applyTheme());
       this.loadState();
@@ -765,7 +1005,7 @@ function configHelper() {
     autoSizeQueue() {
       if (this._queueSyncDirection === 'queue') return;
       this._queueSyncDirection = 'retention';
-      const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (10 + this.avgLabelLen) + 16)) * 0.3;
+      const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (this._est.label_key_overhead_bytes + this.avgLabelLen) + this._est.series_base_overhead_bytes)) * this._est.compression_ratio;
       const needed = Math.ceil(bytesPerSec * this.targetRetentionMin * 60 / 1048576);
       this.setQueueMaxSizeMB(Math.max(10, needed));
       this.$nextTick(() => { this._queueSyncDirection = null; });
@@ -773,7 +1013,7 @@ function configHelper() {
     autoSizeRetention() {
       if (this._queueSyncDirection === 'retention') return;
       this._queueSyncDirection = 'queue';
-      const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (10 + this.avgLabelLen) + 16)) * 0.3;
+      const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (this._est.label_key_overhead_bytes + this.avgLabelLen) + this._est.series_base_overhead_bytes)) * this._est.compression_ratio;
       if (bytesPerSec <= 0) { this._queueSyncDirection = null; return; }
       const retentionSec = (this.queueMaxSizeMB * 1048576) / bytesPerSec;
       const retentionMin = retentionSec / 60;
@@ -850,12 +1090,12 @@ function configHelper() {
     cardinalityMode: 'bloom',
     bloomFPR: 0.01,
     hllThreshold: 10000,
-    bufferMaxSize: 5000,
+    bufferMaxSize: 10000,
     bufferBatchSize: 1000,
     queueMaxRetries: 3,
-    queueType: 'disk',
-    queueMaxSizeVal: 100,
-    queueMaxSizeUnit: 'MB',
+    queueType: 'memory',
+    queueMaxSizeVal: 1,
+    queueMaxSizeUnit: 'GB',
     targetRetentionVal: 10,
     targetRetentionUnit: 'min',
     fitCpuVal: 4,
@@ -936,21 +1176,21 @@ function configHelper() {
     },
 
     // ---- CPU estimation ----
-    get estCores() { return this.dps / 100000; },
+    get estCores() { return this.dps / this._est.dps_per_core; },
     get cpuUtil() { return this.estCores / this.availableCores; },
     get cpuUtilPct() { return (this.cpuUtil * 100).toFixed(0); },
     get cpuStatusClass() {
-      if (this.cpuUtil <= 0.7) return 'status-green';
+      if (this.cpuUtil <= this._est.cpu_target_utilization) return 'status-green';
       if (this.cpuUtil <= 0.9) return 'status-yellow';
       return 'status-red';
     },
     get cpuBadgeClass() {
-      if (this.cpuUtil <= 0.7) return 'badge-green';
+      if (this.cpuUtil <= this._est.cpu_target_utilization) return 'badge-green';
       if (this.cpuUtil <= 0.9) return 'badge-yellow';
       return 'badge-red';
     },
     get cpuStatusLabel() {
-      if (this.cpuUtil <= 0.7) return 'OK';
+      if (this.cpuUtil <= this._est.cpu_target_utilization) return 'OK';
       if (this.cpuUtil <= 0.9) return 'Warning';
       return 'Over capacity';
     },
@@ -964,16 +1204,16 @@ function configHelper() {
     },
     get trackerMemory() {
       const mode = this.cardinalityMode;
-      if (mode === 'exact') return this.totalSeries * 75;
+      if (mode === 'exact') return this.totalSeries * this._est.exact_mode_bytes_per_series;
       if (mode === 'bloom') return this.uniqueMetrics * Math.ceil(this.bloomBitsPerTracker / 8);
-      // hybrid: bloom up to threshold, HLL (12KB) above
+      // hybrid: bloom up to threshold, HLL above
       const bloomTrackers = Math.min(this.uniqueMetrics, Math.floor(this.uniqueMetrics * (this.hllThreshold / this.avgCardinality)));
       const hllTrackers = this.uniqueMetrics - bloomTrackers;
-      return bloomTrackers * Math.ceil(this.bloomBitsPerTracker / 8) + hllTrackers * 12288;
+      return bloomTrackers * Math.ceil(this.bloomBitsPerTracker / 8) + hllTrackers * this._est.hll_memory_bytes;
     },
-    get avgSeriesSize() { return this.avgLabels * (10 + this.avgLabelLen) + 16; },
+    get avgSeriesSize() { return this.avgLabels * (this._est.label_key_overhead_bytes + this.avgLabelLen) + this._est.series_base_overhead_bytes; },
     get bufferMemory() { return this.bufferMaxSize * this.avgSeriesSize; },
-    get baseOverhead() { return 50 * 1048576; },
+    get baseOverhead() { return this._est.base_overhead_bytes; },
     get queueMemoryAdd() { return this.queueType === 'memory' ? this.queueMaxSizeMB * 1048576 : 0; },
     get totalMemory() { return this.trackerMemory + this.bufferMemory + this.baseOverhead + this.queueMemoryAdd; },
 
@@ -989,12 +1229,12 @@ function configHelper() {
     },
     // ---- Queue disk estimation ----
     get avgBatchBytes() { return this.bufferBatchSize * this.avgSeriesSize; },
-    get compressionRatio() { return 0.3; },
+    get compressionRatio() { return this._est.compression_ratio; },
     get writeThroughput() { return (this.dps / this.bufferBatchSize) * this.avgBatchBytes * this.compressionRatio; },
     get writeIOPS() { return Math.ceil(this.dps / this.bufferBatchSize); },
-    get readIOPS() { return Math.ceil(this.writeIOPS * 0.1); },
+    get readIOPS() { return Math.ceil(this.writeIOPS * this._est.read_iops_ratio); },
     get totalIOPS() { return this.writeIOPS + this.readIOPS; },
-    get pvcSize() { return Math.ceil(this.queueMaxSizeMB * 1.2); },
+    get pvcSize() { return Math.ceil(this.queueMaxSizeMB * this._est.pvc_headroom_factor); },
 
     // ---- Queue retention ----
     get queueRetentionSec() {
@@ -1049,70 +1289,87 @@ function configHelper() {
     },
 
     // ---- Cloud storage ----
+    calcDiskPerformance(disk, sizeGiB) {
+      const volGiB = Math.max(disk.min_gib, Math.min(disk.max_gib, sizeGiB));
+      const volTiB = volGiB / 1024;
+
+      // IOPS: baseline + per-GiB scaling, capped at max
+      let effIOPS = (disk.baseline_iops || 0) + (disk.iops_per_gib || 0) * volGiB;
+      effIOPS = Math.min(disk.max_iops, Math.round(effIOPS));
+
+      // Throughput: baseline + per-GiB or per-TiB or per-IOPS scaling, capped at max
+      let effTput = (disk.baseline_tput_mbs || 0);
+      if (disk.tput_per_gib_mbs) effTput += disk.tput_per_gib_mbs * volGiB;
+      if (disk.tput_per_tib_mbs) effTput += disk.tput_per_tib_mbs * volTiB;
+      if (disk.tput_per_iops_mbs) effTput += disk.tput_per_iops_mbs * effIOPS;
+      effTput = Math.min(disk.max_tput_mbs, Math.round(effTput));
+
+      // Burst throughput (credit-based disks)
+      let burstTput = null;
+      if (disk.burst_tput_per_tib_mbs) {
+        burstTput = Math.min(disk.max_tput_mbs, Math.round(disk.burst_tput_per_tib_mbs * volTiB));
+      } else if (disk.burst_tput_mbs) {
+        burstTput = disk.burst_tput_mbs;
+      }
+
+      let burstIOPS = null;
+      if (disk.burst_iops) burstIOPS = disk.burst_iops;
+
+      return { effIOPS, effTput, burstTput, burstIOPS, volGiB };
+    },
     get storageOptions() {
       const iops = this.totalIOPS;
       const tput = this.writeThroughput / 1048576; // MB/s
       const sizeGiB = Math.max(1, Math.ceil(this.pvcSize / 1024));
-      const sizeTiB = sizeGiB / 1024;
+      const disks = this._storage[this.cloudProvider] || [];
 
-      // AWS st1: min volume 125 GiB, baseline 40 MB/s per TiB, burst 250 MB/s per TiB, max 500 MB/s
-      const st1GiB = Math.max(125, sizeGiB);
-      const st1TiB = st1GiB / 1024;
-      const st1Base = Math.min(500, Math.round(st1TiB * 40));
-      const st1Burst = Math.min(500, Math.round(st1TiB * 250));
-      // GCP size-dependent write performance
-      const pdSsdIOPS = Math.min(100000, Math.max(300, sizeGiB * 30));
-      const pdBalIOPS = Math.min(80000, Math.max(3000, sizeGiB * 6));
-      const pdStdIOPS = Math.min(15000, Math.max(75, Math.round(sizeGiB * 1.5)));
+      return disks.map(disk => {
+        const perf = this.calcDiskPerformance(disk, sizeGiB);
+        // Use burst for fits check if credit-based, effective for provisioned/none
+        const fitsIOPS = perf.burstIOPS ? Math.max(perf.effIOPS, perf.burstIOPS) : perf.effIOPS;
+        const fitsTput = perf.burstTput ? Math.max(perf.effTput, perf.burstTput) : perf.effTput;
 
-      const tables = {
-        aws: [
-          { name: 'gp3', maxIOPS: 80000, maxThroughput: 2000, note: '3K IOPS + 125 MB/s baseline included; provisionable' },
-          { name: 'io2 Block Express', maxIOPS: 256000, maxThroughput: 4000, note: 'Provisioned; up to 1000 IOPS/GiB' },
-          { name: 'io1', maxIOPS: 64000, maxThroughput: 1000, note: 'Provisioned; up to 50 IOPS/GiB' },
-          { name: 'st1 (HDD)', maxIOPS: 500, maxThroughput: st1Burst, note: `Min vol ${st1GiB} GiB: ${st1Base} MB/s sustained, ${st1Burst} MB/s burst` },
-        ],
-        azure: [
-          { name: 'Premium SSD v1', maxIOPS: 20000, maxThroughput: 900, note: 'Tier-based; credit burst up to 30K IOPS/1000 MB/s' },
-          { name: 'Premium SSD v2', maxIOPS: 80000, maxThroughput: 1200, note: '3K IOPS + 125 MB/s baseline; provisionable' },
-          { name: 'Ultra Disk', maxIOPS: 400000, maxThroughput: 10000, note: 'Fully provisionable IOPS/throughput' },
-          { name: 'Standard SSD', maxIOPS: 6000, maxThroughput: 750, note: 'Tier-based; credit-based bursting' },
-        ],
-        gcp: [
-          { name: 'pd-ssd', maxIOPS: pdSsdIOPS, maxThroughput: 1200, note: `30 write IOPS/GiB \u2192 ${pdSsdIOPS.toLocaleString()} at ${sizeGiB} GiB` },
-          { name: 'pd-balanced', maxIOPS: pdBalIOPS, maxThroughput: 1200, note: `6 write IOPS/GiB \u2192 ${pdBalIOPS.toLocaleString()} at ${sizeGiB} GiB` },
-          { name: 'pd-standard', maxIOPS: pdStdIOPS, maxThroughput: 400, note: `1.5 write IOPS/GiB \u2192 ${pdStdIOPS.toLocaleString()} at ${sizeGiB} GiB` },
-        ],
-      };
-      const opts = (tables[this.cloudProvider] || []).map(o => ({
-        ...o,
-        fits: iops <= o.maxIOPS && tput <= o.maxThroughput,
-        recommended: false,
-      }));
-      // First that fits is recommended
-      const rec = opts.find(o => o.fits);
-      if (rec) rec.recommended = true;
-      return opts;
+        // Generate note automatically from parameters
+        let note = '';
+        if (disk.burst_model === 'credit') {
+          note = `At ${perf.volGiB} GiB: ${perf.effTput} MB/s sustained`;
+          if (perf.burstTput) note += `, ${perf.burstTput} MB/s burst`;
+        } else if (disk.burst_model === 'provisioned') {
+          note = `At ${perf.volGiB} GiB: ${perf.effIOPS.toLocaleString()} IOPS, ${perf.effTput} MB/s baseline`;
+        } else {
+          note = `${perf.effIOPS.toLocaleString()} IOPS at ${perf.volGiB} GiB (${disk.iops_per_gib}/GiB)`;
+        }
+
+        return {
+          name: disk.name,
+          class: disk.class,
+          disk_type: disk.disk_type,
+          maxIOPS: perf.effIOPS,
+          maxThroughput: perf.effTput,
+          burstIOPS: perf.burstIOPS,
+          burstThroughput: perf.burstTput,
+          note,
+          fits: iops <= fitsIOPS && tput <= fitsTput,
+          recommended: false,
+        };
+      }).map((opt, i, arr) => {
+        if (!arr.some(o => o.recommended) && opt.fits) opt.recommended = true;
+        return opt;
+      });
     },
     get recommendedStorageClass() {
       const rec = this.storageOptions.find(o => o.recommended);
-      if (!rec) return '';
-      const nameMap = {
-        'gp3': 'gp3', 'io2 Block Express': 'io2', 'io1': 'io1', 'st1 (HDD)': 'st1',
-        'Premium SSD v1': 'managed-premium', 'Premium SSD v2': 'managed-premium-v2', 'Ultra Disk': 'ultra-disk', 'Standard SSD': 'managed-standard',
-        'pd-ssd': 'pd-ssd', 'pd-balanced': 'pd-balanced', 'pd-standard': 'pd-standard',
-      };
-      return nameMap[rec.name] || rec.name;
+      return rec ? rec.class : '';
     },
 
     // ---- K8s pod sizing ----
-    get maxThroughputPerPod() { return this.coresPerPod * 100000 * 0.7; },
+    get maxThroughputPerPod() { return this.coresPerPod * this._est.dps_per_core * this._est.cpu_target_utilization; },
     get recommendedPods() { return Math.max(1, Math.ceil(this.dps / this.maxThroughputPerPod)); },
     get actualPods() { return this.podOverride > 0 ? this.podOverride : this.recommendedPods; },
-    get perPodCpuReq() { return Math.ceil(this.dps / this.actualPods / 100000 * 1000); },
-    get perPodCpuLimit() { return Math.ceil(this.perPodCpuReq * 1.5); },
+    get perPodCpuReq() { return Math.ceil(this.dps / this.actualPods / this._est.dps_per_core * 1000); },
+    get perPodCpuLimit() { return Math.ceil(this.perPodCpuReq * this._est.cpu_limit_factor); },
     get perPodMemReq() { return Math.ceil(this.totalMemory / this.actualPods); },
-    get perPodMemLimit() { return Math.ceil(this.perPodMemReq * 1.3); },
+    get perPodMemLimit() { return Math.ceil(this.perPodMemReq * this._est.mem_limit_factor); },
     get totalClusterCpu() { return this.actualPods * this.perPodCpuReq; },
     get totalClusterMem() { return this.actualPods * this.perPodMemReq; },
     get fitPodOk() { return this.podOverride <= 0 || this.podOverride >= this.recommendedPods; },
@@ -1125,9 +1382,9 @@ function configHelper() {
     // ---- YAML generation ----
     get helmYaml() {
       const csi = { aws: 'ebs.csi.aws.com', azure: 'disk.csi.azure.com', gcp: 'pd.csi.storage.gke.io' };
-      const diskTypeMap = { aws: { 'gp3': 'gp3', 'io2': 'io2', 'io1': 'io1', 'st1': 'st1' }, azure: { 'managed-premium': 'Premium_LRS', 'managed-premium-v2': 'PremiumV2_LRS', 'ultra-disk': 'UltraSSD_LRS', 'managed-standard': 'StandardSSD_LRS' }, gcp: { 'pd-ssd': 'pd-ssd', 'pd-balanced': 'pd-balanced', 'pd-standard': 'pd-standard' } };
-      const recClass = this.recommendedStorageClass;
-      const diskTypes = { aws: (diskTypeMap.aws[recClass] || 'gp3'), azure: (diskTypeMap.azure[recClass] || 'Premium_LRS'), gcp: (diskTypeMap.gcp[recClass] || 'pd-ssd') };
+      const rec = this.storageOptions.find(o => o.recommended);
+      const recClass = rec ? rec.class : '';
+      const recDiskType = rec ? rec.disk_type : '';
       let y = '';
       y += `replicaCount: ${this.actualPods}\n`;
       y += `\nresources:\n`;
@@ -1175,7 +1432,7 @@ function configHelper() {
         y += `  size: "${this.pvcSize}Mi"\n`;
         if (this.cloudProvider !== 'none') {
           const driver = csi[this.cloudProvider] || 'kubernetes.io/no-provisioner';
-          const dt = diskTypes[this.cloudProvider] || 'default';
+          const dt = recDiskType || 'default';
           y += `\n# StorageClass example (apply separately if needed)\n`;
           y += `# ---\n`;
           y += `# apiVersion: storage.k8s.io/v1\n`;
