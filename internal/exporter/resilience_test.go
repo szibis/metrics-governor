@@ -310,10 +310,17 @@ func TestResilience_PRWQueuedExporter_SplitOnErrorPreservesTimeseries(t *testing
 	// This will fail with 413 (20 > 5), get queued, then split on retry
 	_ = qe.Export(context.Background(), req)
 
-	// Wait for splits and retries
+	// Wait for splits and retries — poll exported count rather than queue size,
+	// because QueueSize() drops to 0 when the last item is dequeued for retry
+	// but before the mock records the successful export.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if qe.QueueSize() == 0 {
+		exported := mock.getExported()
+		count := 0
+		for _, e := range exported {
+			count += len(e.Timeseries)
+		}
+		if count >= total {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
