@@ -124,6 +124,8 @@ type QueueYAMLConfig struct {
 	ChunkSize          int64    `yaml:"chunk_size"`
 	MetaSyncInterval   Duration `yaml:"meta_sync_interval"`
 	StaleFlushInterval Duration `yaml:"stale_flush_interval"`
+	WriteBufferSize    int      `yaml:"write_buffer_size"`
+	Compression        string   `yaml:"compression"`
 	// Backoff settings
 	Backoff BackoffYAMLConfig `yaml:"backoff"`
 	// Circuit breaker settings
@@ -303,7 +305,7 @@ func (y *YAMLConfig) ApplyDefaults() {
 		y.Buffer.Size = 10000
 	}
 	if y.Buffer.BatchSize == 0 {
-		y.Buffer.BatchSize = 1000
+		y.Buffer.BatchSize = 5000
 	}
 	if y.Buffer.MaxBatchBytes == 0 {
 		y.Buffer.MaxBatchBytes = 8388608 // 8MB
@@ -364,7 +366,7 @@ func (y *YAMLConfig) ApplyDefaults() {
 	}
 	// FastQueue defaults
 	if y.Exporter.Queue.InmemoryBlocks == 0 {
-		y.Exporter.Queue.InmemoryBlocks = 256
+		y.Exporter.Queue.InmemoryBlocks = 2048
 	}
 	if y.Exporter.Queue.ChunkSize == 0 {
 		y.Exporter.Queue.ChunkSize = 512 * 1024 * 1024 // 512MB
@@ -373,7 +375,13 @@ func (y *YAMLConfig) ApplyDefaults() {
 		y.Exporter.Queue.MetaSyncInterval = Duration(time.Second)
 	}
 	if y.Exporter.Queue.StaleFlushInterval == 0 {
-		y.Exporter.Queue.StaleFlushInterval = Duration(5 * time.Second)
+		y.Exporter.Queue.StaleFlushInterval = Duration(30 * time.Second)
+	}
+	if y.Exporter.Queue.WriteBufferSize == 0 {
+		y.Exporter.Queue.WriteBufferSize = 262144 // 256KB
+	}
+	if y.Exporter.Queue.Compression == "" {
+		y.Exporter.Queue.Compression = "snappy"
 	}
 	// Backoff defaults
 	if y.Exporter.Queue.Backoff.Enabled == nil {
@@ -523,6 +531,8 @@ func (y *YAMLConfig) ToConfig() *Config {
 		QueueChunkSize:          y.Exporter.Queue.ChunkSize,
 		QueueMetaSyncInterval:   time.Duration(y.Exporter.Queue.MetaSyncInterval),
 		QueueStaleFlushInterval: time.Duration(y.Exporter.Queue.StaleFlushInterval),
+		QueueWriteBufferSize:    y.Exporter.Queue.WriteBufferSize,
+		QueueCompression:        y.Exporter.Queue.Compression,
 		// Backoff settings
 		QueueBackoffEnabled:    *y.Exporter.Queue.Backoff.Enabled,
 		QueueBackoffMultiplier: y.Exporter.Queue.Backoff.Multiplier,

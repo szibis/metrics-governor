@@ -109,10 +109,12 @@ type Config struct {
 	QueueAdaptiveEnabled   bool
 	QueueCompactThreshold  float64
 	// FastQueue settings
-	QueueInmemoryBlocks     int           // In-memory channel size (default: 256)
+	QueueInmemoryBlocks     int           // In-memory channel size (default: 2048)
 	QueueChunkSize          int64         // Chunk file size (default: 512MB)
 	QueueMetaSyncInterval   time.Duration // Metadata sync interval (default: 1s)
-	QueueStaleFlushInterval time.Duration // Stale flush interval (default: 5s)
+	QueueStaleFlushInterval time.Duration // Stale flush interval (default: 30s)
+	QueueWriteBufferSize    int           // Buffered writer size in bytes (default: 262144 = 256KB)
+	QueueCompression        string        // Block compression: none, snappy (default: snappy)
 	// Backoff settings
 	QueueBackoffEnabled    bool    // Enable exponential backoff (default: true)
 	QueueBackoffMultiplier float64 // Backoff multiplier (default: 2.0)
@@ -290,7 +292,7 @@ func ParseFlags() *Config {
 	// Buffer flags
 	flag.IntVar(&cfg.BufferSize, "buffer-size", 10000, "Maximum number of metrics to buffer")
 	flag.DurationVar(&cfg.FlushInterval, "flush-interval", 5*time.Second, "Buffer flush interval")
-	flag.IntVar(&cfg.MaxBatchSize, "batch-size", 1000, "Maximum batch size for export")
+	flag.IntVar(&cfg.MaxBatchSize, "batch-size", 5000, "Maximum batch size for export")
 	flag.IntVar(&cfg.MaxBatchBytes, "max-batch-bytes", 8388608, "Maximum batch size in bytes for export (0 = no limit)")
 
 	// Stats flags
@@ -315,10 +317,12 @@ func ParseFlags() *Config {
 	flag.BoolVar(&cfg.QueueAdaptiveEnabled, "queue-adaptive-enabled", true, "Enable adaptive queue sizing based on disk space")
 	flag.Float64Var(&cfg.QueueCompactThreshold, "queue-compact-threshold", 0.5, "Ratio of consumed entries before compaction (0.0-1.0)")
 	// FastQueue flags
-	flag.IntVar(&cfg.QueueInmemoryBlocks, "queue-inmemory-blocks", 256, "In-memory channel size for FastQueue")
+	flag.IntVar(&cfg.QueueInmemoryBlocks, "queue-inmemory-blocks", 2048, "In-memory channel size for FastQueue")
 	flag.Int64Var(&cfg.QueueChunkSize, "queue-chunk-size", 536870912, "Chunk file size in bytes (512MB default)")
 	flag.DurationVar(&cfg.QueueMetaSyncInterval, "queue-meta-sync", 1*time.Second, "Metadata sync interval (max data loss window)")
-	flag.DurationVar(&cfg.QueueStaleFlushInterval, "queue-stale-flush", 5*time.Second, "Interval to flush stale in-memory blocks to disk")
+	flag.DurationVar(&cfg.QueueStaleFlushInterval, "queue-stale-flush", 30*time.Second, "Interval to flush stale in-memory blocks to disk")
+	flag.IntVar(&cfg.QueueWriteBufferSize, "queue-write-buffer-size", 262144, "Write buffer size in bytes for disk queue (256KB default)")
+	flag.StringVar(&cfg.QueueCompression, "queue-compression", "snappy", "Queue block compression: none, snappy")
 	// Backoff flags
 	flag.BoolVar(&cfg.QueueBackoffEnabled, "queue-backoff-enabled", true, "Enable exponential backoff for retries")
 	flag.Float64Var(&cfg.QueueBackoffMultiplier, "queue-backoff-multiplier", 2.0, "Backoff delay multiplier on each failure")
@@ -372,7 +376,7 @@ func ParseFlags() *Config {
 
 	// PRW Buffer flags
 	flag.IntVar(&cfg.PRWBufferSize, "prw-buffer-size", 10000, "Maximum PRW requests to buffer")
-	flag.IntVar(&cfg.PRWBatchSize, "prw-batch-size", 1000, "Maximum batch size for PRW export")
+	flag.IntVar(&cfg.PRWBatchSize, "prw-batch-size", 5000, "Maximum batch size for PRW export")
 	flag.DurationVar(&cfg.PRWFlushInterval, "prw-flush-interval", 5*time.Second, "PRW buffer flush interval")
 
 	// PRW Queue flags
@@ -665,6 +669,14 @@ func applyFlagOverrides(cfg *Config) {
 			if d, err := time.ParseDuration(f.Value.String()); err == nil {
 				cfg.QueueStaleFlushInterval = d
 			}
+		case "queue-write-buffer-size":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.QueueWriteBufferSize = i
+				}
+			}
+		case "queue-compression":
+			cfg.QueueCompression = f.Value.String()
 		case "queue-backoff-enabled":
 			cfg.QueueBackoffEnabled = f.Value.String() == "true"
 		case "queue-backoff-multiplier":
@@ -1344,7 +1356,7 @@ OPTIONS:
     Buffer:
         -buffer-size <n>                 Maximum metrics to buffer (default: 10000)
         -flush-interval <dur>            Buffer flush interval (default: 5s)
-        -batch-size <n>                  Maximum batch size for export (default: 1000)
+        -batch-size <n>                  Maximum batch size for export (default: 5000)
         -max-batch-bytes <n>             Maximum batch size in bytes (default: 8388608 = 8MB, 0 = no limit)
                                          Batches exceeding this are split. Set below backend limit
                                          (e.g., VictoriaMetrics opentelemetry.maxRequestSize).
@@ -1390,10 +1402,12 @@ OPTIONS:
         -queue-retry-interval <dur>      Initial retry interval (default: 5s)
         -queue-max-retry-delay <dur>     Maximum retry backoff delay (default: 5m)
         -queue-full-behavior <behavior>  Queue full behavior: drop_oldest, drop_newest, or block (default: drop_oldest)
-        -queue-inmemory-blocks <n>       In-memory channel size (default: 256)
+        -queue-inmemory-blocks <n>       In-memory channel size (default: 2048)
         -queue-chunk-size <n>            Chunk file size in bytes (default: 512MB)
         -queue-meta-sync <dur>           Metadata sync interval / max data loss window (default: 1s)
-        -queue-stale-flush <dur>         Interval to flush stale in-memory blocks to disk (default: 5s)
+        -queue-stale-flush <dur>         Interval to flush stale in-memory blocks to disk (default: 30s)
+        -queue-write-buffer-size <n>     Write buffer size in bytes (default: 262144 = 256KB)
+        -queue-compression <type>        Block compression: none, snappy (default: snappy)
 
     Queue Resilience (Backoff & Circuit Breaker):
         -queue-backoff-enabled           Enable exponential backoff for retries (default: true)
@@ -1539,7 +1553,7 @@ func DefaultConfig() *Config {
 		ReceiverKeepAlivesEnabled:       true,
 		BufferSize:                      10000,
 		FlushInterval:                   5 * time.Second,
-		MaxBatchSize:                    1000,
+		MaxBatchSize:                    5000,
 		MaxBatchBytes:                   8388608, // 8MB
 		StatsAddr:                       ":9090",
 		StatsLabels:                     "",
@@ -1557,10 +1571,12 @@ func DefaultConfig() *Config {
 		QueueTargetUtilization:          0.85,
 		QueueAdaptiveEnabled:            true,
 		QueueCompactThreshold:           0.5,
-		QueueInmemoryBlocks:             256,
+		QueueInmemoryBlocks:             2048,
 		QueueChunkSize:                  536870912, // 512MB
 		QueueMetaSyncInterval:           1 * time.Second,
-		QueueStaleFlushInterval:         5 * time.Second,
+		QueueStaleFlushInterval:         30 * time.Second,
+		QueueWriteBufferSize:            262144, // 256KB
+		QueueCompression:                "snappy",
 		QueueBackoffEnabled:             true,
 		QueueBackoffMultiplier:          2.0,
 		QueueCircuitBreakerEnabled:      true,
@@ -1584,7 +1600,7 @@ func DefaultConfig() *Config {
 		PRWExporterTimeout:       30 * time.Second,
 		PRWExporterVMCompression: "snappy",
 		PRWBufferSize:            10000,
-		PRWBatchSize:             1000,
+		PRWBatchSize:             5000,
 		PRWFlushInterval:         5 * time.Second,
 		PRWQueueEnabled:          false,
 		PRWQueuePath:             "./prw-queue",
