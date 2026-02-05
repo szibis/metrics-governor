@@ -172,6 +172,7 @@ Plan your deployment in seconds. The **interactive Configuration Helper** estima
 | 🛠️ | [**Development**](docs/development.md) | Building, project structure, contributing |
 | ⚡ | [**Performance**](docs/performance.md) | Bloom filters, string interning, queue I/O optimization |
 | 🛡️ | [**Resilience**](docs/resilience.md) | Circuit breaker, exponential backoff, memory limits |
+| 🔢 | [**Cardinality Tracking**](docs/cardinality-tracking.md) | Bloom, HyperLogLog, and Hybrid mode comparison and configuration |
 | 💾 | [**Bloom Persistence**](docs/bloom-persistence.md) | Save/restore bloom filter state across restarts |
 | 🖥️ | [**Configuration Helper**](docs/config-helper.md) | Interactive browser tool for deployment planning |
 
@@ -182,20 +183,20 @@ Plan your deployment in seconds. The **interactive Configuration Helper** estima
 | Capability | Description |
 |------------|-------------|
 | **OTLP Protocol** | Full gRPC and HTTP receiver/exporter with TLS, mTLS, and authentication (bearer token, basic auth) |
-| **PRW Protocol** | Prometheus Remote Write 1.0/2.0 with native histograms, VictoriaMetrics mode, custom endpoint paths |
+| **[PRW Protocol](docs/prw.md)** | Prometheus Remote Write 1.0/2.0 with native histograms, VictoriaMetrics mode, custom endpoint paths |
 | **Intelligent Buffering** | Configurable buffer with byte-aware batch splitting, concurrent export workers, and failover queue (both OTLP and PRW) |
-| **Adaptive Limits** | Per-group tracking with smart dropping of top offenders only, dry-run mode for safe rollouts |
-| **Real-time Statistics** | Per-metric cardinality, datapoints, and limit violation tracking with Prometheus metrics |
-| **Consistent Sharding** | Distribute metrics across multiple backends via K8s DNS discovery with virtual nodes (OTLP and PRW) |
-| **Persistent Queue** | FastQueue disk-backed queue with snappy compression, 256KB buffered I/O, write coalescing, circuit breaker, exponential backoff, automatic retry, and split-on-error — identical for both OTLP and PRW pipelines |
-| **Disk I/O Optimizations** | Buffered writer (256KB), write coalescing, per-block snappy compression toggle — reduces syscalls ~128x and disk I/O ~70% |
-| **Failover Queue** | Memory or disk-backed safety net catches all export failures with automatic drain loop — data is never silently dropped |
-| **Split-on-Error** | Oversized batches automatically split in half and retry on HTTP 413 and "too big" errors from backends like VictoriaMetrics, Thanos, Mimir, and Cortex |
-| **Cardinality Tracking** | Three modes: **Bloom filter** (98% less memory, 1.2MB vs 75MB per 1M series), **HyperLogLog** (constant ~12KB per tracker, ideal for high-cardinality metrics), and **Hybrid** (auto-switches Bloom→HLL at configurable threshold) |
-| **Bloom Persistence** | Save and restore Bloom/HLL filter state across pod restarts — eliminates cold-start re-learning period with configurable save intervals and TTL |
-| **Performance Optimized** | String interning (76% fewer allocations), concurrency limiting, and configurable cardinality mode selection |
-| **Human-Readable Config** | CLI flags and YAML config accept Mi/Gi/Ti notation for all byte-size values (e.g. `--queue-max-bytes 2Gi`) |
-| **Configuration Helper** | Interactive browser-based tool for deployment planning — estimates CPU, memory, disk I/O, K8s pod sizing, per-pod traffic splitting, and generates ready-to-use YAML |
+| **[Adaptive Limits](docs/limits.md)** | Per-group tracking with smart dropping of top offenders only, dry-run mode for safe rollouts |
+| **[Real-time Statistics](docs/statistics.md)** | Per-metric cardinality, datapoints, and limit violation tracking with Prometheus metrics |
+| **[Consistent Sharding](docs/sharding.md)** | Distribute metrics across multiple backends via K8s DNS discovery with virtual nodes (OTLP and PRW) |
+| **[Persistent Queue](docs/resilience.md)** | FastQueue disk-backed queue with snappy compression, 256KB buffered I/O, write coalescing, circuit breaker, exponential backoff, automatic retry, and split-on-error — identical for both OTLP and PRW pipelines |
+| **[Disk I/O Optimizations](docs/performance.md)** | Buffered writer (256KB), write coalescing, per-block snappy compression toggle — reduces syscalls ~128x and disk I/O ~70% |
+| **[Failover Queue](docs/resilience.md)** | Memory or disk-backed safety net catches all export failures with automatic drain loop — data is never silently dropped |
+| **[Split-on-Error](docs/resilience.md)** | Oversized batches automatically split in half and retry on HTTP 413 and "too big" errors from backends like VictoriaMetrics, Thanos, Mimir, and Cortex |
+| **[Cardinality Tracking](docs/cardinality-tracking.md)** | Three modes: **Bloom filter** (98% less memory, 1.2MB vs 75MB per 1M series), **HyperLogLog** (constant ~12KB per tracker, ideal for high-cardinality metrics), and **Hybrid** (auto-switches Bloom→HLL at configurable threshold) |
+| **[Bloom Persistence](docs/bloom-persistence.md)** | Save and restore Bloom/HLL filter state across pod restarts — eliminates cold-start re-learning period with configurable save intervals and TTL |
+| **[Performance Optimized](docs/performance.md)** | String interning (76% fewer allocations), concurrency limiting, and configurable cardinality mode selection |
+| **[Human-Readable Config](docs/configuration.md)** | CLI flags and YAML config accept Mi/Gi/Ti notation for all byte-size values (e.g. `--queue-max-bytes 2Gi`) |
+| **[Configuration Helper](docs/config-helper.md)** | Interactive browser-based tool for deployment planning — estimates CPU, memory, disk I/O, K8s pod sizing, per-pod traffic splitting, and generates ready-to-use YAML |
 | **Cloud Storage Guidance** | Auto-recommends AWS, Azure, and GCP block storage classes based on calculated per-pod IOPS and throughput requirements |
 | **Graceful Shutdown** | Configurable timeout drains in-flight exports and persists queue state before termination |
 | **Production Ready** | Helm chart, multi-arch Docker images, 880+ tests including pipeline integrity, durability, and resilience test suites |
