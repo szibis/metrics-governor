@@ -994,19 +994,21 @@ function configHelper() {
       const tput = this.writeThroughput / 1048576; // MB/s
       const tables = {
         aws: [
-          { name: 'gp3', maxIOPS: 16000, maxThroughput: 1000 },
-          { name: 'io1/io2', maxIOPS: 64000, maxThroughput: 1000 },
-          { name: 'st1', maxIOPS: 500, maxThroughput: 500 },
+          { name: 'gp3', maxIOPS: 80000, maxThroughput: 2000 },
+          { name: 'io2 Block Express', maxIOPS: 256000, maxThroughput: 4000 },
+          { name: 'io1', maxIOPS: 64000, maxThroughput: 1000 },
+          { name: 'st1 (HDD)', maxIOPS: 500, maxThroughput: 500 },
         ],
         azure: [
-          { name: 'Premium SSD', maxIOPS: 20000, maxThroughput: 900 },
-          { name: 'Ultra Disk', maxIOPS: 160000, maxThroughput: 4000 },
+          { name: 'Premium SSD v1', maxIOPS: 20000, maxThroughput: 900 },
+          { name: 'Premium SSD v2', maxIOPS: 80000, maxThroughput: 1200 },
+          { name: 'Ultra Disk', maxIOPS: 400000, maxThroughput: 10000 },
           { name: 'Standard SSD', maxIOPS: 6000, maxThroughput: 750 },
         ],
         gcp: [
           { name: 'pd-ssd', maxIOPS: 100000, maxThroughput: 1200 },
           { name: 'pd-balanced', maxIOPS: 80000, maxThroughput: 1200 },
-          { name: 'pd-standard', maxIOPS: 7500, maxThroughput: 400 },
+          { name: 'pd-standard', maxIOPS: 15000, maxThroughput: 400 },
         ],
       };
       const opts = (tables[this.cloudProvider] || []).map(o => ({
@@ -1023,8 +1025,8 @@ function configHelper() {
       const rec = this.storageOptions.find(o => o.recommended);
       if (!rec) return '';
       const nameMap = {
-        'gp3': 'gp3', 'io1/io2': 'io2', 'st1': 'st1',
-        'Premium SSD': 'managed-premium', 'Ultra Disk': 'ultra-disk', 'Standard SSD': 'managed-standard',
+        'gp3': 'gp3', 'io2 Block Express': 'io2', 'io1': 'io1', 'st1 (HDD)': 'st1',
+        'Premium SSD v1': 'managed-premium', 'Premium SSD v2': 'managed-premium-v2', 'Ultra Disk': 'ultra-disk', 'Standard SSD': 'managed-standard',
         'pd-ssd': 'pd-ssd', 'pd-balanced': 'pd-balanced', 'pd-standard': 'pd-standard',
       };
       return nameMap[rec.name] || rec.name;
@@ -1050,7 +1052,9 @@ function configHelper() {
     // ---- YAML generation ----
     get helmYaml() {
       const csi = { aws: 'ebs.csi.aws.com', azure: 'disk.csi.azure.com', gcp: 'pd.csi.storage.gke.io' };
-      const diskTypes = { aws: 'gp3', azure: 'Premium_LRS', gcp: 'pd-ssd' };
+      const diskTypeMap = { aws: { 'gp3': 'gp3', 'io2': 'io2', 'io1': 'io1', 'st1': 'st1' }, azure: { 'managed-premium': 'Premium_LRS', 'managed-premium-v2': 'PremiumV2_LRS', 'ultra-disk': 'UltraSSD_LRS', 'managed-standard': 'StandardSSD_LRS' }, gcp: { 'pd-ssd': 'pd-ssd', 'pd-balanced': 'pd-balanced', 'pd-standard': 'pd-standard' } };
+      const recClass = this.recommendedStorageClass;
+      const diskTypes = { aws: (diskTypeMap.aws[recClass] || 'gp3'), azure: (diskTypeMap.azure[recClass] || 'Premium_LRS'), gcp: (diskTypeMap.gcp[recClass] || 'pd-ssd') };
       let y = '';
       y += `replicaCount: ${this.actualPods}\n`;
       y += `\nresources:\n`;
