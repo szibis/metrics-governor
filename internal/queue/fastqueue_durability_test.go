@@ -548,10 +548,10 @@ func TestDurability_FastQueue_GracefulShutdownPreservesInMemoryData(t *testing.T
 // asserting Len() and Size() are correct after each operation and survive close/reopen.
 func TestConsistency_FastQueue_LenAndSizeAccurate(t *testing.T) {
 	tests := []struct {
-		name     string
-		pushes   int
-		pops     int
-		wantLen  int
+		name    string
+		pushes  int
+		pops    int
+		wantLen int
 	}{
 		{"push10_pop0", 10, 0, 10},
 		{"push10_pop5", 10, 5, 5},

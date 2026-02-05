@@ -31,7 +31,7 @@ const (
 	defaultWriteBufferSize    = 262144 // 256KB
 
 	// Compression flag bits in the block header length field
-	compressionFlagBit = uint64(1) << 63 // Bit 63: snappy compressed
+	compressionFlagBit = uint64(1) << 63    // Bit 63: snappy compressed
 	lengthMask         = ^(uint64(3) << 62) // Mask out top 2 bits for actual length
 
 	// File names

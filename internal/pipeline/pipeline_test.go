@@ -67,13 +67,13 @@ func (e *failingExporter) Close() error { return nil }
 type noopStatsCollector struct{}
 
 func (n *noopStatsCollector) Process([]*metricspb.ResourceMetrics)  {}
-func (n *noopStatsCollector) RecordReceived(int)                     {}
-func (n *noopStatsCollector) RecordExport(int)                       {}
-func (n *noopStatsCollector) RecordExportError()                     {}
-func (n *noopStatsCollector) RecordOTLPBytesReceived(int)            {}
-func (n *noopStatsCollector) RecordOTLPBytesReceivedCompressed(int)  {}
-func (n *noopStatsCollector) RecordOTLPBytesSent(int)                {}
-func (n *noopStatsCollector) SetOTLPBufferSize(int)                  {}
+func (n *noopStatsCollector) RecordReceived(int)                    {}
+func (n *noopStatsCollector) RecordExport(int)                      {}
+func (n *noopStatsCollector) RecordExportError()                    {}
+func (n *noopStatsCollector) RecordOTLPBytesReceived(int)           {}
+func (n *noopStatsCollector) RecordOTLPBytesReceivedCompressed(int) {}
+func (n *noopStatsCollector) RecordOTLPBytesSent(int)               {}
+func (n *noopStatsCollector) SetOTLPBufferSize(int)                 {}
 
 // noopLimitsEnforcer passes all metrics through unchanged.
 type noopLimitsEnforcer struct{}

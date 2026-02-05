@@ -80,13 +80,13 @@ func (e *splittingExporter) getExported() [][]*metricspb.ResourceMetrics {
 type integrityStatsCollector struct{}
 
 func (n *integrityStatsCollector) Process([]*metricspb.ResourceMetrics)  {}
-func (n *integrityStatsCollector) RecordReceived(int)                     {}
-func (n *integrityStatsCollector) RecordExport(int)                       {}
-func (n *integrityStatsCollector) RecordExportError()                     {}
-func (n *integrityStatsCollector) RecordOTLPBytesReceived(int)            {}
-func (n *integrityStatsCollector) RecordOTLPBytesReceivedCompressed(int)  {}
-func (n *integrityStatsCollector) RecordOTLPBytesSent(int)                {}
-func (n *integrityStatsCollector) SetOTLPBufferSize(int)                  {}
+func (n *integrityStatsCollector) RecordReceived(int)                    {}
+func (n *integrityStatsCollector) RecordExport(int)                      {}
+func (n *integrityStatsCollector) RecordExportError()                    {}
+func (n *integrityStatsCollector) RecordOTLPBytesReceived(int)           {}
+func (n *integrityStatsCollector) RecordOTLPBytesReceivedCompressed(int) {}
+func (n *integrityStatsCollector) RecordOTLPBytesSent(int)               {}
+func (n *integrityStatsCollector) SetOTLPBufferSize(int)                 {}
 
 // integrityLimitsEnforcer passes all metrics through unchanged.
 type integrityLimitsEnforcer struct{}

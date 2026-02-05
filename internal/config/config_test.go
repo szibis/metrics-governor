@@ -619,7 +619,7 @@ func TestByteSizeFlagTypes(t *testing.T) {
 	t.Run("flag_integration", func(t *testing.T) {
 		fs := flag.NewFlagSet("test", flag.ContinueOnError)
 		var maxBytes int64 = 1073741824
-		var bufSize int = 262144
+		var bufSize = 262144
 
 		fs.Var(&byteSizeFlag{target: &maxBytes}, "max-bytes", "test")
 		fs.Var(&byteSizeIntFlag{target: &bufSize}, "buf-size", "test")
