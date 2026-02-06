@@ -219,6 +219,18 @@ type Config struct {
 	BloomPersistenceCompression      bool
 	BloomPersistenceCompressionLevel int
 
+	// Tenancy settings
+	TenancyEnabled         bool
+	TenancyMode            string // "header", "label", "attribute"
+	TenancyHeaderName      string
+	TenancyLabelName       string
+	TenancyAttributeKey    string
+	TenancyDefaultTenant   string
+	TenancyInjectLabel     bool
+	TenancyInjectLabelName string
+	TenancyStripSource     bool
+	TenancyConfigFile      string // Path to tenancy config file (for tenant quotas)
+
 	// Shutdown settings
 	ShutdownTimeout time.Duration // Graceful shutdown timeout (default: 30s)
 
@@ -491,7 +503,18 @@ func ParseFlags() *Config {
 	flag.BoolVar(&cfg.BloomPersistenceCompression, "bloom-persistence-compression", true, "Enable gzip compression for bloom state files")
 	flag.IntVar(&cfg.BloomPersistenceCompressionLevel, "bloom-persistence-compression-level", 1, "Gzip compression level (1=fast, 9=best)")
 
-	// Help and version
+	// Tenancy flags
+	flag.BoolVar(&cfg.TenancyEnabled, "tenancy-enabled", false, "Enable multi-tenancy support")
+	flag.StringVar(&cfg.TenancyMode, "tenancy-mode", "header", "Tenant detection mode: header, label, attribute")
+	flag.StringVar(&cfg.TenancyHeaderName, "tenancy-header-name", "X-Scope-OrgID", "HTTP header for tenant ID (mode=header)")
+	flag.StringVar(&cfg.TenancyLabelName, "tenancy-label-name", "tenant", "Metric label for tenant ID (mode=label)")
+	flag.StringVar(&cfg.TenancyAttributeKey, "tenancy-attribute-key", "service.namespace", "Resource attribute for tenant ID (mode=attribute)")
+	flag.StringVar(&cfg.TenancyDefaultTenant, "tenancy-default-tenant", "default", "Fallback tenant when detection fails")
+	flag.BoolVar(&cfg.TenancyInjectLabel, "tenancy-inject-label", true, "Inject tenant ID as a label on all datapoints")
+	flag.StringVar(&cfg.TenancyInjectLabelName, "tenancy-inject-label-name", "__tenant__", "Label name for injected tenant ID")
+	flag.BoolVar(&cfg.TenancyStripSource, "tenancy-strip-source", false, "Remove source label after tenant detection (mode=label only)")
+	flag.StringVar(&cfg.TenancyConfigFile, "tenancy-config", "", "Path to tenancy config file (tenant quotas, overrides)")
+
 	// Shutdown flags
 	flag.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", 30*time.Second, "Graceful shutdown timeout (should be less than K8s terminationGracePeriodSeconds)")
 
@@ -1003,6 +1026,26 @@ func applyFlagOverrides(cfg *Config) {
 			}
 		case "pprof-enabled":
 			cfg.PprofEnabled = f.Value.String() == "true"
+		case "tenancy-enabled":
+			cfg.TenancyEnabled = f.Value.String() == "true"
+		case "tenancy-mode":
+			cfg.TenancyMode = f.Value.String()
+		case "tenancy-header-name":
+			cfg.TenancyHeaderName = f.Value.String()
+		case "tenancy-label-name":
+			cfg.TenancyLabelName = f.Value.String()
+		case "tenancy-attribute-key":
+			cfg.TenancyAttributeKey = f.Value.String()
+		case "tenancy-default-tenant":
+			cfg.TenancyDefaultTenant = f.Value.String()
+		case "tenancy-inject-label":
+			cfg.TenancyInjectLabel = f.Value.String() == "true"
+		case "tenancy-inject-label-name":
+			cfg.TenancyInjectLabelName = f.Value.String()
+		case "tenancy-strip-source":
+			cfg.TenancyStripSource = f.Value.String() == "true"
+		case "tenancy-config":
+			cfg.TenancyConfigFile = f.Value.String()
 		case "help", "h":
 			cfg.ShowHelp = f.Value.String() == "true"
 		case "version", "v":
@@ -1268,6 +1311,36 @@ func (c *Config) BloomPersistenceConfig() BloomPersistenceConfig {
 		MaxMemory:        c.BloomPersistenceMaxMemory,
 		Compression:      c.BloomPersistenceCompression,
 		CompressionLevel: c.BloomPersistenceCompressionLevel,
+	}
+}
+
+// TenancyConfig returns the tenancy-related fields as a structured value.
+// This avoids importing internal/tenant (which imports the OTLP protos).
+type TenancyConfig struct {
+	Enabled         bool
+	Mode            string
+	HeaderName      string
+	LabelName       string
+	AttributeKey    string
+	DefaultTenant   string
+	InjectLabel     bool
+	InjectLabelName string
+	StripSource     bool
+	ConfigFile      string
+}
+
+func (c *Config) TenancyConfig() TenancyConfig {
+	return TenancyConfig{
+		Enabled:         c.TenancyEnabled,
+		Mode:            c.TenancyMode,
+		HeaderName:      c.TenancyHeaderName,
+		LabelName:       c.TenancyLabelName,
+		AttributeKey:    c.TenancyAttributeKey,
+		DefaultTenant:   c.TenancyDefaultTenant,
+		InjectLabel:     c.TenancyInjectLabel,
+		InjectLabelName: c.TenancyInjectLabelName,
+		StripSource:     c.TenancyStripSource,
+		ConfigFile:      c.TenancyConfigFile,
 	}
 }
 
@@ -1732,6 +1805,14 @@ func DefaultConfig() *Config {
 		BloomPersistenceMaxMemory:        268435456, // 256MB
 		BloomPersistenceCompression:      true,
 		BloomPersistenceCompressionLevel: 1,
+		// Tenancy defaults
+		TenancyMode:            "header",
+		TenancyHeaderName:      "X-Scope-OrgID",
+		TenancyLabelName:       "tenant",
+		TenancyAttributeKey:    "service.namespace",
+		TenancyDefaultTenant:   "default",
+		TenancyInjectLabel:     true,
+		TenancyInjectLabelName: "__tenant__",
 		// Shutdown defaults
 		ShutdownTimeout: 30 * time.Second,
 	}

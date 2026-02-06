@@ -123,6 +123,17 @@ ConfigMap name for sampling configuration
 {{- end }}
 
 {{/*
+ConfigMap name for tenancy configuration
+*/}}
+{{- define "metrics-governor.tenancyConfigMapName" -}}
+{{- if .Values.tenancy.existingConfigMap }}
+{{- .Values.tenancy.existingConfigMap }}
+{{- else }}
+{{- printf "%s-tenancy" (include "metrics-governor.fullname" .) }}
+{{- end }}
+{{- end }}
+
+{{/*
 Headless service name
 */}}
 {{- define "metrics-governor.headlessServiceName" -}}
@@ -169,6 +180,32 @@ Only file path arguments are passed as CLI flags.
 {{- $args = append $args "-sampling-config=/etc/metrics-governor/sampling/sampling.yaml" -}}
 {{- else }}
 {{- $args = append $args "-sampling-config=/etc/metrics-governor/sampling.yaml" -}}
+{{- end }}
+{{- end }}
+{{- if .Values.tenancy.enabled }}
+{{- $args = append $args (printf "-tenancy-enabled=%t" .Values.tenancy.enabled) -}}
+{{- $args = append $args (printf "-tenancy-mode=%s" .Values.tenancy.mode) -}}
+{{- if eq .Values.tenancy.mode "header" }}
+{{- $args = append $args (printf "-tenancy-header-name=%s" .Values.tenancy.headerName) -}}
+{{- end }}
+{{- if eq .Values.tenancy.mode "label" }}
+{{- $args = append $args (printf "-tenancy-label-name=%s" .Values.tenancy.labelName) -}}
+{{- if .Values.tenancy.stripSource }}
+{{- $args = append $args "-tenancy-strip-source=true" -}}
+{{- end }}
+{{- end }}
+{{- if eq .Values.tenancy.mode "attribute" }}
+{{- $args = append $args (printf "-tenancy-attribute-key=%s" .Values.tenancy.attributeKey) -}}
+{{- end }}
+{{- $args = append $args (printf "-tenancy-default-tenant=%s" .Values.tenancy.defaultTenant) -}}
+{{- if .Values.tenancy.injectLabel }}
+{{- $args = append $args (printf "-tenancy-inject-label=%t" .Values.tenancy.injectLabel) -}}
+{{- $args = append $args (printf "-tenancy-inject-label-name=%s" .Values.tenancy.injectLabelName) -}}
+{{- end }}
+{{- if .Values.configReload.enabled }}
+{{- $args = append $args "-tenancy-config=/etc/metrics-governor/tenancy/tenancy.yaml" -}}
+{{- else }}
+{{- $args = append $args "-tenancy-config=/etc/metrics-governor/tenancy.yaml" -}}
 {{- end }}
 {{- end }}
 {{- range .Values.config.extraArgs }}
@@ -360,6 +397,18 @@ Volume mounts
   readOnly: true
 {{- end }}
 {{- end }}
+{{- if .Values.tenancy.enabled }}
+{{- if .Values.configReload.enabled }}
+- name: tenancy-config
+  mountPath: /etc/metrics-governor/tenancy
+  readOnly: true
+{{- else }}
+- name: tenancy-config
+  mountPath: /etc/metrics-governor/tenancy.yaml
+  subPath: tenancy.yaml
+  readOnly: true
+{{- end }}
+{{- end }}
 {{- if .Values.receiverTLS.enabled }}
 - name: receiver-tls
   mountPath: /etc/tls/receiver
@@ -435,6 +484,11 @@ Volumes
 - name: sampling-config
   configMap:
     name: {{ include "metrics-governor.samplingConfigMapName" . }}
+{{- end }}
+{{- if .Values.tenancy.enabled }}
+- name: tenancy-config
+  configMap:
+    name: {{ include "metrics-governor.tenancyConfigMapName" . }}
 {{- end }}
 {{- if .Values.receiverTLS.enabled }}
 - name: receiver-tls
@@ -626,7 +680,7 @@ containers:
   {{- with .Values.extraContainers }}
   {{- toYaml . | nindent 2 }}
   {{- end }}
-  {{- if and .Values.configReload.enabled (or .Values.limits.enabled .Values.relabeling.enabled .Values.sampling.enabled) }}
+  {{- if and .Values.configReload.enabled (or .Values.limits.enabled .Values.relabeling.enabled .Values.sampling.enabled .Values.tenancy.enabled) }}
   - name: configmap-reload
     {{- $crRegistry := .Values.global.imageRegistry | default "" }}
     {{- $crRepo := .Values.configReload.image.repository }}
@@ -640,7 +694,7 @@ containers:
     command: ["sh", "-c"]
     args:
       - |
-        WATCH_FILES="/etc/metrics-governor/config/config.yaml{{ if .Values.limits.enabled }},/etc/metrics-governor/limits/limits.yaml{{ end }}{{ if .Values.relabeling.enabled }},/etc/metrics-governor/relabel/relabel.yaml{{ end }}{{ if .Values.sampling.enabled }},/etc/metrics-governor/sampling/sampling.yaml{{ end }}"
+        WATCH_FILES="/etc/metrics-governor/config/config.yaml{{ if .Values.limits.enabled }},/etc/metrics-governor/limits/limits.yaml{{ end }}{{ if .Values.relabeling.enabled }},/etc/metrics-governor/relabel/relabel.yaml{{ end }}{{ if .Values.sampling.enabled }},/etc/metrics-governor/sampling/sampling.yaml{{ end }}{{ if .Values.tenancy.enabled }},/etc/metrics-governor/tenancy/tenancy.yaml{{ end }}"
         WATCH_INTERVAL="{{ .Values.configReload.watchInterval }}"
         SIGNAL="HUP"
         PROCESS_NAME="metrics-governor"
@@ -716,6 +770,11 @@ containers:
       {{- if .Values.sampling.enabled }}
       - name: sampling-config
         mountPath: /etc/metrics-governor/sampling
+        readOnly: true
+      {{- end }}
+      {{- if .Values.tenancy.enabled }}
+      - name: tenancy-config
+        mountPath: /etc/metrics-governor/tenancy
         readOnly: true
       {{- end }}
     {{- with .Values.configReload.resources }}

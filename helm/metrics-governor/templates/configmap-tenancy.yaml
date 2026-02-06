@@ -1,0 +1,12 @@
+{{- if and .Values.tenancy.enabled (not .Values.tenancy.existingConfigMap) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "metrics-governor.tenancyConfigMapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "metrics-governor.labels" . | nindent 4 }}
+data:
+  tenancy.yaml: |
+    {{- .Values.tenancy.config | nindent 4 }}
+{{- end }}

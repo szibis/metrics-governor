@@ -80,6 +80,31 @@ To enable sampling, set:
   sampling.enabled=true
 {{- end }}
 
+{{- if .Values.tenancy.enabled }}
+
+Multi-tenancy is ENABLED.
+  Detection mode: {{ .Values.tenancy.mode }}
+  {{- if eq .Values.tenancy.mode "header" }}
+  Header: {{ .Values.tenancy.headerName }}
+  {{- else if eq .Values.tenancy.mode "label" }}
+  Label: {{ .Values.tenancy.labelName }}
+  {{- else if eq .Values.tenancy.mode "attribute" }}
+  Attribute: {{ .Values.tenancy.attributeKey }}
+  {{- end }}
+  Default tenant: {{ .Values.tenancy.defaultTenant }}
+  Label injection: {{ if .Values.tenancy.injectLabel }}{{ .Values.tenancy.injectLabelName }}{{ else }}disabled{{ end }}
+{{- if .Values.tenancy.existingConfigMap }}
+  Quotas config: Using existing ConfigMap '{{ .Values.tenancy.existingConfigMap }}'
+{{- else }}
+  Quotas config: {{ include "metrics-governor.tenancyConfigMapName" . }}
+{{- end }}
+{{- else }}
+
+Multi-tenancy is DISABLED.
+To enable tenancy, set:
+  tenancy.enabled=true
+{{- end }}
+
 {{- if .Values.serviceMonitor.enabled }}
 
 ServiceMonitor is enabled for Prometheus Operator integration.

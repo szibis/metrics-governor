@@ -82,6 +82,15 @@ type MetricSampler interface {
 	Sample(resourceMetrics []*metricspb.ResourceMetrics) []*metricspb.ResourceMetrics
 }
 
+// TenantProcessor detects tenants and applies per-tenant quotas.
+// It runs before the LimitsEnforcer in the pipeline.
+type TenantProcessor interface {
+	// ProcessBatch detects tenants in a batch and applies quotas.
+	// Returns the surviving metrics after quota enforcement.
+	// headerTenant is the tenant extracted from the request header (empty if not applicable).
+	ProcessBatch(resourceMetrics []*metricspb.ResourceMetrics, headerTenant string) []*metricspb.ResourceMetrics
+}
+
 // LogAggregator aggregates similar log messages.
 type LogAggregator interface {
 	Error(key string, message string, fields map[string]interface{}, datapoints int64)
@@ -129,6 +138,12 @@ func WithSampler(s MetricSampler) BufferOption {
 	return func(b *MetricsBuffer) { b.sampler = s }
 }
 
+// WithTenantProcessor sets a tenant processor for the buffer. When set,
+// it runs before limits enforcement to detect tenants and apply quotas.
+func WithTenantProcessor(tp TenantProcessor) BufferOption {
+	return func(b *MetricsBuffer) { b.tenantProcessor = tp }
+}
+
 // WithFailoverQueue sets a failover queue for the buffer. When all export
 // attempts fail (including splitting), failed batches are pushed to this
 // queue instead of being silently dropped.
@@ -138,22 +153,23 @@ func WithFailoverQueue(q FailoverQueue) BufferOption {
 
 // MetricsBuffer buffers incoming metrics and flushes them periodically.
 type MetricsBuffer struct {
-	mu            sync.Mutex
-	metrics       []*metricspb.ResourceMetrics
-	maxSize       int
-	maxBatchSize  int
-	maxBatchBytes int
-	flushInterval time.Duration
-	exporter      Exporter
-	stats         StatsCollector
-	limits        LimitsEnforcer
-	flushChan     chan struct{}
-	doneChan      chan struct{}
-	logAggregator LogAggregator
-	concurrency   *exporter.ConcurrencyLimiter
-	relabeler     MetricRelabeler
-	sampler       MetricSampler
-	failoverQueue FailoverQueue
+	mu              sync.Mutex
+	metrics         []*metricspb.ResourceMetrics
+	maxSize         int
+	maxBatchSize    int
+	maxBatchBytes   int
+	flushInterval   time.Duration
+	exporter        Exporter
+	stats           StatsCollector
+	limits          LimitsEnforcer
+	flushChan       chan struct{}
+	doneChan        chan struct{}
+	logAggregator   LogAggregator
+	concurrency     *exporter.ConcurrencyLimiter
+	relabeler       MetricRelabeler
+	sampler         MetricSampler
+	failoverQueue   FailoverQueue
+	tenantProcessor TenantProcessor
 }
 
 // New creates a new MetricsBuffer.
@@ -176,8 +192,19 @@ func New(maxSize, maxBatchSize int, flushInterval time.Duration, exp Exporter, s
 	return buf
 }
 
+// AddWithTenant adds metrics to the buffer with a pre-extracted tenant header.
+// This is used by receivers that can extract tenant from HTTP/gRPC headers.
+func (b *MetricsBuffer) AddWithTenant(resourceMetrics []*metricspb.ResourceMetrics, headerTenant string) {
+	b.addInternal(resourceMetrics, headerTenant)
+}
+
 // Add adds metrics to the buffer.
 func (b *MetricsBuffer) Add(resourceMetrics []*metricspb.ResourceMetrics) {
+	b.addInternal(resourceMetrics, "")
+}
+
+// addInternal is the shared implementation for Add and AddWithTenant.
+func (b *MetricsBuffer) addInternal(resourceMetrics []*metricspb.ResourceMetrics, headerTenant string) {
 	// Track received datapoints and bytes
 	if b.stats != nil {
 		receivedCount := countDatapoints(resourceMetrics)
@@ -197,6 +224,11 @@ func (b *MetricsBuffer) Add(resourceMetrics []*metricspb.ResourceMetrics) {
 		if len(resourceMetrics) == 0 {
 			return
 		}
+	}
+
+	// Apply tenant detection and quota enforcement (before limits)
+	if b.tenantProcessor != nil {
+		resourceMetrics = b.tenantProcessor.ProcessBatch(resourceMetrics, headerTenant)
 	}
 
 	// Apply limits enforcement (may filter/sample metrics)
