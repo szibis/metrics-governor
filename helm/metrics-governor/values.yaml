@@ -327,6 +327,37 @@ sampling:
     strategy: head
     rules: []
 
+# -- Multi-tenancy configuration
+tenancy:
+  # -- Enable multi-tenancy support
+  enabled: false
+  # -- Tenant detection mode: "header", "label", or "attribute"
+  mode: "header"
+  # -- HTTP header name for tenant ID (mode=header, Mimir/Cortex compatible)
+  headerName: "X-Scope-OrgID"
+  # -- Metric label name for tenant ID (mode=label)
+  labelName: "tenant"
+  # -- Resource attribute key for tenant ID (mode=attribute)
+  attributeKey: "service.namespace"
+  # -- Default tenant when detection fails
+  defaultTenant: "default"
+  # -- Inject tenant ID as a label on all datapoints
+  injectLabel: true
+  # -- Label name for injected tenant ID
+  injectLabelName: "__tenant__"
+  # -- Remove source label after detection (mode=label only)
+  stripSource: false
+  # -- Use existing ConfigMap for tenant quotas
+  existingConfigMap: ""
+  # -- Tenant quotas configuration content
+  config: |
+    default:
+      max_datapoints: 100000
+      max_cardinality: 50000
+      action: log
+      window: "1m"
+    tenants: {}
+
 service:
   # -- Enable service
   enabled: true

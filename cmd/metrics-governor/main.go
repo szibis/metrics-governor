@@ -31,6 +31,7 @@ import (
 	"github.com/szibis/metrics-governor/internal/relabel"
 	"github.com/szibis/metrics-governor/internal/sampling"
 	"github.com/szibis/metrics-governor/internal/stats"
+	"github.com/szibis/metrics-governor/internal/tenant"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
 
@@ -293,6 +294,44 @@ func main() {
 		))
 	}
 
+	// Create tenant pipeline (if tenancy enabled)
+	var tenantPipeline *tenant.Pipeline
+	if cfg.TenancyEnabled {
+		tenancyCfg := tenant.Config{
+			Enabled:          true,
+			Mode:             tenant.DetectionMode(cfg.TenancyMode),
+			HeaderName:       cfg.TenancyHeaderName,
+			LabelName:        cfg.TenancyLabelName,
+			AttributeKey:     cfg.TenancyAttributeKey,
+			DefaultTenant:    cfg.TenancyDefaultTenant,
+			InjectLabel:      cfg.TenancyInjectLabel,
+			InjectLabelName:  cfg.TenancyInjectLabelName,
+			StripSourceLabel: cfg.TenancyStripSource,
+		}
+		detector, err := tenant.NewDetector(tenancyCfg)
+		if err != nil {
+			logging.Fatal("failed to create tenant detector", logging.F("error", err.Error()))
+		}
+
+		var quotaEnforcer *tenant.QuotaEnforcer
+		if cfg.TenancyConfigFile != "" {
+			quotasCfg, err := tenant.LoadQuotasConfig(cfg.TenancyConfigFile)
+			if err != nil {
+				logging.Fatal("failed to load tenant quotas config", logging.F("error", err.Error(), "path", cfg.TenancyConfigFile))
+			}
+			quotaEnforcer = tenant.NewQuotaEnforcer(quotasCfg)
+			logging.Info("tenant quota enforcer initialized", logging.F("path", cfg.TenancyConfigFile))
+		}
+
+		tenantPipeline = tenant.NewPipeline(detector, quotaEnforcer)
+		logging.Info("tenancy enabled", logging.F(
+			"mode", cfg.TenancyMode,
+			"default_tenant", cfg.TenancyDefaultTenant,
+			"inject_label", cfg.TenancyInjectLabel,
+			"quotas_enabled", cfg.TenancyConfigFile != "",
+		))
+	}
+
 	// Create log aggregator for buffer (aggregates logs per 10s interval)
 	bufferLogAggregator := limits.NewLogAggregator(10 * time.Second)
 
@@ -304,6 +343,11 @@ func main() {
 	if cfg.ExportConcurrency != 0 || !cfg.ShardingEnabled {
 		// Wire export concurrency to buffer (default: NumCPU*4)
 		bufOpts = append(bufOpts, buffer.WithConcurrency(cfg.ExportConcurrency))
+	}
+
+	// Set up tenant processor in buffer (if tenancy enabled)
+	if tenantPipeline != nil {
+		bufOpts = append(bufOpts, buffer.WithTenantProcessor(tenantPipeline))
 	}
 
 	// Set up failover queue (safety net for export failures)
@@ -491,6 +535,7 @@ func main() {
 		"queue_enabled", cfg.QueueEnabled,
 		"sharding_enabled", cfg.ShardingEnabled,
 		"prw_enabled", cfg.PRWListenAddr != "",
+		"tenancy_enabled", cfg.TenancyEnabled,
 	))
 
 	// Set up SIGHUP handler for config reload
@@ -565,6 +610,18 @@ func main() {
 						}
 
 						logging.Info("main config reloaded (hot-reloadable settings applied)")
+					}
+				}
+
+				// Reload tenant quotas config
+				if cfg.TenancyConfigFile != "" && tenantPipeline != nil {
+					logging.Info("reloading tenant quotas config", logging.F("path", cfg.TenancyConfigFile))
+					newQuotasCfg, err := tenant.LoadQuotasConfig(cfg.TenancyConfigFile)
+					if err != nil {
+						logging.Error("tenant quotas reload failed, keeping current config", logging.F("error", err.Error(), "path", cfg.TenancyConfigFile))
+					} else {
+						tenantPipeline.SetQuotaEnforcer(tenant.NewQuotaEnforcer(newQuotasCfg))
+						logging.Info("tenant quotas config reloaded successfully")
 					}
 				}
 
