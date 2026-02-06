@@ -49,6 +49,22 @@ To enable limits, set:
   limits.enabled=true
 {{- end }}
 
+{{- if .Values.relabeling.enabled }}
+
+=== Relabeling ===
+  Status: ENABLED
+{{- if .Values.relabeling.existingConfigMap }}
+  Config: Using existing ConfigMap '{{ .Values.relabeling.existingConfigMap }}'
+{{- else }}
+  Config: {{ include "metrics-governor.relabelConfigMapName" . }}
+{{- end }}
+{{- else }}
+
+Metric relabeling is DISABLED.
+To enable relabeling, set:
+  relabeling.enabled=true
+{{- end }}
+
 {{- if .Values.serviceMonitor.enabled }}
 
 ServiceMonitor is enabled for Prometheus Operator integration.

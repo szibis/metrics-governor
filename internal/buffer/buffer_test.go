@@ -379,6 +379,119 @@ func TestConcurrentAdds(t *testing.T) {
 	}
 }
 
+// Mock relabeler for testing
+type mockRelabeler struct {
+	mu      sync.Mutex
+	calls   int
+	dropAll bool
+	rename  string // if set, rename all metrics to this
+}
+
+func (m *mockRelabeler) Relabel(rms []*metricspb.ResourceMetrics) []*metricspb.ResourceMetrics {
+	m.mu.Lock()
+	m.calls++
+	m.mu.Unlock()
+
+	if m.dropAll {
+		return nil
+	}
+	if m.rename != "" {
+		for _, rm := range rms {
+			for _, sm := range rm.ScopeMetrics {
+				for _, metric := range sm.Metrics {
+					metric.Name = m.rename
+				}
+			}
+		}
+	}
+	return rms
+}
+
+func (m *mockRelabeler) getCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.calls
+}
+
+func TestWithRelabeler(t *testing.T) {
+	exp := &mockExporter{}
+	rel := &mockRelabeler{rename: "renamed_metric"}
+	buf := New(100, 10, 50*time.Millisecond, exp, nil, nil, nil, WithRelabeler(rel))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go buf.Start(ctx)
+
+	buf.Add(createTestResourceMetrics(3))
+
+	// Wait for flush
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	buf.Wait()
+
+	if rel.getCalls() == 0 {
+		t.Error("expected relabeler to be called")
+	}
+	if exp.getRequestCount() == 0 {
+		t.Error("expected export to be called")
+	}
+
+	// Verify metrics were renamed
+	exp.mu.Lock()
+	for _, req := range exp.requests {
+		for _, rm := range req.ResourceMetrics {
+			for _, sm := range rm.ScopeMetrics {
+				for _, m := range sm.Metrics {
+					if m.Name != "renamed_metric" {
+						t.Errorf("expected metric name 'renamed_metric', got '%s'", m.Name)
+					}
+				}
+			}
+		}
+	}
+	exp.mu.Unlock()
+}
+
+func TestWithRelabelerDropAll(t *testing.T) {
+	exp := &mockExporter{}
+	rel := &mockRelabeler{dropAll: true}
+	buf := New(100, 10, 50*time.Millisecond, exp, nil, nil, nil, WithRelabeler(rel))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go buf.Start(ctx)
+
+	buf.Add(createTestResourceMetrics(5))
+
+	// Wait for flush
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	buf.Wait()
+
+	if rel.getCalls() == 0 {
+		t.Error("expected relabeler to be called")
+	}
+	if exp.getRequestCount() != 0 {
+		t.Errorf("expected no exports when relabeler drops all, got %d", exp.getRequestCount())
+	}
+}
+
+func TestWithRelabelerNil(t *testing.T) {
+	// Verify that nil relabeler doesn't cause issues
+	exp := &mockExporter{}
+	buf := New(100, 10, 50*time.Millisecond, exp, nil, nil, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go buf.Start(ctx)
+
+	buf.Add(createTestResourceMetrics(3))
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	buf.Wait()
+
+	if exp.getRequestCount() == 0 {
+		t.Error("expected export to be called without relabeler")
+	}
+}
+
 func TestWait(t *testing.T) {
 	exporter := &mockExporter{}
 	buf := New(100, 10, 50*time.Millisecond, exporter, nil, nil, nil)

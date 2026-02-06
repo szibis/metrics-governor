@@ -101,6 +101,17 @@ ConfigMap name for limits configuration
 {{- end }}
 
 {{/*
+ConfigMap name for relabel configuration
+*/}}
+{{- define "metrics-governor.relabelConfigMapName" -}}
+{{- if .Values.relabeling.existingConfigMap }}
+{{- .Values.relabeling.existingConfigMap }}
+{{- else }}
+{{- printf "%s-relabel" (include "metrics-governor.fullname" .) }}
+{{- end }}
+{{- end }}
+
+{{/*
 Headless service name
 */}}
 {{- define "metrics-governor.headlessServiceName" -}}
@@ -133,6 +144,13 @@ Only file path arguments are passed as CLI flags.
 {{- $args = append $args "-limits-config=/etc/metrics-governor/limits/limits.yaml" -}}
 {{- else }}
 {{- $args = append $args "-limits-config=/etc/metrics-governor/limits.yaml" -}}
+{{- end }}
+{{- end }}
+{{- if .Values.relabeling.enabled }}
+{{- if .Values.configReload.enabled }}
+{{- $args = append $args "-relabel-config=/etc/metrics-governor/relabel/relabel.yaml" -}}
+{{- else }}
+{{- $args = append $args "-relabel-config=/etc/metrics-governor/relabel.yaml" -}}
 {{- end }}
 {{- end }}
 {{- range .Values.config.extraArgs }}
@@ -300,6 +318,18 @@ Volume mounts
   readOnly: true
 {{- end }}
 {{- end }}
+{{- if .Values.relabeling.enabled }}
+{{- if .Values.configReload.enabled }}
+- name: relabel-config
+  mountPath: /etc/metrics-governor/relabel
+  readOnly: true
+{{- else }}
+- name: relabel-config
+  mountPath: /etc/metrics-governor/relabel.yaml
+  subPath: relabel.yaml
+  readOnly: true
+{{- end }}
+{{- end }}
 {{- if .Values.receiverTLS.enabled }}
 - name: receiver-tls
   mountPath: /etc/tls/receiver
@@ -365,6 +395,11 @@ Volumes
 - name: limits-config
   configMap:
     name: {{ include "metrics-governor.limitsConfigMapName" . }}
+{{- end }}
+{{- if .Values.relabeling.enabled }}
+- name: relabel-config
+  configMap:
+    name: {{ include "metrics-governor.relabelConfigMapName" . }}
 {{- end }}
 {{- if .Values.receiverTLS.enabled }}
 - name: receiver-tls
@@ -556,7 +591,7 @@ containers:
   {{- with .Values.extraContainers }}
   {{- toYaml . | nindent 2 }}
   {{- end }}
-  {{- if and .Values.configReload.enabled .Values.limits.enabled }}
+  {{- if and .Values.configReload.enabled (or .Values.limits.enabled .Values.relabeling.enabled) }}
   - name: configmap-reload
     {{- $crRegistry := .Values.global.imageRegistry | default "" }}
     {{- $crRepo := .Values.configReload.image.repository }}
@@ -570,7 +605,7 @@ containers:
     command: ["sh", "-c"]
     args:
       - |
-        WATCH_FILES="/etc/metrics-governor/config/config.yaml,/etc/metrics-governor/limits/limits.yaml"
+        WATCH_FILES="/etc/metrics-governor/config/config.yaml{{ if .Values.limits.enabled }},/etc/metrics-governor/limits/limits.yaml{{ end }}{{ if .Values.relabeling.enabled }},/etc/metrics-governor/relabel/relabel.yaml{{ end }}"
         WATCH_INTERVAL="{{ .Values.configReload.watchInterval }}"
         SIGNAL="HUP"
         PROCESS_NAME="metrics-governor"
@@ -633,9 +668,16 @@ containers:
       - name: config
         mountPath: /etc/metrics-governor/config
         readOnly: true
+      {{- if .Values.limits.enabled }}
       - name: limits-config
         mountPath: /etc/metrics-governor/limits
         readOnly: true
+      {{- end }}
+      {{- if .Values.relabeling.enabled }}
+      - name: relabel-config
+        mountPath: /etc/metrics-governor/relabel
+        readOnly: true
+      {{- end }}
     {{- with .Values.configReload.resources }}
     resources:
       {{- toYaml . | nindent 6 }}

@@ -28,6 +28,7 @@ import (
 	"github.com/szibis/metrics-governor/internal/prw"
 	"github.com/szibis/metrics-governor/internal/queue"
 	"github.com/szibis/metrics-governor/internal/receiver"
+	"github.com/szibis/metrics-governor/internal/relabel"
 	"github.com/szibis/metrics-governor/internal/stats"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
@@ -255,6 +256,23 @@ func main() {
 		))
 	}
 
+	// Create relabeler (if configured)
+	var relabeler *relabel.Relabeler
+	if cfg.RelabelConfig != "" {
+		relabelConfigs, err := relabel.LoadFile(cfg.RelabelConfig)
+		if err != nil {
+			logging.Fatal("failed to load relabel config", logging.F("error", err.Error(), "path", cfg.RelabelConfig))
+		}
+		relabeler, err = relabel.New(relabelConfigs)
+		if err != nil {
+			logging.Fatal("failed to create relabeler", logging.F("error", err.Error()))
+		}
+		logging.Info("relabeler initialized", logging.F(
+			"config", cfg.RelabelConfig,
+			"rules_count", len(relabelConfigs),
+		))
+	}
+
 	// Create log aggregator for buffer (aggregates logs per 10s interval)
 	bufferLogAggregator := limits.NewLogAggregator(10 * time.Second)
 
@@ -276,6 +294,11 @@ func main() {
 			"max_size", cfg.QueueMaxSize,
 			"max_bytes", cfg.QueueMaxBytes,
 		))
+	}
+
+	// Wire relabeler into export pipeline
+	if relabeler != nil {
+		bufOpts = append(bufOpts, buffer.WithRelabeler(relabeler))
 	}
 
 	// Create buffer with stats collector, limits enforcer, and log aggregator
@@ -438,13 +461,14 @@ func main() {
 		"receiver_tls", cfg.ReceiverTLSEnabled,
 		"receiver_auth", cfg.ReceiverAuthEnabled,
 		"limits_enabled", cfg.LimitsConfig != "",
+		"relabel_enabled", cfg.RelabelConfig != "",
 		"queue_enabled", cfg.QueueEnabled,
 		"sharding_enabled", cfg.ShardingEnabled,
 		"prw_enabled", cfg.PRWListenAddr != "",
 	))
 
 	// Set up SIGHUP handler for config reload
-	// Reloads: limits rules, limits dry-run toggle
+	// Reloads: limits rules, limits dry-run toggle, relabel rules
 	// Does NOT reload: receiver, exporter, buffer, queue, sharding settings (require restart)
 	{
 		sighupChan := make(chan os.Signal, 1)
@@ -462,6 +486,21 @@ func main() {
 					} else {
 						limitsEnforcer.ReloadConfig(newLimitsCfg)
 						logging.Info("limits config reloaded successfully", logging.F("rules_count", len(newLimitsCfg.Rules)))
+					}
+				}
+
+				// Reload relabel config
+				if cfg.RelabelConfig != "" && relabeler != nil {
+					logging.Info("reloading relabel config", logging.F("path", cfg.RelabelConfig))
+					newRelabelConfigs, err := relabel.LoadFile(cfg.RelabelConfig)
+					if err != nil {
+						logging.Error("relabel config reload failed, keeping current config", logging.F("error", err.Error(), "path", cfg.RelabelConfig))
+					} else {
+						if err := relabeler.ReloadConfig(newRelabelConfigs); err != nil {
+							logging.Error("relabel config apply failed, keeping current config", logging.F("error", err.Error()))
+						} else {
+							logging.Info("relabel config reloaded successfully", logging.F("rules_count", len(newRelabelConfigs)))
+						}
 					}
 				}
 

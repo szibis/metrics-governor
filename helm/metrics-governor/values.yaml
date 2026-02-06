@@ -305,6 +305,16 @@ limits:
       action: log
     rules: []
 
+# -- Relabeling configuration (creates ConfigMap)
+relabeling:
+  # -- Enable metric relabeling
+  enabled: false
+  # -- Use existing ConfigMap for relabeling
+  existingConfigMap: ""
+  # -- Relabel configuration content (Prometheus-compatible relabel_configs)
+  config: |
+    relabel_configs: []
+
 service:
   # -- Enable service
   enabled: true
