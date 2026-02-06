@@ -1,0 +1,49 @@
+suite: RBAC template
+templates:
+  - templates/rbac.yaml
+tests:
+  - it: creates Role and RoleBinding by default
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: Role
+        documentIndex: 0
+      - isKind:
+          of: RoleBinding
+        documentIndex: 1
+
+  - it: creates ClusterRole and ClusterRoleBinding when clusterWide is true
+    set:
+      rbac.clusterWide: true
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: ClusterRole
+        documentIndex: 0
+      - isKind:
+          of: ClusterRoleBinding
+        documentIndex: 1
+
+  - it: appends extraRules to Role
+    set:
+      rbac.extraRules:
+        - apiGroups: ["apps"]
+          resources: ["deployments"]
+          verbs: ["get"]
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["apps"]
+            resources: ["deployments"]
+            verbs: ["get"]
+        documentIndex: 0
+
+  - it: does not render when create is false
+    set:
+      rbac.create: false
+    asserts:
+      - hasDocuments:
+          count: 0

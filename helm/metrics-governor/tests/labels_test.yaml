@@ -1,0 +1,56 @@
+suite: Labels and annotations
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: has standard labels
+    asserts:
+      - isNotNull:
+          path: metadata.labels["helm.sh/chart"]
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: metrics-governor
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: "0.23.0"
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+
+  - it: propagates extraLabels to workload metadata
+    set:
+      extraLabels:
+        team: platform
+    asserts:
+      - equal:
+          path: metadata.labels.team
+          value: platform
+
+  - it: propagates podLabels to pod template
+    set:
+      podLabels:
+        sidecar.istio.io/inject: "true"
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels["sidecar.istio.io/inject"]
+          value: "true"
+
+  - it: propagates podAnnotations to pod template
+    set:
+      podAnnotations:
+        prometheus.io/scrape: "true"
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["prometheus.io/scrape"]
+          value: "true"
+
+  - it: propagates annotations to workload metadata
+    set:
+      annotations:
+        meta.helm.sh/release-name: my-release
+    asserts:
+      - equal:
+          path: metadata.annotations["meta.helm.sh/release-name"]
+          value: my-release

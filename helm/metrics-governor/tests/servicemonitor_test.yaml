@@ -1,0 +1,38 @@
+suite: ServiceMonitor template
+templates:
+  - templates/servicemonitor.yaml
+tests:
+  - it: does not render by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders when enabled
+    set:
+      serviceMonitor.enabled: true
+    asserts:
+      - isKind:
+          of: ServiceMonitor
+
+  - it: propagates interval and scrapeTimeout
+    set:
+      serviceMonitor.enabled: true
+      serviceMonitor.interval: 15s
+      serviceMonitor.scrapeTimeout: 5s
+    asserts:
+      - equal:
+          path: spec.endpoints[0].interval
+          value: 15s
+      - equal:
+          path: spec.endpoints[0].scrapeTimeout
+          value: 5s
+
+  - it: propagates additionalLabels
+    set:
+      serviceMonitor.enabled: true
+      serviceMonitor.additionalLabels:
+        release: prometheus
+    asserts:
+      - equal:
+          path: metadata.labels.release
+          value: prometheus

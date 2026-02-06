@@ -409,6 +409,21 @@ jobs:
       - name: Lint Helm chart
         run: helm lint helm/metrics-governor
 
+  test-helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Install helm-unittest
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest
+
+      - name: Run Helm chart unit tests
+        run: helm unittest helm/metrics-governor
+
   validate-config-helper:
     runs-on: ubuntu-latest
     steps:
@@ -722,7 +737,7 @@ jobs:
         run: docker compose down -v --remove-orphans 2>/dev/null || true
 
   build-binaries:
-    needs: [ci-filter, build, test-unit, test-functional, test-e2e, test-e2e-docker, lint, lint-dockerfile, lint-yaml, lint-helm]
+    needs: [ci-filter, build, test-unit, test-functional, test-e2e, test-e2e-docker, lint, lint-dockerfile, lint-yaml, lint-helm, test-helm]
     runs-on: ubuntu-latest
     if: >-
       needs.ci-filter.outputs.skip_tests != 'true' &&

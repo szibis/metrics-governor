@@ -1,0 +1,53 @@
+suite: ConfigMap template
+templates:
+  - templates/configmap.yaml
+tests:
+  - it: always renders
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-metrics-governor-config
+
+  - it: contains config.yaml data key
+    asserts:
+      - isNotNull:
+          path: data["config.yaml"]
+
+  - it: generated config includes receiver section
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "receiver:"
+
+  - it: generated config includes exporter section
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "exporter:"
+
+  - it: generated config includes buffer section
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "buffer:"
+
+  - it: generated config includes stats section
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "stats:"
+
+  - it: rawConfig overrides template-generated config
+    set:
+      config.rawConfig: |
+        custom: true
+        my_key: my_value
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "custom: true"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "my_key: my_value"
