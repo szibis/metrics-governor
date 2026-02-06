@@ -17,6 +17,7 @@ Production-focused dashboard for monitoring metrics-governor in real deployments
 - **Queue & Persistence** - Queue size, max size, push/pop/retry operations
 - **Sharding** - Active endpoints, datapoints by endpoint, DNS & rehash events
 - **Runtime** - Memory usage (heap/stack), goroutines, GC rate
+- **Config Reload & Health** - Uptime, config reload count/rate, last reload time, process start time
 
 **Use for:**
 - Day-to-day monitoring
@@ -24,18 +25,23 @@ Production-focused dashboard for monitoring metrics-governor in real deployments
 - Capacity planning
 - Limits tuning
 
-### 2. E2E Testing Dashboard (`e2e-testing.json`)
+### 2. Development Dashboard (`development.json`)
 
-Full testing dashboard including metrics generator and verifier panels.
+Development and testing dashboard showing the full data pipeline: generator → governor → verifier.
 
-**Additional Sections:**
-- **Generator** - Metrics/datapoints per second, batch latency, burst events
-- **Verifier** - Verification pass rate, ingestion rate, check status
+**Sections:**
+- **Test Pipeline Overview** - At-a-glance status: generator rate, governor throughput, export errors, verifier pass rate
+- **Generator** - Throughput, batch latency, totals, errors, spike/mistake scenario status
+- **Governor Pipeline** - Datapoints rate (received/sent/dropped), batches, buffer size, bytes throughput
+- **Config & Health** - Uptime, config reloads, last reload time, goroutines, memory, GC
+- **Limits Enforcement** - Dropped vs passed, limit violations, per-rule datapoints and cardinality
+- **Verifier** - Pass rate, ingestion rate, VictoriaMetrics stats, check totals, end-to-end comparison
 
 **Use for:**
-- E2E testing with docker-compose
-- Development and debugging
-- CI/CD validation
+- Local development with docker-compose
+- Debugging data flow issues
+- Verifying limits enforcement behavior
+- Monitoring test pipeline health
 
 ## Installation
 
@@ -82,7 +88,7 @@ grafana:
 
 ## Variables
 
-Both dashboards use a `datasource` template variable to select the Prometheus datasource.
+All dashboards use a `datasource` template variable to select the Prometheus datasource.
 
 ## Customization
 

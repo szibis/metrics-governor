@@ -254,7 +254,7 @@ func TestDiskIOMetrics(t *testing.T) {
 
 	// Disk I/O metrics may or may not be available depending on permissions
 	// Just check the basic ones that should work
-	if strings.Contains(body, "metrics_governor_process_io_read_bytes_total") {
+	if strings.Contains(body, "metrics_governor_disk_read_bytes_total") {
 		// Good, IO metrics are available
 		t.Log("Disk I/O metrics are available")
 	}

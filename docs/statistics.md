@@ -139,6 +139,15 @@ These metrics track the Prometheus Remote Write (PRW) pipeline:
 | `metrics_governor_prw_batches_sent_total` | counter | Total PRW batches exported |
 | `metrics_governor_prw_export_errors_total` | counter | Total PRW export errors |
 
+### Config Reload Metrics
+
+These metrics track dynamic configuration reloads via SIGHUP (see [reload.md](reload.md)):
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_config_reloads_total` | counter | Successful limits config reloads via SIGHUP |
+| `metrics_governor_config_reload_last_success_timestamp_seconds` | gauge | Unix timestamp of last successful config reload |
+
 ## Configuring Label Tracking
 
 Track specific labels for detailed statistics:

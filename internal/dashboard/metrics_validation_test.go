@@ -146,6 +146,10 @@ var knownMetrics = []string{
 	"metrics_governor_tracker_switches_total",
 	"metrics_governor_tracker_sample_rate",
 
+	// Config reload metrics (limits/enforcer.go)
+	"metrics_governor_config_reloads_total",
+	"metrics_governor_config_reload_last_success_timestamp_seconds",
+
 	// Rule cache metrics (limits/enforcer.go)
 	"metrics_governor_rule_cache_evictions_total",
 	"metrics_governor_rule_cache_hit_ratio",
@@ -233,12 +237,10 @@ var knownMetrics = []string{
 	"metrics_governor_process_max_fds",
 
 	// Disk I/O metrics (stats/runtime.go) - Linux only
-	"metrics_governor_process_io_read_chars_total",
-	"metrics_governor_process_io_write_chars_total",
-	"metrics_governor_process_io_read_syscalls_total",
-	"metrics_governor_process_io_write_syscalls_total",
-	"metrics_governor_process_io_read_bytes_total",
-	"metrics_governor_process_io_write_bytes_total",
+	// Only real storage-layer I/O (read_bytes/write_bytes from /proc/self/io).
+	// VFS-level rchar/wchar and syscall counts are excluded — they mix disk + network.
+	"metrics_governor_disk_read_bytes_total",
+	"metrics_governor_disk_write_bytes_total",
 
 	// Network metrics (stats/runtime.go) - Linux only
 	"metrics_governor_network_receive_bytes_total",
@@ -465,6 +467,7 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_limits",
 		"metrics_governor_dropped_",
 		"metrics_governor_tracker",
+		"metrics_governor_config",
 		"metrics_governor_cardinality",
 		// Caching & pool metrics prefixes
 		"metrics_governor_compression",
@@ -477,6 +480,7 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_memory",
 		"metrics_governor_gc_",
 		"metrics_governor_psi_",
+		"metrics_governor_disk_",
 		"metrics_governor_network",
 	}
 
@@ -499,6 +503,7 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 func TestDashboardJSONValid(t *testing.T) {
 	dashboards := []string{
 		"../../dashboards/operations.json",
+		"../../dashboards/development.json",
 		"../../test/grafana/dashboards/metrics-governor.json",
 		"../../test/grafana/dashboards/e2e-testing.json",
 	}

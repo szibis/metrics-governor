@@ -701,10 +701,8 @@ New internal metrics exposing Go runtime and process statistics:
 - `metrics_governor_network_*_dropped_total` - Dropped packets
 
 **Disk I/O Metrics (Linux):**
-- `metrics_governor_process_io_read_bytes_total` - Bytes read from disk
-- `metrics_governor_process_io_write_bytes_total` - Bytes written to disk
-- `metrics_governor_process_io_read_syscalls_total` - Read syscalls
-- `metrics_governor_process_io_write_syscalls_total` - Write syscalls
+- `metrics_governor_disk_read_bytes_total` - Actual bytes read from storage layer
+- `metrics_governor_disk_write_bytes_total` - Actual bytes written to storage layer
 
 **PSI Metrics (Linux):**
 - `metrics_governor_psi_{cpu,memory,io}_some_avg*` - Pressure stall info

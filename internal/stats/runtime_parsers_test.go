@@ -1,0 +1,354 @@
+package stats
+
+import (
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// TestWritePSIResource tests PSI metrics writing with mock data.
+func TestWritePSIResource(t *testing.T) {
+	metrics := map[string]*psiMetric{
+		"some": {Avg10: 1.23, Avg60: 4.56, Avg300: 7.89, Total: 12345678},
+		"full": {Avg10: 0.12, Avg60: 0.34, Avg300: 0.56, Total: 9876543},
+	}
+
+	w := httptest.NewRecorder()
+	writePSIResource(w, "cpu", metrics)
+
+	body := w.Body.String()
+
+	expected := []string{
+		"metrics_governor_psi_cpu_some_avg10 1.23",
+		"metrics_governor_psi_cpu_some_avg60 4.56",
+		"metrics_governor_psi_cpu_some_avg300 7.89",
+		"metrics_governor_psi_cpu_some_total_microseconds 12345678",
+		"metrics_governor_psi_cpu_full_avg10 0.12",
+		"metrics_governor_psi_cpu_full_avg60 0.34",
+		"metrics_governor_psi_cpu_full_avg300 0.56",
+		"metrics_governor_psi_cpu_full_total_microseconds 9876543",
+	}
+
+	for _, exp := range expected {
+		if !strings.Contains(body, exp) {
+			t.Errorf("Expected output to contain %q", exp)
+		}
+	}
+
+	// Verify HELP and TYPE comments
+	if !strings.Contains(body, "# HELP metrics_governor_psi_cpu_some_avg10") {
+		t.Error("Missing HELP for psi_cpu_some_avg10")
+	}
+	if !strings.Contains(body, "# TYPE metrics_governor_psi_cpu_some_avg10 gauge") {
+		t.Error("Missing TYPE gauge for psi_cpu_some_avg10")
+	}
+	if !strings.Contains(body, "# TYPE metrics_governor_psi_cpu_some_total_microseconds counter") {
+		t.Error("Missing TYPE counter for psi_cpu_some_total_microseconds")
+	}
+}
+
+// TestWritePSIResourceSomeOnly tests PSI writing with only "some" metrics (like CPU).
+func TestWritePSIResourceSomeOnly(t *testing.T) {
+	metrics := map[string]*psiMetric{
+		"some": {Avg10: 2.5, Avg60: 1.0, Avg300: 0.5, Total: 100},
+	}
+
+	w := httptest.NewRecorder()
+	writePSIResource(w, "memory", metrics)
+
+	body := w.Body.String()
+
+	if !strings.Contains(body, "metrics_governor_psi_memory_some_avg10 2.50") {
+		t.Error("Missing memory some avg10")
+	}
+	// Should NOT contain "full" metrics
+	if strings.Contains(body, "metrics_governor_psi_memory_full") {
+		t.Error("Unexpected full metrics for memory when only some is present")
+	}
+}
+
+// TestWritePSIResourceEmpty tests PSI writing with empty metrics map.
+func TestWritePSIResourceEmpty(t *testing.T) {
+	w := httptest.NewRecorder()
+	writePSIResource(w, "io", map[string]*psiMetric{})
+
+	body := w.Body.String()
+	if body != "" {
+		t.Errorf("Expected empty output for empty metrics, got: %s", body)
+	}
+}
+
+// TestWriteProcessStat tests /proc/self/stat parsing and metric output.
+func TestWriteProcessStat(t *testing.T) {
+	// Simulated /proc/self/stat line (simplified — 52 fields like real Linux)
+	// Fields of interest: index 13 (utime), 14 (stime), 22 (vsize), 23 (rss)
+	fields := make([]string, 52)
+	fields[0] = "12345"                  // pid
+	fields[1] = "(metrics-governor)"     // comm
+	fields[2] = "S"                      // state
+	for i := 3; i < 52; i++ {
+		fields[i] = "0"
+	}
+	fields[13] = "500"        // utime = 500 jiffies = 5.00 seconds
+	fields[14] = "200"        // stime = 200 jiffies = 2.00 seconds
+	fields[22] = "104857600"  // vsize = 100MB
+	fields[23] = "25600"      // rss = 25600 pages
+
+	data := strings.Join(fields, " ")
+
+	w := httptest.NewRecorder()
+	writeProcessStat(w, data)
+
+	body := w.Body.String()
+
+	expected := []struct {
+		metric string
+		value  string
+	}{
+		{"metrics_governor_process_cpu_user_seconds", "5.00"},
+		{"metrics_governor_process_cpu_system_seconds", "2.00"},
+		{"metrics_governor_process_cpu_total_seconds", "7.00"},
+		{"metrics_governor_process_virtual_memory_bytes", "104857600"},
+	}
+
+	for _, exp := range expected {
+		line := exp.metric + " " + exp.value
+		if !strings.Contains(body, line) {
+			t.Errorf("Expected output to contain %q", line)
+		}
+	}
+
+	// Verify HELP/TYPE
+	if !strings.Contains(body, "# TYPE metrics_governor_process_cpu_user_seconds counter") {
+		t.Error("Missing counter TYPE for cpu_user_seconds")
+	}
+	if !strings.Contains(body, "# TYPE metrics_governor_process_virtual_memory_bytes gauge") {
+		t.Error("Missing gauge TYPE for virtual_memory_bytes")
+	}
+
+	// RSS should be present (value depends on page size)
+	if !strings.Contains(body, "metrics_governor_process_resident_memory_bytes") {
+		t.Error("Missing resident_memory_bytes metric")
+	}
+}
+
+// TestWriteProcessStatTooFewFields tests graceful handling of short data.
+func TestWriteProcessStatTooFewFields(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeProcessStat(w, "1 (foo) S 0 0 0")
+
+	body := w.Body.String()
+	if body != "" {
+		t.Errorf("Expected empty output for too-few fields, got: %s", body)
+	}
+}
+
+// TestWriteMaxFDs tests /proc/self/limits parsing.
+func TestWriteMaxFDs(t *testing.T) {
+	data := `Limit                     Soft Limit           Hard Limit           Units
+Max cpu time              unlimited            unlimited            seconds
+Max file size             unlimited            unlimited            bytes
+Max data size             unlimited            unlimited            bytes
+Max open files            1048576              1048576              files
+Max locked memory         8388608              unlimited            bytes
+`
+
+	w := httptest.NewRecorder()
+	writeMaxFDs(w, data)
+
+	body := w.Body.String()
+
+	if !strings.Contains(body, "metrics_governor_process_max_fds 1048576") {
+		t.Errorf("Expected max_fds=1048576, got: %s", body)
+	}
+	if !strings.Contains(body, "# TYPE metrics_governor_process_max_fds gauge") {
+		t.Error("Missing gauge TYPE for max_fds")
+	}
+}
+
+// TestWriteMaxFDsNoMatch tests limits data without "Max open files".
+func TestWriteMaxFDsNoMatch(t *testing.T) {
+	data := `Limit                     Soft Limit           Hard Limit           Units
+Max cpu time              unlimited            unlimited            seconds
+`
+
+	w := httptest.NewRecorder()
+	writeMaxFDs(w, data)
+
+	body := w.Body.String()
+	if body != "" {
+		t.Errorf("Expected empty output when no open files limit, got: %s", body)
+	}
+}
+
+// TestWriteDiskIO tests /proc/self/io parsing — only real disk I/O (read_bytes/write_bytes).
+func TestWriteDiskIO(t *testing.T) {
+	data := `rchar: 123456789
+wchar: 987654321
+syscr: 50000
+syscw: 30000
+read_bytes: 4096000
+write_bytes: 8192000
+cancelled_write_bytes: 0
+`
+
+	w := httptest.NewRecorder()
+	writeDiskIO(w, data)
+
+	body := w.Body.String()
+
+	// Only real disk I/O metrics should be emitted
+	expected := []struct {
+		metric string
+		value  string
+	}{
+		{"metrics_governor_disk_read_bytes_total", "4096000"},
+		{"metrics_governor_disk_write_bytes_total", "8192000"},
+	}
+
+	for _, exp := range expected {
+		line := exp.metric + " " + exp.value
+		if !strings.Contains(body, line) {
+			t.Errorf("Expected output to contain %q", line)
+		}
+	}
+
+	// Verify both are counters
+	for _, exp := range expected {
+		typeComment := "# TYPE " + exp.metric + " counter"
+		if !strings.Contains(body, typeComment) {
+			t.Errorf("Expected counter TYPE for %s", exp.metric)
+		}
+	}
+
+	// VFS-level and syscall metrics should NOT be emitted
+	excluded := []string{
+		"process_io_read_chars_total",
+		"process_io_write_chars_total",
+		"process_io_read_syscalls_total",
+		"process_io_write_syscalls_total",
+	}
+	for _, excl := range excluded {
+		if strings.Contains(body, excl) {
+			t.Errorf("Should not emit VFS/syscall metric %q", excl)
+		}
+	}
+}
+
+// TestWriteDiskIOPartialData tests disk I/O with incomplete data.
+func TestWriteDiskIOPartialData(t *testing.T) {
+	data := `rchar: 100
+invalid_line
+wchar: not_a_number
+read_bytes: 200
+`
+
+	w := httptest.NewRecorder()
+	writeDiskIO(w, data)
+
+	body := w.Body.String()
+
+	// Only read_bytes should be present (real disk I/O)
+	if !strings.Contains(body, "metrics_governor_disk_read_bytes_total 200") {
+		t.Error("Expected disk_read_bytes metric")
+	}
+	// rchar/wchar should NOT be emitted (VFS-level, excluded)
+	if strings.Contains(body, "process_io_read_chars_total") {
+		t.Error("Should not emit VFS-level rchar metric")
+	}
+}
+
+// TestWriteDiskIOEmpty tests disk I/O with empty data.
+func TestWriteDiskIOEmpty(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeDiskIO(w, "")
+
+	body := w.Body.String()
+	if body != "" {
+		t.Errorf("Expected empty output for empty data, got: %s", body)
+	}
+}
+
+// TestWriteNetworkIO tests /proc/net/dev parsing.
+func TestWriteNetworkIO(t *testing.T) {
+	data := `Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo: 1000000  10000    0    0    0     0          0         0  1000000  10000    0    0    0     0       0          0
+  eth0: 5000000  40000    5    2    0     0          0         0  3000000  25000    1    0    0     0       0          0
+  eth1: 2000000  15000    0    1    0     0          0         0  1000000  8000     0    3    0     0       0          0
+`
+
+	w := httptest.NewRecorder()
+	writeNetworkIO(w, data)
+
+	body := w.Body.String()
+
+	// lo should be excluded, only eth0 + eth1
+	expected := []struct {
+		metric string
+		value  string
+	}{
+		{"metrics_governor_network_receive_bytes_total", "7000000"},      // 5000000 + 2000000
+		{"metrics_governor_network_transmit_bytes_total", "4000000"},     // 3000000 + 1000000
+		{"metrics_governor_network_receive_packets_total", "55000"},      // 40000 + 15000
+		{"metrics_governor_network_transmit_packets_total", "33000"},     // 25000 + 8000
+		{"metrics_governor_network_receive_errors_total", "5"},           // 5 + 0
+		{"metrics_governor_network_transmit_errors_total", "1"},          // 1 + 0
+		{"metrics_governor_network_receive_dropped_total", "3"},          // 2 + 1
+		{"metrics_governor_network_transmit_dropped_total", "3"},         // 0 + 3
+	}
+
+	for _, exp := range expected {
+		line := exp.metric + " " + exp.value
+		if !strings.Contains(body, line) {
+			t.Errorf("Expected output to contain %q, body:\n%s", line, body)
+		}
+	}
+}
+
+// TestWriteNetworkIOSkipsLoopback tests that loopback is excluded.
+func TestWriteNetworkIOSkipsLoopback(t *testing.T) {
+	data := `Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo: 9999999  99999    0    0    0     0          0         0  9999999  99999    0    0    0     0       0          0
+`
+
+	w := httptest.NewRecorder()
+	writeNetworkIO(w, data)
+
+	body := w.Body.String()
+
+	// All counters should be 0 since only lo is present
+	if !strings.Contains(body, "metrics_governor_network_receive_bytes_total 0") {
+		t.Error("Expected receive_bytes=0 when only loopback is present")
+	}
+}
+
+// TestWriteNetworkIOEmpty tests network I/O with empty data.
+func TestWriteNetworkIOEmpty(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeNetworkIO(w, "")
+
+	body := w.Body.String()
+
+	// Should still emit zero counters
+	if !strings.Contains(body, "metrics_governor_network_receive_bytes_total 0") {
+		t.Error("Expected zero counters for empty data")
+	}
+}
+
+// TestWriteNetworkIOHeaderOnly tests with just headers, no interfaces.
+func TestWriteNetworkIOHeaderOnly(t *testing.T) {
+	data := `Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+`
+
+	w := httptest.NewRecorder()
+	writeNetworkIO(w, data)
+
+	body := w.Body.String()
+
+	if !strings.Contains(body, "metrics_governor_network_receive_bytes_total 0") {
+		t.Error("Expected zero counters for header-only data")
+	}
+}
