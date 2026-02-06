@@ -18,6 +18,14 @@ type YAMLConfig struct {
 	Limits      LimitsYAMLConfig      `yaml:"limits"`
 	Performance PerformanceYAMLConfig `yaml:"performance"`
 	Memory      MemoryYAMLConfig      `yaml:"memory"`
+	Telemetry   TelemetryYAMLConfig   `yaml:"telemetry"`
+}
+
+// TelemetryYAMLConfig holds OTLP self-monitoring telemetry configuration.
+type TelemetryYAMLConfig struct {
+	Endpoint string `yaml:"endpoint"` // OTLP endpoint (empty = disabled)
+	Protocol string `yaml:"protocol"` // "grpc" or "http" (default: "grpc")
+	Insecure *bool  `yaml:"insecure"` // Use insecure connection (default: true)
 }
 
 // MemoryYAMLConfig holds memory limit configuration.
@@ -200,6 +208,7 @@ type StatsYAMLConfig struct {
 type LimitsYAMLConfig struct {
 	DryRun           *bool `yaml:"dry_run"`
 	RuleCacheMaxSize int   `yaml:"rule_cache_max_size"`
+	StatsThreshold   int64 `yaml:"stats_threshold"` // Only report per-group stats for groups with >= N datapoints
 }
 
 // Duration is a wrapper for time.Duration that supports YAML unmarshaling.
@@ -530,6 +539,15 @@ func (y *YAMLConfig) ApplyDefaults() {
 	if y.Memory.LimitRatio == 0 {
 		y.Memory.LimitRatio = 0.9
 	}
+
+	// Telemetry defaults
+	if y.Telemetry.Protocol == "" {
+		y.Telemetry.Protocol = "grpc"
+	}
+	if y.Telemetry.Insecure == nil {
+		b := true
+		y.Telemetry.Insecure = &b
+	}
 }
 
 // ToConfig converts YAMLConfig to the flat Config struct.
@@ -605,8 +623,9 @@ func (y *YAMLConfig) ToConfig() *Config {
 		StatsLabels: strings.Join(y.Stats.Labels, ","),
 
 		// Limits
-		LimitsDryRun:     *y.Limits.DryRun,
-		RuleCacheMaxSize: y.Limits.RuleCacheMaxSize,
+		LimitsDryRun:         *y.Limits.DryRun,
+		RuleCacheMaxSize:     y.Limits.RuleCacheMaxSize,
+		LimitsStatsThreshold: y.Limits.StatsThreshold,
 
 		// Queue
 		QueueType:              y.Exporter.Queue.Type,
@@ -651,6 +670,11 @@ func (y *YAMLConfig) ToConfig() *Config {
 
 		// Memory
 		MemoryLimitRatio: y.Memory.LimitRatio,
+
+		// Telemetry
+		TelemetryEndpoint: y.Telemetry.Endpoint,
+		TelemetryProtocol: y.Telemetry.Protocol,
+		TelemetryInsecure: *y.Telemetry.Insecure,
 	}
 
 	return cfg

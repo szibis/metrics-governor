@@ -427,39 +427,9 @@ The operations dashboard includes a "Circuit Breaker & Backoff" section with:
 7. **Circuit Events** - Opens and rejections correlation
 8. **Retry Success Rate** - Success vs failure ratio
 
-### Recommended Alerts
+### Alerting Rules
 
-```yaml
-# Circuit breaker opened
-- alert: MetricsGovernorCircuitOpen
-  expr: metrics_governor_queue_circuit_breaker_state > 0
-  for: 1m
-  labels:
-    severity: warning
-  annotations:
-    summary: "Circuit breaker open"
-    description: "Queue circuit breaker is {{ if eq $value 1 }}OPEN{{ else }}HALF-OPEN{{ end }}"
-
-# High rejection rate
-- alert: MetricsGovernorHighRejectionRate
-  expr: rate(metrics_governor_queue_circuit_breaker_rejections_total[5m]) > 10
-  for: 5m
-  labels:
-    severity: critical
-  annotations:
-    summary: "High circuit breaker rejection rate"
-    description: "{{ $value | humanize }} rejections per second"
-
-# Backoff delay climbing
-- alert: MetricsGovernorHighBackoff
-  expr: metrics_governor_queue_current_backoff_seconds > 120
-  for: 5m
-  labels:
-    severity: warning
-  annotations:
-    summary: "High queue backoff delay"
-    description: "Current backoff delay is {{ $value | humanize }}s"
-```
+For comprehensive Prometheus alerting rules (circuit breaker, cardinality spikes, drop rate, export errors, memory, health, config reload, queue), see **[Alerting](alerting.md)**.
 
 ## Best Practices
 

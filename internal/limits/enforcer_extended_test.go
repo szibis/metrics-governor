@@ -1,8 +1,10 @@
 package limits
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -821,4 +823,475 @@ func TestEnforcer_Adaptive_DryRunWithExcess(t *testing.T) {
 			t.Errorf("Dry run should pass through, got %d results", len(result))
 		}
 	}
+}
+
+func TestNewEnforcer_InitialReloadTimestamp(t *testing.T) {
+	before := time.Now().UTC().Unix()
+	enforcer := NewEnforcer(nil, false, 0)
+	after := time.Now().UTC().Unix()
+
+	ts := enforcer.lastReloadUTC.Load()
+	if ts == 0 {
+		t.Fatal("lastReloadUTC should not be 0 (Unix epoch)")
+	}
+	if ts < before || ts > after {
+		t.Errorf("lastReloadUTC %d not between %d and %d", ts, before, after)
+	}
+}
+
+func TestServeHTTP_ReloadTimestamp(t *testing.T) {
+	config := &Config{
+		Rules: []Rule{
+			{Name: "test-rule", Match: RuleMatch{MetricName: "test_.*"}, MaxDatapointsRate: 1000, MaxCardinality: 100, Action: ActionLog},
+		},
+	}
+	enforcer := NewEnforcer(config, false, 0)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	enforcer.ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	now := time.Now().UTC().Unix()
+
+	// The timestamp should be recent (within 5 seconds of now)
+	if !containsRecentTimestamp(body, "metrics_governor_config_reload_last_success_timestamp_seconds", now, 5) {
+		t.Error("config_reload_last_success_timestamp_seconds should be a recent timestamp, not 0")
+	}
+}
+
+func TestReloadConfig_UpdatesTimestamp(t *testing.T) {
+	config := &Config{Rules: []Rule{
+		{Name: "rule1", Match: RuleMatch{MetricName: "test_.*"}, MaxDatapointsRate: 1000, MaxCardinality: 100, Action: ActionLog},
+	}}
+	enforcer := NewEnforcer(config, false, 0)
+
+	initialTS := enforcer.lastReloadUTC.Load()
+	time.Sleep(1100 * time.Millisecond) // Ensure at least 1 second passes
+
+	newConfig := &Config{Rules: []Rule{
+		{Name: "rule1", Match: RuleMatch{MetricName: "test_.*"}, MaxDatapointsRate: 2000, MaxCardinality: 200, Action: ActionLog},
+	}}
+	enforcer.ReloadConfig(newConfig)
+
+	reloadedTS := enforcer.lastReloadUTC.Load()
+	if reloadedTS <= initialTS {
+		t.Errorf("lastReloadUTC should advance after reload: initial=%d, reloaded=%d", initialTS, reloadedTS)
+	}
+}
+
+func TestStatsThreshold_Zero_ReportsAll(t *testing.T) {
+	cfg := &Config{
+		Rules: []Rule{
+			{
+				Name:              "threshold-test",
+				Match:             RuleMatch{MetricName: "thresh_.*"},
+				MaxDatapointsRate: 10000,
+				MaxCardinality:    10000,
+				Action:            ActionLog,
+				GroupBy:           []string{"service"},
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, false, 0)
+	defer enforcer.Stop()
+	// threshold=0 (default) means report all
+
+	// Create two groups with different datapoint counts
+	for i := 0; i < 50; i++ {
+		rm := createTestResourceMetrics(
+			map[string]string{"service": "small"},
+			[]*metricspb.Metric{createTestMetric("thresh_metric", map[string]string{}, 1)},
+		)
+		enforcer.Process([]*metricspb.ResourceMetrics{rm})
+	}
+	for i := 0; i < 200; i++ {
+		rm := createTestResourceMetrics(
+			map[string]string{"service": "large"},
+			[]*metricspb.Metric{createTestMetric("thresh_metric", map[string]string{}, 1)},
+		)
+		enforcer.Process([]*metricspb.ResourceMetrics{rm})
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	enforcer.ServeHTTP(rec, req)
+	body := rec.Body.String()
+
+	// Both groups should appear in per-group metrics
+	if !strings.Contains(body, `metrics_governor_rule_group_datapoints{rule="threshold-test",group="service=small"}`) {
+		t.Error("threshold=0 should report small group datapoints")
+	}
+	if !strings.Contains(body, `metrics_governor_rule_group_datapoints{rule="threshold-test",group="service=large"}`) {
+		t.Error("threshold=0 should report large group datapoints")
+	}
+	if !strings.Contains(body, `metrics_governor_rule_group_cardinality{rule="threshold-test",group="service=small"}`) {
+		t.Error("threshold=0 should report small group cardinality")
+	}
+	if !strings.Contains(body, `metrics_governor_rule_group_cardinality{rule="threshold-test",group="service=large"}`) {
+		t.Error("threshold=0 should report large group cardinality")
+	}
+}
+
+func TestStatsThreshold_Filters_LowGroups(t *testing.T) {
+	cfg := &Config{
+		Rules: []Rule{
+			{
+				Name:              "filter-test",
+				Match:             RuleMatch{MetricName: "filt_.*"},
+				MaxDatapointsRate: 10000,
+				MaxCardinality:    10000,
+				Action:            ActionLog,
+				GroupBy:           []string{"service"},
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, false, 0)
+	defer enforcer.Stop()
+	enforcer.SetStatsThreshold(100) // Only report groups with >= 100 dps
+
+	// small group: 50 datapoints (below threshold)
+	for i := 0; i < 50; i++ {
+		rm := createTestResourceMetrics(
+			map[string]string{"service": "small"},
+			[]*metricspb.Metric{createTestMetric("filt_metric", map[string]string{}, 1)},
+		)
+		enforcer.Process([]*metricspb.ResourceMetrics{rm})
+	}
+	// large group: 200 datapoints (above threshold)
+	for i := 0; i < 200; i++ {
+		rm := createTestResourceMetrics(
+			map[string]string{"service": "large"},
+			[]*metricspb.Metric{createTestMetric("filt_metric", map[string]string{}, 1)},
+		)
+		enforcer.Process([]*metricspb.ResourceMetrics{rm})
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	enforcer.ServeHTTP(rec, req)
+	body := rec.Body.String()
+
+	// Large group should be reported
+	if !strings.Contains(body, `metrics_governor_rule_group_datapoints{rule="filter-test",group="service=large"}`) {
+		t.Error("large group should appear with threshold=100")
+	}
+	// Small group should be filtered out
+	if strings.Contains(body, `group="service=small"`) {
+		t.Error("small group (50 dps) should be filtered out with threshold=100")
+	}
+}
+
+func TestStatsThreshold_GlobalsAlwaysReported(t *testing.T) {
+	cfg := &Config{
+		Rules: []Rule{
+			{
+				Name:              "globals-test",
+				Match:             RuleMatch{MetricName: "glob_.*"},
+				MaxDatapointsRate: 10000,
+				MaxCardinality:    10000,
+				Action:            ActionLog,
+				GroupBy:           []string{"service"},
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, false, 0)
+	defer enforcer.Stop()
+	enforcer.SetStatsThreshold(9999) // Very high — filter nearly everything
+
+	// Add some data
+	for i := 0; i < 10; i++ {
+		rm := createTestResourceMetrics(
+			map[string]string{"service": "api"},
+			[]*metricspb.Metric{createTestMetric("glob_metric", map[string]string{}, 1)},
+		)
+		enforcer.Process([]*metricspb.ResourceMetrics{rm})
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	enforcer.ServeHTTP(rec, req)
+	body := rec.Body.String()
+
+	// Global/per-rule aggregates must always be present
+	globalMetrics := []string{
+		"metrics_governor_limit_datapoints_exceeded_total",
+		"metrics_governor_limit_cardinality_exceeded_total",
+		"metrics_governor_limit_datapoints_dropped_total",
+		"metrics_governor_limit_datapoints_passed_total",
+		"metrics_governor_limit_groups_dropped_total",
+		"metrics_governor_rule_current_datapoints",
+		"metrics_governor_rule_current_cardinality",
+		"metrics_governor_rule_groups_total",
+		"metrics_governor_rule_dropped_groups_total",
+		"metrics_governor_limits_total_datapoints",
+		"metrics_governor_limits_total_cardinality",
+		"metrics_governor_config_reloads_total",
+		"metrics_governor_config_reload_last_success_timestamp_seconds",
+		"metrics_governor_limits_stats_threshold",
+	}
+	for _, m := range globalMetrics {
+		if !strings.Contains(body, m) {
+			t.Errorf("global metric %q should always be reported even with high threshold", m)
+		}
+	}
+
+	// Per-group metrics should be filtered (10 dps < 9999 threshold)
+	if strings.Contains(body, "metrics_governor_rule_group_datapoints") &&
+		strings.Contains(body, `group="service=api"`) {
+		t.Error("per-group datapoints should be filtered with threshold=9999")
+	}
+}
+
+func TestStatsThreshold_DroppedGroupsAlwaysReported(t *testing.T) {
+	cfg := &Config{
+		Rules: []Rule{
+			{
+				Name:              "drop-always-test",
+				Match:             RuleMatch{MetricName: "dropalw_.*"},
+				MaxDatapointsRate: 5,
+				Action:            ActionAdaptive,
+				GroupBy:           []string{"service"},
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, false, 0)
+	defer enforcer.Stop()
+	enforcer.SetStatsThreshold(9999) // Very high threshold
+
+	// Exceed limits to trigger adaptive dropping
+	for i := 0; i < 30; i++ {
+		rm := createTestResourceMetrics(
+			map[string]string{"service": "overloaded"},
+			[]*metricspb.Metric{createTestMetric("dropalw_metric", map[string]string{}, 3)},
+		)
+		enforcer.Process([]*metricspb.ResourceMetrics{rm})
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	enforcer.ServeHTTP(rec, req)
+	body := rec.Body.String()
+
+	// Dropped groups info/totals should always be reported (enforcement decisions)
+	if !strings.Contains(body, "metrics_governor_rule_dropped_groups_total") {
+		t.Error("dropped groups total should always be reported")
+	}
+	// The dropped group info metric should appear if groups were actually dropped
+	if strings.Contains(body, "metrics_governor_dropped_group_info") {
+		// If it appears, that's correct — dropped groups are always reported
+		t.Log("dropped_group_info present — correctly not filtered by threshold")
+	}
+}
+
+func TestStatsThreshold_ThresholdMetricExposed(t *testing.T) {
+	cfg := &Config{Rules: []Rule{}}
+	enforcer := NewEnforcer(cfg, false, 0)
+	defer enforcer.Stop()
+	enforcer.SetStatsThreshold(42)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	enforcer.ServeHTTP(rec, req)
+	body := rec.Body.String()
+
+	if !strings.Contains(body, "metrics_governor_limits_stats_threshold 42") {
+		t.Error("expected metrics_governor_limits_stats_threshold to expose value 42")
+	}
+	// Verify HELP and TYPE lines
+	if !strings.Contains(body, "# HELP metrics_governor_limits_stats_threshold") {
+		t.Error("missing HELP line for stats_threshold metric")
+	}
+	if !strings.Contains(body, "# TYPE metrics_governor_limits_stats_threshold gauge") {
+		t.Error("missing TYPE line for stats_threshold metric")
+	}
+}
+
+func TestSetStatsThreshold_Concurrent(t *testing.T) {
+	cfg := &Config{
+		Rules: []Rule{
+			{
+				Name:              "race-test",
+				Match:             RuleMatch{MetricName: "race_.*"},
+				MaxDatapointsRate: 10000,
+				MaxCardinality:    10000,
+				Action:            ActionLog,
+				GroupBy:           []string{"service"},
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, false, 0)
+	defer enforcer.Stop()
+
+	// Populate some data
+	for i := 0; i < 50; i++ {
+		rm := createTestResourceMetrics(
+			map[string]string{"service": "api"},
+			[]*metricspb.Metric{createTestMetric("race_metric", map[string]string{}, 1)},
+		)
+		enforcer.Process([]*metricspb.ResourceMetrics{rm})
+	}
+
+	done := make(chan struct{})
+	// Writer goroutine: toggling threshold
+	go func() {
+		defer close(done)
+		for i := 0; i < 1000; i++ {
+			if i%2 == 0 {
+				enforcer.SetStatsThreshold(100)
+			} else {
+				enforcer.SetStatsThreshold(0)
+			}
+		}
+	}()
+
+	// Reader goroutine: hitting ServeHTTP concurrently
+	for i := 0; i < 100; i++ {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		enforcer.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rec.Code)
+		}
+	}
+	<-done
+}
+
+func TestStatsThreshold_ViolationLogFiltered(t *testing.T) {
+	cfg := &Config{
+		Rules: []Rule{
+			{
+				Name:              "log-filter-test",
+				Match:             RuleMatch{MetricName: "logfilt_.*"},
+				MaxDatapointsRate: 5,
+				Action:            ActionLog,
+				GroupBy:           []string{"service"},
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, false, 0)
+	defer enforcer.Stop()
+	enforcer.SetStatsThreshold(100) // High threshold — 1 dp per Process call is below
+
+	// Process enough to exceed limit (triggers handleViolation) but each call has few dps
+	for i := 0; i < 20; i++ {
+		rm := createTestResourceMetrics(
+			map[string]string{"service": "api"},
+			[]*metricspb.Metric{createTestMetric("logfilt_metric", map[string]string{}, 1)},
+		)
+		enforcer.Process([]*metricspb.ResourceMetrics{rm})
+	}
+
+	// Verify log aggregator entries: with threshold=100 and each call having 1 dp,
+	// the violation log should be suppressed
+	enforcer.logAggregator.mu.Lock()
+	violationEntries := 0
+	for key := range enforcer.logAggregator.entries {
+		if strings.HasPrefix(key, "violation:log-filter-test:") {
+			violationEntries++
+		}
+	}
+	enforcer.logAggregator.mu.Unlock()
+
+	if violationEntries > 0 {
+		t.Errorf("expected violation logs to be filtered (dp=1 < threshold=100), found %d entries", violationEntries)
+	}
+}
+
+func TestStatsThreshold_ViolationLogEmitted(t *testing.T) {
+	cfg := &Config{
+		Rules: []Rule{
+			{
+				Name:              "log-emit-test",
+				Match:             RuleMatch{MetricName: "logemit_.*"},
+				MaxDatapointsRate: 5,
+				Action:            ActionLog,
+				GroupBy:           []string{"service"},
+			},
+		},
+	}
+	LoadConfigFromStruct(cfg)
+
+	enforcer := NewEnforcer(cfg, false, 0)
+	defer enforcer.Stop()
+	enforcer.SetStatsThreshold(3) // Low threshold — 5 dps per call is above
+
+	// Process with 5 datapoints per call to exceed both limit and threshold
+	for i := 0; i < 10; i++ {
+		rm := createTestResourceMetrics(
+			map[string]string{"service": "api"},
+			[]*metricspb.Metric{createTestMetric("logemit_metric", map[string]string{}, 5)},
+		)
+		enforcer.Process([]*metricspb.ResourceMetrics{rm})
+	}
+
+	// Verify log aggregator entries: with threshold=3 and each call having 5 dps,
+	// the violation log should be emitted
+	enforcer.logAggregator.mu.Lock()
+	violationEntries := 0
+	for key := range enforcer.logAggregator.entries {
+		if strings.HasPrefix(key, "violation:log-emit-test:") {
+			violationEntries++
+		}
+	}
+	enforcer.logAggregator.mu.Unlock()
+
+	if violationEntries == 0 {
+		t.Error("expected violation logs to be emitted (dp=5 >= threshold=3)")
+	}
+}
+
+// containsRecentTimestamp checks if the Prometheus output contains a metric
+// with a value within maxDiff seconds of now.
+func containsRecentTimestamp(body, metricName string, now, maxDiff int64) bool {
+	for _, line := range splitLines(body) {
+		if len(line) == 0 || line[0] == '#' {
+			continue
+		}
+		parts := splitMetricLine(line)
+		if parts.name == metricName {
+			return parts.value > 0 && (now-parts.value) <= maxDiff
+		}
+	}
+	return false
+}
+
+type metricLineParts struct {
+	name  string
+	value int64
+}
+
+func splitLines(s string) []string {
+	var lines []string
+	for _, l := range strings.Split(s, "\n") {
+		lines = append(lines, strings.TrimSpace(l))
+	}
+	return lines
+}
+
+func splitMetricLine(line string) metricLineParts {
+	parts := strings.Fields(line)
+	if len(parts) < 2 {
+		return metricLineParts{}
+	}
+	name := parts[0]
+	// Strip labels if present (e.g., metric{label="x"} 42)
+	if idx := strings.IndexByte(name, '{'); idx >= 0 {
+		name = name[:idx]
+	}
+	var val int64
+	fmt.Sscanf(parts[len(parts)-1], "%d", &val)
+	return metricLineParts{name: name, value: val}
 }

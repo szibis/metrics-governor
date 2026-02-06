@@ -68,6 +68,10 @@ type Enforcer struct {
 	// Config reload tracking
 	reloadCount   atomic.Int64 // successful reloads
 	lastReloadUTC atomic.Int64 // unix timestamp of last successful reload
+
+	// Stats reporting threshold: only report per-group stats for groups
+	// with >= this many datapoints (0 = report all). Enforcement is not affected.
+	statsThreshold atomic.Int64
 }
 
 // ViolationMetrics tracks limit violation counts.
@@ -85,7 +89,7 @@ type ViolationMetrics struct {
 // NewEnforcer creates a new limits enforcer.
 // ruleCacheMaxSize controls the bounded LRU rule matching cache size (0 disables caching).
 func NewEnforcer(config *Config, dryRun bool, ruleCacheMaxSize int) *Enforcer {
-	return &Enforcer{
+	e := &Enforcer{
 		config:        config,
 		ruleStats:     make(map[string]*ruleStats),
 		droppedGroups: make(map[string]map[string]time.Time),
@@ -101,6 +105,10 @@ func NewEnforcer(config *Config, dryRun bool, ruleCacheMaxSize int) *Enforcer {
 		ruleMatchCache: newRuleCache(ruleCacheMaxSize),
 		trackerModes:   make(map[string]map[string]*trackerModeInfo),
 	}
+	// Initialize reload timestamp to now so "time since reload" metrics
+	// don't report ~56 years (Unix epoch default of 0).
+	e.lastReloadUTC.Store(time.Now().UTC().Unix())
+	return e
 }
 
 // ReloadConfig atomically replaces the enforcer's limits configuration.
@@ -158,6 +166,13 @@ func (e *Enforcer) DryRun() bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.dryRun
+}
+
+// SetStatsThreshold configures the per-group stats reporting threshold.
+// Groups with fewer than threshold datapoints AND cardinality are omitted
+// from the /metrics output. Enforcement is not affected. 0 = report all.
+func (e *Enforcer) SetStatsThreshold(threshold int64) {
+	e.statsThreshold.Store(threshold)
 }
 
 // Stop stops the enforcer and flushes any pending aggregated logs.
@@ -440,20 +455,24 @@ func (e *Enforcer) handleViolation(rule *Rule, groupKey string, m *metricspb.Met
 	sampleRate := e.calculateSampleRate(rule, groupKey)
 
 	// Aggregate the violation log (key: rule+group+reason+action)
-	logKey := fmt.Sprintf("violation:%s:%s:%s:%s", rule.Name, groupKey, reason, rule.Action)
-	logFields := map[string]interface{}{
-		"rule":    rule.Name,
-		"metric":  m.Name,
-		"group":   groupKey,
-		"reason":  reason,
-		"action":  string(rule.Action),
-		"dry_run": e.dryRun,
+	// Skip logging for groups below the stats threshold to reduce log noise.
+	statsThresh := e.statsThreshold.Load()
+	if statsThresh == 0 || int64(datapointsCount) >= statsThresh {
+		logKey := fmt.Sprintf("violation:%s:%s:%s:%s", rule.Name, groupKey, reason, rule.Action)
+		logFields := map[string]interface{}{
+			"rule":    rule.Name,
+			"metric":  m.Name,
+			"group":   groupKey,
+			"reason":  reason,
+			"action":  string(rule.Action),
+			"dry_run": e.dryRun,
+		}
+		if trackerMode == cardinality.TrackerModeHLL {
+			logFields["tracker_mode"] = "hll"
+			logFields["sample_rate"] = sampleRate
+		}
+		e.logAggregator.Warn(logKey, "limit exceeded", logFields, int64(datapointsCount))
 	}
-	if trackerMode == cardinality.TrackerModeHLL {
-		logFields["tracker_mode"] = "hll"
-		logFields["sample_rate"] = sampleRate
-	}
-	e.logAggregator.Warn(logKey, "limit exceeded", logFields, int64(datapointsCount))
 
 	// Record violation
 	e.recordViolation(rule.Name, reason)
@@ -829,6 +848,8 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	e.violations.mu.RLock()
 	defer e.violations.mu.RUnlock()
 
+	threshold := e.statsThreshold.Load()
+
 	// Helper to get action for a rule
 	getAction := func(ruleName string) string {
 		if e.config != nil {
@@ -961,10 +982,14 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Per-group stats within each rule (top groups by datapoints)
+	// When statsThreshold > 0, only groups with >= threshold datapoints or cardinality are reported.
 	fmt.Fprintf(w, "# HELP metrics_governor_rule_group_datapoints Current datapoints per group within rule\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_rule_group_datapoints gauge\n")
 	for ruleName, rs := range e.ruleStats {
 		for groupKey, gs := range rs.groups {
+			if threshold > 0 && gs.datapoints < threshold && int64(gs.cardinality.Count()) < threshold {
+				continue
+			}
 			fmt.Fprintf(w, "metrics_governor_rule_group_datapoints{rule=%q,group=%q} %d\n", ruleName, groupKey, gs.datapoints)
 		}
 	}
@@ -973,6 +998,9 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# TYPE metrics_governor_rule_group_cardinality gauge\n")
 	for ruleName, rs := range e.ruleStats {
 		for groupKey, gs := range rs.groups {
+			if threshold > 0 && gs.datapoints < threshold && int64(gs.cardinality.Count()) < threshold {
+				continue
+			}
 			fmt.Fprintf(w, "metrics_governor_rule_group_cardinality{rule=%q,group=%q} %d\n", ruleName, groupKey, gs.cardinality.Count())
 		}
 	}
@@ -1058,6 +1086,15 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# TYPE metrics_governor_tracker_mode gauge\n")
 	for ruleName, groups := range e.trackerModes {
 		for groupKey, info := range groups {
+			if threshold > 0 {
+				if rs, ok := e.ruleStats[ruleName]; ok {
+					if gs, ok := rs.groups[groupKey]; ok {
+						if gs.datapoints < threshold && int64(gs.cardinality.Count()) < threshold {
+							continue
+						}
+					}
+				}
+			}
 			fmt.Fprintf(w, "metrics_governor_tracker_mode{rule=%q,group=%q} %d\n", ruleName, groupKey, int(info.mode))
 		}
 	}
@@ -1071,6 +1108,15 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for ruleName, groups := range e.trackerModes {
 		for groupKey, info := range groups {
 			if info.mode == cardinality.TrackerModeHLL {
+				if threshold > 0 {
+					if rs, ok := e.ruleStats[ruleName]; ok {
+						if gs, ok := rs.groups[groupKey]; ok {
+							if gs.datapoints < threshold && int64(gs.cardinality.Count()) < threshold {
+								continue
+							}
+						}
+					}
+				}
 				fmt.Fprintf(w, "metrics_governor_tracker_sample_rate{rule=%q,group=%q} %f\n", ruleName, groupKey, info.sampleRate)
 			}
 		}
@@ -1088,6 +1134,11 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# HELP metrics_governor_serieskey_pool_discards_total Series key slices discarded (too large for pool)\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_serieskey_pool_discards_total counter\n")
 	fmt.Fprintf(w, "metrics_governor_serieskey_pool_discards_total %d\n", seriesKeyPoolDiscards.Load())
+
+	// Stats threshold gauge
+	fmt.Fprintf(w, "# HELP metrics_governor_limits_stats_threshold Configured per-group stats reporting threshold (0 = report all)\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_limits_stats_threshold gauge\n")
+	fmt.Fprintf(w, "metrics_governor_limits_stats_threshold %d\n", threshold)
 
 	// Config reload metrics
 	fmt.Fprintf(w, "# HELP metrics_governor_config_reloads_total Successful limits config reloads via SIGHUP\n")

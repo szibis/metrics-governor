@@ -8602,12 +8602,194 @@
       ]
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ops"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 224
+      },
+      "id": 10110,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "title": "Disk I/O Operations",
+      "description": "Read/write system call counts per second (from /proc/self/io syscr/syscw)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(metrics_governor_io_read_ops_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "Read Ops"
+        },
+        {
+          "expr": "rate(metrics_governor_io_write_ops_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "Write Ops"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "Bps"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 224
+      },
+      "id": 10111,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "title": "VFS I/O Throughput",
+      "description": "VFS-level read/write bytes per second (includes cache, sockets, pipes; from /proc/self/io rchar/wchar)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(metrics_governor_io_vfs_read_bytes_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "VFS Read"
+        },
+        {
+          "expr": "rate(metrics_governor_io_vfs_write_bytes_total{job=~\".*metrics-governor.*\"}[1m])",
+          "legendFormat": "VFS Write"
+        }
+      ]
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 224
+        "y": 232
       },
       "id": 76,
       "panels": [],
@@ -8672,7 +8854,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 225
+        "y": 233
       },
       "id": 77,
       "options": {
@@ -8763,7 +8945,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 225
+        "y": 233
       },
       "id": 78,
       "options": {
@@ -8854,7 +9036,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 233
+        "y": 241
       },
       "id": 79,
       "options": {
@@ -8901,7 +9083,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 237
+        "y": 245
       },
       "id": 10007,
       "panels": [],
@@ -8966,7 +9148,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 238
+        "y": 246
       },
       "id": 10008,
       "options": {
@@ -9057,7 +9239,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 238
+        "y": 246
       },
       "id": 10009,
       "options": {
@@ -9160,7 +9342,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 246
+        "y": 254
       },
       "id": 10010,
       "options": {
@@ -9255,7 +9437,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 246
+        "y": 254
       },
       "id": 10011,
       "options": {
@@ -9298,7 +9480,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 254
+        "y": 262
       },
       "id": 10012,
       "panels": [],
@@ -9363,7 +9545,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 255
+        "y": 263
       },
       "id": 10013,
       "options": {
@@ -9450,7 +9632,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 255
+        "y": 263
       },
       "id": 10014,
       "options": {
@@ -9541,7 +9723,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 263
+        "y": 271
       },
       "id": 10015,
       "options": {
@@ -9628,7 +9810,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 263
+        "y": 271
       },
       "id": 10016,
       "options": {
@@ -9671,7 +9853,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 271
+        "y": 279
       },
       "id": 600,
       "panels": [],
@@ -9715,7 +9897,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 272
+        "y": 280
       },
       "id": 601,
       "options": {
@@ -9775,7 +9957,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 272
+        "y": 280
       },
       "id": 602,
       "options": {
@@ -9844,7 +10026,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 272
+        "y": 280
       },
       "id": 603,
       "options": {
@@ -9934,7 +10116,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 272
+        "y": 280
       },
       "id": 604,
       "options": {
@@ -10043,7 +10225,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 280
+        "y": 288
       },
       "id": 605,
       "options": {
@@ -10169,7 +10351,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 280
+        "y": 288
       },
       "id": 606,
       "options": {
@@ -10260,7 +10442,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 288
+        "y": 296
       },
       "id": 607,
       "options": {
@@ -10330,7 +10512,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 288
+        "y": 296
       },
       "id": 608,
       "options": {
@@ -10420,7 +10602,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 288
+        "y": 296
       },
       "id": 609,
       "options": {
@@ -10499,7 +10681,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 292
+        "y": 300
       },
       "id": 610,
       "options": {
@@ -10545,7 +10727,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 297
+        "y": 305
       },
       "id": 10100,
       "panels": [],
@@ -10581,7 +10763,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 298
+        "y": 306
       },
       "id": 10101,
       "options": {
@@ -10641,7 +10823,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 298
+        "y": 306
       },
       "id": 10102,
       "options": {
@@ -10719,7 +10901,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 298
+        "y": 306
       },
       "id": 10103,
       "options": {
@@ -10787,7 +10969,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 298
+        "y": 306
       },
       "id": 10104,
       "options": {
@@ -10855,7 +11037,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 298
+        "y": 306
       },
       "id": 10105,
       "options": {
@@ -10915,7 +11097,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 298
+        "y": 306
       },
       "id": 10106,
       "options": {
@@ -11005,7 +11187,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 302
+        "y": 310
       },
       "id": 10107,
       "options": {
@@ -11095,7 +11277,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 302
+        "y": 310
       },
       "id": 10108,
       "options": {
@@ -11133,6 +11315,82 @@
       ],
       "title": "Process Health",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "text": "All Groups"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 318
+      },
+      "id": 10112,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_limits_stats_threshold",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Stats Threshold",
+      "description": "Per-group stats reporting threshold (0 = report all groups)",
+      "type": "stat"
     }
   ],
   "refresh": "10s",

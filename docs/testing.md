@@ -1,6 +1,6 @@
 # Testing
 
-A comprehensive test suite with **880+ tests** across unit, functional, e2e, and performance testing ensures reliability and correctness.
+A comprehensive test suite with **1,600+ tests** across unit, functional, e2e, race condition, memory leak, and performance testing ensures reliability and correctness.
 
 [![Build Status](https://github.com/szibis/metrics-governor/actions/workflows/build.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
 [![Benchmarks](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml)
@@ -19,23 +19,28 @@ View the latest test results and coverage reports:
 
 | Component | Unit Tests | Functional | E2E | Benchmarks | Coverage |
 |-----------|:----------:|:----------:|:---:|:----------:|:--------:|
-| [**Auth**](../internal/auth/) | 27 | - | ✓ | 10 | ~88% |
-| [**Buffer**](../internal/buffer/) | 28 | 6 | ✓ | 6 | ~95% |
-| [**Compression**](../internal/compression/) | 19 | - | ✓ | 13 | ~90% |
-| [**Config**](../internal/config/) | 50 | - | - | - | ~85% |
-| [**Exporter**](../internal/exporter/) | 118 | 5 | ✓ | 14 | ~92% |
-| [**Limits**](../internal/limits/) | 77 | 10 | ✓ | 9 | ~92% |
-| [**Logging**](../internal/logging/) | 24 | - | - | - | ~80% |
-| [**PRW**](../internal/prw/) | 82 | 8 | ✓ | 6 | ~89% |
-| [**Queue**](../internal/queue/) | 78 | 8 | ✓ | 7 | ~88% |
-| [**Receiver**](../internal/receiver/) | 45 | 9 | ✓ | 9 | ~90% |
-| [**Sharding**](../internal/sharding/) | 98 | 8 | ✓ | 10 | ~95% |
-| [**Stats**](../internal/stats/) | 65 | 12 | ✓ | 6 | ~90% |
-| [**TLS**](../internal/tls/) | 12 | - | ✓ | - | ~85% |
-| **Functional** | - | 73 | - | - | - |
-| **E2E** | - | - | 8 | - | - |
-| **Test Utils** | - | - | 72 | - | - |
-| **Total** | **727** | **73** | **80** | **90** | **~86%** |
+| Component | Unit Tests | Functional | E2E | Race | MemLeak | Benchmarks | Coverage |
+|-----------|:----------:|:----------:|:---:|:----:|:-------:|:----------:|:--------:|
+| [**Auth**](../internal/auth/) | 27 | - | ✓ | 5 | 2 | 10 | ~88% |
+| [**Buffer**](../internal/buffer/) | 28 | 6 | ✓ | 3 | 2 | 6 | ~95% |
+| [**Cardinality**](../internal/cardinality/) | 30 | - | - | 10 | 5 | 4 | ~92% |
+| [**Compression**](../internal/compression/) | 19 | - | ✓ | 8 | 2 | 13 | ~90% |
+| [**Config**](../internal/config/) | 50 | - | - | - | - | - | ~85% |
+| [**Exporter**](../internal/exporter/) | 118 | 5 | ✓ | 7 | 2 | 14 | ~92% |
+| [**Health**](../internal/health/) | 12 | - | - | - | - | - | ~90% |
+| [**Intern**](../internal/intern/) | 20 | - | - | 8 | 4 | 4 | ~95% |
+| [**Limits**](../internal/limits/) | 77 | 10 | ✓ | 10 | 3 | 9 | ~92% |
+| [**Logging**](../internal/logging/) | 24 | - | - | 5 | 2 | - | ~80% |
+| [**PRW**](../internal/prw/) | 82 | 8 | ✓ | 4 | 2 | 6 | ~89% |
+| [**Queue**](../internal/queue/) | 78 | 8 | ✓ | 8 | 2 | 7 | ~88% |
+| [**Receiver**](../internal/receiver/) | 45 | 9 | ✓ | 3 | 1 | 9 | ~90% |
+| [**Sharding**](../internal/sharding/) | 98 | 8 | ✓ | 5 | 2 | 10 | ~95% |
+| [**Stats**](../internal/stats/) | 65 | 12 | ✓ | 6 | 2 | 6 | ~95% |
+| [**TLS**](../internal/tls/) | 12 | - | ✓ | - | - | - | ~85% |
+| **Functional** | - | 73 | - | - | - | - | - |
+| **E2E** | - | - | 8 | - | - | - | - |
+| **Test Utils** | - | - | 72 | - | - | - | - |
+| **Total** | **765** | **73** | **80** | **82** | **31** | **98** | **~86%** |
 
 ## Test Categories Detail
 
@@ -89,6 +94,47 @@ Full system tests with complete pipeline.
 | `TestE2E_ManyDatapoints` | Large batch processing |
 | `TestE2E_BurstTraffic` | Traffic burst handling |
 | `TestE2E_EdgeCaseValues` | Extreme float values |
+
+### Race Condition Tests (`*_race_test.go`)
+
+**82 tests** across 13 packages verify thread safety of all concurrent data structures and operations. These tests are designed to detect data races when run with `go test -race`.
+
+| Package | Tests | Key Concurrency Areas |
+|---------|:-----:|------------------------|
+| `cardinality` | 10 | HLL/Bloom/Hybrid concurrent Add/Count, mode switch under contention |
+| `limits` | 10 | Enforcer concurrent Process, cache clear, violation metrics |
+| `compression` | 8 | Concurrent compress/decompress across gzip/zstd/snappy |
+| `intern` | 8 | Pool concurrent intern, reset cycles, global pool access |
+| `queue` | 8 | SendQueue/FastQueue concurrent push/pop, compression |
+| `exporter` | 7 | ConcurrencyLimiter acquire/release, circuit breaker state changes |
+| `stats` | 6 | Collector concurrent Process, ServeHTTP, periodic logging |
+| `auth` | 5 | HTTP middleware concurrent requests, bearer/basic auth |
+| `logging` | 5 | Concurrent logging, SetOutput during logging, mixed levels |
+| `sharding` | 5 | HashRing concurrent get/update, ShardKeyBuilder |
+| `prw` | 4 | Buffer concurrent Add, flush during add, start/wait |
+| `buffer` | 3 | MemoryQueue concurrent push/pop, eviction under contention |
+| `receiver` | 3 | PRW receiver concurrent requests, start/stop |
+
+Run:
+```bash
+# All race tests (with race detector)
+go test -race -run 'TestRace_' -count=1 -timeout=5m ./internal/...
+
+# Specific package
+go test -race -run 'TestRace_' ./internal/limits/...
+```
+
+### Data Integrity Tests (CI)
+
+The `pipeline-integrity.yml` workflow runs three categories of data integrity verification:
+
+| Suite | CI Job | Description |
+|-------|--------|-------------|
+| **Data Integrity** | `data-integrity-tests` | Verifies no data corruption through the pipeline (checksums match at ingestion and export) |
+| **Consistency Tests** | `consistency-tests` | Ensures metric counts, labels, and timestamps are preserved end-to-end |
+| **Durability Tests** | `durability-tests` | Tests queue persistence and recovery after restarts |
+
+These tests use the docker-compose test environment with the verifier service to validate end-to-end correctness.
 
 ### Memory Leak Tests
 
@@ -169,13 +215,15 @@ go test -run Stress -count=1 -timeout=10m ./internal/...
 
 #### CI Workflow: Memory Check
 
-The `.github/workflows/memory-check.yml` workflow runs on every PR to `main` with four parallel jobs:
+The `.github/workflows/memory-check.yml` workflow runs on every PR to `main` with six parallel jobs:
 
 | Job | Description | Timeout |
 |-----|-------------|---------|
 | `resource-tests` | Runs `*_resource_test.go` tests | 5m |
 | `goroutine-leak-check` | Runs `*_leak_test.go` tests with goleak | 5m |
 | `memory-stress-test` | Runs `*_stress_test.go` sustained-load tests | 10m |
+| `race-condition-tests` | Runs `TestRace_*` tests with `-race` flag across all packages | 10m |
+| `memory-leak-tests` | Runs `TestMemLeak_*` tests checking for bounded memory growth | 10m |
 | `benchmark-alloc-compare` | Compares `allocs/op` between PR and base branch using `benchstat`; posts a PR comment if regressions exceed 10% | 10m |
 
 ### Benchmarks
