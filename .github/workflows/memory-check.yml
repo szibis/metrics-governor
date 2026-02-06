@@ -260,16 +260,51 @@ jobs:
       - name: Install benchstat
         run: go install golang.org/x/perf/cmd/benchstat@latest
 
+      - name: Detect changed packages
+        id: detect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+
+          # Build list of ./internal/<pkg>/... paths for changed packages only
+          BENCH_PATHS=""
+          for pkg in auth buffer cardinality compression config dashboard exporter health intern limits logging pipeline prw queue receiver sharding stats tls; do
+            if echo "$CHANGED_FILES" | grep -q "^internal/$pkg/"; then
+              BENCH_PATHS="$BENCH_PATHS ./internal/$pkg/..."
+            fi
+          done
+          BENCH_PATHS=$(echo "$BENCH_PATHS" | xargs)
+
+          if [ -z "$BENCH_PATHS" ]; then
+            echo "No benchmark-relevant packages changed"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Packages to benchmark: $BENCH_PATHS"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "paths=$BENCH_PATHS" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run benchmarks on PR branch
-        run: go test -bench=. -benchmem -benchtime=1s -count=3 -timeout=5m ./internal/... > new.txt 2>&1 || true
+        if: steps.detect.outputs.skip != 'true'
+        env:
+          BENCH_PATHS: ${{ steps.detect.outputs.paths }}
+        run: go test -bench=. -benchmem -benchtime=500ms -count=3 -timeout=10m $BENCH_PATHS > new.txt 2>&1 || true
 
       - name: Run benchmarks on base branch
+        if: steps.detect.outputs.skip != 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BENCH_PATHS: ${{ steps.detect.outputs.paths }}
         run: |
-          git checkout ${{ github.event.pull_request.base.sha }}
-          go test -bench=. -benchmem -benchtime=1s -count=3 -timeout=5m ./internal/... > old.txt 2>&1 || true
-          git checkout ${{ github.event.pull_request.head.sha }}
+          git checkout "$BASE_SHA"
+          go test -bench=. -benchmem -benchtime=500ms -count=3 -timeout=10m $BENCH_PATHS > old.txt 2>&1 || true
+          git checkout "$HEAD_SHA"
 
       - name: Compare benchmarks
+        if: steps.detect.outputs.skip != 'true'
         id: benchstat
         run: |
           set +e
@@ -299,7 +334,7 @@ jobs:
           fi
 
       - name: Post benchmark comment
-        if: steps.benchstat.outputs.has_regressions == 'true' && github.event_name == 'pull_request'
+        if: steps.detect.outputs.skip != 'true' && steps.benchstat.outputs.has_regressions == 'true' && github.event_name == 'pull_request'
         uses: actions/github-script@v8
         with:
           script: |
