@@ -77,6 +77,11 @@ type LimitsEnforcer interface {
 	Process(resourceMetrics []*metricspb.ResourceMetrics) []*metricspb.ResourceMetrics
 }
 
+// MetricSampler defines the interface for sampling metrics before limits.
+type MetricSampler interface {
+	Sample(resourceMetrics []*metricspb.ResourceMetrics) []*metricspb.ResourceMetrics
+}
+
 // LogAggregator aggregates similar log messages.
 type LogAggregator interface {
 	Error(key string, message string, fields map[string]interface{}, datapoints int64)
@@ -118,6 +123,12 @@ func WithRelabeler(r MetricRelabeler) BufferOption {
 	return func(b *MetricsBuffer) { b.relabeler = r }
 }
 
+// WithSampler sets a metric sampler for the buffer. The sampler is
+// applied in Add() before limits enforcement.
+func WithSampler(s MetricSampler) BufferOption {
+	return func(b *MetricsBuffer) { b.sampler = s }
+}
+
 // WithFailoverQueue sets a failover queue for the buffer. When all export
 // attempts fail (including splitting), failed batches are pushed to this
 // queue instead of being silently dropped.
@@ -141,6 +152,7 @@ type MetricsBuffer struct {
 	logAggregator LogAggregator
 	concurrency   *exporter.ConcurrencyLimiter
 	relabeler     MetricRelabeler
+	sampler       MetricSampler
 	failoverQueue FailoverQueue
 }
 
@@ -177,6 +189,14 @@ func (b *MetricsBuffer) Add(resourceMetrics []*metricspb.ResourceMetrics) {
 	// Process stats before any filtering
 	if b.stats != nil {
 		b.stats.Process(resourceMetrics)
+	}
+
+	// Apply sampling filter (reduces volume before limits)
+	if b.sampler != nil {
+		resourceMetrics = b.sampler.Sample(resourceMetrics)
+		if len(resourceMetrics) == 0 {
+			return
+		}
 	}
 
 	// Apply limits enforcement (may filter/sample metrics)

@@ -121,6 +121,29 @@ func (m *mockLimitsEnforcer) Process(resourceMetrics []*metricspb.ResourceMetric
 	return resourceMetrics
 }
 
+// Mock sampler for testing
+type mockSampler struct {
+	mu      sync.Mutex
+	calls   int
+	dropAll bool
+}
+
+func (m *mockSampler) Sample(rms []*metricspb.ResourceMetrics) []*metricspb.ResourceMetrics {
+	m.mu.Lock()
+	m.calls++
+	m.mu.Unlock()
+	if m.dropAll {
+		return nil
+	}
+	return rms
+}
+
+func (m *mockSampler) getCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.calls
+}
+
 func createTestResourceMetrics(count int) []*metricspb.ResourceMetrics {
 	result := make([]*metricspb.ResourceMetrics, count)
 	for i := 0; i < count; i++ {
@@ -489,6 +512,63 @@ func TestWithRelabelerNil(t *testing.T) {
 
 	if exp.getRequestCount() == 0 {
 		t.Error("expected export to be called without relabeler")
+	}
+}
+
+func TestWithSampler(t *testing.T) {
+	exp := &mockExporter{}
+	smp := &mockSampler{}
+	buf := New(100, 10, 50*time.Millisecond, exp, nil, nil, nil, WithSampler(smp))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go buf.Start(ctx)
+
+	buf.Add(createTestResourceMetrics(3))
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	buf.Wait()
+
+	if smp.getCalls() == 0 {
+		t.Error("expected sampler to be called")
+	}
+	if exp.getRequestCount() == 0 {
+		t.Error("expected export to be called when sampler passes through")
+	}
+}
+
+func TestWithSamplerDropAll(t *testing.T) {
+	exp := &mockExporter{}
+	smp := &mockSampler{dropAll: true}
+	buf := New(100, 10, time.Hour, exp, nil, nil, nil, WithSampler(smp))
+
+	buf.Add(createTestResourceMetrics(5))
+
+	// Sampler drops all, nothing should reach the buffer
+	buf.mu.Lock()
+	count := len(buf.metrics)
+	buf.mu.Unlock()
+
+	if count != 0 {
+		t.Errorf("expected 0 metrics when sampler drops all, got %d", count)
+	}
+}
+
+func TestSamplerBeforeLimits(t *testing.T) {
+	// Verify that sampler runs before limits enforcer
+	exp := &mockExporter{}
+	smp := &mockSampler{dropAll: true}
+	lim := &mockLimitsEnforcer{}
+	buf := New(100, 10, time.Hour, exp, nil, lim, nil, WithSampler(smp))
+
+	buf.Add(createTestResourceMetrics(5))
+
+	// Sampler drops all, limits should never see the data
+	buf.mu.Lock()
+	count := len(buf.metrics)
+	buf.mu.Unlock()
+
+	if count != 0 {
+		t.Errorf("expected sampler to drop before limits, got %d in buffer", count)
 	}
 }
 

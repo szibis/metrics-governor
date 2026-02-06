@@ -65,6 +65,21 @@ To enable relabeling, set:
   relabeling.enabled=true
 {{- end }}
 
+{{- if .Values.sampling.enabled }}
+
+Metric sampling is ENABLED.
+{{- if .Values.sampling.existingConfigMap }}
+  Config: Using existing ConfigMap '{{ .Values.sampling.existingConfigMap }}'
+{{- else }}
+  Config: {{ include "metrics-governor.samplingConfigMapName" . }}
+{{- end }}
+{{- else }}
+
+Metric sampling is DISABLED.
+To enable sampling, set:
+  sampling.enabled=true
+{{- end }}
+
 {{- if .Values.serviceMonitor.enabled }}
 
 ServiceMonitor is enabled for Prometheus Operator integration.
