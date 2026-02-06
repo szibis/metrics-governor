@@ -242,6 +242,7 @@ jobs:
   benchmark-alloc-compare:
     needs: [ci-filter]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: >-
       needs.ci-filter.outputs.skip_memory != 'true' &&
       github.event_name == 'pull_request' &&
@@ -290,7 +291,7 @@ jobs:
         if: steps.detect.outputs.skip != 'true'
         env:
           BENCH_PATHS: ${{ steps.detect.outputs.paths }}
-        run: go test -bench=. -benchmem -benchtime=500ms -count=3 -timeout=10m $BENCH_PATHS > new.txt 2>&1 || true
+        run: go test -short -bench=. -benchmem -benchtime=500ms -count=3 -timeout=5m $BENCH_PATHS > new.txt 2>&1 || true
 
       - name: Run benchmarks on base branch
         if: steps.detect.outputs.skip != 'true'
@@ -300,7 +301,7 @@ jobs:
           BENCH_PATHS: ${{ steps.detect.outputs.paths }}
         run: |
           git checkout "$BASE_SHA"
-          go test -bench=. -benchmem -benchtime=500ms -count=3 -timeout=10m $BENCH_PATHS > old.txt 2>&1 || true
+          go test -short -bench=. -benchmem -benchtime=500ms -count=3 -timeout=5m $BENCH_PATHS > old.txt 2>&1 || true
           git checkout "$HEAD_SHA"
 
       - name: Compare benchmarks

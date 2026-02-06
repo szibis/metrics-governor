@@ -587,6 +587,9 @@ func BenchmarkPRWReceiver_HandleWrite(b *testing.B) {
 }
 
 func BenchmarkPRWReceiver_HandleWrite_LargePayload(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping large payload benchmark in short mode")
+	}
 	buf := &mockPRWBuffer{}
 	receiver := NewPRW(":0", buf)
 

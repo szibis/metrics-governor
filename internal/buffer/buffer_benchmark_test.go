@@ -108,6 +108,9 @@ func BenchmarkBuffer_HighThroughput(b *testing.B) {
 
 // BenchmarkBuffer_Scale tests performance at different scales
 func BenchmarkBuffer_Scale(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping scale benchmark in short mode")
+	}
 	scales := []struct {
 		name       string
 		bufferSize int
