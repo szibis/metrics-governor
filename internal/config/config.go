@@ -216,6 +216,9 @@ type Config struct {
 	// Shutdown settings
 	ShutdownTimeout time.Duration // Graceful shutdown timeout (default: 30s)
 
+	// Debug
+	PprofEnabled bool
+
 	// Flags
 	ShowHelp    bool
 	ShowVersion bool
@@ -479,6 +482,8 @@ func ParseFlags() *Config {
 	// Help and version
 	// Shutdown flags
 	flag.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", 30*time.Second, "Graceful shutdown timeout (should be less than K8s terminationGracePeriodSeconds)")
+
+	flag.BoolVar(&cfg.PprofEnabled, "pprof-enabled", false, "Enable /debug/pprof/ endpoints on stats server (for debugging only)")
 
 	flag.BoolVar(&cfg.ShowHelp, "help", false, "Show help message")
 	flag.BoolVar(&cfg.ShowHelp, "h", false, "Show help message (shorthand)")
@@ -980,6 +985,8 @@ func applyFlagOverrides(cfg *Config) {
 					cfg.BloomPersistenceCompressionLevel = i
 				}
 			}
+		case "pprof-enabled":
+			cfg.PprofEnabled = f.Value.String() == "true"
 		case "help", "h":
 			cfg.ShowHelp = f.Value.String() == "true"
 		case "version", "v":

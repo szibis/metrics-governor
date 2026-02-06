@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -332,6 +333,16 @@ func main() {
 			_, _ = io.Copy(w, &buf)
 		}
 	})
+
+	// Register pprof endpoints (disabled by default, for debugging only)
+	if cfg.PprofEnabled {
+		statsMux.HandleFunc("/debug/pprof/", pprof.Index)
+		statsMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		statsMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		statsMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		statsMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		logging.Warn("pprof endpoints enabled at /debug/pprof/ — do not expose in production without auth")
+	}
 
 	statsServer := &http.Server{
 		Addr:    cfg.StatsAddr,
