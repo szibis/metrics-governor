@@ -1,0 +1,53 @@
+suite: Service template
+templates:
+  - templates/service.yaml
+tests:
+  - it: renders ClusterIP service with 3 ports by default
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.ports[0].name
+          value: grpc
+      - equal:
+          path: spec.ports[0].port
+          value: 4317
+      - equal:
+          path: spec.ports[1].name
+          value: http
+      - equal:
+          path: spec.ports[1].port
+          value: 4318
+      - equal:
+          path: spec.ports[2].name
+          value: stats
+      - equal:
+          path: spec.ports[2].port
+          value: 9090
+
+  - it: renders externalTrafficPolicy when set
+    set:
+      service.externalTrafficPolicy: Local
+    asserts:
+      - equal:
+          path: spec.externalTrafficPolicy
+          value: Local
+
+  - it: renders loadBalancerIP when type is LoadBalancer
+    set:
+      service.type: LoadBalancer
+      service.loadBalancerIP: 10.0.0.1
+    asserts:
+      - equal:
+          path: spec.loadBalancerIP
+          value: 10.0.0.1
+
+  - it: does not render when service.enabled is false
+    set:
+      service.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

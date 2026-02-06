@@ -1,0 +1,39 @@
+suite: Ingress template
+templates:
+  - templates/ingress.yaml
+tests:
+  - it: does not render by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders when enabled
+    set:
+      ingress.enabled: true
+    asserts:
+      - isKind:
+          of: Ingress
+
+  - it: propagates ingressClassName
+    set:
+      ingress.enabled: true
+      ingress.className: nginx
+    asserts:
+      - equal:
+          path: spec.ingressClassName
+          value: nginx
+
+  - it: renders TLS section when set
+    set:
+      ingress.enabled: true
+      ingress.tls:
+        - secretName: tls-secret
+          hosts:
+            - metrics.example.com
+    asserts:
+      - equal:
+          path: spec.tls[0].secretName
+          value: tls-secret
+      - equal:
+          path: spec.tls[0].hosts[0]
+          value: metrics.example.com

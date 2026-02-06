@@ -1,0 +1,47 @@
+suite: Pod spec
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: renders priorityClassName when set
+    set:
+      priorityClassName: high-priority
+    asserts:
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: high-priority
+
+  - it: sets shareProcessNamespace true when configReload is enabled
+    set:
+      configReload.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.shareProcessNamespace
+          value: true
+
+  - it: sets terminationGracePeriodSeconds from values
+    asserts:
+      - equal:
+          path: spec.template.spec.terminationGracePeriodSeconds
+          value: 30
+
+  - it: sets dnsPolicy from values
+    asserts:
+      - equal:
+          path: spec.template.spec.dnsPolicy
+          value: ClusterFirst
+
+  - it: mounts config volume
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: config
+            configMap:
+              name: RELEASE-NAME-metrics-governor-config
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: config
+            mountPath: /etc/metrics-governor/config.yaml
+            subPath: config.yaml
+            readOnly: true

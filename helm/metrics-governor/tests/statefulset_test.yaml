@@ -1,0 +1,44 @@
+suite: StatefulSet template
+templates:
+  - templates/statefulset.yaml
+tests:
+  - it: renders when kind is statefulset
+    set:
+      kind: statefulset
+    asserts:
+      - isKind:
+          of: StatefulSet
+
+  - it: sets serviceName to headless service name
+    set:
+      kind: statefulset
+    asserts:
+      - equal:
+          path: spec.serviceName
+          value: RELEASE-NAME-metrics-governor-headless
+
+  - it: sets podManagementPolicy from values
+    set:
+      kind: statefulset
+    asserts:
+      - equal:
+          path: spec.podManagementPolicy
+          value: OrderedReady
+
+  - it: renders VolumeClaimTemplate when persistence is enabled
+    set:
+      kind: statefulset
+      persistence.enabled: true
+      persistence.size: 5Gi
+    asserts:
+      - equal:
+          path: spec.volumeClaimTemplates[0].metadata.name
+          value: data
+      - equal:
+          path: spec.volumeClaimTemplates[0].spec.resources.requests.storage
+          value: 5Gi
+
+  - it: does not render when kind is deployment
+    asserts:
+      - hasDocuments:
+          count: 0
