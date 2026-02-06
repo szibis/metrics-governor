@@ -1,0 +1,12 @@
+{{- if and .Values.relabeling.enabled (not .Values.relabeling.existingConfigMap) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "metrics-governor.relabelConfigMapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "metrics-governor.labels" . | nindent 4 }}
+data:
+  relabel.yaml: |
+    {{- .Values.relabeling.config | nindent 4 }}
+{{- end }}

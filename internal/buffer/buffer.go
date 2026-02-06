@@ -83,6 +83,11 @@ type LogAggregator interface {
 	Stop()
 }
 
+// MetricRelabeler defines the interface for relabeling metrics before export.
+type MetricRelabeler interface {
+	Relabel(resourceMetrics []*metricspb.ResourceMetrics) []*metricspb.ResourceMetrics
+}
+
 // FailoverQueue is the interface for a queue used as safety net on export failure.
 type FailoverQueue interface {
 	Push(req *colmetricspb.ExportMetricsServiceRequest) error
@@ -107,6 +112,12 @@ func WithConcurrency(n int) BufferOption {
 	}
 }
 
+// WithRelabeler sets a metric relabeler for the buffer. The relabeler is
+// applied to each batch in exportBatch() before sending to the exporter.
+func WithRelabeler(r MetricRelabeler) BufferOption {
+	return func(b *MetricsBuffer) { b.relabeler = r }
+}
+
 // WithFailoverQueue sets a failover queue for the buffer. When all export
 // attempts fail (including splitting), failed batches are pushed to this
 // queue instead of being silently dropped.
@@ -129,6 +140,7 @@ type MetricsBuffer struct {
 	doneChan      chan struct{}
 	logAggregator LogAggregator
 	concurrency   *exporter.ConcurrencyLimiter
+	relabeler     MetricRelabeler
 	failoverQueue FailoverQueue
 }
 
@@ -304,6 +316,14 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 
 // exportBatch exports a single batch with error-aware retry and split-on-error.
 func (b *MetricsBuffer) exportBatch(ctx context.Context, batch []*metricspb.ResourceMetrics) {
+	// Apply relabeling before export (may filter or transform metrics)
+	if b.relabeler != nil {
+		batch = b.relabeler.Relabel(batch)
+		if len(batch) == 0 {
+			return
+		}
+	}
+
 	req := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: batch}
 	byteSize := estimateResourceMetricsSize(batch)
 	datapointCount := countDatapoints(batch)

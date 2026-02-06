@@ -97,6 +97,9 @@ type Config struct {
 	LimitsDryRun     bool
 	RuleCacheMaxSize int
 
+	// Relabeling settings
+	RelabelConfig string
+
 	// Queue settings
 	QueueType              string // "memory" or "disk"
 	QueueEnabled           bool
@@ -362,6 +365,9 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.LimitsConfig, "limits-config", "", "Path to limits configuration YAML file")
 	flag.BoolVar(&cfg.LimitsDryRun, "limits-dry-run", true, "Dry run mode: log violations but don't drop/sample")
 	flag.IntVar(&cfg.RuleCacheMaxSize, "rule-cache-max-size", 10000, "Maximum entries in the rule matching LRU cache (0 disables)")
+
+	// Relabeling flags
+	flag.StringVar(&cfg.RelabelConfig, "relabel-config", "", "Path to relabel configuration YAML file")
 
 	// Queue flags
 	flag.BoolVar(&cfg.QueueEnabled, "queue-enabled", true, "Enable queue for export retries (default: true)")
@@ -675,6 +681,8 @@ func applyFlagOverrides(cfg *Config) {
 					cfg.RuleCacheMaxSize = i
 				}
 			}
+		case "relabel-config":
+			cfg.RelabelConfig = f.Value.String()
 		case "queue-enabled":
 			cfg.QueueEnabled = f.Value.String() == "true"
 		case "queue-type":
@@ -1444,6 +1452,9 @@ OPTIONS:
         -limits-dry-run                  Dry run mode: log only, don't drop/sample (default: true)
         -rule-cache-max-size <n>         Maximum entries in the rule matching LRU cache (default: 10000, 0 disables)
 
+    Relabeling:
+        -relabel-config <path>           Path to relabel configuration YAML file (Prometheus-compatible)
+
     Cardinality Tracking:
         -cardinality-mode <mode>         Tracking mode: bloom, exact, or hybrid (auto Bloom→HLL) (default: bloom)
         -cardinality-expected-items <n>  Expected unique items per tracker for Bloom sizing (default: 100000)
@@ -1634,6 +1645,7 @@ func DefaultConfig() *Config {
 		LimitsConfig:                    "",
 		LimitsDryRun:                    true,
 		RuleCacheMaxSize:                10000,
+		RelabelConfig:                   "",
 		QueueType:                       "memory",
 		QueueEnabled:                    true,
 		QueuePath:                       "./queue",
