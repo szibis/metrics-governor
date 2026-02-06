@@ -1351,10 +1351,14 @@ func PrintUsage() {
 
 USAGE:
     metrics-governor [OPTIONS]
+    metrics-governor validate <config-file> [<config-file>...]
 
 DESCRIPTION:
     Receives OTLP metrics via gRPC and HTTP, buffers them, and forwards
     to a configurable OTLP endpoint with batching support.
+
+SUBCOMMANDS:
+    validate    Validate configuration files and report errors/warnings (JSON output)
 
 OPTIONS:
     Configuration:

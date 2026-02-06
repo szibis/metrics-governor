@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/pprof"
@@ -45,6 +46,12 @@ func (m *metricsRecorder) WriteHeader(statusCode int) {
 }
 
 func main() {
+	// Handle "validate" subcommand before flag parsing
+	if len(os.Args) >= 2 && os.Args[1] == "validate" {
+		runValidate(os.Args[2:])
+		return
+	}
+
 	cfg := config.ParseFlags()
 
 	// Auto-detect and set GOMEMLIMIT based on container memory limits (cgroups)
@@ -557,6 +564,29 @@ func main() {
 // initMemoryLimit auto-detects container memory limits and sets GOMEMLIMIT.
 // This helps prevent OOM kills by making the Go GC more aggressive as memory
 // approaches the limit.
+func runValidate(args []string) {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: metrics-governor validate <config-file> [<config-file>...]")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Validates YAML configuration files and reports errors/warnings.")
+		fmt.Fprintln(os.Stderr, "Exit code 0 if all files are valid, 1 if any have errors.")
+		os.Exit(1)
+	}
+
+	allValid := true
+	for _, path := range args {
+		result := config.ValidateFile(path)
+		fmt.Println(result.JSON())
+		if !result.Valid {
+			allValid = false
+		}
+	}
+
+	if !allValid {
+		os.Exit(1)
+	}
+}
+
 func initMemoryLimit(ratio float64) {
 	// Check if GOMEMLIMIT is already set via environment
 	if os.Getenv("GOMEMLIMIT") != "" {
