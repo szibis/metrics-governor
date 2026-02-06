@@ -98,9 +98,9 @@ func TestRace_Sampling_SampleWithReload(t *testing.T) {
 				Strategy:    StrategyProbabilistic,
 				Rules: []Rule{
 					{
-						Name:    "test-rule",
-						Match:   map[string]string{"__name__": "metric_.*"},
-						Rate:    0.3,
+						Name:     "test-rule",
+						Match:    map[string]string{"__name__": "metric_.*"},
+						Rate:     0.3,
 						Strategy: StrategyHead,
 					},
 				},
