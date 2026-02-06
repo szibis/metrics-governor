@@ -3,7 +3,9 @@ package receiver
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/szibis/metrics-governor/internal/logging"
 	tlspkg "github.com/szibis/metrics-governor/internal/tls"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -171,33 +174,50 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 	var exportReq colmetricspb.ExportMetricsServiceRequest
 
 	contentType := req.Header.Get("Content-Type")
+	isJSON := false
 	switch contentType {
-	case "application/x-protobuf":
+	case "application/x-protobuf", "application/protobuf":
 		if err := proto.Unmarshal(body, &exportReq); err != nil {
 			IncrementReceiverError("decode")
 			http.Error(w, "Failed to unmarshal protobuf", http.StatusBadRequest)
 			return
 		}
+	case "application/json":
+		isJSON = true
+		if err := protojson.Unmarshal(body, &exportReq); err != nil {
+			IncrementReceiverError("decode")
+			http.Error(w, "Failed to unmarshal JSON", http.StatusBadRequest)
+			return
+		}
 	default:
-		// TODO: add JSON support
 		IncrementReceiverError("decode")
-		http.Error(w, "Unsupported content type", http.StatusUnsupportedMediaType)
+		http.Error(w, "Unsupported content type; expected application/x-protobuf or application/json", http.StatusUnsupportedMediaType)
 		return
 	}
 
 	r.buffer.Add(exportReq.ResourceMetrics)
 
-	// Return empty response
+	// Return response in the same format as the request
 	resp := &colmetricspb.ExportMetricsServiceResponse{}
-	respBytes, err := proto.Marshal(resp)
-	if err != nil {
-		http.Error(w, "Failed to marshal response", http.StatusInternalServerError)
-		return
+	if isJSON {
+		respBytes, err := protojson.Marshal(resp)
+		if err != nil {
+			http.Error(w, "Failed to marshal JSON response", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(respBytes)
+	} else {
+		respBytes, err := proto.Marshal(resp)
+		if err != nil {
+			http.Error(w, "Failed to marshal response", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(respBytes)
 	}
-
-	w.Header().Set("Content-Type", "application/x-protobuf")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(respBytes)
 }
 
 // Start starts the HTTP server.
@@ -213,4 +233,14 @@ func (r *HTTPReceiver) Start() error {
 // Stop gracefully stops the HTTP server.
 func (r *HTTPReceiver) Stop(ctx context.Context) error {
 	return r.server.Shutdown(ctx)
+}
+
+// HealthCheck returns nil if the HTTP receiver port is accepting connections.
+func (r *HTTPReceiver) HealthCheck() error {
+	conn, err := net.DialTimeout("tcp", r.addr, 1*time.Second)
+	if err != nil {
+		return fmt.Errorf("HTTP receiver not reachable on %s: %w", r.addr, err)
+	}
+	conn.Close()
+	return nil
 }

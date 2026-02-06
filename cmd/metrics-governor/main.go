@@ -20,6 +20,7 @@ import (
 	"github.com/szibis/metrics-governor/internal/cardinality"
 	"github.com/szibis/metrics-governor/internal/config"
 	"github.com/szibis/metrics-governor/internal/exporter"
+	"github.com/szibis/metrics-governor/internal/health"
 	"github.com/szibis/metrics-governor/internal/limits"
 	"github.com/szibis/metrics-governor/internal/logging"
 	"github.com/szibis/metrics-governor/internal/prw"
@@ -228,6 +229,9 @@ func main() {
 	var limitsEnforcer interface {
 		Process([]*metricspb.ResourceMetrics) []*metricspb.ResourceMetrics
 		ServeHTTP(http.ResponseWriter, *http.Request)
+		ReloadConfig(cfg *limits.Config)
+		SetDryRun(dryRun bool)
+		DryRun() bool
 		Stop()
 	}
 	if cfg.LimitsConfig != "" {
@@ -288,8 +292,13 @@ func main() {
 		}
 	}()
 
-	// Start stats HTTP server with combined metrics
+	// Create health checker for liveness/readiness probes
+	healthChecker := health.New()
+
+	// Start stats HTTP server with combined metrics + health endpoints
 	statsMux := http.NewServeMux()
+	statsMux.HandleFunc("/live", healthChecker.LiveHandler())
+	statsMux.HandleFunc("/ready", healthChecker.ReadyHandler())
 	statsMux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		// Buffer all metrics first to support proper compression
 		var buf bytes.Buffer
@@ -395,6 +404,13 @@ func main() {
 		))
 	}
 
+	// Register readiness checks for pipeline components
+	healthChecker.RegisterReadiness("grpc_receiver", grpcReceiver.HealthCheck)
+	healthChecker.RegisterReadiness("http_receiver", httpReceiver.HealthCheck)
+	if prwReceiver != nil {
+		healthChecker.RegisterReadiness("prw_receiver", prwReceiver.HealthCheck)
+	}
+
 	logging.Info("metrics-governor started", logging.F(
 		"grpc_addr", cfg.GRPCListenAddr,
 		"http_addr", cfg.HTTPListenAddr,
@@ -409,12 +425,65 @@ func main() {
 		"prw_enabled", cfg.PRWListenAddr != "",
 	))
 
+	// Set up SIGHUP handler for config reload
+	// Reloads: limits rules, limits dry-run toggle
+	// Does NOT reload: receiver, exporter, buffer, queue, sharding settings (require restart)
+	{
+		sighupChan := make(chan os.Signal, 1)
+		signal.Notify(sighupChan, syscall.SIGHUP)
+		go func() {
+			for range sighupChan {
+				logging.Info("received SIGHUP, reloading configuration")
+
+				// Reload limits config (rules file)
+				if cfg.LimitsConfig != "" && limitsEnforcer != nil {
+					logging.Info("reloading limits config", logging.F("path", cfg.LimitsConfig))
+					newLimitsCfg, err := limits.LoadConfig(cfg.LimitsConfig)
+					if err != nil {
+						logging.Error("limits config reload failed, keeping current config", logging.F("error", err.Error(), "path", cfg.LimitsConfig))
+					} else {
+						limitsEnforcer.ReloadConfig(newLimitsCfg)
+						logging.Info("limits config reloaded successfully", logging.F("rules_count", len(newLimitsCfg.Rules)))
+					}
+				}
+
+				// Reload main config (for hot-reloadable settings like dry_run)
+				if cfg.ConfigFile != "" {
+					logging.Info("reloading main config", logging.F("path", cfg.ConfigFile))
+					yamlCfg, err := config.LoadYAML(cfg.ConfigFile)
+					if err != nil {
+						logging.Error("main config reload failed, keeping current settings", logging.F("error", err.Error(), "path", cfg.ConfigFile))
+					} else {
+						newMainCfg := yamlCfg.ToConfig()
+
+						// Apply hot-reloadable settings
+						if limitsEnforcer != nil {
+							oldDryRun := limitsEnforcer.DryRun()
+							newDryRun := newMainCfg.LimitsDryRun
+							if oldDryRun != newDryRun {
+								limitsEnforcer.SetDryRun(newDryRun)
+								logging.Info("limits dry-run mode changed", logging.F("old", oldDryRun, "new", newDryRun))
+							}
+						}
+
+						logging.Info("main config reloaded (hot-reloadable settings applied)")
+					}
+				}
+
+				logging.Info("SIGHUP reload complete")
+			}
+		}()
+	}
+
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-sigChan
 
 	logging.Info("shutting down", logging.F("signal", sig.String(), "timeout", cfg.ShutdownTimeout.String()))
+
+	// Mark as shutting down so health probes return 503 immediately
+	healthChecker.SetShuttingDown()
 
 	// Create shutdown context with configurable timeout
 	// Note: K8s terminationGracePeriodSeconds should be > this timeout
@@ -423,11 +492,17 @@ func main() {
 
 	// Graceful shutdown - stop receivers first (stop accepting new data)
 	grpcReceiver.Stop()
-	_ = httpReceiver.Stop(shutdownCtx)
-	if prwReceiver != nil {
-		_ = prwReceiver.Stop(shutdownCtx)
+	if err := httpReceiver.Stop(shutdownCtx); err != nil {
+		logging.Warn("HTTP receiver shutdown error", logging.F("error", err.Error()))
 	}
-	_ = statsServer.Shutdown(shutdownCtx)
+	if prwReceiver != nil {
+		if err := prwReceiver.Stop(shutdownCtx); err != nil {
+			logging.Warn("PRW receiver shutdown error", logging.F("error", err.Error()))
+		}
+	}
+	if err := statsServer.Shutdown(shutdownCtx); err != nil {
+		logging.Warn("stats server shutdown error", logging.F("error", err.Error()))
+	}
 	cancel()
 
 	// Wait for buffers to drain (uses shutdown timeout)

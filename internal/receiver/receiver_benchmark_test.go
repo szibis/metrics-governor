@@ -64,6 +64,9 @@ func BenchmarkGRPCReceiver_Export_Concurrent(b *testing.B) {
 
 // BenchmarkGRPCReceiver_Export_Scale benchmarks at different scales
 func BenchmarkGRPCReceiver_Export_Scale(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping scale benchmark in short mode")
+	}
 	scales := []struct {
 		name       string
 		metrics    int
@@ -136,6 +139,9 @@ func BenchmarkHTTPReceiver_HandleMetrics_Concurrent(b *testing.B) {
 
 // BenchmarkHTTPReceiver_HandleMetrics_Scale benchmarks at different payload sizes
 func BenchmarkHTTPReceiver_HandleMetrics_Scale(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping scale benchmark in short mode")
+	}
 	scales := []struct {
 		name       string
 		metrics    int
@@ -170,6 +176,9 @@ func BenchmarkHTTPReceiver_HandleMetrics_Scale(b *testing.B) {
 
 // BenchmarkProtobuf_Unmarshal benchmarks protobuf unmarshaling (baseline)
 func BenchmarkProtobuf_Unmarshal(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping protobuf scale benchmark in short mode")
+	}
 	sizes := []struct {
 		name       string
 		metrics    int

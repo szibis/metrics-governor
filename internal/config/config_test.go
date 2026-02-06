@@ -635,3 +635,173 @@ func TestByteSizeFlagTypes(t *testing.T) {
 		}
 	})
 }
+
+func TestValidate_DefaultConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("default config should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_MemoryLimitRatio(t *testing.T) {
+	cfg := DefaultConfig()
+
+	cfg.MemoryLimitRatio = 1.5
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for memory-limit-ratio > 1.0")
+	}
+
+	cfg.MemoryLimitRatio = -0.1
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for memory-limit-ratio < 0")
+	}
+
+	cfg.MemoryLimitRatio = 0.0
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("0.0 should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_QueueTargetUtilization(t *testing.T) {
+	cfg := DefaultConfig()
+
+	cfg.QueueTargetUtilization = 2.0
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for target utilization > 1.0")
+	}
+}
+
+func TestValidate_CardinalityFPRate(t *testing.T) {
+	cfg := DefaultConfig()
+
+	cfg.CardinalityFPRate = 0
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for fp-rate = 0")
+	}
+
+	cfg.CardinalityFPRate = 1.0
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for fp-rate = 1.0")
+	}
+
+	cfg.CardinalityFPRate = 0.001
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("0.001 should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_CardinalityHLLPrecision(t *testing.T) {
+	cfg := DefaultConfig()
+
+	cfg.CardinalityHLLPrecision = 3
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for hll-precision < 4")
+	}
+
+	cfg.CardinalityHLLPrecision = 19
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for hll-precision > 18")
+	}
+
+	cfg.CardinalityHLLPrecision = 14
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("14 should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_CardinalityMode(t *testing.T) {
+	cfg := DefaultConfig()
+
+	cfg.CardinalityMode = "invalid"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for invalid cardinality mode")
+	}
+
+	for _, mode := range []string{"bloom", "exact", "hybrid"} {
+		cfg.CardinalityMode = mode
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("mode %q should be valid, got: %v", mode, err)
+		}
+	}
+}
+
+func TestValidate_ShardingCrossField(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ShardingEnabled = true
+	cfg.ShardingHeadlessService = ""
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error when sharding is enabled without headless service")
+	}
+
+	cfg.ShardingHeadlessService = "my-service.ns.svc:4317"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("should be valid with headless service set, got: %v", err)
+	}
+}
+
+func TestValidate_ExporterProtocol(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ExporterProtocol = "websocket"
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for invalid protocol")
+	}
+}
+
+func TestValidate_QueueType(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.QueueType = "redis"
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for invalid queue type")
+	}
+}
+
+func TestValidate_BackoffMultiplier(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.QueueBackoffEnabled = true
+	cfg.QueueBackoffMultiplier = 0.5
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for backoff multiplier <= 1.0")
+	}
+}
+
+func TestValidate_MultipleErrors(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.MemoryLimitRatio = 5.0
+	cfg.CardinalityFPRate = 0
+	cfg.ShardingEnabled = true
+	cfg.ShardingHeadlessService = ""
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected multiple validation errors")
+	}
+
+	// Check that all three errors are present
+	errMsg := err.Error()
+	if !contains(errMsg, "memory-limit-ratio") {
+		t.Error("missing memory-limit-ratio error")
+	}
+	if !contains(errMsg, "cardinality-fp-rate") {
+		t.Error("missing cardinality-fp-rate error")
+	}
+	if !contains(errMsg, "sharding-headless-service") {
+		t.Error("missing sharding-headless-service error")
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && searchString(s, substr)
+}
+
+func searchString(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

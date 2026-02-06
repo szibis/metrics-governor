@@ -159,44 +159,48 @@ func (r *RuntimeStats) writePSIMetrics(w http.ResponseWriter) {
 		if err != nil {
 			continue // PSI not available or not accessible
 		}
+		writePSIResource(w, psi.resource, metrics)
+	}
+}
 
-		// Write some metrics
-		if some, ok := metrics["some"]; ok {
-			fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_some_avg10 PSI %s some average over 10 seconds\n", psi.resource, psi.resource)
-			fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_some_avg10 gauge\n", psi.resource)
-			fmt.Fprintf(w, "metrics_governor_psi_%s_some_avg10 %.2f\n", psi.resource, some.Avg10)
+// writePSIResource writes parsed PSI metrics for a single resource type.
+func writePSIResource(w http.ResponseWriter, resource string, metrics map[string]*psiMetric) {
+	// Write some metrics
+	if some, ok := metrics["some"]; ok {
+		fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_some_avg10 PSI %s some average over 10 seconds\n", resource, resource)
+		fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_some_avg10 gauge\n", resource)
+		fmt.Fprintf(w, "metrics_governor_psi_%s_some_avg10 %.2f\n", resource, some.Avg10)
 
-			fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_some_avg60 PSI %s some average over 60 seconds\n", psi.resource, psi.resource)
-			fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_some_avg60 gauge\n", psi.resource)
-			fmt.Fprintf(w, "metrics_governor_psi_%s_some_avg60 %.2f\n", psi.resource, some.Avg60)
+		fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_some_avg60 PSI %s some average over 60 seconds\n", resource, resource)
+		fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_some_avg60 gauge\n", resource)
+		fmt.Fprintf(w, "metrics_governor_psi_%s_some_avg60 %.2f\n", resource, some.Avg60)
 
-			fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_some_avg300 PSI %s some average over 300 seconds\n", psi.resource, psi.resource)
-			fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_some_avg300 gauge\n", psi.resource)
-			fmt.Fprintf(w, "metrics_governor_psi_%s_some_avg300 %.2f\n", psi.resource, some.Avg300)
+		fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_some_avg300 PSI %s some average over 300 seconds\n", resource, resource)
+		fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_some_avg300 gauge\n", resource)
+		fmt.Fprintf(w, "metrics_governor_psi_%s_some_avg300 %.2f\n", resource, some.Avg300)
 
-			fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_some_total_microseconds PSI %s some total stall time in microseconds\n", psi.resource, psi.resource)
-			fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_some_total_microseconds counter\n", psi.resource)
-			fmt.Fprintf(w, "metrics_governor_psi_%s_some_total_microseconds %d\n", psi.resource, some.Total)
-		}
+		fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_some_total_microseconds PSI %s some total stall time in microseconds\n", resource, resource)
+		fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_some_total_microseconds counter\n", resource)
+		fmt.Fprintf(w, "metrics_governor_psi_%s_some_total_microseconds %d\n", resource, some.Total)
+	}
 
-		// Write full metrics (memory and io only)
-		if full, ok := metrics["full"]; ok {
-			fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_full_avg10 PSI %s full average over 10 seconds\n", psi.resource, psi.resource)
-			fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_full_avg10 gauge\n", psi.resource)
-			fmt.Fprintf(w, "metrics_governor_psi_%s_full_avg10 %.2f\n", psi.resource, full.Avg10)
+	// Write full metrics (memory and io only)
+	if full, ok := metrics["full"]; ok {
+		fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_full_avg10 PSI %s full average over 10 seconds\n", resource, resource)
+		fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_full_avg10 gauge\n", resource)
+		fmt.Fprintf(w, "metrics_governor_psi_%s_full_avg10 %.2f\n", resource, full.Avg10)
 
-			fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_full_avg60 PSI %s full average over 60 seconds\n", psi.resource, psi.resource)
-			fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_full_avg60 gauge\n", psi.resource)
-			fmt.Fprintf(w, "metrics_governor_psi_%s_full_avg60 %.2f\n", psi.resource, full.Avg60)
+		fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_full_avg60 PSI %s full average over 60 seconds\n", resource, resource)
+		fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_full_avg60 gauge\n", resource)
+		fmt.Fprintf(w, "metrics_governor_psi_%s_full_avg60 %.2f\n", resource, full.Avg60)
 
-			fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_full_avg300 PSI %s full average over 300 seconds\n", psi.resource, psi.resource)
-			fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_full_avg300 gauge\n", psi.resource)
-			fmt.Fprintf(w, "metrics_governor_psi_%s_full_avg300 %.2f\n", psi.resource, full.Avg300)
+		fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_full_avg300 PSI %s full average over 300 seconds\n", resource, resource)
+		fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_full_avg300 gauge\n", resource)
+		fmt.Fprintf(w, "metrics_governor_psi_%s_full_avg300 %.2f\n", resource, full.Avg300)
 
-			fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_full_total_microseconds PSI %s full total stall time in microseconds\n", psi.resource, psi.resource)
-			fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_full_total_microseconds counter\n", psi.resource)
-			fmt.Fprintf(w, "metrics_governor_psi_%s_full_total_microseconds %d\n", psi.resource, full.Total)
-		}
+		fmt.Fprintf(w, "# HELP metrics_governor_psi_%s_full_total_microseconds PSI %s full total stall time in microseconds\n", resource, resource)
+		fmt.Fprintf(w, "# TYPE metrics_governor_psi_%s_full_total_microseconds counter\n", resource)
+		fmt.Fprintf(w, "metrics_governor_psi_%s_full_total_microseconds %d\n", resource, full.Total)
 	}
 }
 
@@ -265,29 +269,45 @@ func (r *RuntimeStats) writeProcessCPUMetrics(w http.ResponseWriter) {
 		return
 	}
 
+	writeProcessStat(w, string(data))
+
+	// Try to get open file descriptors
+	if fds, err := os.ReadDir("/proc/self/fd"); err == nil {
+		fmt.Fprintf(w, "# HELP metrics_governor_process_open_fds Number of open file descriptors\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_process_open_fds gauge\n")
+		fmt.Fprintf(w, "metrics_governor_process_open_fds %d\n", len(fds))
+	}
+
+	// Try to get max file descriptors
+	if data, err := os.ReadFile("/proc/self/limits"); err == nil {
+		writeMaxFDs(w, string(data))
+	}
+
+	// Disk I/O from /proc/self/io
+	r.writeDiskIOMetrics(w)
+
+	// Network I/O from /proc/net/dev
+	r.writeNetworkIOMetrics(w)
+}
+
+// writeProcessStat parses /proc/self/stat data and writes CPU and memory metrics.
+func writeProcessStat(w http.ResponseWriter, data string) {
 	// Parse /proc/self/stat - fields are space separated
 	// Field 14 = utime (user mode jiffies)
 	// Field 15 = stime (kernel mode jiffies)
-	// Field 22 = starttime (jiffies after boot)
 	// Field 23 = vsize (virtual memory size)
 	// Field 24 = rss (resident set size in pages)
-
-	fields := strings.Fields(string(data))
+	fields := strings.Fields(data)
 	if len(fields) < 24 {
 		return
 	}
 
-	// User time (field 14, index 13)
 	utime, _ := strconv.ParseUint(fields[13], 10, 64)
-	// System time (field 15, index 14)
 	stime, _ := strconv.ParseUint(fields[14], 10, 64)
-	// Virtual memory size (field 23, index 22)
 	vsize, _ := strconv.ParseUint(fields[22], 10, 64)
-	// RSS in pages (field 24, index 23)
 	rss, _ := strconv.ParseInt(fields[23], 10, 64)
 
-	// Convert jiffies to seconds (assuming 100 Hz clock tick)
-	clockTick := float64(100) // sysconf(_SC_CLK_TCK) is typically 100
+	clockTick := float64(100)
 
 	fmt.Fprintf(w, "# HELP metrics_governor_process_cpu_user_seconds Total user CPU time in seconds\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_process_cpu_user_seconds counter\n")
@@ -305,42 +325,28 @@ func (r *RuntimeStats) writeProcessCPUMetrics(w http.ResponseWriter) {
 	fmt.Fprintf(w, "# TYPE metrics_governor_process_virtual_memory_bytes gauge\n")
 	fmt.Fprintf(w, "metrics_governor_process_virtual_memory_bytes %d\n", vsize)
 
-	// RSS is in pages, convert to bytes (page size is typically 4096)
 	pageSize := int64(os.Getpagesize())
 	fmt.Fprintf(w, "# HELP metrics_governor_process_resident_memory_bytes Resident memory size in bytes\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_process_resident_memory_bytes gauge\n")
 	fmt.Fprintf(w, "metrics_governor_process_resident_memory_bytes %d\n", rss*pageSize)
+}
 
-	// Try to get open file descriptors
-	if fds, err := os.ReadDir("/proc/self/fd"); err == nil {
-		fmt.Fprintf(w, "# HELP metrics_governor_process_open_fds Number of open file descriptors\n")
-		fmt.Fprintf(w, "# TYPE metrics_governor_process_open_fds gauge\n")
-		fmt.Fprintf(w, "metrics_governor_process_open_fds %d\n", len(fds))
-	}
-
-	// Try to get max file descriptors
-	if data, err := os.ReadFile("/proc/self/limits"); err == nil {
-		lines := strings.Split(string(data), "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "Max open files") {
-				fields := strings.Fields(line)
-				if len(fields) >= 4 {
-					if maxFds, err := strconv.ParseUint(fields[3], 10, 64); err == nil {
-						fmt.Fprintf(w, "# HELP metrics_governor_process_max_fds Maximum number of open file descriptors\n")
-						fmt.Fprintf(w, "# TYPE metrics_governor_process_max_fds gauge\n")
-						fmt.Fprintf(w, "metrics_governor_process_max_fds %d\n", maxFds)
-					}
+// writeMaxFDs parses /proc/self/limits data and writes max FD metric.
+func writeMaxFDs(w http.ResponseWriter, data string) {
+	lines := strings.Split(data, "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Max open files") {
+			fields := strings.Fields(line)
+			if len(fields) >= 4 {
+				if maxFds, err := strconv.ParseUint(fields[3], 10, 64); err == nil {
+					fmt.Fprintf(w, "# HELP metrics_governor_process_max_fds Maximum number of open file descriptors\n")
+					fmt.Fprintf(w, "# TYPE metrics_governor_process_max_fds gauge\n")
+					fmt.Fprintf(w, "metrics_governor_process_max_fds %d\n", maxFds)
 				}
-				break
 			}
+			break
 		}
 	}
-
-	// Disk I/O from /proc/self/io
-	r.writeDiskIOMetrics(w)
-
-	// Network I/O from /proc/net/dev
-	r.writeNetworkIOMetrics(w)
 }
 
 // writeDiskIOMetrics writes process disk I/O metrics from /proc/self/io.
@@ -354,17 +360,15 @@ func (r *RuntimeStats) writeDiskIOMetrics(w http.ResponseWriter) {
 		return
 	}
 
-	// Parse /proc/self/io
-	// Format:
-	// rchar: 1234
-	// wchar: 5678
-	// syscr: 100
-	// syscw: 200
-	// read_bytes: 4096
-	// write_bytes: 8192
-	// canceled_write_bytes: 0
+	writeDiskIO(w, string(data))
+}
 
-	lines := strings.Split(string(data), "\n")
+// writeDiskIO parses /proc/self/io data and writes real disk I/O metrics.
+// Only read_bytes and write_bytes are emitted — these represent actual storage-layer I/O.
+// rchar/wchar (VFS-level, includes cache/sockets/pipes) and syscr/syscw (syscall counts)
+// are intentionally excluded because they mix disk and network I/O.
+func writeDiskIO(w http.ResponseWriter, data string) {
+	lines := strings.Split(data, "\n")
 	for _, line := range lines {
 		parts := strings.SplitN(line, ":", 2)
 		if len(parts) != 2 {
@@ -377,30 +381,14 @@ func (r *RuntimeStats) writeDiskIOMetrics(w http.ResponseWriter) {
 		}
 
 		switch key {
-		case "rchar":
-			fmt.Fprintf(w, "# HELP metrics_governor_process_io_read_chars_total Characters read by the process\n")
-			fmt.Fprintf(w, "# TYPE metrics_governor_process_io_read_chars_total counter\n")
-			fmt.Fprintf(w, "metrics_governor_process_io_read_chars_total %d\n", value)
-		case "wchar":
-			fmt.Fprintf(w, "# HELP metrics_governor_process_io_write_chars_total Characters written by the process\n")
-			fmt.Fprintf(w, "# TYPE metrics_governor_process_io_write_chars_total counter\n")
-			fmt.Fprintf(w, "metrics_governor_process_io_write_chars_total %d\n", value)
-		case "syscr":
-			fmt.Fprintf(w, "# HELP metrics_governor_process_io_read_syscalls_total Read syscalls made by the process\n")
-			fmt.Fprintf(w, "# TYPE metrics_governor_process_io_read_syscalls_total counter\n")
-			fmt.Fprintf(w, "metrics_governor_process_io_read_syscalls_total %d\n", value)
-		case "syscw":
-			fmt.Fprintf(w, "# HELP metrics_governor_process_io_write_syscalls_total Write syscalls made by the process\n")
-			fmt.Fprintf(w, "# TYPE metrics_governor_process_io_write_syscalls_total counter\n")
-			fmt.Fprintf(w, "metrics_governor_process_io_write_syscalls_total %d\n", value)
 		case "read_bytes":
-			fmt.Fprintf(w, "# HELP metrics_governor_process_io_read_bytes_total Bytes read from disk by the process\n")
-			fmt.Fprintf(w, "# TYPE metrics_governor_process_io_read_bytes_total counter\n")
-			fmt.Fprintf(w, "metrics_governor_process_io_read_bytes_total %d\n", value)
+			fmt.Fprintf(w, "# HELP metrics_governor_disk_read_bytes_total Actual bytes read from storage by the process\n")
+			fmt.Fprintf(w, "# TYPE metrics_governor_disk_read_bytes_total counter\n")
+			fmt.Fprintf(w, "metrics_governor_disk_read_bytes_total %d\n", value)
 		case "write_bytes":
-			fmt.Fprintf(w, "# HELP metrics_governor_process_io_write_bytes_total Bytes written to disk by the process\n")
-			fmt.Fprintf(w, "# TYPE metrics_governor_process_io_write_bytes_total counter\n")
-			fmt.Fprintf(w, "metrics_governor_process_io_write_bytes_total %d\n", value)
+			fmt.Fprintf(w, "# HELP metrics_governor_disk_write_bytes_total Actual bytes written to storage by the process\n")
+			fmt.Fprintf(w, "# TYPE metrics_governor_disk_write_bytes_total counter\n")
+			fmt.Fprintf(w, "metrics_governor_disk_write_bytes_total %d\n", value)
 		}
 	}
 }
@@ -416,17 +404,15 @@ func (r *RuntimeStats) writeNetworkIOMetrics(w http.ResponseWriter) {
 		return
 	}
 
-	// Parse /proc/net/dev
-	// Format:
-	// Inter-|   Receive                                                |  Transmit
-	//  face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
-	//     lo: 123456  1234    0    0    0     0          0         0   123456  1234    0    0    0     0       0          0
-	//   eth0: 789012  5678    0    0    0     0          0         0   345678  2345    0    0    0     0       0          0
+	writeNetworkIO(w, string(data))
+}
 
+// writeNetworkIO parses /proc/net/dev data and writes network I/O metrics.
+func writeNetworkIO(w http.ResponseWriter, data string) {
 	var totalRxBytes, totalTxBytes, totalRxPackets, totalTxPackets uint64
 	var totalRxErrors, totalTxErrors, totalRxDropped, totalTxDropped uint64
 
-	lines := strings.Split(string(data), "\n")
+	lines := strings.Split(data, "\n")
 	for _, line := range lines {
 		// Skip header lines
 		if strings.Contains(line, "|") || strings.TrimSpace(line) == "" {

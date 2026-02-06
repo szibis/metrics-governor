@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -218,6 +219,10 @@ type Config struct {
 	// Flags
 	ShowHelp    bool
 	ShowVersion bool
+
+	// ConfigFile is the path to the YAML config file (if specified).
+	// Used for hot-reloading on SIGHUP.
+	ConfigFile string
 }
 
 // byteSizeFlag implements flag.Value and flag.Getter for human-readable byte sizes.
@@ -492,10 +497,17 @@ func ParseFlags() *Config {
 			os.Exit(1)
 		}
 		cfg = yamlCfg.ToConfig()
+		cfg.ConfigFile = configFile
 	}
 
 	// Apply CLI overrides for explicitly set flags
 	applyFlagOverrides(cfg)
+
+	// Validate configuration
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 
 	return cfg
 }
@@ -1688,4 +1700,70 @@ func DefaultConfig() *Config {
 		// Shutdown defaults
 		ShutdownTimeout: 30 * time.Second,
 	}
+}
+
+// Validate checks configuration values for logical correctness.
+// Returns all validation errors joined together so operators see every
+// misconfiguration at once rather than fixing them one at a time.
+func (c *Config) Validate() error {
+	var errs []string
+
+	// Range checks for float64 fields that represent ratios (0.0-1.0)
+	if c.MemoryLimitRatio < 0 || c.MemoryLimitRatio > 1.0 {
+		errs = append(errs, fmt.Sprintf("memory-limit-ratio must be between 0.0 and 1.0, got %f", c.MemoryLimitRatio))
+	}
+	if c.QueueTargetUtilization < 0 || c.QueueTargetUtilization > 1.0 {
+		errs = append(errs, fmt.Sprintf("queue-target-utilization must be between 0.0 and 1.0, got %f", c.QueueTargetUtilization))
+	}
+	if c.QueueCompactThreshold < 0 || c.QueueCompactThreshold > 1.0 {
+		errs = append(errs, fmt.Sprintf("queue-compact-threshold must be between 0.0 and 1.0, got %f", c.QueueCompactThreshold))
+	}
+
+	// Cardinality validation
+	if c.CardinalityFPRate <= 0 || c.CardinalityFPRate >= 1.0 {
+		errs = append(errs, fmt.Sprintf("cardinality-fp-rate must be between 0.0 and 1.0 (exclusive), got %f", c.CardinalityFPRate))
+	}
+	if c.CardinalityHLLPrecision < 4 || c.CardinalityHLLPrecision > 18 {
+		errs = append(errs, fmt.Sprintf("cardinality-hll-precision must be between 4 and 18, got %d", c.CardinalityHLLPrecision))
+	}
+	validCardModes := map[string]bool{"bloom": true, "exact": true, "hybrid": true}
+	if !validCardModes[c.CardinalityMode] {
+		errs = append(errs, fmt.Sprintf("cardinality-mode must be one of: bloom, exact, hybrid; got %q", c.CardinalityMode))
+	}
+
+	// Cross-field: sharding requires headless service
+	if c.ShardingEnabled && c.ShardingHeadlessService == "" {
+		errs = append(errs, "sharding-headless-service is required when sharding-enabled=true")
+	}
+
+	// Cross-field: exporter protocol validation
+	validProtocols := map[string]bool{"grpc": true, "http": true}
+	if !validProtocols[c.ExporterProtocol] {
+		errs = append(errs, fmt.Sprintf("exporter-protocol must be 'grpc' or 'http', got %q", c.ExporterProtocol))
+	}
+
+	// Queue validation
+	validQueueTypes := map[string]bool{"memory": true, "disk": true}
+	if !validQueueTypes[c.QueueType] {
+		errs = append(errs, fmt.Sprintf("queue-type must be 'memory' or 'disk', got %q", c.QueueType))
+	}
+	validQueueBehaviors := map[string]bool{"drop_oldest": true, "drop_newest": true, "block": true}
+	if !validQueueBehaviors[c.QueueFullBehavior] {
+		errs = append(errs, fmt.Sprintf("queue-full-behavior must be one of: drop_oldest, drop_newest, block; got %q", c.QueueFullBehavior))
+	}
+
+	// Backoff multiplier must be > 1
+	if c.QueueBackoffEnabled && c.QueueBackoffMultiplier <= 1.0 {
+		errs = append(errs, fmt.Sprintf("queue-backoff-multiplier must be > 1.0 when backoff is enabled, got %f", c.QueueBackoffMultiplier))
+	}
+
+	// Bloom persistence compression level
+	if c.BloomPersistenceCompressionLevel < 0 || c.BloomPersistenceCompressionLevel > 9 {
+		errs = append(errs, fmt.Sprintf("bloom-persistence-compression-level must be between 0 and 9, got %d", c.BloomPersistenceCompressionLevel))
+	}
+
+	if len(errs) == 0 {
+		return nil
+	}
+	return errors.New("configuration validation failed:\n  - " + strings.Join(errs, "\n  - "))
 }

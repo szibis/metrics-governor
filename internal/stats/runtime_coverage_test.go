@@ -206,7 +206,7 @@ func TestWriteDiskIOMetricsNonLinuxExtended(t *testing.T) {
 
 	// On non-Linux, should not write any disk I/O metrics
 	body := w.Body.String()
-	if strings.Contains(body, "metrics_governor_process_io") {
+	if strings.Contains(body, "metrics_governor_disk_") {
 		t.Error("Expected no disk I/O metrics on non-Linux")
 	}
 }

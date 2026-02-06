@@ -2,9 +2,11 @@ package receiver
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
@@ -158,9 +160,10 @@ type GRPCConfig struct {
 // GRPCReceiver receives metrics via OTLP gRPC.
 type GRPCReceiver struct {
 	colmetricspb.UnimplementedMetricsServiceServer
-	server *grpc.Server
-	buffer *buffer.MetricsBuffer
-	addr   string
+	server  *grpc.Server
+	buffer  *buffer.MetricsBuffer
+	addr    string
+	running atomic.Bool
 }
 
 // NewGRPC creates a new gRPC receiver with default configuration.
@@ -218,11 +221,22 @@ func (r *GRPCReceiver) Start() error {
 
 	colmetricspb.RegisterMetricsServiceServer(r.server, r)
 
+	r.running.Store(true)
 	logging.Info("gRPC receiver started", logging.F("addr", r.addr))
-	return r.server.Serve(lis)
+	err = r.server.Serve(lis)
+	r.running.Store(false)
+	return err
 }
 
 // Stop gracefully stops the gRPC server.
 func (r *GRPCReceiver) Stop() {
 	r.server.GracefulStop()
+}
+
+// HealthCheck returns nil if the gRPC receiver is running and accepting connections.
+func (r *GRPCReceiver) HealthCheck() error {
+	if !r.running.Load() {
+		return fmt.Errorf("gRPC receiver not running on %s", r.addr)
+	}
+	return nil
 }

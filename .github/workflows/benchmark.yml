@@ -123,6 +123,7 @@ jobs:
 
   benchmark-targeted:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: detect-changes
     if: needs.detect-changes.outputs.has_changes == 'true' && github.event_name == 'pull_request'
     strategy:
@@ -175,7 +176,7 @@ jobs:
         run: |
           echo "Running benchmarks for package: ${{ matrix.package }}"
           # Use count=3 for PRs (faster), count=5 for main branch
-          go test -bench=. -benchmem -count=3 ./internal/${{ matrix.package }}/... 2>&1 | tee benchmark-${{ matrix.package }}.txt
+          go test -short -bench=. -benchmem -benchtime=500ms -count=3 -timeout=5m ./internal/${{ matrix.package }}/... 2>&1 | tee benchmark-${{ matrix.package }}.txt
 
           # Save to cache
           mkdir -p ./benchmark-cache
@@ -384,7 +385,7 @@ jobs:
           # Run benchmarks only for packages that need it
           for pkg in $PACKAGES_TO_RUN; do
             echo "Running baseline benchmark for $pkg"
-            go test -bench=. -benchmem -count=3 ./internal/$pkg/... 2>&1 | tee baseline/benchmark-$pkg.txt || true
+            go test -short -bench=. -benchmem -benchtime=500ms -count=3 -timeout=5m ./internal/$pkg/... 2>&1 | tee baseline/benchmark-$pkg.txt || true
             # Cache the result
             cp "baseline/benchmark-$pkg.txt" "baseline-cache/benchmark-$pkg.txt"
           done

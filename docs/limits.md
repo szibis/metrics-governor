@@ -314,3 +314,19 @@ metrics_governor_rule_current_cardinality{rule="adaptive-by-service"} 4500
 metrics_governor_rule_groups_total{rule="adaptive-by-service"} 15
 metrics_governor_rule_dropped_groups_total{rule="adaptive-by-service"} 2
 ```
+
+## Dynamic Config Reload
+
+Limits configuration can be hot-reloaded at runtime via `SIGHUP` — no restart needed.
+
+```bash
+# Local / VM
+kill -HUP $(pidof metrics-governor)
+
+# Kubernetes (with configmap-reload sidecar — automatic)
+# Just update the ConfigMap; the sidecar sends SIGHUP for you
+```
+
+On SIGHUP, the limits YAML is re-read and atomically swapped. Per-rule stats are preserved for rules that still exist; removed rules are cleaned up; the rule cache is cleared. If the new file is invalid, the reload is rejected and the current config stays active.
+
+For full details on the reload mechanism, the configmap-reload sidecar, Helm chart setup, monitoring metrics, and what settings require a full restart, see **[Dynamic Configuration Reload](reload.md)**.

@@ -3876,7 +3876,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_process_io_read_bytes_total[1m]))",
+          "expr": "(rate(metrics_governor_disk_read_bytes_total[1m]))",
           "legendFormat": "Disk Read",
           "refId": "A"
         },
@@ -3885,7 +3885,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_process_io_write_bytes_total[1m]))",
+          "expr": "(rate(metrics_governor_disk_write_bytes_total[1m]))",
           "legendFormat": "Disk Write",
           "refId": "B"
         }
@@ -3990,105 +3990,6 @@
         }
       ],
       "title": "Network Packets Rate",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 109
-      },
-      "id": 61,
-      "options": {
-        "legend": {
-          "calcs": [
-            "last"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "(rate(metrics_governor_process_io_read_syscalls_total[1m]))",
-          "legendFormat": "Read Syscalls",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "(rate(metrics_governor_process_io_write_syscalls_total[1m]))",
-          "legendFormat": "Write Syscalls",
-          "refId": "B"
-        }
-      ],
-      "title": "Disk I/O Syscalls Rate",
       "type": "timeseries"
     },
     {
@@ -4260,7 +4161,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_process_io_read_bytes_total[1m]))",
+          "expr": "(rate(metrics_governor_disk_read_bytes_total[1m]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -4319,7 +4220,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(rate(metrics_governor_process_io_write_bytes_total[1m]))",
+          "expr": "(rate(metrics_governor_disk_write_bytes_total[1m]))",
           "legendFormat": "",
           "refId": "A"
         }
