@@ -3,7 +3,9 @@ package receiver
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 
@@ -248,6 +250,16 @@ func (r *PRWReceiver) Start() error {
 // Stop gracefully stops the PRW HTTP server.
 func (r *PRWReceiver) Stop(ctx context.Context) error {
 	return r.server.Shutdown(ctx)
+}
+
+// HealthCheck returns nil if the PRW receiver port is accepting connections.
+func (r *PRWReceiver) HealthCheck() error {
+	conn, err := net.DialTimeout("tcp", r.addr, 1*time.Second)
+	if err != nil {
+		return fmt.Errorf("PRW receiver not reachable on %s: %w", r.addr, err)
+	}
+	conn.Close()
+	return nil
 }
 
 // itoa converts an int to a string without importing strconv.

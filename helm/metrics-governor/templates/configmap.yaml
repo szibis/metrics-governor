@@ -6,5 +6,10 @@ metadata:
   labels:
     {{- include "metrics-governor.labels" . | nindent 4 }}
 data:
+  {{- if .Values.config.rawConfig }}
+  config.yaml: |
+    {{- .Values.config.rawConfig | nindent 4 }}
+  {{- else }}
   config.yaml: |
     {{- include "metrics-governor.configYAML" . | nindent 4 }}
+  {{- end }}

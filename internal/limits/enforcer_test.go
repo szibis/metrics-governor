@@ -1499,3 +1499,73 @@ func TestRuleNameInLabel(t *testing.T) {
 		})
 	}
 }
+
+func TestReloadConfig(t *testing.T) {
+	cfg := &Config{
+		Rules: []Rule{
+			{Name: "rule-a", MaxCardinality: 1000, Action: ActionLog},
+			{Name: "rule-b", MaxCardinality: 2000, Action: ActionDrop},
+		},
+	}
+	e := NewEnforcer(cfg, false, 100)
+
+	// Process some metrics to populate stats for rule-a
+	rm := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{createTestMetric("test_metric", map[string]string{"k": "v"}, 5)},
+	)
+	e.Process([]*metricspb.ResourceMetrics{rm})
+
+	// Verify initial state
+	if e.reloadCount.Load() != 0 {
+		t.Errorf("expected reload count 0, got %d", e.reloadCount.Load())
+	}
+
+	// Reload with new config — removes rule-b, adds rule-c
+	newCfg := &Config{
+		Rules: []Rule{
+			{Name: "rule-a", MaxCardinality: 5000, Action: ActionAdaptive},
+			{Name: "rule-c", MaxCardinality: 3000, Action: ActionLog},
+		},
+	}
+	e.ReloadConfig(newCfg)
+
+	// Verify reload was tracked
+	if e.reloadCount.Load() != 1 {
+		t.Errorf("expected reload count 1, got %d", e.reloadCount.Load())
+	}
+	if e.lastReloadUTC.Load() == 0 {
+		t.Error("expected lastReloadUTC to be set")
+	}
+
+	// Verify config was swapped
+	if len(e.config.Rules) != 2 {
+		t.Errorf("expected 2 rules, got %d", len(e.config.Rules))
+	}
+	if e.config.Rules[0].Name != "rule-a" || e.config.Rules[0].MaxCardinality != 5000 {
+		t.Error("expected rule-a to be updated")
+	}
+
+	// Verify stats for rule-a are preserved, rule-b cleaned up
+	e.mu.RLock()
+	_, hasRuleA := e.ruleStats["rule-a"]
+	_, hasRuleB := e.ruleStats["rule-b"]
+	e.mu.RUnlock()
+	if !hasRuleA {
+		t.Error("expected stats for rule-a to be preserved")
+	}
+	if hasRuleB {
+		t.Error("expected stats for rule-b to be cleaned up")
+	}
+
+	// Verify reload metrics appear in ServeHTTP output
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	body := rec.Body.String()
+	if !strings.Contains(body, "metrics_governor_config_reloads_total 1") {
+		t.Error("expected config_reloads_total=1 in metrics output")
+	}
+	if !strings.Contains(body, "metrics_governor_config_reload_last_success_timestamp_seconds") {
+		t.Error("expected reload timestamp metric in output")
+	}
+}

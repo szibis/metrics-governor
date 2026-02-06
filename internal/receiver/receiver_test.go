@@ -149,13 +149,52 @@ func TestHTTPHandleMetricsUnsupportedContentType(t *testing.T) {
 	r := NewHTTP(":4318", buf)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/metrics", bytes.NewReader([]byte("{}")))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "text/xml")
 
 	rec := httptest.NewRecorder()
 	r.handleMetrics(rec, req)
 
 	if rec.Code != http.StatusUnsupportedMediaType {
 		t.Errorf("expected status 415, got %d", rec.Code)
+	}
+}
+
+func TestHTTPHandleMetricsJSON(t *testing.T) {
+	buf := newTestBuffer()
+
+	r := NewHTTP(":4318", buf)
+
+	// Minimal valid OTLP JSON request
+	jsonBody := []byte(`{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"json.test.metric"}]}]}]}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/metrics", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	r.handleMetrics(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	if rec.Header().Get("Content-Type") != "application/json" {
+		t.Errorf("expected Content-Type 'application/json', got '%s'", rec.Header().Get("Content-Type"))
+	}
+}
+
+func TestHTTPHandleMetricsInvalidJSON(t *testing.T) {
+	buf := newTestBuffer()
+
+	r := NewHTTP(":4318", buf)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/metrics", bytes.NewReader([]byte("{invalid json")))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	r.handleMetrics(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 for invalid JSON, got %d", rec.Code)
 	}
 }
 

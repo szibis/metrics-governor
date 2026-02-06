@@ -119,18 +119,31 @@ config:
   statsLabels: ""
   # -- Dry run mode for limits
   limitsDryRun: true
-  # -- Extra arguments to pass
+  # -- Extra CLI arguments (advanced use only; prefer config file settings)
   extraArgs: []
-  # -- CLI overrides (applied on top of config file)
-  overrides:
-    # -- Override receiver gRPC address
-    grpcListen: ""
-    # -- Override receiver HTTP address
-    httpListen: ""
-    # -- Override stats address
-    statsAddr: ""
-    # -- Override exporter endpoint
-    exporterEndpoint: ""
+  # -- Raw YAML config override.
+  # When set, this is used verbatim as config.yaml instead of the template-generated config.
+  # This gives full control over all configuration options.
+  # Example:
+  #   rawConfig: |
+  #     receiver:
+  #       grpc:
+  #         address: ":4317"
+  #       http:
+  #         address: ":4318"
+  #     exporter:
+  #       endpoint: "otel-collector:4317"
+  #       protocol: "grpc"
+  #       insecure: true
+  #     buffer:
+  #       size: 10000
+  #       batch_size: 1000
+  #       flush_interval: "5s"
+  #     stats:
+  #       address: ":9090"
+  #     limits:
+  #       dry_run: true
+  rawConfig: ""
 
 # -- Receiver TLS configuration
 receiverTLS:
@@ -421,6 +434,30 @@ persistence:
   # -- Existing claim to use
   existingClaim: ""
 
+# -- Config reload sidecar for automatic ConfigMap change detection
+# When enabled, a lightweight sidecar watches config files and sends SIGHUP
+# to metrics-governor when changes are detected (e.g. after ConfigMap update).
+configReload:
+  # -- Enable the configmap-reload sidecar
+  enabled: false
+  image:
+    # -- Sidecar image repository (uses busybox for minimal footprint)
+    repository: busybox
+    # -- Sidecar image tag
+    tag: "1.37"
+    # -- Image pull policy
+    pullPolicy: IfNotPresent
+  # -- Polling interval in seconds for detecting file changes
+  watchInterval: 10
+  # -- Resources for the sidecar container
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 50m
+      memory: 32Mi
+
 # -- Extra volumes
 extraVolumes: []
 
@@ -473,10 +510,11 @@ hostNetwork: false
 lifecycle: {}
 
 # -- Liveness probe
+# /live returns 200 if the process is running, 503 during shutdown
 livenessProbe:
   enabled: true
   httpGet:
-    path: /metrics
+    path: /live
     port: stats
   initialDelaySeconds: 10
   periodSeconds: 10
@@ -485,10 +523,11 @@ livenessProbe:
   successThreshold: 1
 
 # -- Readiness probe
+# /ready checks all pipeline components (receivers, exporters); returns 503 if any are down
 readinessProbe:
   enabled: true
   httpGet:
-    path: /metrics
+    path: /ready
     port: stats
   initialDelaySeconds: 5
   periodSeconds: 5
@@ -497,10 +536,11 @@ readinessProbe:
   successThreshold: 1
 
 # -- Startup probe
+# Uses /live to detect when the process has started
 startupProbe:
   enabled: false
   httpGet:
-    path: /metrics
+    path: /live
     port: stats
   initialDelaySeconds: 5
   periodSeconds: 5

@@ -117,27 +117,22 @@ Pod FQDN for StatefulSet
 {{- end }}
 
 {{/*
-Generate container arguments (uses config file)
+Generate container arguments (config-file-only — no CLI flag overrides)
+All configuration is driven by the YAML config file mounted from ConfigMap.
+Only file path arguments are passed as CLI flags.
 */}}
 {{- define "metrics-governor.args" -}}
 {{- $args := list -}}
+{{- if .Values.configReload.enabled }}
+{{- $args = append $args "-config=/etc/metrics-governor/config/config.yaml" -}}
+{{- else }}
 {{- $args = append $args "-config=/etc/metrics-governor/config.yaml" -}}
+{{- end }}
 {{- if .Values.limits.enabled }}
+{{- if .Values.configReload.enabled }}
+{{- $args = append $args "-limits-config=/etc/metrics-governor/limits/limits.yaml" -}}
+{{- else }}
 {{- $args = append $args "-limits-config=/etc/metrics-governor/limits.yaml" -}}
-{{- end }}
-{{/* Optional CLI overrides for operational flexibility */}}
-{{- if .Values.config.overrides }}
-{{- if .Values.config.overrides.grpcListen }}
-{{- $args = append $args (printf "-grpc-listen=%s" .Values.config.overrides.grpcListen) -}}
-{{- end }}
-{{- if .Values.config.overrides.httpListen }}
-{{- $args = append $args (printf "-http-listen=%s" .Values.config.overrides.httpListen) -}}
-{{- end }}
-{{- if .Values.config.overrides.statsAddr }}
-{{- $args = append $args (printf "-stats-addr=%s" .Values.config.overrides.statsAddr) -}}
-{{- end }}
-{{- if .Values.config.overrides.exporterEndpoint }}
-{{- $args = append $args (printf "-exporter-endpoint=%s" .Values.config.overrides.exporterEndpoint) -}}
 {{- end }}
 {{- end }}
 {{- range .Values.config.extraArgs }}
@@ -282,15 +277,28 @@ Container ports
 Volume mounts
 */}}
 {{- define "metrics-governor.volumeMounts" -}}
+{{- if .Values.configReload.enabled }}
+{{/* Directory mounts (no subPath) — enables automatic ConfigMap updates by kubelet */}}
+- name: config
+  mountPath: /etc/metrics-governor/config
+  readOnly: true
+{{- else }}
 - name: config
   mountPath: /etc/metrics-governor/config.yaml
   subPath: config.yaml
   readOnly: true
+{{- end }}
 {{- if .Values.limits.enabled }}
+{{- if .Values.configReload.enabled }}
+- name: limits-config
+  mountPath: /etc/metrics-governor/limits
+  readOnly: true
+{{- else }}
 - name: limits-config
   mountPath: /etc/metrics-governor/limits.yaml
   subPath: limits.yaml
   readOnly: true
+{{- end }}
 {{- end }}
 {{- if .Values.receiverTLS.enabled }}
 - name: receiver-tls
@@ -438,6 +446,9 @@ serviceAccountName: {{ include "metrics-governor.serviceAccountName" . }}
 securityContext:
   {{- toYaml . | nindent 2 }}
 {{- end }}
+{{- if .Values.configReload.enabled }}
+shareProcessNamespace: true
+{{- end }}
 {{- if .Values.priorityClassName }}
 priorityClassName: {{ .Values.priorityClassName }}
 {{- end }}
@@ -544,6 +555,91 @@ containers:
     {{- end }}
   {{- with .Values.extraContainers }}
   {{- toYaml . | nindent 2 }}
+  {{- end }}
+  {{- if and .Values.configReload.enabled .Values.limits.enabled }}
+  - name: configmap-reload
+    {{- $crRegistry := .Values.global.imageRegistry | default "" }}
+    {{- $crRepo := .Values.configReload.image.repository }}
+    {{- $crTag := .Values.configReload.image.tag }}
+    {{- if $crRegistry }}
+    image: {{ printf "%s/%s:%s" $crRegistry $crRepo $crTag }}
+    {{- else }}
+    image: {{ printf "%s:%s" $crRepo $crTag }}
+    {{- end }}
+    imagePullPolicy: {{ .Values.configReload.image.pullPolicy }}
+    command: ["sh", "-c"]
+    args:
+      - |
+        WATCH_FILES="/etc/metrics-governor/config/config.yaml,/etc/metrics-governor/limits/limits.yaml"
+        WATCH_INTERVAL="{{ .Values.configReload.watchInterval }}"
+        SIGNAL="HUP"
+        PROCESS_NAME="metrics-governor"
+
+        log() { echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') [configmap-reload] $1"; }
+
+        compute_hash() {
+          hash=""
+          IFS=','
+          for file in $WATCH_FILES; do
+            [ -f "$file" ] && h=$(sha256sum "$file" | cut -d' ' -f1) && hash="${hash}${h}"
+          done
+          unset IFS
+          echo "$hash"
+        }
+
+        find_pid() {
+          for p in /proc/[0-9]*; do
+            [ -f "$p/cmdline" ] && cmd=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null) && \
+            case "$cmd" in *"$PROCESS_NAME"*) basename "$p"; return;; esac
+          done
+        }
+
+        log "starting config watcher (interval: ${WATCH_INTERVAL}s)"
+        retries=0
+        while true; do
+          current_hash=$(compute_hash)
+          [ -n "$current_hash" ] && break
+          retries=$((retries + 1))
+          [ "$retries" -ge 30 ] && log "ERROR: files not found after 30 retries" && exit 1
+          sleep 2
+        done
+        previous_hash="$current_hash"
+        log "initial hash: ${previous_hash}"
+
+        while true; do
+          sleep "$WATCH_INTERVAL"
+          current_hash=$(compute_hash)
+          if [ "$current_hash" != "$previous_hash" ]; then
+            log "config change detected"
+            pid=$(find_pid)
+            if [ -n "$pid" ]; then
+              log "sending SIGHUP to pid $pid"
+              kill -"$SIGNAL" "$pid" 2>/dev/null && log "signal sent" || log "ERROR: signal failed"
+            else
+              log "ERROR: process not found"
+            fi
+            previous_hash="$current_hash"
+          fi
+        done
+    securityContext:
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
+        add:
+          - SYS_PTRACE
+    volumeMounts:
+      - name: config
+        mountPath: /etc/metrics-governor/config
+        readOnly: true
+      - name: limits-config
+        mountPath: /etc/metrics-governor/limits
+        readOnly: true
+    {{- with .Values.configReload.resources }}
+    resources:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
   {{- end }}
 {{- $vols := include "metrics-governor.volumes" . }}
 {{- if $vols }}

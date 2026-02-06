@@ -64,6 +64,11 @@ type Enforcer struct {
 
 	// Total mode switch counter
 	totalSwitches atomic.Int64
+
+	// Config reload tracking
+	reloadCount   atomic.Int64 // successful reloads
+	reloadErrors  atomic.Int64 // failed reloads (recorded externally)
+	lastReloadUTC atomic.Int64 // unix timestamp of last successful reload
 }
 
 // ViolationMetrics tracks limit violation counts.
@@ -97,6 +102,63 @@ func NewEnforcer(config *Config, dryRun bool, ruleCacheMaxSize int) *Enforcer {
 		ruleMatchCache: newRuleCache(ruleCacheMaxSize),
 		trackerModes:   make(map[string]map[string]*trackerModeInfo),
 	}
+}
+
+// ReloadConfig atomically replaces the enforcer's limits configuration.
+// Existing per-rule stats are preserved for rules that still exist;
+// stats for removed rules are cleaned up.
+func (e *Enforcer) ReloadConfig(newConfig *Config) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	oldRules := make(map[string]bool)
+	if e.config != nil {
+		for _, r := range e.config.Rules {
+			oldRules[r.Name] = true
+		}
+	}
+
+	e.config = newConfig
+
+	// Clean up stats for rules that no longer exist
+	newRules := make(map[string]bool)
+	for _, r := range newConfig.Rules {
+		newRules[r.Name] = true
+	}
+	for name := range e.ruleStats {
+		if !newRules[name] {
+			delete(e.ruleStats, name)
+		}
+	}
+	for name := range e.droppedGroups {
+		if !newRules[name] {
+			delete(e.droppedGroups, name)
+		}
+	}
+
+	// Clear rule cache since rules changed
+	if e.ruleMatchCache != nil {
+		e.ruleMatchCache = newRuleCache(e.ruleMatchCache.maxSize)
+	}
+
+	// Track reload event
+	e.reloadCount.Add(1)
+	e.lastReloadUTC.Store(time.Now().Unix())
+}
+
+// SetDryRun updates the dry-run mode at runtime.
+// When dry-run is enabled, violations are logged but data is not dropped.
+func (e *Enforcer) SetDryRun(dryRun bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.dryRun = dryRun
+}
+
+// DryRun returns the current dry-run mode.
+func (e *Enforcer) DryRun() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.dryRun
 }
 
 // Stop stops the enforcer and flushes any pending aggregated logs.
@@ -1027,6 +1089,15 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# HELP metrics_governor_serieskey_pool_discards_total Series key slices discarded (too large for pool)\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_serieskey_pool_discards_total counter\n")
 	fmt.Fprintf(w, "metrics_governor_serieskey_pool_discards_total %d\n", seriesKeyPoolDiscards.Load())
+
+	// Config reload metrics
+	fmt.Fprintf(w, "# HELP metrics_governor_config_reloads_total Successful limits config reloads via SIGHUP\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_config_reloads_total counter\n")
+	fmt.Fprintf(w, "metrics_governor_config_reloads_total %d\n", e.reloadCount.Load())
+
+	fmt.Fprintf(w, "# HELP metrics_governor_config_reload_last_success_timestamp_seconds Unix timestamp of last successful config reload\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_config_reload_last_success_timestamp_seconds gauge\n")
+	fmt.Fprintf(w, "metrics_governor_config_reload_last_success_timestamp_seconds %d\n", e.lastReloadUTC.Load())
 }
 
 // Helper functions
