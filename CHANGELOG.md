@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.23.0] - 2026-02-06
+
+### Added
+
+- feat: OTEL logging, I/O metrics, reload fix, stats threshold, and production tuning (#107)
+
+### Other
+
+- test: add extended coverage for relabeling, sampling, and multi-tenancy (#106)
+
+
 ## [0.22.0] - 2026-02-06
 
 ### Added
