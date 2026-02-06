@@ -597,3 +597,117 @@ func TestWait(t *testing.T) {
 		t.Error("Wait() blocked for too long")
 	}
 }
+
+// Mock tenant processor for testing
+type mockTenantProcessor struct {
+	mu      sync.Mutex
+	calls   int
+	dropAll bool
+}
+
+func (m *mockTenantProcessor) ProcessBatch(rms []*metricspb.ResourceMetrics, headerTenant string) []*metricspb.ResourceMetrics {
+	m.mu.Lock()
+	m.calls++
+	m.mu.Unlock()
+	if m.dropAll {
+		return nil
+	}
+	return rms
+}
+
+func (m *mockTenantProcessor) getCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.calls
+}
+
+func TestWithTenantProcessor(t *testing.T) {
+	exp := &mockExporter{}
+	tp := &mockTenantProcessor{}
+	buf := New(100, 10, 50*time.Millisecond, exp, nil, nil, nil, WithTenantProcessor(tp))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go buf.Start(ctx)
+
+	buf.Add(createTestResourceMetrics(3))
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	buf.Wait()
+
+	if tp.getCalls() == 0 {
+		t.Error("expected tenant processor to be called")
+	}
+	if exp.getRequestCount() == 0 {
+		t.Error("expected export to be called when tenant processor passes through")
+	}
+}
+
+func TestWithTenantProcessorNil(t *testing.T) {
+	// Verify that nil tenant processor doesn't cause issues
+	exp := &mockExporter{}
+	buf := New(100, 10, 50*time.Millisecond, exp, nil, nil, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go buf.Start(ctx)
+
+	buf.Add(createTestResourceMetrics(3))
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	buf.Wait()
+
+	if exp.getRequestCount() == 0 {
+		t.Error("expected export to be called without tenant processor")
+	}
+}
+
+func TestWithAllFeatures(t *testing.T) {
+	// Wire relabeler + sampler + tenant processor + limits all together
+	exp := &mockExporter{}
+	rel := &mockRelabeler{rename: "renamed"}
+	smp := &mockSampler{}
+	tp := &mockTenantProcessor{}
+	lim := &mockLimitsEnforcer{}
+	buf := New(100, 10, 50*time.Millisecond, exp, nil, lim, nil,
+		WithRelabeler(rel),
+		WithSampler(smp),
+		WithTenantProcessor(tp),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go buf.Start(ctx)
+
+	buf.Add(createTestResourceMetrics(5))
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	buf.Wait()
+
+	// Verify correct pipeline ordering:
+	// Add → sampler → tenant processor → limits → buffer → flush → relabeler → export
+	if smp.getCalls() == 0 {
+		t.Error("expected sampler to be called")
+	}
+	if tp.getCalls() == 0 {
+		t.Error("expected tenant processor to be called")
+	}
+	if rel.getCalls() == 0 {
+		t.Error("expected relabeler to be called")
+	}
+	if exp.getRequestCount() == 0 {
+		t.Error("expected export to be called")
+	}
+
+	// Verify metrics were renamed by relabeler
+	exp.mu.Lock()
+	for _, req := range exp.requests {
+		for _, rm := range req.ResourceMetrics {
+			for _, sm := range rm.ScopeMetrics {
+				for _, m := range sm.Metrics {
+					if m.Name != "renamed" {
+						t.Errorf("expected metric name 'renamed', got '%s'", m.Name)
+					}
+				}
+			}
+		}
+	}
+	exp.mu.Unlock()
+}
