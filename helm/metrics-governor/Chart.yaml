@@ -2,8 +2,8 @@ apiVersion: v2
 name: metrics-governor
 description: OTLP metrics proxy with buffering, statistics tracking, and adaptive limits enforcement
 type: application
-version: 0.9.4
-appVersion: "0.16.1"
+version: 0.9.5
+appVersion: "0.17.0"
 keywords:
   - otlp
   - metrics
