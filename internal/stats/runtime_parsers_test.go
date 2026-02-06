@@ -83,16 +83,16 @@ func TestWriteProcessStat(t *testing.T) {
 	// Simulated /proc/self/stat line (simplified — 52 fields like real Linux)
 	// Fields of interest: index 13 (utime), 14 (stime), 22 (vsize), 23 (rss)
 	fields := make([]string, 52)
-	fields[0] = "12345"                  // pid
-	fields[1] = "(metrics-governor)"     // comm
-	fields[2] = "S"                      // state
+	fields[0] = "12345"              // pid
+	fields[1] = "(metrics-governor)" // comm
+	fields[2] = "S"                  // state
 	for i := 3; i < 52; i++ {
 		fields[i] = "0"
 	}
-	fields[13] = "500"        // utime = 500 jiffies = 5.00 seconds
-	fields[14] = "200"        // stime = 200 jiffies = 2.00 seconds
-	fields[22] = "104857600"  // vsize = 100MB
-	fields[23] = "25600"      // rss = 25600 pages
+	fields[13] = "500"       // utime = 500 jiffies = 5.00 seconds
+	fields[14] = "200"       // stime = 200 jiffies = 2.00 seconds
+	fields[22] = "104857600" // vsize = 100MB
+	fields[23] = "25600"     // rss = 25600 pages
 
 	data := strings.Join(fields, " ")
 
@@ -189,7 +189,7 @@ syscr: 50000
 syscw: 30000
 read_bytes: 4096000
 write_bytes: 8192000
-cancelled_write_bytes: 0
+canceled_write_bytes: 0
 `
 
 	w := httptest.NewRecorder()
@@ -288,14 +288,14 @@ func TestWriteNetworkIO(t *testing.T) {
 		metric string
 		value  string
 	}{
-		{"metrics_governor_network_receive_bytes_total", "7000000"},      // 5000000 + 2000000
-		{"metrics_governor_network_transmit_bytes_total", "4000000"},     // 3000000 + 1000000
-		{"metrics_governor_network_receive_packets_total", "55000"},      // 40000 + 15000
-		{"metrics_governor_network_transmit_packets_total", "33000"},     // 25000 + 8000
-		{"metrics_governor_network_receive_errors_total", "5"},           // 5 + 0
-		{"metrics_governor_network_transmit_errors_total", "1"},          // 1 + 0
-		{"metrics_governor_network_receive_dropped_total", "3"},          // 2 + 1
-		{"metrics_governor_network_transmit_dropped_total", "3"},         // 0 + 3
+		{"metrics_governor_network_receive_bytes_total", "7000000"},  // 5000000 + 2000000
+		{"metrics_governor_network_transmit_bytes_total", "4000000"}, // 3000000 + 1000000
+		{"metrics_governor_network_receive_packets_total", "55000"},  // 40000 + 15000
+		{"metrics_governor_network_transmit_packets_total", "33000"}, // 25000 + 8000
+		{"metrics_governor_network_receive_errors_total", "5"},       // 5 + 0
+		{"metrics_governor_network_transmit_errors_total", "1"},      // 1 + 0
+		{"metrics_governor_network_receive_dropped_total", "3"},      // 2 + 1
+		{"metrics_governor_network_transmit_dropped_total", "3"},     // 0 + 3
 	}
 
 	for _, exp := range expected {

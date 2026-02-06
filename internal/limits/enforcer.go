@@ -67,7 +67,6 @@ type Enforcer struct {
 
 	// Config reload tracking
 	reloadCount   atomic.Int64 // successful reloads
-	reloadErrors  atomic.Int64 // failed reloads (recorded externally)
 	lastReloadUTC atomic.Int64 // unix timestamp of last successful reload
 }
 
