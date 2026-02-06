@@ -17,6 +17,7 @@ metrics-governor includes several high-performance optimizations for production 
 | Queue I/O Optimization | Yes | Yes | -40-60% disk (compression) | 10x throughput |
 | Persistent Disk Queue | Yes | Yes | Bounded by max_bytes | Disk I/O |
 | Memory Limit Auto-Detection | Yes | Yes | Prevents OOM kills | More predictable GC |
+| Stats Threshold Filtering | Yes | Yes | -49% scrape bytes | -44% scrape latency |
 
 ### Architecture Overview
 
@@ -601,6 +602,188 @@ When basic authentication is configured, the Base64-encoded `Authorization` head
 The `countDatapoints` function, used to calculate batch sizes for metrics and statistics, previously traversed nested data structures multiple times. The deduplicated implementation merges traversal passes into a single walk, reducing traversal CPU by approximately 50% per batch with no additional memory overhead.
 
 **Configuration**: This optimization is always active and requires no configuration.
+
+---
+
+## Production Tuning Guide
+
+This section provides concrete tuning recommendations for large-scale production deployments handling **millions of datapoints per minute** and **tens of thousands of unique series**.
+
+### Limits Enforcer — Stats Threshold
+
+The per-group stats reporting on the `/metrics` endpoint scales linearly with the number of tracked groups. In high-cardinality environments (10K+ groups), this can produce **megabytes of scrape output** and dominate Prometheus scrape time.
+
+**Benchmark results** (1,000 groups, ~50% filtered):
+
+| Metric | No threshold | threshold=5 | Reduction |
+|--------|:-----------:|:-----------:|:---------:|
+| Latency | 345 µs/op | 192 µs/op | **44%** |
+| Memory | 312 KB/op | 159 KB/op | **49%** |
+| Allocations | 2,756/op | 1,403/op | **49%** |
+
+Savings scale linearly — with 10K groups and threshold filtering 90% of them, expect ~90% reduction in scrape output.
+
+```yaml
+limits:
+  stats_threshold: 100  # Only report groups with >= 100 datapoints or cardinality
+```
+
+See [limits.md](./limits.md#per-group-stats-threshold) for full configuration details.
+
+### Rule Cache Sizing
+
+The rule matching LRU cache avoids regex evaluation for previously seen metric identities. In production, the default 10K entries may be insufficient for high-cardinality workloads:
+
+```bash
+# High-cardinality workloads (100K+ unique metric names)
+metrics-governor -rule-cache-max-size=100000
+
+# Monitor effectiveness — hit ratio should be > 95%
+# rate(metrics_governor_rule_cache_hits_total[5m]) / (rate(metrics_governor_rule_cache_hits_total[5m]) + rate(metrics_governor_rule_cache_misses_total[5m]))
+```
+
+Each cache entry is ~100 bytes, so 100K entries ≈ 10 MB — a worthwhile trade-off for eliminating regex evaluation on the hot path.
+
+### Cardinality Tracker Mode
+
+For production deployments with unknown or highly variable cardinality, use **hybrid mode**:
+
+```yaml
+cardinality:
+  mode: hybrid
+  expected_items: 100000
+  fp_rate: 0.01
+  hll_threshold: 50000
+```
+
+This starts with memory-efficient Bloom filters and automatically switches to HLL when cardinality exceeds the threshold. The switch preserves the approximate count without resetting statistics.
+
+**Memory planning by mode:**
+
+| Cardinality | Bloom (1% FPR) | HLL (p=14) | Exact (map) |
+|-------------|:--------------:|:----------:|:-----------:|
+| 10K series | 12 KB | 12 KB | 750 KB |
+| 100K series | 120 KB | 12 KB | 7.5 MB |
+| 1M series | 1.2 MB | 12 KB | 75 MB |
+| 10M series | 12 MB | 12 KB | 750 MB |
+
+### Export Pipeline Tuning
+
+| Setting | Small (<1M dps/min) | Medium (1-10M dps/min) | Large (10M+ dps/min) |
+|---------|:-------------------:|:----------------------:|:--------------------:|
+| `-batch-size` | 500 | 1000 | 2000 |
+| `-max-batch-bytes` | 4 MB | 8 MB | 8 MB |
+| `-export-concurrency` | 4 | `NumCPU * 2` | `NumCPU * 4` |
+| `-buffer-size` | 100 | 500 | 1000 |
+| `-string-interning` | true | true | true |
+| `-intern-max-value-length` | 64 | 64 | 128 |
+
+### Memory Configuration
+
+```yaml
+memory:
+  limit_ratio: 0.9    # Leave 10% for non-heap
+
+# For large containers (> 4GB), use 0.85 to leave more headroom
+memory:
+  limit_ratio: 0.85
+```
+
+**Container sizing guidelines:**
+
+| Throughput | Recommended Memory | GOMEMLIMIT | Queue Disk |
+|------------|:-----------------:|:----------:|:----------:|
+| < 1M dps/min | 512 MB | 460 MB | 1 GB |
+| 1-5M dps/min | 1 GB | 900 MB | 5 GB |
+| 5-20M dps/min | 2 GB | 1.7 GB | 10 GB |
+| 20-100M dps/min | 4 GB | 3.4 GB | 20 GB |
+| 100M+ dps/min | 8 GB | 6.8 GB | 50 GB |
+
+### Persistent Queue Tuning
+
+For production resilience during backend outages:
+
+```yaml
+queue:
+  enabled: true
+  path: /data/queue
+  max_bytes: 10737418240  # 10 GB
+  inmemory_blocks: 4096   # ~40s buffer for 100K dps/min
+  chunk_size: 536870912   # 512 MB chunks
+  compression: snappy     # ~65% size reduction
+  write_buffer_size: 262144  # 256 KB
+  stale_flush: 30s
+  meta_sync: 1s           # Max 1s data loss window
+```
+
+**Queue sizing formula:**
+
+```
+Required disk = (datapoints/min × avg_bytes_per_dp × desired_minutes) / compression_ratio
+
+Example: 10M dps/min × 50 bytes × 30 min / 3 ≈ 5 GB
+```
+
+### Prometheus Scrape Optimization
+
+When metrics-governor itself produces high-cardinality output (many rules × many groups), optimize the scrape:
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: metrics-governor
+    scrape_interval: 30s     # Don't scrape too frequently
+    scrape_timeout: 15s      # Allow time for large responses
+    metrics_path: /metrics
+    params:
+      # Use stats threshold to reduce output
+      # (configured on metrics-governor side)
+```
+
+Combine the stats threshold with Prometheus `metric_relabel_configs` to further reduce stored series if needed:
+
+```yaml
+    metric_relabel_configs:
+      # Drop per-group metrics if you only need rule-level aggregates
+      - source_labels: [__name__]
+        regex: 'metrics_governor_rule_group_(datapoints|cardinality)'
+        action: drop
+```
+
+### Complete Production Configuration
+
+```bash
+metrics-governor \
+  # Pipeline
+  -receiver-addr :4317 \
+  -exporter-endpoint https://vm.example.com/api/v1/import/prometheus \
+  -exporter-compression snappy \
+  \
+  # Limits
+  -limits-config /etc/limits/limits.yaml \
+  -limits-dry-run=false \
+  -limits-stats-threshold=100 \
+  -rule-cache-max-size=50000 \
+  \
+  # Cardinality
+  -cardinality-mode hybrid \
+  -cardinality-expected-items 100000 \
+  -cardinality-hll-threshold 50000 \
+  \
+  # Performance
+  -batch-size 1000 \
+  -max-batch-bytes 8388608 \
+  -export-concurrency 32 \
+  -buffer-size 500 \
+  -string-interning=true \
+  \
+  # Resilience
+  -queue-enabled=true \
+  -queue-path /data/queue \
+  -queue-max-bytes 10737418240 \
+  -queue-compression snappy \
+  -memory-limit-ratio 0.9
+```
 
 ---
 

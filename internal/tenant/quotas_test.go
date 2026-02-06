@@ -618,3 +618,39 @@ func BenchmarkQuotaEnforcer_Process(b *testing.B) {
 		qe.Process("tenant-1", rms)
 	}
 }
+
+func TestNewQuotaEnforcer_InitialReloadTimestamp(t *testing.T) {
+	before := time.Now().UTC().Unix()
+	qe := NewQuotaEnforcer(&QuotasConfig{
+		Global: &GlobalQuota{MaxDatapoints: 1000, Action: QuotaActionDrop},
+	})
+	after := time.Now().UTC().Unix()
+
+	ts := qe.lastReloadUTC.Load()
+	if ts == 0 {
+		t.Fatal("lastReloadUTC should not be 0 (Unix epoch)")
+	}
+	if ts < before || ts > after {
+		t.Errorf("lastReloadUTC %d not between %d and %d", ts, before, after)
+	}
+}
+
+func TestQuotaEnforcer_ReloadConfig_UpdatesTimestamp(t *testing.T) {
+	cfg := &QuotasConfig{
+		Global: &GlobalQuota{MaxDatapoints: 1000, Action: QuotaActionDrop},
+	}
+	qe := NewQuotaEnforcer(cfg)
+
+	initialTS := qe.lastReloadUTC.Load()
+	time.Sleep(1100 * time.Millisecond)
+
+	newCfg := &QuotasConfig{
+		Global: &GlobalQuota{MaxDatapoints: 2000, Action: QuotaActionDrop},
+	}
+	qe.ReloadConfig(newCfg)
+
+	reloadedTS := qe.lastReloadUTC.Load()
+	if reloadedTS <= initialTS {
+		t.Errorf("lastReloadUTC should advance after reload: initial=%d, reloaded=%d", initialTS, reloadedTS)
+	}
+}

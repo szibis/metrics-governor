@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -208,6 +209,9 @@ type Config struct {
 	LimitsLogInterval   time.Duration // Limits enforcement summary log interval (0 = disabled)
 	LimitsLogIndividual bool          // Log individual limit violations (high volume)
 
+	// Limits stats reporting threshold
+	LimitsStatsThreshold int64 // Only report per-group stats for groups with >= N datapoints (0 = report all)
+
 	// Bloom persistence settings
 	BloomPersistenceEnabled          bool
 	BloomPersistencePath             string
@@ -236,6 +240,11 @@ type Config struct {
 
 	// Debug
 	PprofEnabled bool
+
+	// Telemetry settings (OTLP self-monitoring export)
+	TelemetryEndpoint string // OTLP endpoint for self-monitoring (empty = disabled)
+	TelemetryProtocol string // "grpc" or "http" (default: "grpc")
+	TelemetryInsecure bool   // Use insecure connection (default: true)
 
 	// Flags
 	ShowHelp    bool
@@ -491,6 +500,7 @@ func ParseFlags() *Config {
 	flag.DurationVar(&cfg.StatsLogInterval, "stats-log-interval", 10*time.Second, "Operational stats log interval (0 = disabled)")
 	flag.DurationVar(&cfg.LimitsLogInterval, "limits-log-interval", 10*time.Second, "Limits enforcement summary log interval (0 = disabled)")
 	flag.BoolVar(&cfg.LimitsLogIndividual, "limits-log-individual", false, "Log individual limit violations (high volume, default: false)")
+	flag.Int64Var(&cfg.LimitsStatsThreshold, "limits-stats-threshold", 0, "Only report per-group stats for groups with >= N datapoints (0 = report all)")
 
 	// Bloom persistence flags
 	flag.BoolVar(&cfg.BloomPersistenceEnabled, "bloom-persistence-enabled", false, "Enable bloom filter state persistence")
@@ -519,6 +529,11 @@ func ParseFlags() *Config {
 	flag.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", 30*time.Second, "Graceful shutdown timeout (should be less than K8s terminationGracePeriodSeconds)")
 
 	flag.BoolVar(&cfg.PprofEnabled, "pprof-enabled", false, "Enable /debug/pprof/ endpoints on stats server (for debugging only)")
+
+	// Telemetry flags
+	flag.StringVar(&cfg.TelemetryEndpoint, "telemetry-endpoint", "", "OTLP endpoint for self-monitoring telemetry (empty = disabled)")
+	flag.StringVar(&cfg.TelemetryProtocol, "telemetry-protocol", "grpc", "OTLP protocol for self-monitoring (grpc or http)")
+	flag.BoolVar(&cfg.TelemetryInsecure, "telemetry-insecure", true, "Use insecure connection for OTLP telemetry")
 
 	flag.BoolVar(&cfg.ShowHelp, "help", false, "Show help message")
 	flag.BoolVar(&cfg.ShowHelp, "h", false, "Show help message (shorthand)")
@@ -988,6 +1003,10 @@ func applyFlagOverrides(cfg *Config) {
 			}
 		case "limits-log-individual":
 			cfg.LimitsLogIndividual = f.Value.String() == "true"
+		case "limits-stats-threshold":
+			if v, err := strconv.ParseInt(f.Value.String(), 10, 64); err == nil {
+				cfg.LimitsStatsThreshold = v
+			}
 		case "bloom-persistence-enabled":
 			cfg.BloomPersistenceEnabled = f.Value.String() == "true"
 		case "bloom-persistence-path":
@@ -1688,6 +1707,11 @@ EXAMPLES:
         -queue-retry-interval 10s
 
 `)
+}
+
+// GetVersion returns the build version string.
+func GetVersion() string {
+	return version
 }
 
 // PrintVersion prints the version and exits.

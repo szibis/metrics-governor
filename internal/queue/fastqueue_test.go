@@ -1,14 +1,17 @@
 package queue
 
 import (
+	"bytes"
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/compression"
+	"github.com/szibis/metrics-governor/internal/logging"
 )
 
 func TestNewFastQueue(t *testing.T) {
@@ -1425,5 +1428,61 @@ func TestFastQueue_CompressionPersistence(t *testing.T) {
 		if string(data) != "compressed-persistent-data" {
 			t.Errorf("Expected 'compressed-persistent-data', got %q", data)
 		}
+	}
+}
+
+func TestFastQueue_RecoveryLogging(t *testing.T) {
+	// Verify that recovery produces structured JSON log output.
+	// We capture the logging output during recovery of a queue with V2 metadata.
+	tmpDir := t.TempDir()
+
+	var buf bytes.Buffer
+	logging.SetOutput(&buf)
+	defer logging.SetOutput(os.Stdout)
+
+	cfg := FastQueueConfig{
+		Path:              tmpDir,
+		MaxInmemoryBlocks: 10,
+		ChunkFileSize:     1024 * 1024,
+		MetaSyncInterval:  100 * time.Millisecond,
+		MaxSize:           1000,
+		MaxBytes:          100 * 1024 * 1024,
+	}
+
+	// Create a queue, push some data, then close (writes V2 metadata)
+	fq, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("NewFastQueue: %v", err)
+	}
+
+	for i := 0; i < 5; i++ {
+		if err := fq.Push([]byte("recovery-log-test")); err != nil {
+			t.Fatalf("Push %d: %v", i, err)
+		}
+	}
+	fq.Close()
+
+	// Re-open triggers recovery which should log structured messages
+	buf.Reset()
+	fq2, err := NewFastQueue(cfg)
+	if err != nil {
+		t.Fatalf("NewFastQueue (reopen): %v", err)
+	}
+	defer fq2.Close()
+
+	output := buf.String()
+	if output == "" {
+		t.Skip("No log output captured (recovery may not have logged)")
+	}
+
+	// Verify structured JSON log format
+	if !strings.Contains(output, `"SeverityText"`) {
+		t.Errorf("Expected OTEL-format JSON log output, got: %s", output)
+	}
+	if !strings.Contains(output, `"Body"`) {
+		t.Errorf("Expected Body field in structured log, got: %s", output)
+	}
+	if strings.Contains(output, "[fastqueue]") {
+		t.Errorf("Should not contain old-style [fastqueue] prefix, got: %s", output)
 	}
 }

@@ -31,6 +31,7 @@ import (
 	"github.com/szibis/metrics-governor/internal/relabel"
 	"github.com/szibis/metrics-governor/internal/sampling"
 	"github.com/szibis/metrics-governor/internal/stats"
+	"github.com/szibis/metrics-governor/internal/telemetry"
 	"github.com/szibis/metrics-governor/internal/tenant"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
@@ -71,8 +72,39 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Set OTEL-compatible resource attributes for structured logging
+	logging.SetResource(map[string]string{
+		"service.name":    "metrics-governor",
+		"service.version": config.GetVersion(),
+	})
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Initialize OTLP telemetry export (logs + metrics) if configured
+	tel, err := telemetry.Init(ctx, telemetry.Config{
+		Endpoint: cfg.TelemetryEndpoint,
+		Protocol: cfg.TelemetryProtocol,
+		Insecure: cfg.TelemetryInsecure,
+	}, "metrics-governor", config.GetVersion())
+	if err != nil {
+		logging.Error("failed to initialize telemetry", logging.F("error", err.Error()))
+	}
+	if tel != nil {
+		defer func() {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			if err := tel.Shutdown(shutdownCtx); err != nil {
+				logging.Error("telemetry shutdown error", logging.F("error", err.Error()))
+			}
+		}()
+		// Register OTLP log hook so all log entries are also exported via OTLP
+		logging.SetHook(tel.NewLogHook())
+		logging.Info("OTLP telemetry enabled", logging.F(
+			"endpoint", cfg.TelemetryEndpoint,
+			"protocol", cfg.TelemetryProtocol,
+		))
+	}
 
 	// Initialize cardinality tracking configuration
 	cardinalityCfg := cfg.CardinalityConfig()
@@ -243,6 +275,7 @@ func main() {
 		ReloadConfig(cfg *limits.Config)
 		SetDryRun(dryRun bool)
 		DryRun() bool
+		SetStatsThreshold(int64)
 		Stop()
 	}
 	if cfg.LimitsConfig != "" {
@@ -251,10 +284,14 @@ func main() {
 			logging.Fatal("failed to load limits config", logging.F("error", err.Error(), "path", cfg.LimitsConfig))
 		}
 		limitsEnforcer = limits.NewEnforcer(limitsCfg, cfg.LimitsDryRun, cfg.RuleCacheMaxSize)
+		if cfg.LimitsStatsThreshold > 0 {
+			limitsEnforcer.SetStatsThreshold(cfg.LimitsStatsThreshold)
+		}
 		logging.Info("limits enforcer initialized", logging.F(
 			"config", cfg.LimitsConfig,
 			"dry_run", cfg.LimitsDryRun,
 			"rules_count", len(limitsCfg.Rules),
+			"stats_threshold", cfg.LimitsStatsThreshold,
 		))
 	}
 

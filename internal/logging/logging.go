@@ -12,24 +12,46 @@ import (
 type Level string
 
 const (
-	LevelInfo  Level = "info"
-	LevelWarn  Level = "warn"
-	LevelError Level = "error"
-	LevelFatal Level = "fatal"
+	LevelInfo  Level = "INFO"
+	LevelWarn  Level = "WARN"
+	LevelError Level = "ERROR"
+	LevelFatal Level = "FATAL"
 )
 
-// Logger provides JSON structured logging.
-type Logger struct {
-	mu     sync.Mutex
-	output io.Writer
+// severityNumbers maps OTEL severity text to OTEL severity number.
+// See https://opentelemetry.io/docs/specs/otel/logs/data-model/#severity-fields
+var severityNumbers = map[Level]int{
+	LevelInfo:  9,  // INFO
+	LevelWarn:  13, // WARN
+	LevelError: 17, // ERROR
+	LevelFatal: 21, // FATAL
 }
 
-// LogEntry represents a single log entry.
+// SeverityNumber returns the OTEL severity number for a level.
+func SeverityNumber(level Level) int {
+	return severityNumbers[level]
+}
+
+// LogHook is called for every log entry, allowing secondary log sinks
+// (e.g., OTLP log export) without the logging package importing them.
+type LogHook func(level Level, msg string, attrs map[string]interface{})
+
+// Logger provides JSON structured logging in OTEL-compatible format.
+type Logger struct {
+	mu       sync.Mutex
+	output   io.Writer
+	resource map[string]string
+	hook     LogHook
+}
+
+// LogEntry represents a single log entry in OTEL-compatible JSON format.
 type LogEntry struct {
-	Timestamp string                 `json:"timestamp"`
-	Level     Level                  `json:"level"`
-	Message   string                 `json:"message"`
-	Fields    map[string]interface{} `json:"fields,omitempty"`
+	Timestamp      string                 `json:"Timestamp"`
+	SeverityText   string                 `json:"SeverityText"`
+	SeverityNumber int                    `json:"SeverityNumber"`
+	Body           string                 `json:"Body"`
+	Attributes     map[string]interface{} `json:"Attributes,omitempty"`
+	Resource       map[string]string      `json:"Resource,omitempty"`
 }
 
 var defaultLogger = &Logger{output: os.Stdout}
@@ -41,21 +63,46 @@ func SetOutput(w io.Writer) {
 	defaultLogger.output = w
 }
 
-// log writes a structured log entry.
-func (l *Logger) log(level Level, msg string, fields map[string]interface{}) {
+// SetResource sets the OTEL resource attributes (service.name, service.version, etc.)
+// for the default logger. Should be called once at startup.
+func SetResource(resource map[string]string) {
+	defaultLogger.mu.Lock()
+	defer defaultLogger.mu.Unlock()
+	defaultLogger.resource = resource
+}
+
+// SetHook registers a hook that is called for every log entry.
+// Used by the telemetry package to forward logs via OTLP.
+func SetHook(hook LogHook) {
+	defaultLogger.mu.Lock()
+	defer defaultLogger.mu.Unlock()
+	defaultLogger.hook = hook
+}
+
+// log writes a structured log entry in OTEL-compatible JSON format.
+func (l *Logger) log(level Level, msg string, attrs map[string]interface{}) {
 	entry := LogEntry{
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Level:     level,
-		Message:   msg,
-		Fields:    fields,
+		Timestamp:      time.Now().UTC().Format(time.RFC3339),
+		SeverityText:   string(level),
+		SeverityNumber: severityNumbers[level],
+		Body:           msg,
+		Attributes:     attrs,
 	}
 
 	l.mu.Lock()
-	defer l.mu.Unlock()
-
+	if l.resource != nil {
+		entry.Resource = l.resource
+	}
+	hook := l.hook
 	data, _ := json.Marshal(entry)
 	_, _ = l.output.Write(data)
 	_, _ = l.output.Write([]byte("\n"))
+	l.mu.Unlock()
+
+	// Call hook outside the lock to avoid deadlocks
+	if hook != nil {
+		hook(level, msg, attrs)
+	}
 }
 
 // Info logs an info level message.

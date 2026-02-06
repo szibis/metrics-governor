@@ -187,11 +187,15 @@ type QuotaEnforcer struct {
 
 // NewQuotaEnforcer creates a QuotaEnforcer from config.
 func NewQuotaEnforcer(cfg *QuotasConfig) *QuotaEnforcer {
-	return &QuotaEnforcer{
+	qe := &QuotaEnforcer{
 		config:  cfg,
 		tenants: make(map[string]*tenantWindow),
 		global:  &tenantWindow{cardinality: make(map[string]struct{})},
 	}
+	// Initialize reload timestamp to now so "time since reload" metrics
+	// don't report ~56 years (Unix epoch default of 0).
+	qe.lastReloadUTC.Store(time.Now().UTC().Unix())
+	return qe
 }
 
 // ReloadConfig swaps the quotas configuration.

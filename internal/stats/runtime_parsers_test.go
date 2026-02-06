@@ -181,7 +181,7 @@ Max cpu time              unlimited            unlimited            seconds
 	}
 }
 
-// TestWriteDiskIO tests /proc/self/io parsing — only real disk I/O (read_bytes/write_bytes).
+// TestWriteDiskIO tests /proc/self/io parsing — disk I/O, VFS bytes, and syscall counts.
 func TestWriteDiskIO(t *testing.T) {
 	data := `rchar: 123456789
 wchar: 987654321
@@ -197,13 +197,17 @@ canceled_write_bytes: 0
 
 	body := w.Body.String()
 
-	// Only real disk I/O metrics should be emitted
+	// All I/O metrics should be emitted
 	expected := []struct {
 		metric string
 		value  string
 	}{
 		{"metrics_governor_disk_read_bytes_total", "4096000"},
 		{"metrics_governor_disk_write_bytes_total", "8192000"},
+		{"metrics_governor_io_read_ops_total", "50000"},
+		{"metrics_governor_io_write_ops_total", "30000"},
+		{"metrics_governor_io_vfs_read_bytes_total", "123456789"},
+		{"metrics_governor_io_vfs_write_bytes_total", "987654321"},
 	}
 
 	for _, exp := range expected {
@@ -213,7 +217,7 @@ canceled_write_bytes: 0
 		}
 	}
 
-	// Verify both are counters
+	// Verify all are counters
 	for _, exp := range expected {
 		typeComment := "# TYPE " + exp.metric + " counter"
 		if !strings.Contains(body, typeComment) {
@@ -221,17 +225,9 @@ canceled_write_bytes: 0
 		}
 	}
 
-	// VFS-level and syscall metrics should NOT be emitted
-	excluded := []string{
-		"process_io_read_chars_total",
-		"process_io_write_chars_total",
-		"process_io_read_syscalls_total",
-		"process_io_write_syscalls_total",
-	}
-	for _, excl := range excluded {
-		if strings.Contains(body, excl) {
-			t.Errorf("Should not emit VFS/syscall metric %q", excl)
-		}
+	// canceled_write_bytes should NOT be emitted
+	if strings.Contains(body, "canceled_write_bytes") {
+		t.Error("Should not emit canceled_write_bytes metric")
 	}
 }
 
@@ -248,13 +244,39 @@ read_bytes: 200
 
 	body := w.Body.String()
 
-	// Only read_bytes should be present (real disk I/O)
+	// read_bytes should be present
 	if !strings.Contains(body, "metrics_governor_disk_read_bytes_total 200") {
 		t.Error("Expected disk_read_bytes metric")
 	}
-	// rchar/wchar should NOT be emitted (VFS-level, excluded)
-	if strings.Contains(body, "process_io_read_chars_total") {
-		t.Error("Should not emit VFS-level rchar metric")
+	// rchar should be present (valid number)
+	if !strings.Contains(body, "metrics_governor_io_vfs_read_bytes_total 100") {
+		t.Error("Expected io_vfs_read_bytes metric for rchar=100")
+	}
+	// wchar should NOT be present (non-numeric value)
+	if strings.Contains(body, "metrics_governor_io_vfs_write_bytes_total") {
+		t.Error("wchar with non-numeric value should not produce metric")
+	}
+}
+
+// TestWriteDiskIO_MalformedData tests disk I/O with various malformed inputs.
+func TestWriteDiskIO_MalformedData(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+	}{
+		{"missing colons", "read_bytes 4096\nwrite_bytes 8192\n"},
+		{"non-numeric values", "read_bytes: abc\nwrite_bytes: def\n"},
+		{"empty values", "read_bytes: \nwrite_bytes: \n"},
+		{"only whitespace", "   \n  \n"},
+		{"extra colons", "read_bytes: 100: extra\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			writeDiskIO(w, tt.data)
+			// Should not panic; output depends on parsing
+		})
 	}
 }
 

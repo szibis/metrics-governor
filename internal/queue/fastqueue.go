@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/klauspost/compress/s2"
 	"github.com/szibis/metrics-governor/internal/compression"
+	"github.com/szibis/metrics-governor/internal/logging"
 )
 
 const (
@@ -407,11 +407,11 @@ func (fq *FastQueue) recover() error {
 			// Fast path: use persisted counts (O(1) recovery)
 			fq.activeCount.Store(meta.EntryCount)
 			fq.totalBytes.Store(meta.TotalBytes)
-			log.Printf("[fastqueue] recovered %d entries (%d bytes) from metadata", meta.EntryCount, meta.TotalBytes)
+			logging.Info("fastqueue recovered entries from metadata", logging.F("entries", meta.EntryCount, "bytes", meta.TotalBytes))
 		} else {
 			// Slow path: count entries by scanning (legacy metadata)
 			// Use timeout to prevent blocking startup indefinitely
-			log.Printf("[fastqueue] legacy metadata detected, scanning queue (this may take a while)...")
+			logging.Warn("fastqueue legacy metadata detected, scanning queue")
 			start := time.Now()
 
 			done := make(chan struct{})
@@ -431,10 +431,10 @@ func (fq *FastQueue) recover() error {
 				}
 				fq.activeCount.Store(int64(count))
 				fq.totalBytes.Store(totalDataBytes)
-				log.Printf("[fastqueue] recovered %d entries (%d bytes) in %v", count, totalDataBytes, time.Since(start))
+				logging.Info("fastqueue recovery complete", logging.F("entries", count, "bytes", totalDataBytes, "duration", time.Since(start).String()))
 			case <-time.After(recoveryTimeout):
 				// Timeout - discard queue data to allow startup
-				log.Printf("[fastqueue] recovery timeout after %v, discarding queue data", recoveryTimeout)
+				logging.Warn("fastqueue recovery timeout, discarding queue data", logging.F("timeout", recoveryTimeout.String()))
 				fq.readerOffset = 0
 				fq.writerOffset = 0
 				fq.pendingBytes = 0

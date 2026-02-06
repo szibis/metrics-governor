@@ -333,6 +333,112 @@ The queue provides durability for export failures with memory or disk-backed sto
 | `-string-interning` | `true` | Enable string interning for label deduplication |
 | `-intern-max-value-length` | `64` | Max length for label value interning |
 
+### Telemetry Options (OTLP Self-Monitoring)
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-telemetry-endpoint` | | OTLP endpoint for self-monitoring (empty = disabled) |
+| `-telemetry-protocol` | `grpc` | OTLP protocol: `grpc` or `http` |
+| `-telemetry-insecure` | `true` | Use insecure connection for OTLP telemetry |
+
+When `-telemetry-endpoint` is set, metrics-governor exports its own logs (as OTLP log records) and Prometheus metrics (bridged to OTLP metric format) to the specified endpoint.
+
+### HTTP Client Tuning (Exporter)
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-exporter-max-idle-conns` | `100` | Maximum idle connections across all hosts |
+| `-exporter-max-idle-conns-per-host` | `100` | Maximum idle connections per host |
+| `-exporter-max-conns-per-host` | `0` | Maximum total connections per host (0 = unlimited) |
+| `-exporter-idle-conn-timeout` | `90s` | Idle connection timeout |
+| `-exporter-disable-keep-alives` | `false` | Disable HTTP keep-alives |
+| `-exporter-force-http2` | `false` | Force HTTP/2 for non-TLS connections |
+| `-exporter-http2-read-idle-timeout` | `0` | HTTP/2 read idle timeout |
+| `-exporter-http2-ping-timeout` | `0` | HTTP/2 ping timeout |
+
+### Compression Options (Exporter)
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-exporter-compression` | `none` | Compression: `none`, `gzip`, `zstd`, `snappy`, `zlib`, `deflate` |
+| `-exporter-compression-level` | `0` | Compression level (algorithm-specific) |
+
+### Receiver HTTP Server Tuning
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-receiver-read-timeout` | `0` | HTTP server read timeout |
+| `-receiver-read-header-timeout` | `1m` | HTTP server read header timeout |
+| `-receiver-write-timeout` | `30s` | HTTP server write timeout |
+| `-receiver-idle-timeout` | `1m` | HTTP server idle timeout |
+| `-receiver-keep-alives-enabled` | `true` | Enable HTTP keep-alives for receiver |
+| `-prw-receiver-max-body-size` | `0` | Maximum PRW request body size (0 = no limit) |
+| `-prw-receiver-read-timeout` | `1m` | PRW receiver read timeout |
+| `-prw-receiver-write-timeout` | `30s` | PRW receiver write timeout |
+
+### PRW Queue Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-prw-queue-enabled` | `false` | Enable persistent retry queue for PRW |
+| `-prw-queue-path` | `./prw-queue` | PRW queue storage directory |
+| `-prw-queue-max-size` | `10000` | Max PRW queue entries |
+| `-prw-queue-max-bytes` | `1073741824` | Max PRW queue size in bytes (1GB) |
+| `-prw-queue-retry-interval` | `5s` | PRW queue retry interval |
+| `-prw-queue-max-retry-delay` | `5m` | Maximum PRW retry delay |
+
+### PRW Limits Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-prw-limits-enabled` | `false` | Enable limits for PRW pipeline |
+| `-prw-limits-config` | | Path to PRW limits configuration YAML |
+| `-prw-limits-dry-run` | `true` | PRW limits dry run mode |
+
+### Cardinality Tracking Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-cardinality-mode` | `bloom` | Tracking mode: `bloom`, `hll`, `exact`, or `hybrid` |
+| `-cardinality-expected-items` | `100000` | Expected unique items per tracker (Bloom sizing) |
+| `-cardinality-fp-rate` | `0.01` | Bloom filter false positive rate (1% = 0.01) |
+| `-cardinality-hll-threshold` | `10000` | Hybrid: cardinality at which Bloom switches to HLL |
+| `-cardinality-hll-precision` | `14` | HLL precision (registers = 2^precision, 14 = ~12 KB) |
+
+### Bloom Persistence Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-bloom-persistence-enabled` | `false` | Enable bloom filter state persistence |
+| `-bloom-persistence-path` | `./bloom-state` | Directory for persistence files |
+| `-bloom-persistence-save-interval` | `30s` | Interval between periodic saves |
+| `-bloom-persistence-state-ttl` | `1h` | Unused tracker cleanup TTL |
+| `-bloom-persistence-cleanup-interval` | `5m` | Interval between cleanup runs |
+| `-bloom-persistence-max-size` | `500MB` | Maximum disk space for bloom state |
+| `-bloom-persistence-max-memory` | `256MB` | Maximum memory for in-memory bloom filters |
+| `-bloom-persistence-compression` | `true` | Enable gzip compression for state files |
+| `-bloom-persistence-compression-level` | `1` | Gzip compression level (1=fast, 9=best) |
+
+### Stats Options (Extended)
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-stats-log-interval` | `10s` | Operational stats log interval (0 = disabled) |
+
+### Limits Options (Extended)
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-limits-log-interval` | `10s` | Limits enforcement summary log interval |
+| `-limits-log-individual` | `false` | Log individual limit violations |
+| `-rule-cache-max-size` | `10000` | Maximum entries in rule matching LRU cache |
+
+### Shutdown
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-shutdown-timeout` | `30s` | Graceful shutdown timeout |
+
 ### General
 
 | Flag | Description |

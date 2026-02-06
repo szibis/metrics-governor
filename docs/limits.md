@@ -301,6 +301,127 @@ rate(metrics_governor_rule_cache_hits_total[5m]) /
 
 ---
 
+## Cardinality Tracking Modes
+
+Limits enforcement relies on cardinality tracking to detect when a rule exceeds its `max_cardinality` threshold. The accuracy of enforcement depends on which tracking mode is active.
+
+| Mode | Accuracy | Memory @ 1M series | Membership Test | Best For |
+|------|----------|---------------------|-----------------|----------|
+| **Bloom** (default) | ~99% (configurable FPR) | ~1.2 MB | Yes | Most deployments |
+| **HLL** | ~97-99% (estimator) | ~12 KB (constant) | No | Very high cardinality (10M+) |
+| **Hybrid** | Bloom then HLL | Bloom initially, then ~12 KB | Yes (Bloom phase only) | Unknown/variable cardinality |
+| **Exact** | 100% | ~75 MB | Yes | Development/testing |
+
+**Impact on limits enforcement:**
+- **Bloom/Exact/Hybrid (Bloom phase)**: Membership testing works — the enforcer can determine if a specific series was already counted, enabling precise adaptive limiting.
+- **HLL/Hybrid (HLL phase)**: No membership testing — `TestOnly()` always returns `false`. The enforcer still tracks cardinality counts but cannot test individual series membership. Adaptive limiting still works by tracking group-level counts.
+
+### Configuration with Limits
+
+```yaml
+# Recommended: Hybrid mode with limits
+cardinality:
+  mode: hybrid
+  hll_threshold: 10000
+  expected_items: 100000
+  fp_rate: 0.01
+```
+
+```bash
+metrics-governor \
+  -limits-config limits.yaml \
+  -cardinality-mode hybrid \
+  -cardinality-expected-items 100000 \
+  -cardinality-fp-rate 0.01 \
+  -cardinality-hll-threshold 10000
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-cardinality-mode` | `bloom` | Tracking mode: `bloom`, `hll`, `exact`, or `hybrid` |
+| `-cardinality-expected-items` | `100000` | Expected unique items per tracker (Bloom sizing) |
+| `-cardinality-fp-rate` | `0.01` | Bloom filter false positive rate |
+| `-cardinality-hll-threshold` | `10000` | Hybrid: cardinality at which Bloom switches to HLL |
+| `-cardinality-hll-precision` | `14` | HLL precision (14 = ~12 KB) |
+
+For full details on each tracking mode, see **[Cardinality Tracking](cardinality-tracking.md)**.
+
+---
+
+## Per-Group Stats Threshold
+
+In high-cardinality environments with thousands of groups per rule, the `/metrics` endpoint can produce very large output from per-group metrics (`metrics_governor_rule_group_datapoints`, `metrics_governor_rule_group_cardinality`, `metrics_governor_tracker_mode`, `metrics_governor_tracker_sample_rate`). The stats threshold filters out low-activity groups from reporting to reduce scrape size.
+
+**Key design**: The threshold only affects *reporting* — enforcement always sees all groups. Global and per-rule aggregates are always reported regardless of threshold.
+
+### Configuration
+
+```bash
+# Only report per-group stats for groups with >= 100 datapoints or cardinality
+metrics-governor -limits-stats-threshold=100
+```
+
+```yaml
+limits:
+  stats_threshold: 100
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-limits-stats-threshold` | `0` | Minimum datapoints or cardinality for per-group stats reporting. `0` = report all groups. |
+
+### What Gets Filtered
+
+| Metric | Filtered by threshold? | Notes |
+|--------|:----------------------:|-------|
+| `metrics_governor_rule_group_datapoints` | Yes | Per-group datapoints |
+| `metrics_governor_rule_group_cardinality` | Yes | Per-group cardinality |
+| `metrics_governor_tracker_mode` | Yes | Per-group tracker mode |
+| `metrics_governor_tracker_sample_rate` | Yes | Per-group HLL sample rate |
+| Violation log entries | Yes | Log noise reduction for low-traffic groups |
+| `metrics_governor_rule_current_datapoints` | No | Per-rule aggregate always reported |
+| `metrics_governor_rule_current_cardinality` | No | Per-rule aggregate always reported |
+| `metrics_governor_limit_*` | No | Violation counters always reported |
+| `metrics_governor_dropped_group_info` | No | Enforcement decisions always reported |
+| `metrics_governor_limits_stats_threshold` | No | Exposes current config value |
+
+A group is reported if **either** its datapoints **or** its cardinality meets the threshold. This ensures groups that are notable by either measure are visible.
+
+### Performance Impact
+
+Benchmark with 1,000 groups (500 above threshold, 500 below):
+
+| Metric | No threshold | Threshold=5 | Improvement |
+|--------|:----------:|:-----------:|:-----------:|
+| Time/op | ~345 µs | ~192 µs | **44%** |
+| Bytes/op | 312 KB | 159 KB | **49%** |
+| Allocs/op | 2,756 | 1,403 | **49%** |
+
+For production deployments with 10,000+ groups, the savings scale proportionally. A threshold of 50-100 typically filters 80-90% of idle groups while preserving visibility into active ones.
+
+### Recommended Settings
+
+| Deployment | Threshold | Rationale |
+|-----------|:---------:|-----------|
+| Development/testing | `0` | Full visibility for debugging |
+| Small production (<100 groups) | `0` | Overhead is negligible |
+| Medium production (100-1K groups) | `10-50` | Filter idle/test services |
+| Large production (1K-10K groups) | `50-100` | Significant scrape reduction |
+| Very large (10K+ groups) | `100-500` | Essential for scrape stability |
+
+### Monitoring
+
+```promql
+# Current threshold value
+metrics_governor_limits_stats_threshold
+
+# How many groups are being tracked vs reported
+# (compare rule_groups_total with count of rule_group_datapoints lines)
+metrics_governor_rule_groups_total{rule="my-rule"}
+```
+
+---
+
 ## Prometheus Metrics
 
 When limits are enabled, additional metrics are exposed:

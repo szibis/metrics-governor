@@ -28,16 +28,16 @@ func TestLoggerLogWithFields(t *testing.T) {
 		t.Fatalf("Failed to parse log output: %v", err)
 	}
 
-	if entry.Level != LevelInfo {
-		t.Errorf("Expected level 'info', got '%s'", entry.Level)
+	if entry.SeverityText != string(LevelInfo) {
+		t.Errorf("Expected SeverityText 'INFO', got '%s'", entry.SeverityText)
 	}
 
-	if entry.Message != "test message" {
-		t.Errorf("Expected message 'test message', got '%s'", entry.Message)
+	if entry.Body != "test message" {
+		t.Errorf("Expected Body 'test message', got '%s'", entry.Body)
 	}
 
-	if entry.Fields["key1"] != "value1" {
-		t.Errorf("Expected field key1='value1', got '%v'", entry.Fields["key1"])
+	if entry.Attributes["key1"] != "value1" {
+		t.Errorf("Expected attribute key1='value1', got '%v'", entry.Attributes["key1"])
 	}
 }
 
@@ -54,8 +54,8 @@ func TestLoggerWarn(t *testing.T) {
 		t.Fatalf("Failed to parse log output: %v", err)
 	}
 
-	if entry.Level != LevelWarn {
-		t.Errorf("Expected level 'warn', got '%s'", entry.Level)
+	if entry.SeverityText != string(LevelWarn) {
+		t.Errorf("Expected SeverityText 'WARN', got '%s'", entry.SeverityText)
 	}
 }
 
@@ -72,8 +72,8 @@ func TestLoggerError(t *testing.T) {
 		t.Fatalf("Failed to parse log output: %v", err)
 	}
 
-	if entry.Level != LevelError {
-		t.Errorf("Expected level 'error', got '%s'", entry.Level)
+	if entry.SeverityText != string(LevelError) {
+		t.Errorf("Expected SeverityText 'ERROR', got '%s'", entry.SeverityText)
 	}
 }
 
@@ -128,11 +128,11 @@ func TestLoggerInfoNoFields(t *testing.T) {
 		t.Fatalf("Failed to parse log output: %v", err)
 	}
 
-	if entry.Message != "simple message" {
-		t.Errorf("Expected message 'simple message', got '%s'", entry.Message)
+	if entry.Body != "simple message" {
+		t.Errorf("Expected Body 'simple message', got '%s'", entry.Body)
 	}
-	if entry.Fields != nil && len(entry.Fields) > 0 {
-		t.Error("Expected no fields")
+	if entry.Attributes != nil && len(entry.Attributes) > 0 {
+		t.Error("Expected no Attributes")
 	}
 }
 
@@ -177,7 +177,7 @@ func TestLogEntryTimestamp(t *testing.T) {
 
 	// Timestamp should be in RFC3339 format
 	if entry.Timestamp == "" {
-		t.Error("Expected timestamp to be present")
+		t.Error("Expected Timestamp to be present")
 	}
 }
 

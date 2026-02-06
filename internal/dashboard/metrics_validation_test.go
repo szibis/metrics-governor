@@ -133,6 +133,7 @@ var knownMetrics = []string{
 	"metrics_governor_rule_cardinality_memory_bytes",
 	"metrics_governor_limits_cardinality_memory_bytes",
 	"metrics_governor_limits_cardinality_trackers_total",
+	"metrics_governor_limits_stats_threshold",
 
 	// Cardinality tracking (stats.go, limits/enforcer.go)
 	"metrics_governor_cardinality_mode",
@@ -237,10 +238,14 @@ var knownMetrics = []string{
 	"metrics_governor_process_max_fds",
 
 	// Disk I/O metrics (stats/runtime.go) - Linux only
-	// Only real storage-layer I/O (read_bytes/write_bytes from /proc/self/io).
-	// VFS-level rchar/wchar and syscall counts are excluded — they mix disk + network.
+	// Storage-layer I/O (read_bytes/write_bytes from /proc/self/io).
 	"metrics_governor_disk_read_bytes_total",
 	"metrics_governor_disk_write_bytes_total",
+	// I/O syscall counts and VFS-level bytes (rchar/wchar/syscr/syscw from /proc/self/io)
+	"metrics_governor_io_read_ops_total",
+	"metrics_governor_io_write_ops_total",
+	"metrics_governor_io_vfs_read_bytes_total",
+	"metrics_governor_io_vfs_write_bytes_total",
 
 	// Network metrics (stats/runtime.go) - Linux only
 	"metrics_governor_network_receive_bytes_total",
@@ -481,6 +486,7 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_gc_",
 		"metrics_governor_psi_",
 		"metrics_governor_disk_",
+		"metrics_governor_io_",
 		"metrics_governor_network",
 	}
 

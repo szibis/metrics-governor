@@ -3428,6 +3428,188 @@
               }
             ]
           },
+          "unit": "ops"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 88
+      },
+      "id": 215,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "title": "Disk I/O Operations",
+      "description": "Read/write system call counts per second (from /proc/self/io syscr/syscw)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(metrics_governor_io_read_ops_total[1m])",
+          "legendFormat": "Read Ops"
+        },
+        {
+          "expr": "rate(metrics_governor_io_write_ops_total[1m])",
+          "legendFormat": "Write Ops"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "Bps"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 88
+      },
+      "id": 216,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "title": "VFS I/O Throughput",
+      "description": "VFS-level read/write bytes per second (includes cache, sockets, pipes; from /proc/self/io rchar/wchar)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(metrics_governor_io_vfs_read_bytes_total[1m])",
+          "legendFormat": "VFS Read"
+        },
+        {
+          "expr": "rate(metrics_governor_io_vfs_write_bytes_total[1m])",
+          "legendFormat": "VFS Write"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
           "unit": "pps"
         },
         "overrides": []
@@ -3436,7 +3618,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 88
+        "y": 96
       },
       "id": 60,
       "options": {
@@ -3504,7 +3686,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 96
+        "y": 104
       },
       "id": 62,
       "options": {
@@ -3563,7 +3745,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 96
+        "y": 104
       },
       "id": 63,
       "options": {
@@ -3622,7 +3804,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 96
+        "y": 104
       },
       "id": 64,
       "options": {
@@ -3681,7 +3863,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 96
+        "y": 104
       },
       "id": 65,
       "options": {
@@ -3779,7 +3961,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 100
+        "y": 108
       },
       "id": 66,
       "options": {
@@ -3895,7 +4077,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 100
+        "y": 108
       },
       "id": 67,
       "options": {
@@ -3941,7 +4123,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 108
+        "y": 116
       },
       "id": 106,
       "panels": [],
@@ -3980,7 +4162,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 109
+        "y": 117
       },
       "id": 107,
       "options": {
@@ -4039,7 +4221,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 109
+        "y": 117
       },
       "id": 108,
       "options": {
@@ -4106,7 +4288,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 109
+        "y": 117
       },
       "id": 109,
       "options": {
@@ -4165,7 +4347,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 109
+        "y": 117
       },
       "id": 110,
       "options": {
@@ -4255,7 +4437,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 113
+        "y": 121
       },
       "id": 111,
       "options": {
@@ -4350,7 +4532,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 113
+        "y": 121
       },
       "id": 112,
       "options": {
@@ -4441,7 +4623,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 121
+        "y": 129
       },
       "id": 113,
       "options": {
@@ -4541,7 +4723,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 121
+        "y": 129
       },
       "id": 114,
       "options": {
@@ -4608,7 +4790,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 129
+        "y": 137
       },
       "id": 115,
       "options": {
@@ -4658,7 +4840,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 137
+        "y": 145
       },
       "id": 101,
       "panels": [],
@@ -4724,7 +4906,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 138
+        "y": 146
       },
       "id": 10,
       "options": {
@@ -4823,7 +5005,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 138
+        "y": 146
       },
       "id": 11,
       "options": {
@@ -4900,7 +5082,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 146
+        "y": 154
       },
       "id": 12,
       "options": {
@@ -4959,7 +5141,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 146
+        "y": 154
       },
       "id": 13,
       "options": {
@@ -5018,7 +5200,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 146
+        "y": 154
       },
       "id": 14,
       "options": {
@@ -5085,7 +5267,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 146
+        "y": 154
       },
       "id": 15,
       "options": {
@@ -5164,7 +5346,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 150
+        "y": 158
       },
       "id": 200,
       "options": {
@@ -5232,7 +5414,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 150
+        "y": 158
       },
       "id": 201,
       "options": {
@@ -5291,7 +5473,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 150
+        "y": 158
       },
       "id": 202,
       "options": {
@@ -5423,7 +5605,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 154
+        "y": 162
       },
       "id": 203,
       "options": {
@@ -5522,7 +5704,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 154
+        "y": 162
       },
       "id": 204,
       "options": {
@@ -5568,7 +5750,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 162
+        "y": 170
       },
       "id": 102,
       "panels": [],
@@ -5634,7 +5816,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 151
+        "y": 159
       },
       "id": 20,
       "options": {
@@ -5733,7 +5915,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 151
+        "y": 159
       },
       "id": 21,
       "options": {
@@ -5801,7 +5983,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 159
+        "y": 167
       },
       "id": 22,
       "options": {
@@ -5860,7 +6042,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 159
+        "y": 167
       },
       "id": 23,
       "options": {
@@ -5927,7 +6109,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 159
+        "y": 167
       },
       "id": 24,
       "options": {
@@ -6006,7 +6188,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 159
+        "y": 167
       },
       "id": 25,
       "options": {

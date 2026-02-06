@@ -363,10 +363,10 @@ func (r *RuntimeStats) writeDiskIOMetrics(w http.ResponseWriter) {
 	writeDiskIO(w, string(data))
 }
 
-// writeDiskIO parses /proc/self/io data and writes real disk I/O metrics.
-// Only read_bytes and write_bytes are emitted — these represent actual storage-layer I/O.
-// rchar/wchar (VFS-level, includes cache/sockets/pipes) and syscr/syscw (syscall counts)
-// are intentionally excluded because they mix disk and network I/O.
+// writeDiskIO parses /proc/self/io data and writes I/O metrics at multiple layers:
+// - read_bytes/write_bytes: actual storage-layer I/O (bypasses page cache)
+// - rchar/wchar: VFS-level bytes (includes cache, sockets, pipes)
+// - syscr/syscw: total read/write system call counts
 func writeDiskIO(w http.ResponseWriter, data string) {
 	lines := strings.Split(data, "\n")
 	for _, line := range lines {
@@ -389,6 +389,22 @@ func writeDiskIO(w http.ResponseWriter, data string) {
 			fmt.Fprintf(w, "# HELP metrics_governor_disk_write_bytes_total Actual bytes written to storage by the process\n")
 			fmt.Fprintf(w, "# TYPE metrics_governor_disk_write_bytes_total counter\n")
 			fmt.Fprintf(w, "metrics_governor_disk_write_bytes_total %d\n", value)
+		case "syscr":
+			fmt.Fprintf(w, "# HELP metrics_governor_io_read_ops_total Total read system calls by the process\n")
+			fmt.Fprintf(w, "# TYPE metrics_governor_io_read_ops_total counter\n")
+			fmt.Fprintf(w, "metrics_governor_io_read_ops_total %d\n", value)
+		case "syscw":
+			fmt.Fprintf(w, "# HELP metrics_governor_io_write_ops_total Total write system calls by the process\n")
+			fmt.Fprintf(w, "# TYPE metrics_governor_io_write_ops_total counter\n")
+			fmt.Fprintf(w, "metrics_governor_io_write_ops_total %d\n", value)
+		case "rchar":
+			fmt.Fprintf(w, "# HELP metrics_governor_io_vfs_read_bytes_total VFS-level bytes read (includes cache, sockets, pipes)\n")
+			fmt.Fprintf(w, "# TYPE metrics_governor_io_vfs_read_bytes_total counter\n")
+			fmt.Fprintf(w, "metrics_governor_io_vfs_read_bytes_total %d\n", value)
+		case "wchar":
+			fmt.Fprintf(w, "# HELP metrics_governor_io_vfs_write_bytes_total VFS-level bytes written (includes cache, sockets, pipes)\n")
+			fmt.Fprintf(w, "# TYPE metrics_governor_io_vfs_write_bytes_total counter\n")
+			fmt.Fprintf(w, "metrics_governor_io_vfs_write_bytes_total %d\n", value)
 		}
 	}
 }
