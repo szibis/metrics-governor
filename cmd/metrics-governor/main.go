@@ -29,6 +29,7 @@ import (
 	"github.com/szibis/metrics-governor/internal/queue"
 	"github.com/szibis/metrics-governor/internal/receiver"
 	"github.com/szibis/metrics-governor/internal/relabel"
+	"github.com/szibis/metrics-governor/internal/sampling"
 	"github.com/szibis/metrics-governor/internal/stats"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
@@ -273,6 +274,25 @@ func main() {
 		))
 	}
 
+	// Create sampler (if configured)
+	var sampler *sampling.Sampler
+	if cfg.SamplingConfig != "" {
+		samplingCfg, err := sampling.LoadFile(cfg.SamplingConfig)
+		if err != nil {
+			logging.Fatal("failed to load sampling config", logging.F("error", err.Error(), "path", cfg.SamplingConfig))
+		}
+		sampler, err = sampling.New(samplingCfg)
+		if err != nil {
+			logging.Fatal("failed to create sampler", logging.F("error", err.Error()))
+		}
+		logging.Info("sampler initialized", logging.F(
+			"config", cfg.SamplingConfig,
+			"default_rate", samplingCfg.DefaultRate,
+			"strategy", string(samplingCfg.Strategy),
+			"rules_count", len(samplingCfg.Rules),
+		))
+	}
+
 	// Create log aggregator for buffer (aggregates logs per 10s interval)
 	bufferLogAggregator := limits.NewLogAggregator(10 * time.Second)
 
@@ -299,6 +319,11 @@ func main() {
 	// Wire relabeler into export pipeline
 	if relabeler != nil {
 		bufOpts = append(bufOpts, buffer.WithRelabeler(relabeler))
+	}
+
+	// Wire sampler into buffer pipeline (sampling before limits)
+	if sampler != nil {
+		bufOpts = append(bufOpts, buffer.WithSampler(sampler))
 	}
 
 	// Create buffer with stats collector, limits enforcer, and log aggregator
@@ -462,13 +487,14 @@ func main() {
 		"receiver_auth", cfg.ReceiverAuthEnabled,
 		"limits_enabled", cfg.LimitsConfig != "",
 		"relabel_enabled", cfg.RelabelConfig != "",
+		"sampling_enabled", cfg.SamplingConfig != "",
 		"queue_enabled", cfg.QueueEnabled,
 		"sharding_enabled", cfg.ShardingEnabled,
 		"prw_enabled", cfg.PRWListenAddr != "",
 	))
 
 	// Set up SIGHUP handler for config reload
-	// Reloads: limits rules, limits dry-run toggle, relabel rules
+	// Reloads: limits rules, limits dry-run toggle, relabel rules, sampling rules
 	// Does NOT reload: receiver, exporter, buffer, queue, sharding settings (require restart)
 	{
 		sighupChan := make(chan os.Signal, 1)
@@ -500,6 +526,21 @@ func main() {
 							logging.Error("relabel config apply failed, keeping current config", logging.F("error", err.Error()))
 						} else {
 							logging.Info("relabel config reloaded successfully", logging.F("rules_count", len(newRelabelConfigs)))
+						}
+					}
+				}
+
+				// Reload sampling config
+				if cfg.SamplingConfig != "" && sampler != nil {
+					logging.Info("reloading sampling config", logging.F("path", cfg.SamplingConfig))
+					newSamplingCfg, err := sampling.LoadFile(cfg.SamplingConfig)
+					if err != nil {
+						logging.Error("sampling config reload failed, keeping current config", logging.F("error", err.Error(), "path", cfg.SamplingConfig))
+					} else {
+						if err := sampler.ReloadConfig(newSamplingCfg); err != nil {
+							logging.Error("sampling config apply failed, keeping current config", logging.F("error", err.Error()))
+						} else {
+							logging.Info("sampling config reloaded successfully", logging.F("rules_count", len(newSamplingCfg.Rules)))
 						}
 					}
 				}

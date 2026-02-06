@@ -100,6 +100,9 @@ type Config struct {
 	// Relabeling settings
 	RelabelConfig string
 
+	// Sampling settings
+	SamplingConfig string
+
 	// Queue settings
 	QueueType              string // "memory" or "disk"
 	QueueEnabled           bool
@@ -368,6 +371,9 @@ func ParseFlags() *Config {
 
 	// Relabeling flags
 	flag.StringVar(&cfg.RelabelConfig, "relabel-config", "", "Path to relabel configuration YAML file")
+
+	// Sampling flags
+	flag.StringVar(&cfg.SamplingConfig, "sampling-config", "", "Path to sampling configuration YAML file")
 
 	// Queue flags
 	flag.BoolVar(&cfg.QueueEnabled, "queue-enabled", true, "Enable queue for export retries (default: true)")
@@ -683,6 +689,8 @@ func applyFlagOverrides(cfg *Config) {
 			}
 		case "relabel-config":
 			cfg.RelabelConfig = f.Value.String()
+		case "sampling-config":
+			cfg.SamplingConfig = f.Value.String()
 		case "queue-enabled":
 			cfg.QueueEnabled = f.Value.String() == "true"
 		case "queue-type":
@@ -1455,6 +1463,9 @@ OPTIONS:
     Relabeling:
         -relabel-config <path>           Path to relabel configuration YAML file (Prometheus-compatible)
 
+    Sampling:
+        -sampling-config <path>          Path to sampling configuration YAML file
+
     Cardinality Tracking:
         -cardinality-mode <mode>         Tracking mode: bloom, exact, or hybrid (auto Bloom→HLL) (default: bloom)
         -cardinality-expected-items <n>  Expected unique items per tracker for Bloom sizing (default: 100000)
@@ -1646,6 +1657,7 @@ func DefaultConfig() *Config {
 		LimitsDryRun:                    true,
 		RuleCacheMaxSize:                10000,
 		RelabelConfig:                   "",
+		SamplingConfig:                  "",
 		QueueType:                       "memory",
 		QueueEnabled:                    true,
 		QueuePath:                       "./queue",

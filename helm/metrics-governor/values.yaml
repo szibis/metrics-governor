@@ -315,6 +315,18 @@ relabeling:
   config: |
     relabel_configs: []
 
+# -- Sampling configuration (creates ConfigMap)
+sampling:
+  # -- Enable metric sampling
+  enabled: false
+  # -- Use existing ConfigMap for sampling
+  existingConfigMap: ""
+  # -- Sampling configuration content
+  config: |
+    default_rate: 1.0
+    strategy: head
+    rules: []
+
 service:
   # -- Enable service
   enabled: true
