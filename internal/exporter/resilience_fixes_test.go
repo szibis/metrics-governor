@@ -175,13 +175,11 @@ func TestCBGate_MultipleExportsWhileOpen(t *testing.T) {
 // =============================================================================
 // Test 2: CAS Half-Open Transition
 // When many goroutines call AllowRequest() simultaneously after the reset
-// timeout, the CAS(Open->HalfOpen) should fire exactly ONCE. Goroutines that
-// read Open state and lose the CAS get false. The CAS winner and goroutines
-// that subsequently read HalfOpen get true.
+// timeout, the CAS(Open->HalfOpen) should fire exactly ONCE. The CAS winner
+// becomes the single half-open probe; all other goroutines are rejected.
 //
 // The key invariant: the state transitions Open->HalfOpen exactly once, and
-// goroutines that observe the Open state and fail the CAS are rejected (they
-// don't get to send a probe request to the recovering backend).
+// only the CAS winner gets to send a probe request to the recovering backend.
 // =============================================================================
 
 func TestCAS_HalfOpenTransition_OnlyOneCASWinner(t *testing.T) {
@@ -238,10 +236,10 @@ func TestCAS_HalfOpenTransition_OnlyOneCASWinner(t *testing.T) {
 
 func TestCAS_HalfOpenTransition_ViaAllowRequest(t *testing.T) {
 	// Test AllowRequest() integration: after reset timeout, calling AllowRequest
-	// transitions to HalfOpen. The first caller gets true (CAS winner). Subsequent
-	// callers also get true because they see HalfOpen state. This is correct
-	// behavior -- the CAS only prevents multiple Open->HalfOpen transitions, not
-	// requests in HalfOpen state.
+	// transitions to HalfOpen. The first caller gets true (CAS winner + probe).
+	// Subsequent callers are rejected because only one probe is allowed in half-open
+	// state — this prevents probe stampedes where all 32 goroutines hit a slow
+	// destination simultaneously.
 	//
 	// Note: resetTimeout uses Unix() second granularity, so we use a 2s timeout
 	// to ensure the "before timeout" check works reliably.
@@ -271,9 +269,9 @@ func TestCAS_HalfOpenTransition_ViaAllowRequest(t *testing.T) {
 		t.Fatalf("expected HALF_OPEN after first AllowRequest, got %v", cb.State())
 	}
 
-	// Second call sees HalfOpen and returns true (not a CAS race, just HalfOpen behavior)
-	if !cb.AllowRequest() {
-		t.Fatal("AllowRequest in HalfOpen should return true")
+	// Second call sees HalfOpen but is rejected — only one probe allowed at a time
+	if cb.AllowRequest() {
+		t.Fatal("second AllowRequest in HalfOpen should be rejected (probe already in flight)")
 	}
 }
 

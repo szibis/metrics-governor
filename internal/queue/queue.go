@@ -69,6 +69,12 @@ type Config struct {
 	// CircuitBreakerResetTimeout is time to wait before half-open state (default: 30s).
 	CircuitBreakerResetTimeout time.Duration
 
+	// Direct export timeout
+	// DirectExportTimeout is the max time for direct (non-retry) export before failing
+	// and queuing. Prevents slow-but-succeeding destinations from blocking flush goroutines.
+	// Default: 5s. Set to 0 to disable.
+	DirectExportTimeout time.Duration
+
 	// Retry drain settings
 	// BatchDrainSize is the number of entries processed per retry tick (default: 10).
 	BatchDrainSize int

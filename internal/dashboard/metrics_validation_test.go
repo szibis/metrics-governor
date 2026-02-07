@@ -101,7 +101,11 @@ var knownMetrics = []string{
 	"metrics_governor_circuit_breaker_state",
 	"metrics_governor_circuit_breaker_open_total",
 	"metrics_governor_circuit_breaker_rejected_total",
+	"metrics_governor_direct_export_timeout_total",
 	"metrics_governor_queue_backoff_seconds",
+
+	// Logging metrics (logging/logging.go)
+	"metrics_governor_log_messages_total",
 
 	// Sharding metrics (sharding/metrics.go)
 	"metrics_governor_sharding_endpoints_total",
@@ -466,6 +470,8 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_queue",
 		"metrics_governor_fastqueue",
 		"metrics_governor_circuit_breaker",
+		"metrics_governor_direct_export",
+		"metrics_governor_log_",
 		"metrics_governor_sharding",
 		"metrics_governor_limit",
 		"metrics_governor_rule",

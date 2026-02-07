@@ -37,6 +37,7 @@ type CircuitBreaker struct {
 	consecutiveFails atomic.Int32
 	lastFailure      atomic.Int64 // Unix timestamp
 	lastStateChange  atomic.Int64 // Unix timestamp
+	halfOpenProbe    atomic.Int32 // 1 if a half-open probe is in flight, 0 otherwise
 
 	// Configuration
 	failureThreshold int           // Number of failures before opening circuit
@@ -76,8 +77,10 @@ func (cb *CircuitBreaker) AllowRequest() bool {
 		// Check if reset timeout has passed
 		lastFail := cb.lastFailure.Load()
 		if time.Now().Unix()-lastFail >= int64(cb.resetTimeout.Seconds()) {
-			// CAS: only one goroutine wins the Open → HalfOpen transition
+			// CAS: only one goroutine wins the Open → HalfOpen transition.
+			// This goroutine also becomes the half-open probe.
 			if cb.state.CompareAndSwap(int32(CircuitOpen), int32(CircuitHalfOpen)) {
+				cb.halfOpenProbe.Store(1) // This goroutine is the probe
 				cb.lastStateChange.Store(time.Now().Unix())
 				queue.SetCircuitState("half_open")
 				logging.Info("circuit breaker transitioning to half-open", logging.F(
@@ -90,8 +93,13 @@ func (cb *CircuitBreaker) AllowRequest() bool {
 		}
 		return false
 	case CircuitHalfOpen:
-		// Allow limited requests in half-open state
-		return true
+		// Only allow one probe request in half-open state.
+		// CAS: if no probe is in flight (0→1), this goroutine becomes the probe.
+		// All other goroutines are rejected → their data gets queued.
+		if cb.halfOpenProbe.CompareAndSwap(0, 1) {
+			return true
+		}
+		return false
 	default:
 		return true
 	}
@@ -106,6 +114,7 @@ func (cb *CircuitBreaker) RecordSuccess() {
 
 	if state == CircuitHalfOpen {
 		// Success in half-open state, close the circuit
+		cb.halfOpenProbe.Store(0)
 		cb.state.Store(int32(CircuitClosed))
 		cb.lastStateChange.Store(time.Now().Unix())
 		queue.SetCircuitState("closed")
@@ -122,6 +131,7 @@ func (cb *CircuitBreaker) RecordFailure() {
 
 	if state == CircuitHalfOpen {
 		// Failure in half-open state, reopen the circuit
+		cb.halfOpenProbe.Store(0)
 		cb.state.Store(int32(CircuitOpen))
 		cb.lastStateChange.Store(time.Now().Unix())
 		queue.SetCircuitState("open")
@@ -153,6 +163,11 @@ type QueuedExporter struct {
 	baseDelay      time.Duration
 	maxDelay       time.Duration
 	circuitBreaker *CircuitBreaker
+
+	// Direct export timeout — prevents slow destinations from blocking flush goroutines.
+	// When > 0, wraps the export context so slow-but-succeeding exports fail fast
+	// and trigger the circuit breaker → queue path.
+	directExportTimeout time.Duration
 
 	// Backoff configuration
 	backoffEnabled    bool
@@ -217,21 +232,26 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 		drainEntryTimeout = 5 * time.Second
 	}
 
+	// Direct export timeout: fail fast on slow destinations to trigger CB → queue path
+	directExportTimeout := queueCfg.DirectExportTimeout
+	// 0 means disabled (caller must explicitly set)
+
 	qe := &QueuedExporter{
-		exporter:           exporter,
-		queue:              q,
-		baseDelay:          queueCfg.RetryInterval,
-		maxDelay:           queueCfg.MaxRetryDelay,
-		backoffEnabled:     backoffEnabled,
-		backoffMultiplier:  backoffMultiplier,
-		batchDrainSize:     batchDrainSize,
-		burstDrainSize:     burstDrainSize,
-		retryExportTimeout: retryExportTimeout,
-		closeTimeout:       closeTimeout,
-		drainTimeout:       drainTimeout,
-		drainEntryTimeout:  drainEntryTimeout,
-		retryStop:          make(chan struct{}),
-		retryDone:          make(chan struct{}),
+		exporter:            exporter,
+		queue:               q,
+		baseDelay:           queueCfg.RetryInterval,
+		maxDelay:            queueCfg.MaxRetryDelay,
+		directExportTimeout: directExportTimeout,
+		backoffEnabled:      backoffEnabled,
+		backoffMultiplier:   backoffMultiplier,
+		batchDrainSize:      batchDrainSize,
+		burstDrainSize:      burstDrainSize,
+		retryExportTimeout:  retryExportTimeout,
+		closeTimeout:        closeTimeout,
+		drainTimeout:        drainTimeout,
+		drainEntryTimeout:   drainEntryTimeout,
+		retryStop:           make(chan struct{}),
+		retryDone:           make(chan struct{}),
 	}
 
 	// Initialize current delay to base delay
@@ -252,6 +272,12 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 		logging.Info("circuit breaker initialized", logging.F(
 			"failure_threshold", threshold,
 			"reset_timeout", resetTimeout.String(),
+		))
+	}
+
+	if directExportTimeout > 0 {
+		logging.Info("direct export timeout enabled", logging.F(
+			"timeout", directExportTimeout.String(),
 		))
 	}
 
@@ -282,13 +308,27 @@ func (e *QueuedExporter) Export(ctx context.Context, req *colmetricspb.ExportMet
 		return ErrExportQueued
 	}
 
-	// Circuit closed or half-open — try direct export
-	err := e.exporter.Export(ctx, req)
+	// Circuit closed or half-open — try direct export.
+	// Wrap with directExportTimeout to fail fast on slow destinations,
+	// preventing flush goroutines from blocking for the full exporter timeout.
+	exportCtx := ctx
+	if e.directExportTimeout > 0 {
+		var cancel context.CancelFunc
+		exportCtx, cancel = context.WithTimeout(ctx, e.directExportTimeout)
+		defer cancel()
+	}
+
+	err := e.exporter.Export(exportCtx, req)
 	if err == nil {
 		if e.circuitBreaker != nil {
 			e.circuitBreaker.RecordSuccess()
 		}
 		return nil
+	}
+
+	// Track direct export timeouts specifically
+	if e.directExportTimeout > 0 && exportCtx.Err() == context.DeadlineExceeded {
+		queue.IncrementDirectExportTimeout()
 	}
 
 	// Record failure with circuit breaker

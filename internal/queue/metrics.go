@@ -119,6 +119,12 @@ var (
 		Help: "Total number of requests rejected by open circuit breaker",
 	})
 
+	// Direct export timeout metric
+	directExportTimeoutTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_direct_export_timeout_total",
+		Help: "Total number of direct exports that timed out (triggering circuit breaker)",
+	})
+
 	// Backoff metrics
 	currentBackoffSeconds = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "metrics_governor_queue_backoff_seconds",
@@ -151,6 +157,7 @@ func init() {
 	prometheus.MustRegister(circuitBreakerState)
 	prometheus.MustRegister(circuitBreakerOpenTotal)
 	prometheus.MustRegister(circuitBreakerRejectedTotal)
+	prometheus.MustRegister(directExportTimeoutTotal)
 	prometheus.MustRegister(currentBackoffSeconds)
 
 	// Initialize gauges to 0 so they appear in Prometheus immediately
@@ -177,6 +184,7 @@ func init() {
 	fastqueueInmemoryFlushes.Add(0)
 	circuitBreakerOpenTotal.Add(0)
 	circuitBreakerRejectedTotal.Add(0)
+	directExportTimeoutTotal.Add(0)
 
 	// Initialize counter vectors with known label values
 	queueDroppedTotal.WithLabelValues("full").Add(0)
@@ -285,6 +293,11 @@ func IncrementCircuitOpen() {
 // IncrementCircuitRejected increments the circuit breaker rejected counter.
 func IncrementCircuitRejected() {
 	circuitBreakerRejectedTotal.Inc()
+}
+
+// IncrementDirectExportTimeout increments the direct export timeout counter.
+func IncrementDirectExportTimeout() {
+	directExportTimeoutTotal.Inc()
 }
 
 // SetCurrentBackoff sets the current backoff delay metric.

@@ -89,6 +89,7 @@ services:
       - "-queue-circuit-breaker-enabled=true"
       - "-queue-circuit-breaker-threshold=15"
       - "-queue-circuit-breaker-reset-timeout=20s"
+      - "-queue-direct-export-timeout=5s"
       # Rule cache
       - "-rule-cache-max-size=35000"
       # Hybrid cardinality tracking (auto Bloom→HLL)
