@@ -249,6 +249,11 @@ func (qe *PRWQueuedExporter) Export(ctx context.Context, req *prw.WriteRequest) 
 	}
 
 	if qe.alwaysQueue {
+		// Count timeseries/samples at push time since the fast-path worker
+		// (ExportData) sends raw bytes without deserializing.
+		timeseriesCount := len(req.Timeseries)
+		samplesCount := countPRWSamples(req)
+
 		marshalStart := time.Now()
 		data, marshalErr := req.Marshal()
 		pipeline.Record("serialize", pipeline.Since(marshalStart))
@@ -262,6 +267,10 @@ func (qe *PRWQueuedExporter) Export(ctx context.Context, req *prw.WriteRequest) 
 		}
 		pipeline.Record("queue_push", pipeline.Since(pushStart))
 		pipeline.RecordBytes("queue_push", len(data))
+
+		// Record metrics at push time (workers won't have deserialized request)
+		prwExportTimeseriesTotal.Add(float64(timeseriesCount))
+		prwExportSamplesTotal.Add(float64(samplesCount))
 		return nil
 	}
 
@@ -363,12 +372,25 @@ func (qe *PRWQueuedExporter) startWorkers() {
 	}()
 }
 
+// prwDataExporter is an optional interface for exporters that can send
+// pre-serialized proto bytes directly, skipping unmarshal→remarshal.
+type prwDataExporter interface {
+	ExportData(ctx context.Context, data []byte) error
+}
+
 // workerLoop is the main loop for each PRW worker goroutine.
+//
+// Fast path: When the exporter supports ExportData (no extra labels),
+// workers send queue entry bytes directly → compress → HTTP, skipping
+// the costly unmarshal + remarshal roundtrip.
 func (qe *PRWQueuedExporter) workerLoop(id int) {
 	currentBackoff := qe.baseDelay
 	if currentBackoff <= 0 {
 		currentBackoff = 5 * time.Second
 	}
+
+	// Check once if exporter supports the raw-bytes fast path
+	de, hasDataExport := qe.exporter.(prwDataExporter)
 
 	for {
 		select {
@@ -389,15 +411,7 @@ func (qe *PRWQueuedExporter) workerLoop(id int) {
 			continue
 		}
 
-		deserStart := time.Now()
-		req, err := prw.UnmarshalWriteRequest(entry.Data)
-		pipeline.Record("serialize", pipeline.Since(deserStart))
-		if err != nil {
-			logging.Error("PRW worker: failed to deserialize", logging.F("worker_id", id, "error", err.Error()))
-			continue
-		}
-
-		// Check circuit breaker
+		// Check circuit breaker — use raw bytes for re-push
 		if qe.circuitBreaker != nil && !qe.circuitBreaker.AllowRequest() {
 			queue.IncrementCircuitRejected()
 			_ = qe.queue.PushData(entry.Data)
@@ -411,7 +425,37 @@ func (qe *PRWQueuedExporter) workerLoop(id int) {
 		queue.IncrementWorkersActive()
 		exportStart := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), qe.retryExportTimeout)
-		exportErr := qe.exporter.Export(ctx, req)
+
+		var exportErr error
+		usedFastPath := false
+
+		if hasDataExport {
+			// Fast path: send raw proto bytes directly (skip unmarshal+remarshal)
+			exportErr = de.ExportData(ctx, entry.Data)
+			if errors.Is(exportErr, ErrExtraLabelsRequireDeserialize) {
+				// Extra labels configured — permanently disable fast path for this worker
+				hasDataExport = false
+				de = nil
+				exportErr = nil
+			} else {
+				usedFastPath = true
+			}
+		}
+
+		if !usedFastPath {
+			// Slow path: full unmarshal + export
+			deserStart := time.Now()
+			req, deserErr := prw.UnmarshalWriteRequest(entry.Data)
+			pipeline.Record("serialize", pipeline.Since(deserStart))
+			if deserErr != nil {
+				cancel()
+				queue.DecrementWorkersActive()
+				logging.Error("PRW worker: failed to deserialize", logging.F("worker_id", id, "error", deserErr.Error()))
+				continue
+			}
+			exportErr = qe.exporter.Export(ctx, req)
+		}
+
 		cancel()
 		pipeline.Record("export_http", pipeline.Since(exportStart))
 		queue.DecrementWorkersActive()
@@ -436,18 +480,21 @@ func (qe *PRWQueuedExporter) workerLoop(id int) {
 		errType := classifyPRWError(exportErr)
 		prwRetryFailureTotal.WithLabelValues(string(errType)).Inc()
 
-		// Check if splittable
+		// Check if splittable — requires deserialization (rare 413 case)
 		var expErr *ExportError
 		if errors.As(exportErr, &expErr) {
-			if expErr.IsSplittable() && len(req.Timeseries) > 1 {
-				mid := len(req.Timeseries) / 2
-				req1 := &prw.WriteRequest{Timeseries: req.Timeseries[:mid], Metadata: req.Metadata}
-				req2 := &prw.WriteRequest{Timeseries: req.Timeseries[mid:], Metadata: req.Metadata}
-				data1, _ := req1.Marshal()
-				data2, _ := req2.Marshal()
-				_ = qe.queue.PushData(data1)
-				_ = qe.queue.PushData(data2)
-				continue
+			if expErr.IsSplittable() {
+				req, deserErr := prw.UnmarshalWriteRequest(entry.Data)
+				if deserErr == nil && len(req.Timeseries) > 1 {
+					mid := len(req.Timeseries) / 2
+					req1 := &prw.WriteRequest{Timeseries: req.Timeseries[:mid], Metadata: req.Metadata}
+					req2 := &prw.WriteRequest{Timeseries: req.Timeseries[mid:], Metadata: req.Metadata}
+					data1, _ := req1.Marshal()
+					data2, _ := req2.Marshal()
+					_ = qe.queue.PushData(data1)
+					_ = qe.queue.PushData(data2)
+					continue
+				}
 			}
 			if !expErr.IsRetryable() {
 				logging.Warn("PRW worker: dropping non-retryable entry", logging.F(
@@ -459,7 +506,7 @@ func (qe *PRWQueuedExporter) workerLoop(id int) {
 			}
 		}
 
-		// Re-push for retry
+		// Re-push raw bytes for retry
 		_ = qe.queue.PushData(entry.Data)
 
 		if qe.backoffEnabled {

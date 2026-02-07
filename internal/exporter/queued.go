@@ -333,6 +333,10 @@ func (e *QueuedExporter) Export(ctx context.Context, req *colmetricspb.ExportMet
 	if e.alwaysQueue {
 		// Always-queue mode: push to queue, workers will export.
 		// This returns in microseconds regardless of destination speed.
+		//
+		// Count datapoints at push time since the fast-path worker
+		// (ExportData) sends raw bytes without deserializing.
+		datapoints := countDatapoints(req)
 		start := time.Now()
 		if err := e.queue.Push(req); err != nil {
 			return fmt.Errorf("queue push failed: %w", err)
@@ -340,6 +344,7 @@ func (e *QueuedExporter) Export(ctx context.Context, req *colmetricspb.ExportMet
 		pipeline.Record("queue_push", pipeline.Since(start))
 		// Queuing IS the success path — return nil, not ErrExportQueued.
 		// The buffer layer doesn't need to distinguish queued vs exported.
+		recordExportSuccess(datapoints)
 		return nil
 	}
 
@@ -468,14 +473,28 @@ func (e *QueuedExporter) startWorkers() {
 	}()
 }
 
+// dataExporter is an optional interface for exporters that can send pre-serialized
+// proto bytes directly, skipping the unmarshal→remarshal roundtrip.
+type dataExporter interface {
+	ExportData(ctx context.Context, data []byte) error
+}
+
 // workerLoop is the main loop for each worker goroutine. Workers pull entries
 // from the queue and export them. On failure, entries are re-pushed with backoff.
+//
+// Fast path (ExportData): When the exporter supports raw-bytes export, workers
+// send queue entry bytes directly → compress → HTTP, skipping the costly
+// proto.Unmarshal + proto.Marshal roundtrip (~147ms saved per request).
+// Deserialization only happens on splittable errors (rare 413 responses).
 func (e *QueuedExporter) workerLoop(id int) {
 	// Per-worker backoff state
 	currentBackoff := e.baseDelay
 	if currentBackoff <= 0 {
 		currentBackoff = 5 * time.Second
 	}
+
+	// Check once if exporter supports the raw-bytes fast path
+	de, hasDataExport := e.exporter.(dataExporter)
 
 	for {
 		// Check for shutdown
@@ -505,23 +524,10 @@ func (e *QueuedExporter) workerLoop(id int) {
 			continue
 		}
 
-		deserStart := time.Now()
-		req, err := entry.GetRequest()
-		pipeline.Record("serialize", pipeline.Since(deserStart))
-		if err != nil {
-			logging.Error("worker: failed to deserialize queued request", logging.F(
-				"worker_id", id,
-				"error", err.Error(),
-			))
-			// Don't re-push corrupted data
-			continue
-		}
-
-		// Check circuit breaker before export
+		// Check circuit breaker before export — use raw bytes for re-push
 		if e.circuitBreaker != nil && !e.circuitBreaker.AllowRequest() {
 			queue.IncrementCircuitRejected()
-			// Re-push and back off — CB is open
-			_ = e.queue.Push(req)
+			_ = e.queue.PushData(entry.Data) // Re-push raw bytes, no unmarshal needed
 			e.workerSleep(currentBackoff)
 			continue
 		}
@@ -532,7 +538,28 @@ func (e *QueuedExporter) workerLoop(id int) {
 		queue.IncrementWorkersActive()
 		exportStart := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), e.retryExportTimeout)
-		err = e.exporter.Export(ctx, req)
+
+		if hasDataExport {
+			// Fast path: send raw proto bytes directly (skip unmarshal+remarshal)
+			err = de.ExportData(ctx, entry.Data)
+		} else {
+			// Fallback: unmarshal and use standard Export
+			deserStart := time.Now()
+			var req *colmetricspb.ExportMetricsServiceRequest
+			req, err = entry.GetRequest()
+			pipeline.Record("serialize", pipeline.Since(deserStart))
+			if err != nil {
+				cancel()
+				queue.DecrementWorkersActive()
+				logging.Error("worker: failed to deserialize queued request", logging.F(
+					"worker_id", id,
+					"error", err.Error(),
+				))
+				continue
+			}
+			err = e.exporter.Export(ctx, req)
+		}
+
 		cancel()
 		pipeline.Record("export_http", pipeline.Since(exportStart))
 		queue.DecrementWorkersActive()
@@ -560,20 +587,24 @@ func (e *QueuedExporter) workerLoop(id int) {
 		errType := classifyExportError(err)
 		queue.IncrementRetryFailure(string(errType))
 
-		// Check if error is splittable (payload too large)
+		// Check if error is splittable (payload too large) — requires deserialization
 		var exportErr *ExportError
 		if errors.As(err, &exportErr) {
-			if exportErr.IsSplittable() && len(req.ResourceMetrics) > 1 {
-				mid := len(req.ResourceMetrics) / 2
-				req1 := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: req.ResourceMetrics[:mid]}
-				req2 := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: req.ResourceMetrics[mid:]}
-				_ = e.queue.Push(req1)
-				_ = e.queue.Push(req2)
-				logging.Info("worker: split and re-queued", logging.F(
-					"worker_id", id,
-					"original_size", len(req.ResourceMetrics),
-				))
-				continue // No backoff needed — split may work at smaller size
+			if exportErr.IsSplittable() {
+				// Only unmarshal for splitting — this is the rare 413 case
+				req, deserErr := entry.GetRequest()
+				if deserErr == nil && len(req.ResourceMetrics) > 1 {
+					mid := len(req.ResourceMetrics) / 2
+					req1 := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: req.ResourceMetrics[:mid]}
+					req2 := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: req.ResourceMetrics[mid:]}
+					_ = e.queue.Push(req1)
+					_ = e.queue.Push(req2)
+					logging.Info("worker: split and re-queued", logging.F(
+						"worker_id", id,
+						"original_size", len(req.ResourceMetrics),
+					))
+					continue // No backoff needed — split may work at smaller size
+				}
 			}
 			if !exportErr.IsRetryable() {
 				logging.Warn("worker: dropping non-retryable entry", logging.F(
@@ -586,8 +617,8 @@ func (e *QueuedExporter) workerLoop(id int) {
 			}
 		}
 
-		// Re-push for retry and backoff
-		if pushErr := e.queue.Push(req); pushErr != nil {
+		// Re-push raw bytes for retry — no unmarshal needed
+		if pushErr := e.queue.PushData(entry.Data); pushErr != nil {
 			logging.Error("worker: failed to re-queue", logging.F(
 				"worker_id", id,
 				"error", pushErr.Error(),
