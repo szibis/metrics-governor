@@ -151,6 +151,13 @@ func WithFailoverQueue(q FailoverQueue) BufferOption {
 	return func(b *MetricsBuffer) { b.failoverQueue = q }
 }
 
+// WithFlushTimeout sets the maximum time for a flush cycle. If exceeded,
+// the flush context is canceled — ongoing exports see ctx.Err() and fail.
+// Default 0 means no limit (Fixes 1-3 should make this unnecessary).
+func WithFlushTimeout(d time.Duration) BufferOption {
+	return func(b *MetricsBuffer) { b.flushTimeout = d }
+}
+
 // MetricsBuffer buffers incoming metrics and flushes them periodically.
 type MetricsBuffer struct {
 	mu              sync.Mutex
@@ -159,6 +166,7 @@ type MetricsBuffer struct {
 	maxBatchSize    int
 	maxBatchBytes   int
 	flushInterval   time.Duration
+	flushTimeout    time.Duration // 0 = no limit
 	exporter        Exporter
 	stats           StatsCollector
 	limits          LimitsEnforcer
@@ -326,6 +334,13 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 	b.metrics = make([]*metricspb.ResourceMetrics, 0, b.maxSize)
 	b.mu.Unlock()
 
+	// Optional: cap the entire flush cycle duration
+	if b.flushTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, b.flushTimeout)
+		defer cancel()
+	}
+
 	// Update buffer size metric (now empty after taking metrics)
 	if b.stats != nil {
 		b.stats.SetOTLPBufferSize(0)
@@ -353,8 +368,14 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 
 	var wg sync.WaitGroup
 	for _, batch := range allBatches {
+		if !b.concurrency.TryAcquire() {
+			// All concurrency slots busy — export directly in the flush goroutine.
+			// If the circuit breaker is open, QueuedExporter will queue instantly (µs),
+			// so this won't block even under slow destinations.
+			b.exportBatch(ctx, batch)
+			continue
+		}
 		wg.Add(1)
-		b.concurrency.Acquire()
 		exportConcurrentWorkers.Inc()
 		go func() {
 			defer wg.Done()

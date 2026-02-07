@@ -33,6 +33,9 @@ type PRWQueueConfig struct {
 	CircuitBreakerEnabled   bool          // Enable circuit breaker (default: true)
 	CircuitFailureThreshold int           // Failures before opening (default: 10)
 	CircuitResetTimeout     time.Duration // Time to wait before half-open (default: 30s)
+	// Direct export timeout — fail fast on slow destinations to trigger CB → queue.
+	// Default: 0 (disabled; caller must set explicitly).
+	DirectExportTimeout time.Duration
 	// Drain settings
 	BatchDrainSize     int           // Entries per retry tick (default: 10)
 	BurstDrainSize     int           // Entries on recovery (default: 100)
@@ -69,6 +72,9 @@ type PRWQueuedExporter struct {
 	baseDelay      time.Duration
 	maxDelay       time.Duration
 	circuitBreaker *CircuitBreaker
+
+	// Direct export timeout — prevents slow destinations from blocking flush goroutines.
+	directExportTimeout time.Duration
 
 	// Backoff configuration
 	backoffEnabled    bool
@@ -159,20 +165,27 @@ func NewPRWQueued(exporter prwExporterInterface, cfg PRWQueueConfig) (*PRWQueued
 	}
 
 	qe := &PRWQueuedExporter{
-		exporter:           exporter,
-		queue:              q,
-		baseDelay:          baseDelay,
-		maxDelay:           maxDelay,
-		backoffEnabled:     cfg.BackoffEnabled,
-		backoffMultiplier:  backoffMultiplier,
-		batchDrainSize:     batchDrainSize,
-		burstDrainSize:     burstDrainSize,
-		retryExportTimeout: retryExportTimeout,
-		closeTimeout:       closeTimeout,
-		drainTimeout:       drainTimeout,
-		drainEntryTimeout:  drainEntryTimeout,
-		retryStop:          make(chan struct{}),
-		retryDone:          make(chan struct{}),
+		exporter:            exporter,
+		queue:               q,
+		baseDelay:           baseDelay,
+		maxDelay:            maxDelay,
+		directExportTimeout: cfg.DirectExportTimeout,
+		backoffEnabled:      cfg.BackoffEnabled,
+		backoffMultiplier:   backoffMultiplier,
+		batchDrainSize:      batchDrainSize,
+		burstDrainSize:      burstDrainSize,
+		retryExportTimeout:  retryExportTimeout,
+		closeTimeout:        closeTimeout,
+		drainTimeout:        drainTimeout,
+		drainEntryTimeout:   drainEntryTimeout,
+		retryStop:           make(chan struct{}),
+		retryDone:           make(chan struct{}),
+	}
+
+	if cfg.DirectExportTimeout > 0 {
+		logging.Info("PRW direct export timeout enabled", logging.F(
+			"timeout", cfg.DirectExportTimeout.String(),
+		))
 	}
 
 	// Initialize circuit breaker if enabled
@@ -219,13 +232,26 @@ func (qe *PRWQueuedExporter) Export(ctx context.Context, req *prw.WriteRequest) 
 		return ErrExportQueued
 	}
 
-	// Circuit closed or half-open — try direct export
-	err := qe.exporter.Export(ctx, req)
+	// Circuit closed or half-open — try direct export.
+	// Wrap with directExportTimeout to fail fast on slow destinations.
+	exportCtx := ctx
+	if qe.directExportTimeout > 0 {
+		var cancel context.CancelFunc
+		exportCtx, cancel = context.WithTimeout(ctx, qe.directExportTimeout)
+		defer cancel()
+	}
+
+	err := qe.exporter.Export(exportCtx, req)
 	if err == nil {
 		if qe.circuitBreaker != nil {
 			qe.circuitBreaker.RecordSuccess()
 		}
 		return nil
+	}
+
+	// Track direct export timeouts specifically
+	if qe.directExportTimeout > 0 && exportCtx.Err() == context.DeadlineExceeded {
+		queue.IncrementDirectExportTimeout()
 	}
 
 	// Record failure with circuit breaker

@@ -86,6 +86,7 @@ type Config struct {
 	// Buffer settings
 	BufferSize    int
 	FlushInterval time.Duration
+	FlushTimeout  time.Duration // Max time for a flush cycle (default: 0 = no limit)
 	MaxBatchSize  int
 	MaxBatchBytes int
 
@@ -205,6 +206,7 @@ type Config struct {
 	CardinalityHLLPrecision  uint    // HLL precision (registers = 2^precision)
 
 	// Structured logging settings
+	LogLevel            string        // Minimum log level for output: INFO, WARN, ERROR, FATAL (default: ERROR)
 	StatsLogInterval    time.Duration // Operational stats log interval (0 = disabled)
 	LimitsLogInterval   time.Duration // Limits enforcement summary log interval (0 = disabled)
 	LimitsLogIndividual bool          // Log individual limit violations (high volume)
@@ -242,12 +244,13 @@ type Config struct {
 	PprofEnabled bool
 
 	// Queue resilience settings (drain/retry tuning)
-	QueueBatchDrainSize    int           // Entries per retry tick (default: 10)
-	QueueBurstDrainSize    int           // Entries on recovery burst (default: 100)
-	QueueRetryTimeout      time.Duration // Per-retry export timeout (default: 10s)
-	QueueCloseTimeout      time.Duration // Close() wait for retry loop (default: 60s)
-	QueueDrainTimeout      time.Duration // drainQueue overall timeout (default: 30s)
-	QueueDrainEntryTimeout time.Duration // Per-entry timeout during drain (default: 5s)
+	QueueDirectExportTimeout time.Duration // Max time for direct export before queuing (default: 5s, 0=disabled)
+	QueueBatchDrainSize      int           // Entries per retry tick (default: 10)
+	QueueBurstDrainSize      int           // Entries on recovery burst (default: 100)
+	QueueRetryTimeout        time.Duration // Per-retry export timeout (default: 10s)
+	QueueCloseTimeout        time.Duration // Close() wait for retry loop (default: 60s)
+	QueueDrainTimeout        time.Duration // drainQueue overall timeout (default: 30s)
+	QueueDrainEntryTimeout   time.Duration // Per-entry timeout during drain (default: 5s)
 
 	// Exporter transport settings
 	ExporterDialTimeout time.Duration // TCP connection setup timeout (default: 30s)
@@ -398,6 +401,7 @@ func ParseFlags() *Config {
 	// Buffer flags
 	flag.IntVar(&cfg.BufferSize, "buffer-size", 10000, "Maximum number of metrics to buffer")
 	flag.DurationVar(&cfg.FlushInterval, "flush-interval", 5*time.Second, "Buffer flush interval")
+	flag.DurationVar(&cfg.FlushTimeout, "flush-timeout", 0, "Max time for a flush cycle; 0=no limit (safety net for slow exports)")
 	flag.IntVar(&cfg.MaxBatchSize, "batch-size", 5000, "Maximum batch size for export")
 	flag.CommandLine.Var(&byteSizeIntFlag{target: &cfg.MaxBatchBytes}, "max-batch-bytes", "Maximum batch size for export, 0 = no limit (default 8Mi). Accepts: 8Mi, 1Gi, or plain bytes")
 
@@ -517,6 +521,7 @@ func ParseFlags() *Config {
 	flag.UintVar(&cfg.CardinalityHLLPrecision, "cardinality-hll-precision", 14, "HyperLogLog precision (registers = 2^precision, 14 = ~12KB)")
 
 	// Structured logging flags
+	flag.StringVar(&cfg.LogLevel, "log-level", "ERROR", "Minimum log level for output: INFO, WARN, ERROR, FATAL (metrics always emitted)")
 	flag.DurationVar(&cfg.StatsLogInterval, "stats-log-interval", 10*time.Second, "Operational stats log interval (0 = disabled)")
 	flag.DurationVar(&cfg.LimitsLogInterval, "limits-log-interval", 10*time.Second, "Limits enforcement summary log interval (0 = disabled)")
 	flag.BoolVar(&cfg.LimitsLogIndividual, "limits-log-individual", false, "Log individual limit violations (high volume, default: false)")
@@ -551,6 +556,7 @@ func ParseFlags() *Config {
 	flag.BoolVar(&cfg.PprofEnabled, "pprof-enabled", false, "Enable /debug/pprof/ endpoints on stats server (for debugging only)")
 
 	// Queue resilience flags
+	flag.DurationVar(&cfg.QueueDirectExportTimeout, "queue-direct-export-timeout", 5*time.Second, "Max time for direct (non-retry) export before failing and queuing; prevents slow destinations from blocking flush goroutines (0=disabled)")
 	flag.IntVar(&cfg.QueueBatchDrainSize, "queue-batch-drain-size", 10, "Entries processed per retry tick")
 	flag.IntVar(&cfg.QueueBurstDrainSize, "queue-burst-drain-size", 100, "Entries drained in burst on recovery")
 	flag.DurationVar(&cfg.QueueRetryTimeout, "queue-retry-timeout", 10*time.Second, "Per-retry export timeout")
@@ -738,6 +744,10 @@ func applyFlagOverrides(cfg *Config) {
 		case "flush-interval":
 			if d, err := time.ParseDuration(f.Value.String()); err == nil {
 				cfg.FlushInterval = d
+			}
+		case "flush-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.FlushTimeout = d
 			}
 		case "batch-size":
 			if v, ok := f.Value.(flag.Getter); ok {
@@ -1033,6 +1043,8 @@ func applyFlagOverrides(cfg *Config) {
 					cfg.CardinalityHLLPrecision = i
 				}
 			}
+		case "log-level":
+			cfg.LogLevel = f.Value.String()
 		case "stats-log-interval":
 			if d, err := time.ParseDuration(f.Value.String()); err == nil {
 				cfg.StatsLogInterval = d
@@ -1128,6 +1140,10 @@ func applyFlagOverrides(cfg *Config) {
 		case "queue-drain-timeout":
 			if d, err := time.ParseDuration(f.Value.String()); err == nil {
 				cfg.QueueDrainTimeout = d
+			}
+		case "queue-direct-export-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.QueueDirectExportTimeout = d
 			}
 		case "queue-drain-entry-timeout":
 			if d, err := time.ParseDuration(f.Value.String()); err == nil {
@@ -1548,17 +1564,18 @@ func (c *Config) PRWBufferConfig() prw.BufferConfig {
 // PRWQueueConfig returns the PRW queue configuration.
 func (c *Config) PRWQueueConfig() exporter.PRWQueueConfig {
 	return exporter.PRWQueueConfig{
-		Path:               c.PRWQueuePath,
-		MaxSize:            c.PRWQueueMaxSize,
-		MaxBytes:           c.PRWQueueMaxBytes,
-		RetryInterval:      c.PRWQueueRetryInterval,
-		MaxRetryDelay:      c.PRWQueueMaxRetryDelay,
-		BatchDrainSize:     c.QueueBatchDrainSize,
-		BurstDrainSize:     c.QueueBurstDrainSize,
-		RetryExportTimeout: c.QueueRetryTimeout,
-		CloseTimeout:       c.QueueCloseTimeout,
-		DrainTimeout:       c.QueueDrainTimeout,
-		DrainEntryTimeout:  c.QueueDrainEntryTimeout,
+		Path:                c.PRWQueuePath,
+		MaxSize:             c.PRWQueueMaxSize,
+		MaxBytes:            c.PRWQueueMaxBytes,
+		RetryInterval:       c.PRWQueueRetryInterval,
+		MaxRetryDelay:       c.PRWQueueMaxRetryDelay,
+		DirectExportTimeout: c.QueueDirectExportTimeout,
+		BatchDrainSize:      c.QueueBatchDrainSize,
+		BurstDrainSize:      c.QueueBurstDrainSize,
+		RetryExportTimeout:  c.QueueRetryTimeout,
+		CloseTimeout:        c.QueueCloseTimeout,
+		DrainTimeout:        c.QueueDrainTimeout,
+		DrainEntryTimeout:   c.QueueDrainEntryTimeout,
 	}
 }
 
@@ -1675,6 +1692,7 @@ OPTIONS:
         -cardinality-hll-precision <n>   HyperLogLog precision (registers = 2^n) (default: 14 = ~12KB)
 
     Structured Logging:
+        -log-level <level>               Minimum log level for output: INFO, WARN, ERROR, FATAL (default: ERROR; metrics always emitted)
         -stats-log-interval <dur>        Operational stats log interval (default: 10s, 0=disabled)
         -limits-log-interval <dur>       Limits enforcement summary log interval (default: 10s, 0=disabled)
         -limits-log-individual           Log individual limit violations (default: false)
@@ -1886,6 +1904,7 @@ func DefaultConfig() *Config {
 		QueueCircuitBreakerEnabled:      true,
 		QueueCircuitBreakerThreshold:    10,
 		QueueCircuitBreakerResetTimeout: 30 * time.Second,
+		QueueDirectExportTimeout:        5 * time.Second,
 		QueueBatchDrainSize:             10,
 		QueueBurstDrainSize:             100,
 		QueueRetryTimeout:               10 * time.Second,
@@ -1932,6 +1951,7 @@ func DefaultConfig() *Config {
 		CardinalityHLLThreshold:  10000,
 		CardinalityHLLPrecision:  14,
 		// Structured logging defaults
+		LogLevel:            "ERROR",
 		StatsLogInterval:    10 * time.Second,
 		LimitsLogInterval:   10 * time.Second,
 		LimitsLogIndividual: false,

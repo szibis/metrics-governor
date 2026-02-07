@@ -78,6 +78,11 @@ func main() {
 		"service.version": config.GetVersion(),
 	})
 
+	// Set log verbosity (metrics are always emitted regardless of level)
+	if cfg.LogLevel != "" {
+		logging.SetLevel(logging.ParseLevel(cfg.LogLevel))
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -200,6 +205,7 @@ func main() {
 				CircuitBreakerEnabled:      cfg.QueueCircuitBreakerEnabled,
 				CircuitBreakerThreshold:    cfg.QueueCircuitBreakerThreshold,
 				CircuitBreakerResetTimeout: cfg.QueueCircuitBreakerResetTimeout,
+				DirectExportTimeout:        cfg.QueueDirectExportTimeout,
 				InmemoryBlocks:             cfg.QueueInmemoryBlocks,
 				ChunkSize:                  cfg.QueueChunkSize,
 				MetaSyncInterval:           cfg.QueueMetaSyncInterval,
@@ -252,6 +258,7 @@ func main() {
 				CircuitBreakerEnabled:      cfg.QueueCircuitBreakerEnabled,
 				CircuitBreakerThreshold:    cfg.QueueCircuitBreakerThreshold,
 				CircuitBreakerResetTimeout: cfg.QueueCircuitBreakerResetTimeout,
+				DirectExportTimeout:        cfg.QueueDirectExportTimeout,
 				InmemoryBlocks:             cfg.QueueInmemoryBlocks,
 				ChunkSize:                  cfg.QueueChunkSize,
 				MetaSyncInterval:           cfg.QueueMetaSyncInterval,
@@ -410,6 +417,9 @@ func main() {
 	if cfg.ExportConcurrency != 0 || !cfg.ShardingEnabled {
 		// Wire export concurrency to buffer (default: NumCPU*4)
 		bufOpts = append(bufOpts, buffer.WithConcurrency(cfg.ExportConcurrency))
+	}
+	if cfg.FlushTimeout > 0 {
+		bufOpts = append(bufOpts, buffer.WithFlushTimeout(cfg.FlushTimeout))
 	}
 
 	// Set up tenant processor in buffer (if tenancy enabled)
