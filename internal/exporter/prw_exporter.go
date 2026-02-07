@@ -151,10 +151,15 @@ type PRWExporter struct {
 
 // NewPRW creates a new PRW exporter.
 func NewPRW(ctx context.Context, cfg PRWExporterConfig) (*PRWExporter, error) {
+	dialTimeout := cfg.HTTPClient.DialTimeout
+	if dialTimeout <= 0 {
+		dialTimeout = 30 * time.Second
+	}
+
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
+			Timeout:   dialTimeout,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
 		ForceAttemptHTTP2:     cfg.HTTPClient.ForceAttemptHTTP2,
@@ -173,6 +178,9 @@ func NewPRW(ctx context.Context, cfg PRWExporterConfig) (*PRWExporter, error) {
 	}
 	if transport.MaxIdleConnsPerHost == 0 {
 		transport.MaxIdleConnsPerHost = 100
+	}
+	if transport.MaxConnsPerHost == 0 {
+		transport.MaxConnsPerHost = 100
 	}
 	if transport.IdleConnTimeout == 0 {
 		transport.IdleConnTimeout = 90 * time.Second

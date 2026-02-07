@@ -82,17 +82,35 @@ func main() {
 	defer cancel()
 
 	// Initialize OTLP telemetry export (logs + metrics) if configured
+	telHeaders := make(map[string]string)
+	if cfg.TelemetryHeaders != "" {
+		for _, pair := range strings.Split(cfg.TelemetryHeaders, ",") {
+			kv := strings.SplitN(pair, "=", 2)
+			if len(kv) == 2 {
+				telHeaders[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+			}
+		}
+	}
 	tel, err := telemetry.Init(ctx, telemetry.Config{
-		Endpoint: cfg.TelemetryEndpoint,
-		Protocol: cfg.TelemetryProtocol,
-		Insecure: cfg.TelemetryInsecure,
+		Endpoint:         cfg.TelemetryEndpoint,
+		Protocol:         cfg.TelemetryProtocol,
+		Insecure:         cfg.TelemetryInsecure,
+		Timeout:          cfg.TelemetryTimeout,
+		PushInterval:     cfg.TelemetryPushInterval,
+		Compression:      cfg.TelemetryCompression,
+		Headers:          telHeaders,
+		ShutdownTimeout:  cfg.TelemetryShutdownTimeout,
+		RetryEnabled:     cfg.TelemetryRetryEnabled,
+		RetryInitial:     cfg.TelemetryRetryInitial,
+		RetryMaxInterval: cfg.TelemetryRetryMaxInterval,
+		RetryMaxElapsed:  cfg.TelemetryRetryMaxElapsed,
 	}, "metrics-governor", config.GetVersion())
 	if err != nil {
 		logging.Error("failed to initialize telemetry", logging.F("error", err.Error()))
 	}
 	if tel != nil {
 		defer func() {
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), tel.ShutdownTimeout())
 			defer shutdownCancel()
 			if err := tel.Shutdown(shutdownCtx); err != nil {
 				logging.Error("telemetry shutdown error", logging.F("error", err.Error()))
@@ -188,6 +206,12 @@ func main() {
 				StaleFlushInterval:         cfg.QueueStaleFlushInterval,
 				WriteBufferSize:            cfg.QueueWriteBufferSize,
 				Compression:                cfg.QueueCompression,
+				BatchDrainSize:             cfg.QueueBatchDrainSize,
+				BurstDrainSize:             cfg.QueueBurstDrainSize,
+				RetryExportTimeout:         cfg.QueueRetryTimeout,
+				CloseTimeout:               cfg.QueueCloseTimeout,
+				DrainTimeout:               cfg.QueueDrainTimeout,
+				DrainEntryTimeout:          cfg.QueueDrainEntryTimeout,
 			},
 		}
 
@@ -234,6 +258,12 @@ func main() {
 				StaleFlushInterval:         cfg.QueueStaleFlushInterval,
 				WriteBufferSize:            cfg.QueueWriteBufferSize,
 				Compression:                cfg.QueueCompression,
+				BatchDrainSize:             cfg.QueueBatchDrainSize,
+				BurstDrainSize:             cfg.QueueBurstDrainSize,
+				RetryExportTimeout:         cfg.QueueRetryTimeout,
+				CloseTimeout:               cfg.QueueCloseTimeout,
+				DrainTimeout:               cfg.QueueDrainTimeout,
+				DrainEntryTimeout:          cfg.QueueDrainEntryTimeout,
 			}
 
 			queuedExp, queueErr := exporter.NewQueued(exp, queueCfg)
@@ -582,7 +612,16 @@ func main() {
 		sighupChan := make(chan os.Signal, 1)
 		signal.Notify(sighupChan, syscall.SIGHUP)
 		go func() {
-			for range sighupChan {
+			for {
+				select {
+				case <-ctx.Done():
+					signal.Stop(sighupChan)
+					return
+				case _, ok := <-sighupChan:
+					if !ok {
+						return
+					}
+				}
 				logging.Info("received SIGHUP, reloading configuration")
 
 				// Reload limits config (rules file)

@@ -124,8 +124,8 @@ func TestQueuedExporter_FailureQueues(t *testing.T) {
 
 	req := createTestRequest()
 	err = qe.Export(context.Background(), req)
-	if err != nil {
-		t.Errorf("Expected nil (queued), got error: %v", err)
+	if err != nil && !errors.Is(err, ErrExportQueued) {
+		t.Errorf("Expected nil or ErrExportQueued, got error: %v", err)
 	}
 
 	if qe.QueueLen() != 1 {

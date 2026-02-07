@@ -23,9 +23,23 @@ type YAMLConfig struct {
 
 // TelemetryYAMLConfig holds OTLP self-monitoring telemetry configuration.
 type TelemetryYAMLConfig struct {
-	Endpoint string `yaml:"endpoint"` // OTLP endpoint (empty = disabled)
-	Protocol string `yaml:"protocol"` // "grpc" or "http" (default: "grpc")
-	Insecure *bool  `yaml:"insecure"` // Use insecure connection (default: true)
+	Endpoint        string                   `yaml:"endpoint"`         // OTLP endpoint (empty = disabled)
+	Protocol        string                   `yaml:"protocol"`         // "grpc" or "http" (default: "grpc")
+	Insecure        *bool                    `yaml:"insecure"`         // Use insecure connection (default: true)
+	Timeout         Duration                 `yaml:"timeout"`          // Per-export timeout (0 = SDK default 10s)
+	PushInterval    Duration                 `yaml:"push_interval"`    // Metric push interval (default: 30s)
+	Compression     string                   `yaml:"compression"`      // "gzip" or "" (default: "")
+	ShutdownTimeout Duration                 `yaml:"shutdown_timeout"` // Shutdown grace period (default: 5s)
+	Headers         map[string]string        `yaml:"headers"`          // Custom headers (auth, etc.)
+	Retry           TelemetryRetryYAMLConfig `yaml:"retry"`            // Retry configuration
+}
+
+// TelemetryRetryYAMLConfig holds telemetry retry configuration.
+type TelemetryRetryYAMLConfig struct {
+	Enabled     *bool    `yaml:"enabled"`      // Enable retry (default: true)
+	Initial     Duration `yaml:"initial"`      // Initial retry interval (default: 5s)
+	MaxInterval Duration `yaml:"max_interval"` // Max retry interval (default: 30s)
+	MaxElapsed  Duration `yaml:"max_elapsed"`  // Max total retry time (default: 1m)
 }
 
 // MemoryYAMLConfig holds memory limit configuration.
@@ -139,6 +153,13 @@ type QueueYAMLConfig struct {
 	Backoff BackoffYAMLConfig `yaml:"backoff"`
 	// Circuit breaker settings
 	CircuitBreaker CircuitBreakerYAMLConfig `yaml:"circuit_breaker"`
+	// Resilience settings (drain/retry tuning)
+	BatchDrainSize    int      `yaml:"batch_drain_size"`
+	BurstDrainSize    int      `yaml:"burst_drain_size"`
+	RetryTimeout      Duration `yaml:"retry_timeout"`
+	CloseTimeout      Duration `yaml:"close_timeout"`
+	DrainTimeout      Duration `yaml:"drain_timeout"`
+	DrainEntryTimeout Duration `yaml:"drain_entry_timeout"`
 }
 
 // BackoffYAMLConfig holds exponential backoff configuration.
@@ -188,6 +209,7 @@ type HTTPClientYAMLConfig struct {
 	ForceHTTP2           bool     `yaml:"force_http2"`
 	HTTP2ReadIdleTimeout Duration `yaml:"http2_read_idle_timeout"`
 	HTTP2PingTimeout     Duration `yaml:"http2_ping_timeout"`
+	DialTimeout          Duration `yaml:"dial_timeout"`
 }
 
 // BufferYAMLConfig holds buffer configuration.
@@ -505,6 +527,30 @@ func (y *YAMLConfig) ApplyDefaults() {
 	if y.Exporter.Queue.CircuitBreaker.ResetTimeout == 0 {
 		y.Exporter.Queue.CircuitBreaker.ResetTimeout = Duration(30 * time.Second)
 	}
+	// Queue resilience defaults
+	if y.Exporter.Queue.BatchDrainSize == 0 {
+		y.Exporter.Queue.BatchDrainSize = 10
+	}
+	if y.Exporter.Queue.BurstDrainSize == 0 {
+		y.Exporter.Queue.BurstDrainSize = 100
+	}
+	if y.Exporter.Queue.RetryTimeout == 0 {
+		y.Exporter.Queue.RetryTimeout = Duration(10 * time.Second)
+	}
+	if y.Exporter.Queue.CloseTimeout == 0 {
+		y.Exporter.Queue.CloseTimeout = Duration(60 * time.Second)
+	}
+	if y.Exporter.Queue.DrainTimeout == 0 {
+		y.Exporter.Queue.DrainTimeout = Duration(30 * time.Second)
+	}
+	if y.Exporter.Queue.DrainEntryTimeout == 0 {
+		y.Exporter.Queue.DrainEntryTimeout = Duration(5 * time.Second)
+	}
+
+	// Exporter HTTP client defaults
+	if y.Exporter.HTTPClient.DialTimeout == 0 {
+		y.Exporter.HTTPClient.DialTimeout = Duration(30 * time.Second)
+	}
 
 	// Sharding defaults
 	if y.Exporter.Sharding.Enabled == nil {
@@ -547,6 +593,25 @@ func (y *YAMLConfig) ApplyDefaults() {
 	if y.Telemetry.Insecure == nil {
 		b := true
 		y.Telemetry.Insecure = &b
+	}
+	if y.Telemetry.PushInterval == 0 {
+		y.Telemetry.PushInterval = Duration(30 * time.Second)
+	}
+	if y.Telemetry.ShutdownTimeout == 0 {
+		y.Telemetry.ShutdownTimeout = Duration(5 * time.Second)
+	}
+	if y.Telemetry.Retry.Enabled == nil {
+		b := true
+		y.Telemetry.Retry.Enabled = &b
+	}
+	if y.Telemetry.Retry.Initial == 0 {
+		y.Telemetry.Retry.Initial = Duration(5 * time.Second)
+	}
+	if y.Telemetry.Retry.MaxInterval == 0 {
+		y.Telemetry.Retry.MaxInterval = Duration(30 * time.Second)
+	}
+	if y.Telemetry.Retry.MaxElapsed == 0 {
+		y.Telemetry.Retry.MaxElapsed = Duration(1 * time.Minute)
 	}
 }
 
@@ -611,6 +676,7 @@ func (y *YAMLConfig) ToConfig() *Config {
 		ExporterForceHTTP2:           y.Exporter.HTTPClient.ForceHTTP2,
 		ExporterHTTP2ReadIdleTimeout: time.Duration(y.Exporter.HTTPClient.HTTP2ReadIdleTimeout),
 		ExporterHTTP2PingTimeout:     time.Duration(y.Exporter.HTTPClient.HTTP2PingTimeout),
+		ExporterDialTimeout:          time.Duration(y.Exporter.HTTPClient.DialTimeout),
 
 		// Buffer
 		BufferSize:    y.Buffer.Size,
@@ -653,6 +719,13 @@ func (y *YAMLConfig) ToConfig() *Config {
 		QueueCircuitBreakerEnabled:      *y.Exporter.Queue.CircuitBreaker.Enabled,
 		QueueCircuitBreakerThreshold:    y.Exporter.Queue.CircuitBreaker.Threshold,
 		QueueCircuitBreakerResetTimeout: time.Duration(y.Exporter.Queue.CircuitBreaker.ResetTimeout),
+		// Queue resilience settings
+		QueueBatchDrainSize:    y.Exporter.Queue.BatchDrainSize,
+		QueueBurstDrainSize:    y.Exporter.Queue.BurstDrainSize,
+		QueueRetryTimeout:      time.Duration(y.Exporter.Queue.RetryTimeout),
+		QueueCloseTimeout:      time.Duration(y.Exporter.Queue.CloseTimeout),
+		QueueDrainTimeout:      time.Duration(y.Exporter.Queue.DrainTimeout),
+		QueueDrainEntryTimeout: time.Duration(y.Exporter.Queue.DrainEntryTimeout),
 
 		// Sharding
 		ShardingEnabled:            *y.Exporter.Sharding.Enabled,
@@ -672,9 +745,18 @@ func (y *YAMLConfig) ToConfig() *Config {
 		MemoryLimitRatio: y.Memory.LimitRatio,
 
 		// Telemetry
-		TelemetryEndpoint: y.Telemetry.Endpoint,
-		TelemetryProtocol: y.Telemetry.Protocol,
-		TelemetryInsecure: *y.Telemetry.Insecure,
+		TelemetryEndpoint:         y.Telemetry.Endpoint,
+		TelemetryProtocol:         y.Telemetry.Protocol,
+		TelemetryInsecure:         *y.Telemetry.Insecure,
+		TelemetryTimeout:          time.Duration(y.Telemetry.Timeout),
+		TelemetryPushInterval:     time.Duration(y.Telemetry.PushInterval),
+		TelemetryCompression:      y.Telemetry.Compression,
+		TelemetryShutdownTimeout:  time.Duration(y.Telemetry.ShutdownTimeout),
+		TelemetryRetryEnabled:     *y.Telemetry.Retry.Enabled,
+		TelemetryRetryInitial:     time.Duration(y.Telemetry.Retry.Initial),
+		TelemetryRetryMaxInterval: time.Duration(y.Telemetry.Retry.MaxInterval),
+		TelemetryRetryMaxElapsed:  time.Duration(y.Telemetry.Retry.MaxElapsed),
+		TelemetryHeaders:          headersMapToString(y.Telemetry.Headers),
 	}
 
 	return cfg

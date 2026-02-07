@@ -389,6 +389,11 @@ func (b *MetricsBuffer) exportBatch(ctx context.Context, batch []*metricspb.Reso
 		return
 	}
 
+	// Data queued for retry — not an error, but don't count as exported
+	if errors.Is(err, exporter.ErrExportQueued) {
+		return
+	}
+
 	// Check if error indicates payload too large -- split and retry
 	var exportErr *exporter.ExportError
 	if errors.As(err, &exportErr) && exportErr.IsSplittable() && len(batch) > 1 {
