@@ -141,6 +141,12 @@ var (
 		Name: "metrics_governor_queue_workers_total",
 		Help: "Configured number of worker goroutines",
 	})
+
+	// Non-retryable drop metric
+	queueNonRetryableDroppedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "metrics_governor_queue_non_retryable_dropped_total",
+		Help: "Total entries dropped because the error was non-retryable",
+	}, []string{"error_type"})
 )
 
 func init() {
@@ -173,6 +179,8 @@ func init() {
 	// Worker pool metrics
 	prometheus.MustRegister(queueWorkersActive)
 	prometheus.MustRegister(queueWorkersTotal)
+	// Non-retryable drop metric
+	prometheus.MustRegister(queueNonRetryableDroppedTotal)
 
 	// Initialize gauges to 0 so they appear in Prometheus immediately
 	// (before queue is created or used)
@@ -213,6 +221,11 @@ func init() {
 	queueRetryFailureTotal.WithLabelValues("auth").Add(0)
 	queueRetryFailureTotal.WithLabelValues("rate_limit").Add(0)
 	queueRetryFailureTotal.WithLabelValues("unknown").Add(0)
+
+	// Initialize non-retryable drop labels
+	queueNonRetryableDroppedTotal.WithLabelValues("auth").Add(0)
+	queueNonRetryableDroppedTotal.WithLabelValues("client_error").Add(0)
+	queueNonRetryableDroppedTotal.WithLabelValues("unknown").Add(0)
 
 	// Initialize circuit breaker states
 	circuitBreakerState.WithLabelValues("closed").Set(1) // Start in closed state
@@ -334,4 +347,9 @@ func DecrementWorkersActive() {
 // SetWorkersTotal sets the configured worker count gauge.
 func SetWorkersTotal(n float64) {
 	queueWorkersTotal.Set(n)
+}
+
+// IncrementNonRetryableDropped increments the non-retryable drop counter by error type.
+func IncrementNonRetryableDropped(errorType string) {
+	queueNonRetryableDroppedTotal.WithLabelValues(errorType).Inc()
 }

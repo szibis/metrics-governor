@@ -98,7 +98,7 @@ services:
       - "-sharding-fallback-on-empty=true"
       - "-sharding-dns-refresh-interval=10s"
       # Memory limit
-      - "-memory-limit-ratio=0.9"
+      - "-memory-limit-ratio=0.85"
       # Rule cache
       - "-rule-cache-max-size=10000"
 

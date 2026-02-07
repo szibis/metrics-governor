@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/logging"
+	"github.com/szibis/metrics-governor/internal/pipeline"
 	"github.com/szibis/metrics-governor/internal/queue"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 )
@@ -248,10 +249,10 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 	directExportTimeout := queueCfg.DirectExportTimeout
 	// 0 means disabled (caller must explicitly set)
 
-	// Worker count: default to 2 × NumCPU (I/O-bound, benefits from oversubscription)
+	// Worker count: default to NumCPU (I/O-bound proxy)
 	workers := queueCfg.Workers
 	if workers <= 0 {
-		workers = 2 * runtime.NumCPU()
+		workers = runtime.NumCPU()
 	}
 
 	qe := &QueuedExporter{
@@ -332,9 +333,11 @@ func (e *QueuedExporter) Export(ctx context.Context, req *colmetricspb.ExportMet
 	if e.alwaysQueue {
 		// Always-queue mode: push to queue, workers will export.
 		// This returns in microseconds regardless of destination speed.
+		start := time.Now()
 		if err := e.queue.Push(req); err != nil {
 			return fmt.Errorf("queue push failed: %w", err)
 		}
+		pipeline.Record("queue_push", pipeline.Since(start))
 		// Queuing IS the success path — return nil, not ErrExportQueued.
 		// The buffer layer doesn't need to distinguish queued vs exported.
 		return nil
@@ -468,9 +471,6 @@ func (e *QueuedExporter) startWorkers() {
 // workerLoop is the main loop for each worker goroutine. Workers pull entries
 // from the queue and export them. On failure, entries are re-pushed with backoff.
 func (e *QueuedExporter) workerLoop(id int) {
-	queue.IncrementWorkersActive()
-	defer queue.DecrementWorkersActive()
-
 	// Per-worker backoff state
 	currentBackoff := e.baseDelay
 	if currentBackoff <= 0 {
@@ -486,7 +486,9 @@ func (e *QueuedExporter) workerLoop(id int) {
 		}
 
 		// Pop from queue (non-blocking)
+		popStart := time.Now()
 		entry, err := e.queue.Pop()
+		pipeline.Record("queue_pop", pipeline.Since(popStart))
 		if err != nil {
 			logging.Error("worker: failed to pop queue", logging.F(
 				"worker_id", id,
@@ -503,7 +505,9 @@ func (e *QueuedExporter) workerLoop(id int) {
 			continue
 		}
 
+		deserStart := time.Now()
 		req, err := entry.GetRequest()
+		pipeline.Record("serialize", pipeline.Since(deserStart))
 		if err != nil {
 			logging.Error("worker: failed to deserialize queued request", logging.F(
 				"worker_id", id,
@@ -524,10 +528,14 @@ func (e *QueuedExporter) workerLoop(id int) {
 
 		queue.IncrementRetryTotal()
 
-		// Export with timeout
+		// Export with timeout — track workers actively exporting
+		queue.IncrementWorkersActive()
+		exportStart := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), e.retryExportTimeout)
 		err = e.exporter.Export(ctx, req)
 		cancel()
+		pipeline.Record("export_http", pipeline.Since(exportStart))
+		queue.DecrementWorkersActive()
 
 		if err == nil {
 			// Success
@@ -573,6 +581,7 @@ func (e *QueuedExporter) workerLoop(id int) {
 					"error", err.Error(),
 					"error_type", string(exportErr.Type),
 				))
+				queue.IncrementNonRetryableDropped(string(exportErr.Type))
 				continue
 			}
 		}
@@ -798,6 +807,7 @@ func (e *QueuedExporter) processQueue() bool {
 				"error_type", string(exportErr.Type),
 				"batch_size", len(req.ResourceMetrics),
 			))
+			queue.IncrementNonRetryableDropped(string(exportErr.Type))
 			return false
 		}
 	}

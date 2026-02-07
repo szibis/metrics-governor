@@ -2171,12 +2171,227 @@
       ]
     },
     {
+      "id": 600,
+      "type": "stat",
+      "title": "Data Loss Events (1h)",
+      "description": "Permanent data loss \u2014 export failed AND failover queue push failed",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(metrics_governor_export_data_loss_total[1h]))",
+          "legendFormat": "Data Loss",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 601,
+      "type": "stat",
+      "title": "Non-Retryable Drops (1h)",
+      "description": "Entries dropped due to non-retryable errors (auth, client_error)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(metrics_governor_queue_non_retryable_dropped_total[1h]))",
+          "legendFormat": "Non-Retryable Drops",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 602,
+      "type": "timeseries",
+      "title": "Non-Retryable Drop Rate by Error Type",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "ops",
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "sortBy": "Total",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (error_type) (rate(metrics_governor_queue_non_retryable_dropped_total[5m]))",
+          "legendFormat": "{{error_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 55
       },
       "id": 103,
       "panels": [],
@@ -2242,7 +2457,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 52
+        "y": 56
       },
       "id": 30,
       "options": {
@@ -2357,7 +2572,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 52
+        "y": 56
       },
       "id": 31,
       "options": {
@@ -2482,7 +2697,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 60
+        "y": 64
       },
       "id": 32,
       "options": {
@@ -2607,7 +2822,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 60
+        "y": 64
       },
       "id": 33,
       "options": {
@@ -2683,7 +2898,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 68
+        "y": 72
       },
       "id": 34,
       "options": {
@@ -2750,7 +2965,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 68
+        "y": 72
       },
       "id": 35,
       "options": {
@@ -2817,7 +3032,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 68
+        "y": 72
       },
       "id": 36,
       "options": {
@@ -2884,7 +3099,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 68
+        "y": 72
       },
       "id": 37,
       "options": {
@@ -2974,7 +3189,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 72
+        "y": 76
       },
       "id": 38,
       "options": {
@@ -3064,7 +3279,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 72
+        "y": 76
       },
       "id": 39,
       "options": {
@@ -3101,7 +3316,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 80
+        "y": 84
       },
       "id": 104,
       "panels": [],
@@ -3167,7 +3382,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 81
+        "y": 85
       },
       "id": 40,
       "options": {
@@ -3257,7 +3472,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 81
+        "y": 85
       },
       "id": 41,
       "options": {
@@ -3347,7 +3562,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 89
+        "y": 93
       },
       "id": 42,
       "options": {
@@ -3437,7 +3652,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 89
+        "y": 93
       },
       "id": 43,
       "options": {
@@ -3474,7 +3689,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 97
+        "y": 101
       },
       "id": 105,
       "panels": [],
@@ -3540,7 +3755,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 98
+        "y": 102
       },
       "id": 50,
       "options": {
@@ -3657,7 +3872,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 98
+        "y": 102
       },
       "id": 51,
       "options": {
@@ -3756,7 +3971,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 106
+        "y": 110
       },
       "id": 52,
       "options": {
@@ -3855,7 +4070,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 106
+        "y": 110
       },
       "id": 53,
       "options": {
@@ -3923,7 +4138,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 114
+        "y": 118
       },
       "id": 54,
       "options": {
@@ -3982,7 +4197,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 114
+        "y": 118
       },
       "id": 55,
       "options": {
@@ -4041,7 +4256,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 114
+        "y": 118
       },
       "id": 56,
       "options": {
@@ -4100,7 +4315,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 114
+        "y": 118
       },
       "id": 57,
       "options": {
@@ -4190,7 +4405,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 118
+        "y": 122
       },
       "id": 58,
       "options": {
@@ -4289,7 +4504,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 118
+        "y": 122
       },
       "id": 59,
       "options": {
@@ -4387,7 +4602,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 126
+        "y": 130
       },
       "id": 540,
       "options": {
@@ -4478,7 +4693,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 126
+        "y": 130
       },
       "id": 541,
       "options": {
@@ -4570,7 +4785,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 134
+        "y": 138
       },
       "id": 60,
       "options": {
@@ -4638,7 +4853,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 142
+        "y": 146
       },
       "id": 62,
       "options": {
@@ -4697,7 +4912,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 142
+        "y": 146
       },
       "id": 63,
       "options": {
@@ -4756,7 +4971,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 142
+        "y": 146
       },
       "id": 64,
       "options": {
@@ -4815,7 +5030,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 142
+        "y": 146
       },
       "id": 65,
       "options": {
@@ -4913,7 +5128,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 146
+        "y": 150
       },
       "id": 66,
       "options": {
@@ -5029,7 +5244,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 146
+        "y": 150
       },
       "id": 67,
       "options": {
@@ -5075,7 +5290,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 154
+        "y": 158
       },
       "id": 106,
       "panels": [],
@@ -5114,7 +5329,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 155
+        "y": 159
       },
       "id": 107,
       "options": {
@@ -5173,7 +5388,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 155
+        "y": 159
       },
       "id": 108,
       "options": {
@@ -5240,7 +5455,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 155
+        "y": 159
       },
       "id": 109,
       "options": {
@@ -5299,7 +5514,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 155
+        "y": 159
       },
       "id": 110,
       "options": {
@@ -5389,7 +5604,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 159
+        "y": 163
       },
       "id": 111,
       "options": {
@@ -5484,7 +5699,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 159
+        "y": 163
       },
       "id": 112,
       "options": {
@@ -5575,7 +5790,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 167
+        "y": 171
       },
       "id": 113,
       "options": {
@@ -5675,7 +5890,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 167
+        "y": 171
       },
       "id": 114,
       "options": {
@@ -5742,7 +5957,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 175
+        "y": 179
       },
       "id": 115,
       "options": {
@@ -5792,7 +6007,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 183
+        "y": 187
       },
       "id": 101,
       "panels": [],
@@ -5858,7 +6073,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 184
+        "y": 188
       },
       "id": 10,
       "options": {
@@ -5957,7 +6172,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 184
+        "y": 188
       },
       "id": 11,
       "options": {
@@ -6034,7 +6249,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 192
+        "y": 196
       },
       "id": 12,
       "options": {
@@ -6093,7 +6308,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 192
+        "y": 196
       },
       "id": 13,
       "options": {
@@ -6152,7 +6367,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 192
+        "y": 196
       },
       "id": 14,
       "options": {
@@ -6219,7 +6434,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 192
+        "y": 196
       },
       "id": 15,
       "options": {
@@ -6256,7 +6471,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 196
+        "y": 200
       },
       "id": 102,
       "panels": [],
@@ -6322,7 +6537,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 197
+        "y": 201
       },
       "id": 20,
       "options": {
@@ -6421,7 +6636,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 197
+        "y": 201
       },
       "id": 21,
       "options": {
@@ -6489,7 +6704,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 205
+        "y": 209
       },
       "id": 22,
       "options": {
@@ -6548,7 +6763,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 205
+        "y": 209
       },
       "id": 23,
       "options": {
@@ -6615,7 +6830,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 205
+        "y": 209
       },
       "id": 24,
       "options": {
@@ -6694,7 +6909,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 205
+        "y": 209
       },
       "id": 25,
       "options": {
@@ -6731,7 +6946,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 209
+        "y": 213
       },
       "id": 534,
       "panels": [],
@@ -6775,7 +6990,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 210
+        "y": 214
       },
       "id": 535,
       "options": {
@@ -6835,7 +7050,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 210
+        "y": 214
       },
       "id": 536,
       "options": {
@@ -6934,7 +7149,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 210
+        "y": 214
       },
       "id": 537,
       "options": {
@@ -7043,7 +7258,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 218
+        "y": 222
       },
       "id": 538,
       "options": {
@@ -7161,7 +7376,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 218
+        "y": 222
       },
       "id": 539,
       "options": {
@@ -7201,6 +7416,485 @@
       ],
       "title": "String Intern Pool Ops/s",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 231
+      },
+      "id": 603,
+      "panels": [],
+      "title": "Pipeline Component Utilization",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 232
+      },
+      "id": 604,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(\n  sum by (component) (rate(metrics_governor_component_seconds_total[$__rate_interval]))\n  / ignoring(component) group_left\n  sum(rate(metrics_governor_component_seconds_total[$__rate_interval]))\n) * 100",
+          "legendFormat": "{{component}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pipeline CPU Utilization by Component",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 40,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "mappings": [],
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 232
+      },
+      "id": 605,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (component) (rate(metrics_governor_component_seconds_total[$__rate_interval]))",
+          "legendFormat": "{{component}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pipeline Time per Component (seconds/sec)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 40,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "mappings": [],
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 242
+      },
+      "id": 606,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (component) (rate(metrics_governor_component_bytes_processed_total[$__rate_interval]))",
+          "legendFormat": "{{component}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Bytes Processed Rate by Component",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 60,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "mappings": [],
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 242
+      },
+      "id": 607,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_buffer_bytes",
+          "legendFormat": "Buffer",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_queue_bytes",
+          "legendFormat": "Queue",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_memqueue_bytes",
+          "legendFormat": "Memqueue (failover)",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_cardinality_memory_bytes",
+          "legendFormat": "Cardinality (bloom)",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_fastqueue_disk_bytes",
+          "legendFormat": "FastQueue disk",
+          "refId": "E"
+        }
+      ],
+      "title": "Memory Distribution by Component",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 268435456
+              },
+              {
+                "color": "red",
+                "value": 536870912
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 252
+      },
+      "id": 608,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "go_memstats_heap_alloc_bytes - (metrics_governor_buffer_bytes + metrics_governor_queue_bytes + metrics_governor_memqueue_bytes + metrics_governor_cardinality_memory_bytes)",
+          "legendFormat": "Untracked Heap",
+          "refId": "A"
+        }
+      ],
+      "title": "Untracked Heap Memory",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 252
+      },
+      "id": 609,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(metrics_governor_queue_workers_active / metrics_governor_queue_workers_total) * 100",
+          "legendFormat": "Worker Utilization",
+          "refId": "A"
+        }
+      ],
+      "title": "Workers Utilization %",
+      "type": "stat"
     }
   ],
   "refresh": "5s",

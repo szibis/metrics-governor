@@ -150,11 +150,11 @@ func TestDefaultConfig_AlwaysQueueFields(t *testing.T) {
 	if cfg.QueueCircuitBreakerThreshold != 5 {
 		t.Errorf("expected QueueCircuitBreakerThreshold=5 in defaults, got %d", cfg.QueueCircuitBreakerThreshold)
 	}
-	if cfg.BufferMemoryPercent != 0.15 {
-		t.Errorf("expected BufferMemoryPercent=0.15 in defaults, got %f", cfg.BufferMemoryPercent)
+	if cfg.BufferMemoryPercent != 0.10 {
+		t.Errorf("expected BufferMemoryPercent=0.10 in defaults, got %f", cfg.BufferMemoryPercent)
 	}
-	if cfg.QueueMemoryPercent != 0.15 {
-		t.Errorf("expected QueueMemoryPercent=0.15 in defaults, got %f", cfg.QueueMemoryPercent)
+	if cfg.QueueMemoryPercent != 0.10 {
+		t.Errorf("expected QueueMemoryPercent=0.10 in defaults, got %f", cfg.QueueMemoryPercent)
 	}
 }
 

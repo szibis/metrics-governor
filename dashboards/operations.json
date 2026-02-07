@@ -3998,7 +3998,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 160
+        "y": 164
       },
       "id": 400,
       "options": {
@@ -4086,7 +4086,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 160
+        "y": 164
       },
       "id": 401,
       "options": {
@@ -4290,7 +4290,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 181
+        "y": 193
       },
       "id": 402,
       "options": {
@@ -4495,9 +4495,9 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 184
+        "y": 196
       },
-      "id": 4020,
+      "id": 402,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -5469,12 +5469,73 @@
       ]
     },
     {
+      "id": 10200,
+      "type": "stat",
+      "title": "Data Loss Events (1h)",
+      "description": "Permanent data loss \u2014 export failed AND failover queue push failed",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 120
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(metrics_governor_export_data_loss_total[1h]))",
+          "legendFormat": "Data Loss",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 120
+        "y": 124
       },
       "id": 40,
       "panels": [],
@@ -5539,7 +5600,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 121
+        "y": 125
       },
       "id": 41,
       "options": {
@@ -5630,7 +5691,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 121
+        "y": 125
       },
       "id": 42,
       "options": {
@@ -5724,7 +5785,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 129
+        "y": 133
       },
       "id": 43,
       "options": {
@@ -5823,7 +5884,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 129
+        "y": 133
       },
       "id": 44,
       "options": {
@@ -5926,7 +5987,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 137
+        "y": 141
       },
       "id": 45,
       "options": {
@@ -6013,7 +6074,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 137
+        "y": 141
       },
       "id": 46,
       "options": {
@@ -6104,7 +6165,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 129
+        "y": 133
       },
       "id": 60,
       "options": {
@@ -6199,7 +6260,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 137
+        "y": 141
       },
       "id": 47,
       "options": {
@@ -6371,7 +6432,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 145
+        "y": 149
       },
       "id": 48,
       "options": {
@@ -6505,7 +6566,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 145
+        "y": 149
       },
       "id": 49,
       "options": {
@@ -6592,7 +6653,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 153
+        "y": 157
       },
       "id": 10005,
       "options": {
@@ -6687,7 +6748,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 153
+        "y": 157
       },
       "id": 10006,
       "options": {
@@ -6747,7 +6808,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 161
+        "y": 165
       },
       "id": 50,
       "options": {
@@ -6809,7 +6870,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 161
+        "y": 165
       },
       "id": 51,
       "options": {
@@ -6871,7 +6932,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 161
+        "y": 165
       },
       "id": 52,
       "options": {
@@ -6933,7 +6994,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 161
+        "y": 165
       },
       "id": 53,
       "options": {
@@ -7017,9 +7078,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
+        "w": 12,
         "x": 0,
-        "y": 168
+        "y": 172
       },
       "id": 705,
       "options": {
@@ -7058,100 +7119,6 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Per-worker throughput and total drain rate. Shows how fast items flow through the worker pool.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 168
-      },
-      "id": 707,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max",
-            "last"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "title": "Worker Drain Rate",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "sum(rate(metrics_governor_queue_push_total[1m])) / clamp_min(metrics_governor_queue_workers_total, 1)",
-          "legendFormat": "Items/worker/s",
-          "refId": "A"
-        },
-        {
-          "expr": "rate(metrics_governor_queue_push_total[1m])",
-          "legendFormat": "Total/s",
-          "refId": "B"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "Queue items per worker - shows backlog pressure on the worker pool.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -7167,25 +7134,26 @@
               },
               {
                 "color": "yellow",
-                "value": 100
+                "value": 0.7
               },
               {
                 "color": "red",
-                "value": 1000
+                "value": 0.9
               }
             ]
           },
-          "unit": "short"
+          "unit": "percentunit",
+          "min": 0
         },
         "overrides": []
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 168
+        "w": 6,
+        "x": 12,
+        "y": 172
       },
-      "id": 708,
+      "id": 706,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -7200,12 +7168,166 @@
         },
         "textMode": "auto"
       },
-      "title": "Queue Items per Worker",
+      "title": "Workers Utilization",
       "type": "stat",
       "targets": [
         {
-          "expr": "metrics_governor_queue_size / clamp_min(metrics_governor_queue_workers_total, 1)",
-          "legendFormat": "Items/Worker",
+          "expr": "metrics_governor_queue_workers_active / metrics_governor_queue_workers_total",
+          "legendFormat": "Utilization",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10201,
+      "type": "stat",
+      "title": "Non-Retryable Drops (1h)",
+      "description": "Total entries dropped because the error was non-retryable (auth, client_error, etc.)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 180
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(metrics_governor_queue_non_retryable_dropped_total[1h]))",
+          "legendFormat": "Non-Retryable Drops",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10202,
+      "type": "timeseries",
+      "title": "Non-Retryable Drop Rate by Error Type",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 18,
+        "x": 6,
+        "y": 180
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "ops",
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "sortBy": "Total",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (error_type) (rate(metrics_governor_queue_non_retryable_dropped_total[5m]))",
+          "legendFormat": "{{error_type}}",
           "refId": "A"
         }
       ]
@@ -7216,7 +7338,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 176
+        "y": 188
       },
       "id": 710,
       "panels": [],
@@ -7255,7 +7377,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 177
+        "y": 189
       },
       "id": 711,
       "options": {
@@ -7288,7 +7410,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 178
+        "y": 190
       },
       "id": 200,
       "panels": [],
@@ -7353,7 +7475,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 179
+        "y": 191
       },
       "id": 201,
       "options": {
@@ -7440,7 +7562,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 179
+        "y": 191
       },
       "id": 202,
       "options": {
@@ -7526,7 +7648,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 179
+        "y": 191
       },
       "id": 203,
       "options": {
@@ -7620,7 +7742,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 187
+        "y": 199
       },
       "id": 204,
       "options": {
@@ -7691,7 +7813,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 187
+        "y": 199
       },
       "id": 205,
       "options": {
@@ -7724,7 +7846,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 195
+        "y": 207
       },
       "id": 300,
       "panels": [],
@@ -7794,7 +7916,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 196
+        "y": 208
       },
       "id": 301,
       "options": {
@@ -7856,7 +7978,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 196
+        "y": 208
       },
       "id": 302,
       "options": {
@@ -7918,7 +8040,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 196
+        "y": 208
       },
       "id": 303,
       "options": {
@@ -7980,7 +8102,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 196
+        "y": 208
       },
       "id": 304,
       "options": {
@@ -8065,7 +8187,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 196
+        "y": 208
       },
       "id": 305,
       "options": {
@@ -8150,7 +8272,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 200
+        "y": 212
       },
       "id": 306,
       "options": {
@@ -8236,7 +8358,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 200
+        "y": 212
       },
       "id": 307,
       "options": {
@@ -8326,7 +8448,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 200
+        "y": 212
       },
       "id": 308,
       "options": {
@@ -8393,7 +8515,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 208
+        "y": 220
       },
       "id": 309,
       "options": {
@@ -8471,7 +8593,7 @@
         "h": 8,
         "w": 18,
         "x": 6,
-        "y": 208
+        "y": 220
       },
       "id": 310,
       "options": {
@@ -8513,9 +8635,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 216
+        "y": 228
       },
-      "id": 5000,
+      "id": 50,
       "panels": [],
       "title": "Sharding (if enabled)",
       "type": "row"
@@ -8578,9 +8700,9 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 209
+        "y": 221
       },
-      "id": 5001,
+      "id": 51,
       "options": {
         "legend": {
           "calcs": [
@@ -8663,9 +8785,9 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 209
+        "y": 221
       },
-      "id": 5002,
+      "id": 52,
       "options": {
         "legend": {
           "calcs": [
@@ -8749,9 +8871,9 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 209
+        "y": 221
       },
-      "id": 5003,
+      "id": 53,
       "options": {
         "legend": {
           "calcs": [
@@ -8843,7 +8965,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 217
+        "y": 229
       },
       "id": 54,
       "options": {
@@ -8938,7 +9060,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 217
+        "y": 229
       },
       "id": 55,
       "options": {
@@ -9029,7 +9151,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 217
+        "y": 229
       },
       "id": 56,
       "options": {
@@ -9063,7 +9185,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 225
+        "y": 237
       },
       "id": 70,
       "panels": [],
@@ -9128,7 +9250,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 229
+        "y": 241
       },
       "id": 71,
       "options": {
@@ -9223,7 +9345,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 229
+        "y": 241
       },
       "id": 72,
       "options": {
@@ -9262,7 +9384,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 237
+        "y": 249
       },
       "id": 73,
       "panels": [],
@@ -9327,7 +9449,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 238
+        "y": 250
       },
       "id": 74,
       "options": {
@@ -9418,7 +9540,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 246
+        "y": 258
       },
       "id": 10110,
       "options": {
@@ -9509,7 +9631,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 246
+        "y": 258
       },
       "id": 10111,
       "options": {
@@ -9548,7 +9670,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 254
+        "y": 266
       },
       "id": 76,
       "panels": [],
@@ -9613,7 +9735,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 255
+        "y": 267
       },
       "id": 77,
       "options": {
@@ -9704,7 +9826,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 255
+        "y": 267
       },
       "id": 78,
       "options": {
@@ -9795,7 +9917,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 263
+        "y": 275
       },
       "id": 79,
       "options": {
@@ -9842,7 +9964,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 267
+        "y": 279
       },
       "id": 10007,
       "panels": [],
@@ -9907,7 +10029,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 268
+        "y": 280
       },
       "id": 10008,
       "options": {
@@ -9998,7 +10120,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 268
+        "y": 280
       },
       "id": 10009,
       "options": {
@@ -10101,7 +10223,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 276
+        "y": 288
       },
       "id": 10010,
       "options": {
@@ -10196,7 +10318,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 276
+        "y": 288
       },
       "id": 10011,
       "options": {
@@ -10239,7 +10361,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 284
+        "y": 296
       },
       "id": 10012,
       "panels": [],
@@ -10304,7 +10426,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 285
+        "y": 297
       },
       "id": 10013,
       "options": {
@@ -10391,7 +10513,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 285
+        "y": 297
       },
       "id": 10014,
       "options": {
@@ -10482,7 +10604,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 293
+        "y": 305
       },
       "id": 10015,
       "options": {
@@ -10569,7 +10691,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 293
+        "y": 305
       },
       "id": 10016,
       "options": {
@@ -10612,7 +10734,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 302
+        "y": 313
       },
       "id": 600,
       "panels": [],
@@ -10656,7 +10778,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 303
+        "y": 314
       },
       "id": 601,
       "options": {
@@ -10716,7 +10838,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 303
+        "y": 314
       },
       "id": 602,
       "options": {
@@ -10785,7 +10907,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 303
+        "y": 314
       },
       "id": 603,
       "options": {
@@ -10814,135 +10936,6 @@
         }
       ],
       "title": "Rule Cache Negative Entries",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "Unique strings in intern pool.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 303
-      },
-      "id": 608,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum(metrics_governor_intern_pool_size)",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ],
-      "title": "String Intern Pool Size",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "Compression buffer pool operations per second.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 303
-      },
-      "id": 610,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "rate(metrics_governor_compression_buffer_pool_gets_total[1m])",
-          "legendFormat": "Gets/s",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "rate(metrics_governor_compression_buffer_pool_puts_total[1m])",
-          "legendFormat": "Puts/s",
-          "refId": "B"
-        }
-      ],
-      "title": "Buffer Pool Ops/s",
       "type": "stat"
     },
     {
@@ -11002,9 +10995,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 307
+        "w": 12,
+        "x": 12,
+        "y": 314
       },
       "id": 604,
       "options": {
@@ -11111,9 +11104,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 307
+        "w": 12,
+        "x": 0,
+        "y": 322
       },
       "id": 605,
       "options": {
@@ -11237,9 +11230,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 307
+        "w": 12,
+        "x": 12,
+        "y": 322
       },
       "id": 606,
       "options": {
@@ -11330,7 +11323,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 315
+        "y": 330
       },
       "id": 607,
       "options": {
@@ -11370,6 +11363,66 @@
       ],
       "title": "String Intern Pool Ops/s",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Unique strings in intern pool.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 330
+      },
+      "id": 608,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(metrics_governor_intern_pool_size)",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "String Intern Pool Size",
+      "type": "stat"
     },
     {
       "datasource": {
@@ -11428,9 +11481,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 315
+        "w": 8,
+        "x": 16,
+        "y": 330
       },
       "id": 609,
       "options": {
@@ -11481,212 +11534,11 @@
       "type": "timeseries"
     },
     {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 323
-      },
-      "id": 800,
-      "panels": [],
-      "title": "Component Activity & Resource",
-      "type": "row"
-    },
-    {
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Combined receiver intake rate across OTLP and PRW pipelines.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 324
-      },
-      "id": 801,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "Receiver Rate",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "sum(rate(metrics_governor_datapoints_received_total[1m])) + sum(rate(metrics_governor_prw_datapoints_received_total[1m]))",
-          "legendFormat": "In/s",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "Buffer occupancy as percentage of maximum capacity.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.7
-              },
-              {
-                "color": "red",
-                "value": 0.9
-              }
-            ]
-          },
-          "unit": "percentunit",
-          "min": 0,
-          "max": 1
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 324
-      },
-      "id": 802,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "Buffer Occupancy %",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "metrics_governor_buffer_size / clamp_min(metrics_governor_buffer_max_size, 1)",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "Queue occupancy as percentage of maximum capacity.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.7
-              },
-              {
-                "color": "red",
-                "value": 0.9
-              }
-            ]
-          },
-          "unit": "percentunit",
-          "min": 0,
-          "max": 1
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 324
-      },
-      "id": 803,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "Queue Occupancy %",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "metrics_governor_queue_size / clamp_min(metrics_governor_queue_max_size, 1)",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "Combined export rate across OTLP and PRW pipelines.",
+      "description": "Compression buffer pool operations per second.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -11710,9 +11562,9 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 324
+        "y": 334
       },
-      "id": 804,
+      "id": 610,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -11727,349 +11579,28 @@
         },
         "textMode": "auto"
       },
-      "title": "Export Rate",
-      "type": "stat",
       "targets": [
         {
-          "expr": "sum(rate(metrics_governor_datapoints_exported_total[1m])) + sum(rate(metrics_governor_prw_samples_exported_total[1m]))",
-          "legendFormat": "Out/s",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "Current number of goroutines.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
           },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 500
-              },
-              {
-                "color": "red",
-                "value": 1000
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 324
-      },
-      "id": 805,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "Goroutines",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "metrics_governor_goroutines",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "Current heap memory allocation.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 268435456
-              },
-              {
-                "color": "red",
-                "value": 536870912
-              }
-            ]
-          },
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 324
-      },
-      "id": 806,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "Heap Usage",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "metrics_governor_memory_heap_alloc_bytes",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "Data flow through each pipeline component showing receiver, export, and drop rates.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 20,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 328
-      },
-      "id": 807,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max",
-            "last"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "title": "Component Throughput",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "sum(rate(metrics_governor_datapoints_received_total[1m]))",
-          "legendFormat": "Receiver In",
+          "expr": "rate(metrics_governor_compression_buffer_pool_gets_total[1m])",
+          "legendFormat": "Gets/s",
           "refId": "A"
         },
         {
-          "expr": "sum(rate(metrics_governor_datapoints_exported_total[1m]))",
-          "legendFormat": "OTLP Export",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(metrics_governor_compression_buffer_pool_puts_total[1m])",
+          "legendFormat": "Puts/s",
           "refId": "B"
-        },
-        {
-          "expr": "sum(rate(metrics_governor_prw_samples_exported_total[1m]))",
-          "legendFormat": "PRW Export",
-          "refId": "C"
-        },
-        {
-          "expr": "sum(rate(metrics_governor_datapoints_dropped_total[1m]))",
-          "legendFormat": "Dropped",
-          "refId": "D"
         }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "Memory breakdown by component showing where memory is allocated.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 30,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 328
-      },
-      "id": 808,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max",
-            "last"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "title": "Memory Breakdown",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "metrics_governor_buffer_bytes",
-          "legendFormat": "Buffer",
-          "refId": "A"
-        },
-        {
-          "expr": "metrics_governor_queue_bytes",
-          "legendFormat": "Queue",
-          "refId": "B"
-        },
-        {
-          "expr": "metrics_governor_fastqueue_disk_bytes",
-          "legendFormat": "Queue (Disk)",
-          "refId": "C"
-        },
-        {
-          "expr": "metrics_governor_memory_heap_alloc_bytes - metrics_governor_buffer_bytes - metrics_governor_queue_bytes",
-          "legendFormat": "Other Heap",
-          "refId": "D"
-        }
-      ]
+      ],
+      "title": "Buffer Pool Ops/s",
+      "type": "stat"
     },
     {
       "collapsed": false,
@@ -12077,7 +11608,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 336
+        "y": 339
       },
       "id": 10100,
       "panels": [],
@@ -12113,7 +11644,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 337
+        "y": 340
       },
       "id": 10101,
       "options": {
@@ -12171,9 +11702,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 12,
         "x": 4,
-        "y": 337
+        "y": 340
       },
       "id": 10102,
       "options": {
@@ -12209,7 +11740,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Time since last successful config reload. Shows 'Never' if no reload has occurred.",
+      "description": "Time since last successful config reload. Shows 'N/A' if no reload has occurred.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -12251,7 +11782,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 337
+        "y": 340
       },
       "id": 10103,
       "options": {
@@ -12287,6 +11818,142 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
+      "description": "Current number of goroutines.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 340
+      },
+      "id": 10104,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_goroutines",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Goroutines",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Current heap memory allocation.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 268435456
+              },
+              {
+                "color": "red",
+                "value": 536870912
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 340
+      },
+      "id": 10105,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_memory_heap_alloc_bytes",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Heap Memory",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
       "description": "Process start timestamp.",
       "fieldConfig": {
         "defaults": {
@@ -12310,8 +11977,8 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 12,
-        "y": 337
+        "x": 20,
+        "y": 340
       },
       "id": 10106,
       "options": {
@@ -12340,83 +12007,6 @@
         }
       ],
       "title": "Process Start Time",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "Per-group stats reporting threshold (0 = report all groups)",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "text": "All Groups"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 100
-              },
-              {
-                "color": "red",
-                "value": 1000
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 337
-      },
-      "id": 10112,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "metrics_governor_limits_stats_threshold",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ],
-      "title": "Stats Threshold",
       "type": "stat"
     },
     {
@@ -12478,7 +12068,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 341
+        "y": 344
       },
       "id": 10107,
       "options": {
@@ -12568,7 +12158,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 341
+        "y": 344
       },
       "id": 10108,
       "options": {
@@ -12608,14 +12198,90 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "text": "All Groups"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 352
+      },
+      "id": 10112,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_limits_stats_threshold",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Stats Threshold",
+      "description": "Per-group stats reporting threshold (0 = report all groups)",
+      "type": "stat"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 349
+        "y": 356
       },
-      "id": 420,
+      "id": 400,
       "panels": [],
       "title": "Logging",
       "type": "row"
@@ -12625,7 +12291,6 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Rate of ERROR-level log messages. A sudden increase often indicates export failures, queue issues, or destination problems.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -12641,26 +12306,26 @@
               },
               {
                 "color": "yellow",
-                "value": 0.1
+                "value": 1
               },
               {
                 "color": "red",
-                "value": 1
+                "value": 10
               }
             ]
           },
-          "unit": "ops"
+          "unit": "short"
         }
       },
       "gridPos": {
-        "h": 3,
-        "w": 4,
+        "h": 4,
+        "w": 6,
         "x": 0,
-        "y": 350
+        "y": 357
       },
-      "id": 421,
+      "id": 401,
       "options": {
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
@@ -12673,7 +12338,8 @@
         },
         "textMode": "auto"
       },
-      "title": "Error Rate",
+      "title": "Error Log Rate",
+      "description": "Rate of ERROR-level log messages. A sudden increase often indicates export failures, queue issues, or destination problems.",
       "type": "stat",
       "targets": [
         {
@@ -12687,7 +12353,6 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Rate of WARN-level log messages. Warnings often indicate approaching limits, slow operations, or degraded conditions.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -12703,127 +12368,11 @@
               },
               {
                 "color": "yellow",
-                "value": 1
+                "value": 10
               },
               {
                 "color": "orange",
-                "value": 10
-              }
-            ]
-          },
-          "unit": "ops"
-        }
-      },
-      "gridPos": {
-        "h": 3,
-        "w": 4,
-        "x": 4,
-        "y": 350
-      },
-      "id": 422,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "Warn Rate",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "rate(metrics_governor_log_messages_total{level=\"WARN\"}[5m])",
-          "legendFormat": "Warnings/s"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "Ratio of ERROR messages to total messages. A healthy system should be near 0%. Rising error ratio indicates systemic issues.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.01
-              },
-              {
-                "color": "red",
-                "value": 0.1
-              }
-            ]
-          },
-          "unit": "percentunit"
-        }
-      },
-      "gridPos": {
-        "h": 3,
-        "w": 4,
-        "x": 8,
-        "y": 350
-      },
-      "id": 425,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "Error Ratio",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "rate(metrics_governor_log_messages_total{level=\"ERROR\"}[5m]) / (sum(rate(metrics_governor_log_messages_total[5m])) > 0) or vector(0)",
-          "legendFormat": "Error %"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "Total count of all log messages since startup.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
+                "value": 100
               }
             ]
           },
@@ -12831,12 +12380,12 @@
         }
       },
       "gridPos": {
-        "h": 3,
-        "w": 4,
-        "x": 12,
-        "y": 350
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 357
       },
-      "id": 424,
+      "id": 402,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -12851,12 +12400,13 @@
         },
         "textMode": "auto"
       },
-      "title": "Total Messages",
+      "title": "Warning Log Rate",
+      "description": "Rate of WARN-level log messages. Warnings often indicate approaching limits, slow operations, or degraded conditions.",
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(metrics_governor_log_messages_total)",
-          "legendFormat": "Total"
+          "expr": "rate(metrics_governor_log_messages_total{level=\"WARN\"}[5m])",
+          "legendFormat": "Warnings/s"
         }
       ]
     },
@@ -12972,10 +12522,10 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 353
+        "x": 12,
+        "y": 357
       },
-      "id": 423,
+      "id": 403,
       "options": {
         "legend": {
           "calcs": [
@@ -13010,6 +12560,122 @@
         {
           "expr": "rate(metrics_governor_log_messages_total{level=\"FATAL\"}[1m])",
           "legendFormat": "FATAL"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 361
+      },
+      "id": 404,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "title": "Total Log Messages",
+      "description": "Total count of all log messages since startup.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(metrics_governor_log_messages_total)",
+          "legendFormat": "Total"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.1
+              }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 361
+      },
+      "id": 405,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "title": "Error Ratio",
+      "description": "Ratio of ERROR messages to total messages. A healthy system should be near 0%. Rising error ratio indicates systemic issues.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(metrics_governor_log_messages_total{level=\"ERROR\"}[5m]) / (sum(rate(metrics_governor_log_messages_total[5m])) > 0) or vector(0)",
+          "legendFormat": "Error %"
         }
       ]
     },
@@ -13063,10 +12729,10 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 353
+        "x": 0,
+        "y": 365
       },
-      "id": 426,
+      "id": 406,
       "options": {
         "legend": {
           "calcs": [
@@ -13145,11 +12811,11 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 361
+        "w": 12,
+        "x": 12,
+        "y": 365
       },
-      "id": 427,
+      "id": 407,
       "options": {
         "legend": {
           "calcs": [
@@ -13174,6 +12840,485 @@
           "legendFormat": "{{component}}"
         }
       ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 374
+      },
+      "id": 10203,
+      "panels": [],
+      "title": "Pipeline Component Utilization",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 375
+      },
+      "id": 10204,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(\n  sum by (component) (rate(metrics_governor_component_seconds_total[$__rate_interval]))\n  / ignoring(component) group_left\n  sum(rate(metrics_governor_component_seconds_total[$__rate_interval]))\n) * 100",
+          "legendFormat": "{{component}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pipeline CPU Utilization by Component",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 40,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "mappings": [],
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 375
+      },
+      "id": 10205,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (component) (rate(metrics_governor_component_seconds_total[$__rate_interval]))",
+          "legendFormat": "{{component}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pipeline Time per Component (seconds/sec)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 40,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "mappings": [],
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 385
+      },
+      "id": 10206,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (component) (rate(metrics_governor_component_bytes_processed_total[$__rate_interval]))",
+          "legendFormat": "{{component}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Bytes Processed Rate by Component",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 60,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "mappings": [],
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 385
+      },
+      "id": 10207,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_buffer_bytes",
+          "legendFormat": "Buffer",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_queue_bytes",
+          "legendFormat": "Queue",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_memqueue_bytes",
+          "legendFormat": "Memqueue (failover)",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_cardinality_memory_bytes",
+          "legendFormat": "Cardinality (bloom)",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_fastqueue_disk_bytes",
+          "legendFormat": "FastQueue disk",
+          "refId": "E"
+        }
+      ],
+      "title": "Memory Distribution by Component",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 268435456
+              },
+              {
+                "color": "red",
+                "value": 536870912
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 395
+      },
+      "id": 10208,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "go_memstats_heap_alloc_bytes - (metrics_governor_buffer_bytes + metrics_governor_queue_bytes + metrics_governor_memqueue_bytes + metrics_governor_cardinality_memory_bytes)",
+          "legendFormat": "Untracked Heap",
+          "refId": "A"
+        }
+      ],
+      "title": "Untracked Heap Memory",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 395
+      },
+      "id": 10209,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(metrics_governor_queue_workers_active / metrics_governor_queue_workers_total) * 100",
+          "legendFormat": "Worker Utilization",
+          "refId": "A"
+        }
+      ],
+      "title": "Workers Utilization %",
+      "type": "stat"
     }
   ],
   "refresh": "10s",

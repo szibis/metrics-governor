@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/szibis/metrics-governor/internal/auth"
 	"github.com/szibis/metrics-governor/internal/compression"
+	"github.com/szibis/metrics-governor/internal/pipeline"
 	"github.com/szibis/metrics-governor/internal/prw"
 	tlspkg "github.com/szibis/metrics-governor/internal/tls"
 	"golang.org/x/net/http2"
@@ -306,18 +307,24 @@ func (e *PRWExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 	}
 
 	// Marshal the request to protobuf
+	marshalStart := time.Now()
 	body, err := req.Marshal()
+	pipeline.Record("serialize", pipeline.Since(marshalStart))
 	if err != nil {
 		return fmt.Errorf("failed to marshal PRW request: %w", err)
 	}
+	pipeline.RecordBytes("serialize", len(body))
 
 	// Compress the body
+	compressStart := time.Now()
 	compressedBody, err := compression.Compress(body, compression.Config{
 		Type: e.compression,
 	})
+	pipeline.Record("compress", pipeline.Since(compressStart))
 	if err != nil {
 		return fmt.Errorf("failed to compress PRW request: %w", err)
 	}
+	pipeline.RecordBytes("compress", len(compressedBody))
 
 	// Create HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.endpoint, bytes.NewReader(compressedBody))
@@ -340,7 +347,10 @@ func (e *PRWExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 	prwExportRequestsTotal.Inc()
 
 	// Send request
+	httpStart := time.Now()
 	resp, err := e.httpClient.Do(httpReq)
+	pipeline.Record("export_http", pipeline.Since(httpStart))
+	pipeline.RecordBytes("export_http", len(compressedBody))
 	if err != nil {
 		errType := classifyError(err)
 		prwExportErrorsTotal.WithLabelValues(string(errType)).Inc()

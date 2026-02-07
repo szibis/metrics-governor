@@ -24,8 +24,9 @@ services:
       resources:
         limits:
           # Memory limit - auto-detected by Go runtime via cgroups
-          # GOMEMLIMIT is automatically set to 90% of this value
+          # GOMEMLIMIT is automatically set to 85% of this value
           memory: 512M
+          cpus: "1"
     command:
       - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
       - "-exporter-protocol=http"
@@ -63,7 +64,7 @@ services:
       - "-queue-circuit-breaker-threshold=10"
       - "-queue-circuit-breaker-reset-timeout=30s"
       # Memory limit - auto-detect container limits
-      - "-memory-limit-ratio=0.9"
+      - "-memory-limit-ratio=0.85"
       # Rule cache - LRU cache for metric-to-rule matching
       - "-rule-cache-max-size=10000"
       # Sharding configuration - consistent hashing across endpoints

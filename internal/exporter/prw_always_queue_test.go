@@ -240,9 +240,9 @@ func TestPRWAlwaysQueue_DefaultWorkerCount(t *testing.T) {
 	}
 	t.Cleanup(func() { qe.Close() })
 
-	expected := 2 * runtime.NumCPU()
+	expected := runtime.NumCPU()
 	if qe.workers != expected {
-		t.Fatalf("workers = %d, want %d (2 * NumCPU)", qe.workers, expected)
+		t.Fatalf("workers = %d, want %d (NumCPU)", qe.workers, expected)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/szibis/metrics-governor/internal/exporter"
 	"github.com/szibis/metrics-governor/internal/logging"
+	"github.com/szibis/metrics-governor/internal/pipeline"
 	"github.com/szibis/metrics-governor/internal/queue"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
@@ -60,6 +61,11 @@ var (
 		Name: "metrics_governor_buffer_evictions_total",
 		Help: "Total number of entries evicted due to buffer capacity (full policy: drop_oldest)",
 	})
+
+	exportDataLossTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_export_data_loss_total",
+		Help: "Batches permanently lost (export failed AND failover queue push failed)",
+	})
 )
 
 func init() {
@@ -71,6 +77,7 @@ func init() {
 	prometheus.MustRegister(bufferMaxBytesGauge)
 	prometheus.MustRegister(bufferRejectedTotal)
 	prometheus.MustRegister(bufferEvictionsTotal)
+	prometheus.MustRegister(exportDataLossTotal)
 
 	exportRetrySplitTotal.Add(0)
 	failoverQueuePushTotal.Add(0)
@@ -80,6 +87,7 @@ func init() {
 	bufferMaxBytesGauge.Set(0)
 	bufferRejectedTotal.Add(0)
 	bufferEvictionsTotal.Add(0)
+	exportDataLossTotal.Add(0)
 }
 
 // Exporter defines the interface for sending metrics.
@@ -275,12 +283,16 @@ func (b *MetricsBuffer) addInternal(resourceMetrics []*metricspb.ResourceMetrics
 
 	// Process stats before any filtering
 	if b.stats != nil {
+		start := time.Now()
 		b.stats.Process(resourceMetrics)
+		pipeline.Record("stats", pipeline.Since(start))
 	}
 
 	// Apply sampling filter (reduces volume before limits)
 	if b.sampler != nil {
+		start := time.Now()
 		resourceMetrics = b.sampler.Sample(resourceMetrics)
+		pipeline.Record("sampling", pipeline.Since(start))
 		if len(resourceMetrics) == 0 {
 			return nil
 		}
@@ -288,12 +300,16 @@ func (b *MetricsBuffer) addInternal(resourceMetrics []*metricspb.ResourceMetrics
 
 	// Apply tenant detection and quota enforcement (before limits)
 	if b.tenantProcessor != nil {
+		start := time.Now()
 		resourceMetrics = b.tenantProcessor.ProcessBatch(resourceMetrics, headerTenant)
+		pipeline.Record("tenant", pipeline.Since(start))
 	}
 
 	// Apply limits enforcement (may filter/sample metrics)
 	if b.limits != nil {
+		start := time.Now()
 		resourceMetrics = b.limits.Process(resourceMetrics)
+		pipeline.Record("limits", pipeline.Since(start))
 	}
 
 	if len(resourceMetrics) == 0 {
@@ -431,6 +447,7 @@ func (b *MetricsBuffer) drainFailoverQueue(ctx context.Context) {
 			// Re-push to failover queue for later retry
 			failoverQueueDrainErrorsTotal.Inc()
 			if pushErr := b.failoverQueue.Push(req); pushErr != nil {
+				exportDataLossTotal.Inc()
 				logging.Error("failover drain: re-push failed, data lost", logging.F(
 					"error", err.Error(),
 					"push_error", pushErr.Error(),
@@ -480,6 +497,7 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 	// Step 1: Split by count (maxBatchSize)
 	// Step 2: Split by bytes (maxBatchBytes) via recursive binary split
 	var allBatches [][]*metricspb.ResourceMetrics
+	splitStart := time.Now()
 	for i := 0; i < len(toSend); i += b.maxBatchSize {
 		end := i + b.maxBatchSize
 		if end > len(toSend) {
@@ -488,6 +506,7 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 		countBatch := toSend[i:end]
 		allBatches = append(allBatches, splitByBytes(countBatch, b.maxBatchBytes)...)
 	}
+	pipeline.Record("batch_split", pipeline.Since(splitStart))
 
 	// Step 3: Export batches
 	// In always-queue mode, each exportBatch() returns instantly (queue push is µs).
@@ -520,7 +539,9 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 func (b *MetricsBuffer) exportBatch(ctx context.Context, batch []*metricspb.ResourceMetrics) {
 	// Apply relabeling before export (may filter or transform metrics)
 	if b.relabeler != nil {
+		start := time.Now()
 		batch = b.relabeler.Relabel(batch)
+		pipeline.Record("relabel", pipeline.Since(start))
 		if len(batch) == 0 {
 			return
 		}
@@ -557,6 +578,7 @@ func (b *MetricsBuffer) exportBatch(ctx context.Context, batch []*metricspb.Reso
 	// All export attempts exhausted -- push to failover queue instead of dropping
 	if b.failoverQueue != nil {
 		if qErr := b.failoverQueue.Push(req); qErr != nil {
+			exportDataLossTotal.Inc()
 			logging.Error("CRITICAL: export failed and failover queue push failed, data lost", logging.F(
 				"error", err.Error(),
 				"queue_error", qErr.Error(),
