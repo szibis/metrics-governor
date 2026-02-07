@@ -166,7 +166,7 @@ type QueueYAMLConfig struct {
 	DrainEntryTimeout Duration `yaml:"drain_entry_timeout"`
 	// Worker pool settings
 	AlwaysQueue *bool `yaml:"always_queue"` // Always route through queue (default: true)
-	Workers     int   `yaml:"workers"`      // Worker goroutine count (0 = 2×NumCPU)
+	Workers     int   `yaml:"workers"`      // Worker goroutine count (0 = NumCPU)
 }
 
 // BackoffYAMLConfig holds exponential backoff configuration.
@@ -603,13 +603,13 @@ func (y *YAMLConfig) ApplyDefaults() {
 
 	// Memory defaults
 	if y.Memory.LimitRatio == 0 {
-		y.Memory.LimitRatio = 0.9
+		y.Memory.LimitRatio = 0.85
 	}
 	if y.Memory.BufferPercent == 0 {
-		y.Memory.BufferPercent = 0.15
+		y.Memory.BufferPercent = 0.10
 	}
 	if y.Memory.QueuePercent == 0 {
-		y.Memory.QueuePercent = 0.15
+		y.Memory.QueuePercent = 0.10
 	}
 
 	// Telemetry defaults

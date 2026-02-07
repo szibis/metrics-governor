@@ -135,13 +135,13 @@ type Config struct {
 	QueueCircuitBreakerResetTimeout time.Duration // Time to wait before half-open (default: 30s)
 
 	// Memory limit settings
-	MemoryLimitRatio    float64 // Ratio of container memory to use for GOMEMLIMIT (default: 0.9)
-	BufferMemoryPercent float64 // Buffer capacity as % of detected memory limit (default: 0.15)
-	QueueMemoryPercent  float64 // Queue in-memory capacity as % of detected memory limit (default: 0.15)
+	MemoryLimitRatio    float64 // Ratio of container memory to use for GOMEMLIMIT (default: 0.85)
+	BufferMemoryPercent float64 // Buffer capacity as % of detected memory limit (default: 0.10)
+	QueueMemoryPercent  float64 // Queue in-memory capacity as % of detected memory limit (default: 0.10)
 
 	// Queue worker pool settings
 	QueueAlwaysQueue bool // Always route through queue (default: true)
-	QueueWorkers     int  // Worker goroutine count (0 = 2×NumCPU)
+	QueueWorkers     int  // Worker goroutine count (0 = NumCPU)
 
 	// Sharding settings
 	ShardingEnabled            bool
@@ -457,12 +457,12 @@ func ParseFlags() *Config {
 	flag.DurationVar(&cfg.QueueCircuitBreakerResetTimeout, "queue-circuit-breaker-reset-timeout", 30*time.Second, "Time to wait before half-open state")
 	// Worker pool flags
 	flag.BoolVar(&cfg.QueueAlwaysQueue, "queue-always-queue", true, "Always route data through queue (workers pull and export)")
-	flag.IntVar(&cfg.QueueWorkers, "queue-workers", 0, "Queue worker goroutine count (0 = 2×NumCPU)")
+	flag.IntVar(&cfg.QueueWorkers, "queue-workers", 0, "Queue worker goroutine count (0 = NumCPU)")
 
 	// Memory limit flags
-	flag.Float64Var(&cfg.MemoryLimitRatio, "memory-limit-ratio", 0.9, "Ratio of container memory to use for GOMEMLIMIT (0.0-1.0)")
-	flag.Float64Var(&cfg.BufferMemoryPercent, "buffer-memory-percent", 0.15, "Buffer capacity as % of detected memory limit (0.0-1.0)")
-	flag.Float64Var(&cfg.QueueMemoryPercent, "queue-memory-percent", 0.15, "Queue in-memory capacity as % of detected memory limit (0.0-1.0)")
+	flag.Float64Var(&cfg.MemoryLimitRatio, "memory-limit-ratio", 0.85, "Ratio of container memory to use for GOMEMLIMIT (0.0-1.0)")
+	flag.Float64Var(&cfg.BufferMemoryPercent, "buffer-memory-percent", 0.10, "Buffer capacity as % of detected memory limit (0.0-1.0)")
+	flag.Float64Var(&cfg.QueueMemoryPercent, "queue-memory-percent", 0.10, "Queue in-memory capacity as % of detected memory limit (0.0-1.0)")
 
 	// Sharding flags
 	flag.BoolVar(&cfg.ShardingEnabled, "sharding-enabled", false, "Enable consistent sharding")
@@ -1950,11 +1950,11 @@ func DefaultConfig() *Config {
 		QueueDrainTimeout:               30 * time.Second,
 		QueueDrainEntryTimeout:          5 * time.Second,
 		ExporterDialTimeout:             30 * time.Second,
-		MemoryLimitRatio:                0.9,
-		BufferMemoryPercent:             0.15,
-		QueueMemoryPercent:              0.15,
+		MemoryLimitRatio:                0.85,
+		BufferMemoryPercent:             0.10,
+		QueueMemoryPercent:              0.10,
 		QueueAlwaysQueue:                true,
-		QueueWorkers:                    0, // 0 = 2×NumCPU
+		QueueWorkers:                    0, // 0 = NumCPU
 		ShardingEnabled:                 false,
 		ShardingDNSRefreshInterval:      30 * time.Second,
 		ShardingDNSTimeout:              5 * time.Second,

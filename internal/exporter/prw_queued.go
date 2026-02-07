@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/logging"
+	"github.com/szibis/metrics-governor/internal/pipeline"
 	"github.com/szibis/metrics-governor/internal/prw"
 	"github.com/szibis/metrics-governor/internal/queue"
 )
@@ -177,9 +178,10 @@ func NewPRWQueued(exporter prwExporterInterface, cfg PRWQueueConfig) (*PRWQueued
 		drainEntryTimeout = 5 * time.Second
 	}
 
+	// Worker count: default to NumCPU (I/O-bound proxy)
 	workers := cfg.Workers
 	if workers <= 0 {
-		workers = 2 * runtime.NumCPU()
+		workers = runtime.NumCPU()
 	}
 
 	qe := &PRWQueuedExporter{
@@ -247,13 +249,19 @@ func (qe *PRWQueuedExporter) Export(ctx context.Context, req *prw.WriteRequest) 
 	}
 
 	if qe.alwaysQueue {
+		marshalStart := time.Now()
 		data, marshalErr := req.Marshal()
+		pipeline.Record("serialize", pipeline.Since(marshalStart))
 		if marshalErr != nil {
 			return fmt.Errorf("marshal failed: %w", marshalErr)
 		}
+		pipeline.RecordBytes("serialize", len(data))
+		pushStart := time.Now()
 		if pushErr := qe.queue.PushData(data); pushErr != nil {
 			return fmt.Errorf("queue push failed: %w", pushErr)
 		}
+		pipeline.Record("queue_push", pipeline.Since(pushStart))
+		pipeline.RecordBytes("queue_push", len(data))
 		return nil
 	}
 
@@ -369,7 +377,9 @@ func (qe *PRWQueuedExporter) workerLoop(id int) {
 		default:
 		}
 
+		popStart := time.Now()
 		entry, err := qe.queue.Pop()
+		pipeline.Record("queue_pop", pipeline.Since(popStart))
 		if err != nil {
 			qe.workerSleep(100 * time.Millisecond)
 			continue
@@ -379,7 +389,9 @@ func (qe *PRWQueuedExporter) workerLoop(id int) {
 			continue
 		}
 
+		deserStart := time.Now()
 		req, err := prw.UnmarshalWriteRequest(entry.Data)
+		pipeline.Record("serialize", pipeline.Since(deserStart))
 		if err != nil {
 			logging.Error("PRW worker: failed to deserialize", logging.F("worker_id", id, "error", err.Error()))
 			continue
@@ -395,9 +407,14 @@ func (qe *PRWQueuedExporter) workerLoop(id int) {
 
 		prwRetryTotal.Inc()
 
+		// Track workers actively exporting
+		queue.IncrementWorkersActive()
+		exportStart := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), qe.retryExportTimeout)
 		exportErr := qe.exporter.Export(ctx, req)
 		cancel()
+		pipeline.Record("export_http", pipeline.Since(exportStart))
+		queue.DecrementWorkersActive()
 
 		if exportErr == nil {
 			if qe.circuitBreaker != nil {
@@ -437,6 +454,7 @@ func (qe *PRWQueuedExporter) workerLoop(id int) {
 					"worker_id", id,
 					"error", exportErr.Error(),
 				))
+				queue.IncrementNonRetryableDropped(string(expErr.Type))
 				continue
 			}
 		}
@@ -652,6 +670,7 @@ func (qe *PRWQueuedExporter) processQueue() bool {
 				"error_type", string(expErr.Type),
 				"timeseries", len(req.Timeseries),
 			))
+			queue.IncrementNonRetryableDropped(string(expErr.Type))
 			return false
 		}
 	}

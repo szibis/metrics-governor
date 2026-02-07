@@ -531,8 +531,8 @@ func TestApplyDefaultsMemory(t *testing.T) {
 	cfg := &YAMLConfig{}
 	cfg.ApplyDefaults()
 
-	if cfg.Memory.LimitRatio != 0.9 {
-		t.Errorf("expected default limit ratio 0.9, got %f", cfg.Memory.LimitRatio)
+	if cfg.Memory.LimitRatio != 0.85 {
+		t.Errorf("expected default limit ratio 0.85, got %f", cfg.Memory.LimitRatio)
 	}
 }
 

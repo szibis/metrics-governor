@@ -856,12 +856,13 @@ func initMemoryLimit(ratio float64) {
 			"limit_bytes", limit,
 			"limit_mb", limit/(1024*1024),
 		))
+		autoSetGOGC()
 		return
 	}
 
 	// Validate and apply defaults for ratio
 	if ratio <= 0 || ratio > 1.0 {
-		ratio = 0.9 // Default to 90%
+		ratio = 0.85 // Default to 85%
 	}
 
 	// Auto-detect container memory limit (cgroups v1 and v2)
@@ -891,4 +892,16 @@ func initMemoryLimit(ratio float64) {
 		"ratio", ratio,
 		"source", "cgroup/system",
 	))
+	autoSetGOGC()
+}
+
+// autoSetGOGC sets GOGC=50 for tighter heap control when not explicitly set.
+// GOGC=50 means GC triggers when the live heap grows by 50% (vs 100% default),
+// trading slightly more GC CPU for much tighter memory usage. Acceptable for
+// an I/O-bound proxy doing minimal computation. Users can override via GOGC env var.
+func autoSetGOGC() {
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(50)
+		logging.Info("GOGC auto-set to 50 for tighter heap control")
+	}
 }

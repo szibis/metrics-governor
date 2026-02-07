@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/logging"
+	"github.com/szibis/metrics-governor/internal/pipeline"
 )
 
 // PRWExporter defines the interface for sending PRW metrics.
@@ -97,15 +98,19 @@ func (b *Buffer) Add(req *WriteRequest) {
 
 	// Track received datapoints and bytes (uncompressed)
 	if b.stats != nil {
+		start := time.Now()
 		datapointCount := req.TotalDatapoints()
 		timeseriesCount := req.TotalTimeseries()
 		b.stats.RecordPRWReceived(datapointCount, timeseriesCount)
 		b.stats.RecordPRWBytesReceived(req.EstimateSize())
+		pipeline.Record("stats", pipeline.Since(start))
 	}
 
 	// Apply limits enforcement (may filter/sample metrics)
 	if b.limits != nil {
+		start := time.Now()
 		req = b.limits.Process(req)
+		pipeline.Record("limits", pipeline.Since(start))
 	}
 
 	if req == nil || len(req.Timeseries) == 0 {

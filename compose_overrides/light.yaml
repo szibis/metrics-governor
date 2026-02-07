@@ -81,7 +81,7 @@ services:
       - "-sharding-fallback-on-empty=true"
       - "-sharding-dns-refresh-interval=30s"
       # Memory limit
-      - "-memory-limit-ratio=0.9"
+      - "-memory-limit-ratio=0.85"
     volumes:
       - mg-queue-light-data:/data/queue
 

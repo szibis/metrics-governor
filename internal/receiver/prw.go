@@ -12,6 +12,7 @@ import (
 	"github.com/szibis/metrics-governor/internal/auth"
 	"github.com/szibis/metrics-governor/internal/compression"
 	"github.com/szibis/metrics-governor/internal/logging"
+	"github.com/szibis/metrics-governor/internal/pipeline"
 	"github.com/szibis/metrics-governor/internal/prw"
 	tlspkg "github.com/szibis/metrics-governor/internal/tls"
 )
@@ -177,7 +178,9 @@ func (r *PRWReceiver) handleWrite(w http.ResponseWriter, req *http.Request) {
 	if contentEncoding != "" {
 		compressionType := compression.ParseContentEncoding(contentEncoding)
 		if compressionType != compression.TypeNone {
+			start := time.Now()
 			body, err = compression.Decompress(body, compressionType)
+			pipeline.Record("receive_decompress", pipeline.Since(start))
 			if err != nil {
 				IncrementReceiverError("decompress")
 				logging.Error("failed to decompress PRW request body", logging.F(
@@ -187,10 +190,12 @@ func (r *PRWReceiver) handleWrite(w http.ResponseWriter, req *http.Request) {
 				http.Error(w, "Failed to decompress body", http.StatusBadRequest)
 				return
 			}
+			pipeline.RecordBytes("receive_decompress", len(body))
 		}
 	}
 
 	// Unmarshal the WriteRequest
+	unmarshalStart := time.Now()
 	var writeReq prw.WriteRequest
 	if err := writeReq.Unmarshal(body); err != nil {
 		IncrementReceiverError("decode")
@@ -198,6 +203,8 @@ func (r *PRWReceiver) handleWrite(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Failed to unmarshal protobuf", http.StatusBadRequest)
 		return
 	}
+	pipeline.Record("receive_unmarshal", pipeline.Since(unmarshalStart))
+	pipeline.RecordBytes("receive_unmarshal", len(body))
 
 	// Validate version if configured
 	if r.version != prw.VersionAuto && r.version != "" {

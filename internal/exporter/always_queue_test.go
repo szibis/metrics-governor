@@ -447,7 +447,7 @@ func TestWorkerPool_WorkerCount(t *testing.T) {
 }
 
 // TestWorkerPool_DefaultWorkerCount verifies that when Workers is 0 (default),
-// the actual count is 2 * runtime.NumCPU().
+// the actual count is runtime.NumCPU().
 func TestWorkerPool_DefaultWorkerCount(t *testing.T) {
 	mock := &aqMockExporter{}
 	cfg := alwaysQueueConfig(t, 0) // 0 = use default
@@ -459,8 +459,8 @@ func TestWorkerPool_DefaultWorkerCount(t *testing.T) {
 	}
 	t.Cleanup(func() { qe.Close() })
 
-	expected := 2 * runtime.NumCPU()
+	expected := runtime.NumCPU()
 	if qe.Workers() != expected {
-		t.Fatalf("Workers() = %d, want %d (2 * NumCPU)", qe.Workers(), expected)
+		t.Fatalf("Workers() = %d, want %d (NumCPU)", qe.Workers(), expected)
 	}
 }

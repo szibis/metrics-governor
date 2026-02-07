@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/szibis/metrics-governor/internal/auth"
 	"github.com/szibis/metrics-governor/internal/compression"
+	"github.com/szibis/metrics-governor/internal/pipeline"
 	tlspkg "github.com/szibis/metrics-governor/internal/tls"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
@@ -427,10 +428,13 @@ func classifyGRPCError(err error) ErrorType {
 
 // exportHTTP exports metrics via HTTP.
 func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error {
+	marshalStart := time.Now()
 	body, err := proto.Marshal(req)
+	pipeline.Record("serialize", pipeline.Since(marshalStart))
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
+	pipeline.RecordBytes("serialize", len(body))
 
 	// Track uncompressed size and datapoints
 	uncompressedSize := len(body)
@@ -439,10 +443,13 @@ func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportM
 
 	// Apply compression if configured
 	if e.compression.Type != compression.TypeNone && e.compression.Type != "" {
+		compressStart := time.Now()
 		body, err = compression.Compress(body, e.compression)
+		pipeline.Record("compress", pipeline.Since(compressStart))
 		if err != nil {
 			return fmt.Errorf("failed to compress request: %w", err)
 		}
+		pipeline.RecordBytes("compress", len(body))
 		compressionLabel = string(e.compression.Type)
 	}
 
@@ -460,7 +467,9 @@ func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportM
 
 	otlpExportRequestsTotal.Inc()
 
+	httpStart := time.Now()
 	resp, err := e.httpClient.Do(httpReq)
+	pipeline.Record("export_http", pipeline.Since(httpStart))
 	if err != nil {
 		errType := classifyError(err)
 		recordExportError(errType)

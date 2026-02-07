@@ -42,7 +42,7 @@ services:
       - "-queue-circuit-breaker-threshold=5"
       - "-queue-circuit-breaker-reset-timeout=10s"
       # Memory limit
-      - "-memory-limit-ratio=0.9"
+      - "-memory-limit-ratio=0.85"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/metrics"]
       interval: 5s

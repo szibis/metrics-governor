@@ -14,6 +14,7 @@ import (
 	"github.com/szibis/metrics-governor/internal/buffer"
 	"github.com/szibis/metrics-governor/internal/compression"
 	"github.com/szibis/metrics-governor/internal/logging"
+	"github.com/szibis/metrics-governor/internal/pipeline"
 	tlspkg "github.com/szibis/metrics-governor/internal/tls"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -162,13 +163,16 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 	if contentEncoding != "" {
 		compressionType := compression.ParseContentEncoding(contentEncoding)
 		if compressionType != compression.TypeNone {
+			start := time.Now()
 			body, err = compression.Decompress(body, compressionType)
+			pipeline.Record("receive_decompress", pipeline.Since(start))
 			if err != nil {
 				IncrementReceiverError("decompress")
 				logging.Error("failed to decompress request body", logging.F("encoding", contentEncoding, "error", err.Error()))
 				http.Error(w, "Failed to decompress body", http.StatusBadRequest)
 				return
 			}
+			pipeline.RecordBytes("receive_decompress", len(body))
 		}
 	}
 
@@ -176,6 +180,7 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 
 	contentType := req.Header.Get("Content-Type")
 	isJSON := false
+	unmarshalStart := time.Now()
 	switch contentType {
 	case "application/x-protobuf", "application/protobuf":
 		if err := proto.Unmarshal(body, &exportReq); err != nil {
@@ -195,6 +200,8 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Unsupported content type; expected application/x-protobuf or application/json", http.StatusUnsupportedMediaType)
 		return
 	}
+	pipeline.Record("receive_unmarshal", pipeline.Since(unmarshalStart))
+	pipeline.RecordBytes("receive_unmarshal", len(body))
 
 	if err := r.buffer.Add(exportReq.ResourceMetrics); err != nil {
 		if errors.Is(err, buffer.ErrBufferFull) {

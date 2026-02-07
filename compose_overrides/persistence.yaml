@@ -57,7 +57,7 @@ services:
       - "-queue-circuit-breaker-threshold=10"
       - "-queue-circuit-breaker-reset-timeout=30s"
       # Memory limit
-      - "-memory-limit-ratio=0.9"
+      - "-memory-limit-ratio=0.85"
     volumes:
       - mg-bloom-test-data:/data/bloom-state
       - mg-queue-persist-data:/data/queue
