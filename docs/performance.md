@@ -12,8 +12,8 @@ metrics-governor includes several high-performance optimizations for production 
 | String Interning | Yes | Yes | -76% allocations | -12% CPU |
 | Byte-Aware Batch Splitting | Yes | No | Minimal | Minimal |
 | Split-on-Error | Yes | Yes | Minimal | Minimal |
-| Concurrent Export Workers | Yes | No | Bounded goroutines | Controlled parallelism |
-| Concurrency Limiting | Yes | Yes | Bounded goroutines | Controlled parallelism |
+| Worker Pool (Always-Queue) | Yes | Yes | Bounded goroutines | Pull-based parallelism |
+| Percentage Memory Sizing | Yes | Yes | Scales with container | Minimal |
 | Queue I/O Optimization | Yes | Yes | -40-60% disk (compression) | 10x throughput |
 | Persistent Disk Queue | Yes | Yes | Bounded by max_bytes | Disk I/O |
 | Memory Limit Auto-Detection | Yes | Yes | Prevents OOM kills | More predictable GC |
@@ -27,26 +27,27 @@ graph TB
         BF[Bloom Filters]
         SI[String Interning]
         BS[Byte-Aware Splitting]
-        CW[Concurrent Workers]
-        CL[Concurrency Limiting]
+        WP[Worker Pool]
+        MS[Memory Sizing]
         QIO[Queue I/O]
         ML[Memory Limits]
     end
 
     subgraph "Pipeline"
         RX[Receiver] --> LIM[Limits]
-        LIM --> BUF[Buffer]
+        LIM --> BUF[Buffer\ncapacity-bounded]
         BUF --> SPLIT[Batch Split]
-        SPLIT --> EXP[Export Workers]
-        EXP --> FQ[Failover Queue]
+        SPLIT --> Q[Always Queue]
+        Q --> WRK[Workers]
+        WRK --> FQ[Failover Queue]
     end
 
     BF -.->|Cardinality| LIM
     SI -.->|Labels| RX
-    SI -.->|Labels| EXP
+    SI -.->|Labels| WRK
     BS -.->|Size Control| SPLIT
-    CW -.->|Parallelism| EXP
-    CL -.->|Parallelism| EXP
+    WP -.->|Pull Model| WRK
+    MS -.->|Sizing| BUF
     QIO -.->|Persistence| FQ
     ML -.->|GC Control| ALL[All Components]
 ```
@@ -213,6 +214,7 @@ Batches are split by serialized byte size before export, preventing backend reje
 - **Default 8MB limit** - Safely under typical backend limits (e.g., VictoriaMetrics 16MB `opentelemetry.maxRequestSize`)
 - **Split-on-error** - If backend returns HTTP 400/413 "too large", the batch is split in half and both halves retried automatically
 - **Zero data loss** - Failed batches go to failover queue instead of being dropped
+- **Depth-limited** - Maximum split depth of 4 (produces at most 16 sub-batches) prevents unbounded recursion
 
 **Applies to:** OTLP buffer flush, PRW retry queue
 
@@ -271,28 +273,31 @@ metrics-governor -max-batch-bytes=0
 
 ---
 
-## Concurrent Export Workers
+## Worker Pool Architecture
 
-Parallel export workers within each flush cycle maximize throughput:
+Pull-based worker pool drains the queue concurrently, replacing the previous per-flush concurrent worker model:
 
-- Controlled by `-export-concurrency` (default: `NumCPU * 4`)
-- Each flush cycle dispatches sub-batches to concurrent workers via `sync.WaitGroup`
-- Workers share a semaphore-based concurrency limiter
-- Failed batches are pushed to the failover queue, not dropped
+- **Always-queue model** - `Export()` always pushes to queue (returns instantly), workers pull from queue
+- **Worker count** - Default `2 × NumCPU` (I/O-bound workers benefit from exceeding CPU count, matching VMAgent's approach)
+- **Self-regulating rate** - Workers only pull next item after current export completes (no prefetch)
+- **Per-worker backoff** - Each worker manages its own exponential backoff independently
+- **Graceful shutdown** - Workers finish in-flight exports before stopping; remaining queue items drained
 
-**Applies to:** OTLP buffer flush
+**Applies to:** OTLP pipeline, PRW pipeline (identical behavior)
 
 ### How It Works
 
 ```mermaid
 flowchart LR
-    subgraph "Flush Cycle"
-        SPLIT[Byte-Aware<br/>Split] --> B1[Sub-batch 1]
-        SPLIT --> B2[Sub-batch 2]
-        SPLIT --> BN[Sub-batch N]
+    subgraph "Buffer"
+        FLUSH[Flush] --> PUSH[Push to Queue]
     end
 
-    subgraph "Worker Pool"
+    subgraph "Queue (Always)"
+        Q[Persistent Queue]
+    end
+
+    subgraph "Worker Pool (2×NumCPU)"
         W1[Worker 1]
         W2[Worker 2]
         WN[Worker N]
@@ -300,72 +305,94 @@ flowchart LR
 
     subgraph "Outcome"
         BE[Backend]
-        FQ[Failover Queue]
+        RETRY[Re-push to Queue]
     end
 
-    B1 --> W1 -->|Success| BE
-    B2 --> W2 -->|Success| BE
-    BN --> WN -->|Failure| FQ
+    PUSH --> Q
+    Q -->|Pull| W1 -->|Success| BE
+    Q -->|Pull| W2 -->|Success| BE
+    Q -->|Pull| WN -->|Failure| RETRY
+    RETRY --> Q
 ```
+
+### Why Always-Queue?
+
+| Aspect | Previous (try-direct) | Always-Queue |
+|--------|----------------------|--------------|
+| Flush blocking | `wg.Wait()` blocks until all exports complete | Instant return (push to queue) |
+| Memory under slow destinations | Unbounded growth (buffer keeps accumulating) | Bounded by buffer capacity + queue size |
+| Concurrency control | Semaphore in buffer flush path | N workers pull at their own pace |
+| Failure handling | Queue on failure only | Queue always; workers handle retries |
 
 ### Observability Metrics
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `metrics_governor_export_concurrent_workers` | Gauge | Active export worker goroutines |
-| `metrics_governor_failover_queue_push_total` | Counter | Batches saved to failover queue on export failure |
-
----
-
-## Concurrency Limiting
-
-Semaphore-based limiting prevents goroutine explosion:
-
-- Bounded at `NumCPU * 4` by default
-- 88% reduction in concurrent goroutines under load
-- Prevents memory exhaustion during traffic spikes
-
-**Applies to:** OTLP buffer flush (concurrent export workers), OTLP sharded exporter, PRW sharded exporter
-
-### How It Works
-
-```mermaid
-flowchart LR
-    subgraph "Incoming Requests"
-        R1[Batch 1]
-        R2[Batch 2]
-        R3[Batch 3]
-        R4[Batch N]
-    end
-
-    subgraph "Semaphore"
-        SEM["Slots: NumCPU × 4"]
-    end
-
-    subgraph "Export Workers"
-        W1[Worker]
-        W2[Worker]
-        W3[Worker]
-    end
-
-    subgraph "Backend"
-        BE[Metrics Backend]
-    end
-
-    R1 --> SEM
-    R2 --> SEM
-    R3 --> SEM
-    R4 -.->|Wait| SEM
-    SEM --> W1 --> BE
-    SEM --> W2 --> BE
-    SEM --> W3 --> BE
-```
+| `metrics_governor_queue_workers_active` | Gauge | Active worker goroutines |
+| `metrics_governor_queue_workers_total` | Gauge | Configured worker count |
+| `metrics_governor_queue_push_total` | Counter | Batches pushed to queue |
+| `metrics_governor_queue_retry_total` | Counter | Retry attempts by workers |
 
 ### Configuration
 
 ```bash
-# Limit concurrent exports (default: NumCPU * 4)
-metrics-governor -export-concurrency=32
+# Worker count (default: 2 × NumCPU, auto-scales with hardware)
+metrics-governor -queue-workers=0
+
+# Explicit worker count
+metrics-governor -queue-workers=16
+```
+
+---
+
+## Percentage-Based Memory Sizing
+
+Buffer and queue sizes are derived from the detected container memory limit, ensuring they scale with available resources:
+
+- **Buffer capacity** - Default 15% of detected memory limit
+- **Queue in-memory** - Default 15% of detected memory limit
+- **Runtime overhead** - Remaining ~60% for Go runtime, goroutines, processing
+- **Static override** - Explicit byte values override percentage-based sizing
+
+**Applies to:** OTLP buffer, PRW buffer, OTLP queue, PRW queue
+
+### Memory Budget
+
+```mermaid
+pie title Container Memory Budget (defaults)
+    "GOMEMLIMIT (90%)" : 90
+    "OS Headroom (10%)" : 10
+```
+
+Within the 90% GOMEMLIMIT:
+```mermaid
+pie title GOMEMLIMIT Breakdown
+    "Buffer Capacity (15%)" : 15
+    "Queue In-Memory (15%)" : 15
+    "Go Runtime & Processing (60%)" : 60
+```
+
+### Buffer Full Policies
+
+When the buffer reaches its capacity limit, one of three policies applies:
+
+| Policy | Behavior | Use Case |
+|--------|----------|----------|
+| `reject` (default) | Returns `ErrBufferFull` → 429/ResourceExhausted to sender | Production: senders retry with backoff |
+| `drop_oldest` | Evicts oldest buffered data to make room | Best-effort: prefer fresh data |
+| `block` | Blocks receiver goroutine until space available | True backpressure (like OTel `block_on_overflow`) |
+
+### Configuration
+
+```bash
+# Percentage-based sizing (default)
+metrics-governor -buffer-memory-percent=0.15 -queue-memory-percent=0.15
+
+# Static override (takes precedence)
+metrics-governor -buffer-max-bytes=157286400
+
+# Buffer full policy
+metrics-governor -buffer-full-policy=reject
 ```
 
 ---
@@ -673,7 +700,7 @@ This starts with memory-efficient Bloom filters and automatically switches to HL
 |---------|:-------------------:|:----------------------:|:--------------------:|
 | `-batch-size` | 500 | 1000 | 2000 |
 | `-max-batch-bytes` | 4 MB | 8 MB | 8 MB |
-| `-export-concurrency` | 4 | `NumCPU * 2` | `NumCPU * 4` |
+| `-queue-workers` | 0 (auto) | 0 (auto) | 0 (auto) |
 | `-buffer-size` | 100 | 500 | 1000 |
 | `-string-interning` | true | true | true |
 | `-intern-max-value-length` | 64 | 64 | 128 |
@@ -773,7 +800,7 @@ metrics-governor \
   # Performance
   -batch-size 1000 \
   -max-batch-bytes 8388608 \
-  -export-concurrency 32 \
+  -queue-workers 0 \
   -buffer-size 500 \
   -string-interning=true \
   \

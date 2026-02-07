@@ -207,7 +207,7 @@ The queue uses a high-performance FastQueue implementation inspired by VictoriaM
 | `-queue-backoff-enabled` | `true` | Enable exponential backoff for retries |
 | `-queue-backoff-multiplier` | `2.0` | Backoff delay multiplier on each failure |
 | `-queue-circuit-breaker-enabled` | `true` | Enable circuit breaker pattern |
-| `-queue-circuit-breaker-threshold` | `10` | Consecutive failures to trip circuit |
+| `-queue-circuit-breaker-threshold` | `5` | Consecutive failures to trip circuit |
 | `-queue-circuit-breaker-reset-timeout` | `30s` | Time before half-open state |
 
 ### PRW Receiver Options
@@ -264,7 +264,7 @@ The PRW queue uses the same high-performance disk-backed `SendQueue` as the OTLP
 | `-prw-queue-backoff-enabled` | `true` | Enable exponential backoff for retries |
 | `-prw-queue-backoff-multiplier` | `2.0` | Multiply delay by this on each failure |
 | `-prw-queue-circuit-breaker-enabled` | `true` | Enable circuit breaker pattern |
-| `-prw-queue-circuit-breaker-threshold` | `10` | Consecutive failures before opening circuit |
+| `-prw-queue-circuit-breaker-threshold` | `5` | Consecutive failures before opening circuit |
 | `-prw-queue-circuit-breaker-reset-timeout` | `30s` | Time before half-open state |
 
 ### PRW Sharding Options
@@ -325,11 +325,20 @@ The queue provides durability for export failures with memory or disk-backed sto
 | `-sharding-virtual-nodes` | `150` | Virtual nodes per endpoint |
 | `-sharding-fallback-on-empty` | `false` | Fall back to default exporter if no labels match |
 
+### Always-Queue & Worker Pool Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-queue-always-queue` | `true` | Always route data through queue (workers pull from queue) |
+| `-queue-workers` | `0` | Worker count for queue drain (0 = 2×NumCPU) |
+| `-buffer-full-policy` | `reject` | Buffer full policy: `reject` (429/ResourceExhausted), `drop_oldest`, `block` |
+| `-buffer-memory-percent` | `0.15` | Buffer capacity as percentage of detected memory limit (0.0-1.0) |
+| `-queue-memory-percent` | `0.15` | Queue in-memory capacity as percentage of detected memory limit (0.0-1.0) |
+
 ### Performance Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-export-concurrency` | `0` | Max concurrent export goroutines (0 = NumCPU * 4) |
 | `-string-interning` | `true` | Enable string interning for label deduplication |
 | `-intern-max-value-length` | `64` | Max length for label value interning |
 
@@ -574,11 +583,11 @@ metrics-governor -max-batch-bytes 8388608
 # Enable stats tracking by service, environment and cluster
 metrics-governor -stats-labels service,env,cluster
 
-# Performance tuning: limit concurrent exports
-metrics-governor -export-concurrency 32
+# Performance tuning: configure worker pool
+metrics-governor -queue-workers 32
 
 # High-load environment with byte splitting
-metrics-governor -export-concurrency 64 -buffer-size 100000 -batch-size 5000 -max-batch-bytes 8388608
+metrics-governor -queue-workers 64 -buffer-size 100000 -batch-size 5000 -max-batch-bytes 8388608
 ```
 
 ### Limits Enforcement
@@ -610,19 +619,19 @@ When enabled (default), identical label names and values are deduplicated in mem
 - Reduces memory allocations by up to 66% for PRW unmarshal operations
 - Achieves 99%+ cache hit rate for common labels
 
-### Concurrency Limiting
+### Worker Pool
 
-Prevents goroutine explosion when exporting to multiple sharded endpoints:
+Pull-based workers drain the queue concurrently, replacing the previous semaphore-based concurrency limiting:
 
-- Default limit: `NumCPU * 4` (e.g., 32 on 8-core machine)
-- Set `-export-concurrency=0` to use default
-- Reduces concurrent goroutines by ~88% under high load
+- Default: `2 × NumCPU` workers (I/O-bound, benefits from exceeding CPU count)
+- Set `-queue-workers=0` to use default
+- Workers self-regulate export rate via pull model
 
 ### Recommended Settings
 
-| Environment | export-concurrency | string-interning |
-|-------------|-------------------|------------------|
-| Development | 0 (default) | true |
-| Production | 32-64 | true |
-| Memory-constrained | 16 | true |
-| Ultra-low-latency | 128+ | false |
+| Environment | queue-workers | string-interning |
+|-------------|--------------|------------------|
+| Development | 0 (auto) | true |
+| Production | 0 (auto) or 32-64 | true |
+| Memory-constrained | 8-16 | true |
+| Ultra-low-latency | 64+ | false |

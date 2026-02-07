@@ -152,6 +152,19 @@ Logs follow the [OpenTelemetry Log Data Model](https://opentelemetry.io/docs/spe
 {"Timestamp":"2024-01-26T12:00:00Z","SeverityText":"INFO","SeverityNumber":9,"Body":"limits config reloaded successfully","Attributes":{"rules_count":3},"Resource":{"service.name":"metrics-governor","service.version":"0.17.0"}}
 ```
 
+### Buffer Backpressure Messages
+
+```json
+{"Timestamp":"2024-01-26T12:00:00Z","SeverityText":"WARN","SeverityNumber":13,"Body":"buffer capacity exceeded, rejecting batch","Attributes":{"current_bytes":157286400,"max_bytes":157286400,"policy":"reject"},"Resource":{"service.name":"metrics-governor","service.version":"0.27.0"}}
+```
+
+### Worker Pool Messages
+
+```json
+{"Timestamp":"2024-01-26T12:00:00Z","SeverityText":"INFO","SeverityNumber":9,"Body":"worker pool started","Attributes":{"workers":16,"queue":"otlp"},"Resource":{"service.name":"metrics-governor","service.version":"0.27.0"}}
+{"Timestamp":"2024-01-26T12:00:00Z","SeverityText":"INFO","SeverityNumber":9,"Body":"worker pool stopped","Attributes":{"workers":16,"queue":"otlp","drained":42},"Resource":{"service.name":"metrics-governor","service.version":"0.27.0"}}
+```
+
 ### Shutdown Messages
 
 ```json

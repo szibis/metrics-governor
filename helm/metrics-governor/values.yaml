@@ -118,6 +118,13 @@ config:
       size: 10000
       batch_size: 1000
       flush_interval: "5s"
+      full_policy: "reject"
+    memory:
+      buffer_percent: 0.15
+      queue_percent: 0.15
+    queue:
+      always_queue: true
+      workers: 0              # auto: 2×NumCPU
     stats:
       address: ":9090"
     limits:

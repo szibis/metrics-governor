@@ -3,6 +3,7 @@ package receiver
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -195,7 +196,15 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	r.buffer.Add(exportReq.ResourceMetrics)
+	if err := r.buffer.Add(exportReq.ResourceMetrics); err != nil {
+		if errors.Is(err, buffer.ErrBufferFull) {
+			w.Header().Set("Retry-After", "5")
+			http.Error(w, "buffer capacity exceeded", http.StatusTooManyRequests)
+			return
+		}
+		http.Error(w, "buffer add failed", http.StatusInternalServerError)
+		return
+	}
 
 	// Return response in the same format as the request
 	resp := &colmetricspb.ExportMetricsServiceResponse{}

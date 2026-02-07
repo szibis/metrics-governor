@@ -113,6 +113,35 @@ groups:
           summary: "Config not reloaded in 24h"
           description: "The config-reload sidecar may not be working."
 
+      # --- Buffer Backpressure ---
+      - alert: MetricsGovernorBufferFull
+        expr: metrics_governor_buffer_bytes / metrics_governor_buffer_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Buffer near capacity"
+          description: "Buffer is at {{ $value | humanizePercentage }} utilization. Incoming data may be rejected."
+
+      - alert: MetricsGovernorBufferRejecting
+        expr: rate(metrics_governor_buffer_rejected_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Buffer rejecting data"
+          description: "Buffer is full and rejecting {{ $value | humanize }} batches/sec. Senders will receive 429/ResourceExhausted."
+
+      # --- Worker Pool ---
+      - alert: MetricsGovernorWorkersSaturated
+        expr: metrics_governor_queue_workers_active / metrics_governor_queue_workers_total > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Worker pool saturated"
+          description: "{{ $value | humanizePercentage }} of workers are active. Queue may accumulate. Consider increasing -queue-workers."
+
       # --- Queue ---
       - alert: MetricsGovernorQueueBacklog
         expr: metrics_governor_queue_size > metrics_governor_queue_max_size * 0.8
@@ -231,6 +260,9 @@ receivers:
 | `MetricsGovernorHighMemory` | [Resilience — OOM Kills](resilience.md#oom-kills-despite-memory-limits) |
 | `MetricsGovernorCardinalitySpike` | [Limits — Adaptive Limiting](limits.md#adaptive-limiting-recommended) |
 | `MetricsGovernorStaleConfig` | [Reload — Monitoring Reloads](reload.md#monitoring-reloads) |
+| `MetricsGovernorBufferFull` | [Resilience — Buffer Backpressure](resilience.md#buffer-backpressure) |
+| `MetricsGovernorBufferRejecting` | [Resilience — Buffer Backpressure](resilience.md#buffer-backpressure) |
+| `MetricsGovernorWorkersSaturated` | [Performance — Worker Pool](performance.md#worker-pool-architecture) |
 
 ## See Also
 

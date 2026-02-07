@@ -218,6 +218,8 @@ func main() {
 				CloseTimeout:               cfg.QueueCloseTimeout,
 				DrainTimeout:               cfg.QueueDrainTimeout,
 				DrainEntryTimeout:          cfg.QueueDrainEntryTimeout,
+				AlwaysQueue:                cfg.QueueAlwaysQueue,
+				Workers:                    cfg.QueueWorkers,
 			},
 		}
 
@@ -271,6 +273,8 @@ func main() {
 				CloseTimeout:               cfg.QueueCloseTimeout,
 				DrainTimeout:               cfg.QueueDrainTimeout,
 				DrainEntryTimeout:          cfg.QueueDrainEntryTimeout,
+				AlwaysQueue:                cfg.QueueAlwaysQueue,
+				Workers:                    cfg.QueueWorkers,
 			}
 
 			queuedExp, queueErr := exporter.NewQueued(exp, queueCfg)
@@ -406,6 +410,19 @@ func main() {
 		))
 	}
 
+	// Derive percentage-based memory sizing from GOMEMLIMIT.
+	// Uses config.DeriveMemorySizing which handles the math.MaxInt64 edge case
+	// (GOMEMLIMIT not set → unbounded buffer prevention).
+	rawMemoryLimit := debug.SetMemoryLimit(-1) // Get the limit that was set (does not change it)
+	memorySizing := config.DeriveMemorySizing(rawMemoryLimit, cfg.BufferMemoryPercent, cfg.QueueMemoryPercent)
+	if memorySizing.BufferMaxBytes > 0 {
+		logging.Info("percentage-based buffer sizing", logging.F(
+			"memory_limit_bytes", memorySizing.MemoryLimit,
+			"buffer_percent", cfg.BufferMemoryPercent,
+			"buffer_max_bytes", memorySizing.BufferMaxBytes,
+		))
+	}
+
 	// Create log aggregator for buffer (aggregates logs per 10s interval)
 	bufferLogAggregator := limits.NewLogAggregator(10 * time.Second)
 
@@ -414,12 +431,21 @@ func main() {
 	if cfg.MaxBatchBytes > 0 {
 		bufOpts = append(bufOpts, buffer.WithMaxBatchBytes(cfg.MaxBatchBytes))
 	}
-	if cfg.ExportConcurrency != 0 || !cfg.ShardingEnabled {
-		// Wire export concurrency to buffer (default: NumCPU*4)
-		bufOpts = append(bufOpts, buffer.WithConcurrency(cfg.ExportConcurrency))
-	}
 	if cfg.FlushTimeout > 0 {
 		bufOpts = append(bufOpts, buffer.WithFlushTimeout(cfg.FlushTimeout))
+	}
+	// Map buffer full policy string to queue.FullBehavior
+	switch cfg.BufferFullPolicy {
+	case "reject":
+		bufOpts = append(bufOpts, buffer.WithBufferFullPolicy(queue.DropNewest))
+	case "drop_oldest":
+		bufOpts = append(bufOpts, buffer.WithBufferFullPolicy(queue.DropOldest))
+	case "block":
+		bufOpts = append(bufOpts, buffer.WithBufferFullPolicy(queue.Block))
+	}
+	// Apply derived or explicit buffer byte capacity
+	if memorySizing.BufferMaxBytes > 0 {
+		bufOpts = append(bufOpts, buffer.WithMaxBufferBytes(memorySizing.BufferMaxBytes))
 	}
 
 	// Set up tenant processor in buffer (if tenancy enabled)

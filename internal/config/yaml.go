@@ -46,6 +46,10 @@ type TelemetryRetryYAMLConfig struct {
 type MemoryYAMLConfig struct {
 	// LimitRatio is the ratio of container memory to use for GOMEMLIMIT (0.0-1.0)
 	LimitRatio float64 `yaml:"limit_ratio"`
+	// BufferPercent is buffer capacity as % of detected memory limit (default: 0.15)
+	BufferPercent float64 `yaml:"buffer_percent"`
+	// QueuePercent is queue in-memory capacity as % of detected memory limit (default: 0.15)
+	QueuePercent float64 `yaml:"queue_percent"`
 }
 
 // PerformanceYAMLConfig holds performance tuning configuration.
@@ -160,6 +164,9 @@ type QueueYAMLConfig struct {
 	CloseTimeout      Duration `yaml:"close_timeout"`
 	DrainTimeout      Duration `yaml:"drain_timeout"`
 	DrainEntryTimeout Duration `yaml:"drain_entry_timeout"`
+	// Worker pool settings
+	AlwaysQueue *bool `yaml:"always_queue"` // Always route through queue (default: true)
+	Workers     int   `yaml:"workers"`      // Worker goroutine count (0 = 2×NumCPU)
 }
 
 // BackoffYAMLConfig holds exponential backoff configuration.
@@ -218,6 +225,8 @@ type BufferYAMLConfig struct {
 	BatchSize     int      `yaml:"batch_size"`
 	MaxBatchBytes ByteSize `yaml:"max_batch_bytes"`
 	FlushInterval Duration `yaml:"flush_interval"`
+	FlushTimeout  Duration `yaml:"flush_timeout"`
+	FullPolicy    string   `yaml:"full_policy"` // reject, drop_oldest, block
 }
 
 // StatsYAMLConfig holds stats configuration.
@@ -438,6 +447,12 @@ func (y *YAMLConfig) ApplyDefaults() {
 	if y.Buffer.FlushInterval == 0 {
 		y.Buffer.FlushInterval = Duration(5 * time.Second)
 	}
+	if y.Buffer.FlushTimeout == 0 {
+		y.Buffer.FlushTimeout = Duration(30 * time.Second)
+	}
+	if y.Buffer.FullPolicy == "" {
+		y.Buffer.FullPolicy = "reject"
+	}
 
 	// Stats defaults
 	if y.Stats.Address == "" {
@@ -522,7 +537,12 @@ func (y *YAMLConfig) ApplyDefaults() {
 		y.Exporter.Queue.CircuitBreaker.Enabled = &enabled
 	}
 	if y.Exporter.Queue.CircuitBreaker.Threshold == 0 {
-		y.Exporter.Queue.CircuitBreaker.Threshold = 10
+		y.Exporter.Queue.CircuitBreaker.Threshold = 5
+	}
+	// Worker pool defaults
+	if y.Exporter.Queue.AlwaysQueue == nil {
+		alwaysQueue := true
+		y.Exporter.Queue.AlwaysQueue = &alwaysQueue
 	}
 	if y.Exporter.Queue.CircuitBreaker.ResetTimeout == 0 {
 		y.Exporter.Queue.CircuitBreaker.ResetTimeout = Duration(30 * time.Second)
@@ -584,6 +604,12 @@ func (y *YAMLConfig) ApplyDefaults() {
 	// Memory defaults
 	if y.Memory.LimitRatio == 0 {
 		y.Memory.LimitRatio = 0.9
+	}
+	if y.Memory.BufferPercent == 0 {
+		y.Memory.BufferPercent = 0.15
+	}
+	if y.Memory.QueuePercent == 0 {
+		y.Memory.QueuePercent = 0.15
 	}
 
 	// Telemetry defaults
@@ -679,10 +705,12 @@ func (y *YAMLConfig) ToConfig() *Config {
 		ExporterDialTimeout:          time.Duration(y.Exporter.HTTPClient.DialTimeout),
 
 		// Buffer
-		BufferSize:    y.Buffer.Size,
-		FlushInterval: time.Duration(y.Buffer.FlushInterval),
-		MaxBatchSize:  y.Buffer.BatchSize,
-		MaxBatchBytes: int(y.Buffer.MaxBatchBytes),
+		BufferSize:       y.Buffer.Size,
+		FlushInterval:    time.Duration(y.Buffer.FlushInterval),
+		FlushTimeout:     time.Duration(y.Buffer.FlushTimeout),
+		MaxBatchSize:     y.Buffer.BatchSize,
+		MaxBatchBytes:    int(y.Buffer.MaxBatchBytes),
+		BufferFullPolicy: y.Buffer.FullPolicy,
 
 		// Stats
 		StatsAddr:   y.Stats.Address,
@@ -726,6 +754,8 @@ func (y *YAMLConfig) ToConfig() *Config {
 		QueueCloseTimeout:      time.Duration(y.Exporter.Queue.CloseTimeout),
 		QueueDrainTimeout:      time.Duration(y.Exporter.Queue.DrainTimeout),
 		QueueDrainEntryTimeout: time.Duration(y.Exporter.Queue.DrainEntryTimeout),
+		QueueAlwaysQueue:       *y.Exporter.Queue.AlwaysQueue,
+		QueueWorkers:           y.Exporter.Queue.Workers,
 
 		// Sharding
 		ShardingEnabled:            *y.Exporter.Sharding.Enabled,
@@ -742,7 +772,9 @@ func (y *YAMLConfig) ToConfig() *Config {
 		InternMaxValueLength: y.Performance.InternMaxValueLength,
 
 		// Memory
-		MemoryLimitRatio: y.Memory.LimitRatio,
+		MemoryLimitRatio:    y.Memory.LimitRatio,
+		BufferMemoryPercent: y.Memory.BufferPercent,
+		QueueMemoryPercent:  y.Memory.QueuePercent,
 
 		// Telemetry
 		TelemetryEndpoint:         y.Telemetry.Endpoint,

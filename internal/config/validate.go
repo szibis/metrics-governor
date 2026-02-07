@@ -275,4 +275,21 @@ func mergeYAMLIntoConfig(dst, src *Config) {
 	if src.MemoryLimitRatio != 0 {
 		dst.MemoryLimitRatio = src.MemoryLimitRatio
 	}
+	if src.BufferMemoryPercent != 0 {
+		dst.BufferMemoryPercent = src.BufferMemoryPercent
+	}
+	if src.QueueMemoryPercent != 0 {
+		dst.QueueMemoryPercent = src.QueueMemoryPercent
+	}
+
+	// Buffer full policy
+	if src.BufferFullPolicy != "" {
+		dst.BufferFullPolicy = src.BufferFullPolicy
+	}
+
+	// Queue worker pool
+	dst.QueueAlwaysQueue = src.QueueAlwaysQueue
+	if src.QueueWorkers != 0 {
+		dst.QueueWorkers = src.QueueWorkers
+	}
 }

@@ -89,6 +89,15 @@ type Config struct {
 	// DrainEntryTimeout is the per-entry timeout during drain (default: 5s).
 	DrainEntryTimeout time.Duration
 
+	// AlwaysQueue routes all data through the queue instead of trying direct export first.
+	// When true, Export() always pushes to queue (returns instantly), workers pull and export.
+	// When false, the legacy try-direct/queue-on-failure behavior is used.
+	// Default: true.
+	AlwaysQueue bool
+	// Workers is the number of worker goroutines that pull from the queue and export.
+	// Default: 2 × runtime.NumCPU() (I/O-bound workers benefit from oversubscription).
+	Workers int
+
 	// FastQueue settings
 	// InmemoryBlocks is the in-memory channel size (default: 2048).
 	InmemoryBlocks int
@@ -120,8 +129,10 @@ func DefaultConfig() Config {
 		BackoffEnabled:             true,
 		BackoffMultiplier:          2.0,
 		CircuitBreakerEnabled:      true,
-		CircuitBreakerThreshold:    10,
+		CircuitBreakerThreshold:    5,
 		CircuitBreakerResetTimeout: 30 * time.Second,
+		AlwaysQueue:                true,
+		Workers:                    0, // 0 = 2 × runtime.NumCPU()
 		InmemoryBlocks:             2048,
 		ChunkSize:                  512 * 1024 * 1024, // 512MB
 		MetaSyncInterval:           time.Second,

@@ -1876,8 +1876,8 @@ func TestNewPRWQueued_CircuitBreakerDefaults(t *testing.T) {
 	if qe.circuitBreaker == nil {
 		t.Fatal("expected circuit breaker to be initialized")
 	}
-	if qe.circuitBreaker.failureThreshold != 10 {
-		t.Errorf("expected default threshold 10, got %d", qe.circuitBreaker.failureThreshold)
+	if qe.circuitBreaker.failureThreshold != 5 {
+		t.Errorf("expected default threshold 5, got %d", qe.circuitBreaker.failureThreshold)
 	}
 	if qe.circuitBreaker.resetTimeout != 30*time.Second {
 		t.Errorf("expected default reset timeout 30s, got %v", qe.circuitBreaker.resetTimeout)

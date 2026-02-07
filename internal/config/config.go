@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -84,11 +85,12 @@ type Config struct {
 	ReceiverKeepAlivesEnabled  bool
 
 	// Buffer settings
-	BufferSize    int
-	FlushInterval time.Duration
-	FlushTimeout  time.Duration // Max time for a flush cycle (default: 0 = no limit)
-	MaxBatchSize  int
-	MaxBatchBytes int
+	BufferSize       int
+	FlushInterval    time.Duration
+	FlushTimeout     time.Duration // Max time for a flush cycle (default: 30s)
+	MaxBatchSize     int
+	MaxBatchBytes    int
+	BufferFullPolicy string // Buffer full policy: "reject", "drop_oldest", "block" (default: "reject")
 
 	// Stats settings
 	StatsAddr   string
@@ -133,7 +135,13 @@ type Config struct {
 	QueueCircuitBreakerResetTimeout time.Duration // Time to wait before half-open (default: 30s)
 
 	// Memory limit settings
-	MemoryLimitRatio float64 // Ratio of container memory to use for GOMEMLIMIT (default: 0.9)
+	MemoryLimitRatio    float64 // Ratio of container memory to use for GOMEMLIMIT (default: 0.9)
+	BufferMemoryPercent float64 // Buffer capacity as % of detected memory limit (default: 0.15)
+	QueueMemoryPercent  float64 // Queue in-memory capacity as % of detected memory limit (default: 0.15)
+
+	// Queue worker pool settings
+	QueueAlwaysQueue bool // Always route through queue (default: true)
+	QueueWorkers     int  // Worker goroutine count (0 = 2×NumCPU)
 
 	// Sharding settings
 	ShardingEnabled            bool
@@ -401,7 +409,8 @@ func ParseFlags() *Config {
 	// Buffer flags
 	flag.IntVar(&cfg.BufferSize, "buffer-size", 10000, "Maximum number of metrics to buffer")
 	flag.DurationVar(&cfg.FlushInterval, "flush-interval", 5*time.Second, "Buffer flush interval")
-	flag.DurationVar(&cfg.FlushTimeout, "flush-timeout", 0, "Max time for a flush cycle; 0=no limit (safety net for slow exports)")
+	flag.DurationVar(&cfg.FlushTimeout, "flush-timeout", 30*time.Second, "Max time for a flush cycle; 0=no limit (default: 30s)")
+	flag.StringVar(&cfg.BufferFullPolicy, "buffer-full-policy", "reject", "Buffer full policy: reject (429/ResourceExhausted), drop_oldest, or block")
 	flag.IntVar(&cfg.MaxBatchSize, "batch-size", 5000, "Maximum batch size for export")
 	flag.CommandLine.Var(&byteSizeIntFlag{target: &cfg.MaxBatchBytes}, "max-batch-bytes", "Maximum batch size for export, 0 = no limit (default 8Mi). Accepts: 8Mi, 1Gi, or plain bytes")
 
@@ -444,11 +453,16 @@ func ParseFlags() *Config {
 	flag.Float64Var(&cfg.QueueBackoffMultiplier, "queue-backoff-multiplier", 2.0, "Backoff delay multiplier on each failure")
 	// Circuit breaker flags
 	flag.BoolVar(&cfg.QueueCircuitBreakerEnabled, "queue-circuit-breaker-enabled", true, "Enable circuit breaker pattern for retries")
-	flag.IntVar(&cfg.QueueCircuitBreakerThreshold, "queue-circuit-breaker-threshold", 10, "Consecutive failures before opening circuit")
+	flag.IntVar(&cfg.QueueCircuitBreakerThreshold, "queue-circuit-breaker-threshold", 5, "Consecutive failures before opening circuit")
 	flag.DurationVar(&cfg.QueueCircuitBreakerResetTimeout, "queue-circuit-breaker-reset-timeout", 30*time.Second, "Time to wait before half-open state")
+	// Worker pool flags
+	flag.BoolVar(&cfg.QueueAlwaysQueue, "queue-always-queue", true, "Always route data through queue (workers pull and export)")
+	flag.IntVar(&cfg.QueueWorkers, "queue-workers", 0, "Queue worker goroutine count (0 = 2×NumCPU)")
 
 	// Memory limit flags
 	flag.Float64Var(&cfg.MemoryLimitRatio, "memory-limit-ratio", 0.9, "Ratio of container memory to use for GOMEMLIMIT (0.0-1.0)")
+	flag.Float64Var(&cfg.BufferMemoryPercent, "buffer-memory-percent", 0.15, "Buffer capacity as % of detected memory limit (0.0-1.0)")
+	flag.Float64Var(&cfg.QueueMemoryPercent, "queue-memory-percent", 0.15, "Queue in-memory capacity as % of detected memory limit (0.0-1.0)")
 
 	// Sharding flags
 	flag.BoolVar(&cfg.ShardingEnabled, "sharding-enabled", false, "Enable consistent sharding")
@@ -875,6 +889,26 @@ func applyFlagOverrides(cfg *Config) {
 					cfg.MemoryLimitRatio = fv
 				}
 			}
+		case "buffer-memory-percent":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if fv, ok := v.Get().(float64); ok {
+					cfg.BufferMemoryPercent = fv
+				}
+			}
+		case "queue-memory-percent":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if fv, ok := v.Get().(float64); ok {
+					cfg.QueueMemoryPercent = fv
+				}
+			}
+		case "queue-always-queue":
+			cfg.QueueAlwaysQueue = f.Value.String() == "true"
+		case "queue-workers":
+			if i, err := strconv.Atoi(f.Value.String()); err == nil {
+				cfg.QueueWorkers = i
+			}
+		case "buffer-full-policy":
+			cfg.BufferFullPolicy = f.Value.String()
 		case "sharding-enabled":
 			cfg.ShardingEnabled = f.Value.String() == "true"
 		case "sharding-headless-service":
@@ -1576,6 +1610,8 @@ func (c *Config) PRWQueueConfig() exporter.PRWQueueConfig {
 		CloseTimeout:        c.QueueCloseTimeout,
 		DrainTimeout:        c.QueueDrainTimeout,
 		DrainEntryTimeout:   c.QueueDrainEntryTimeout,
+		AlwaysQueue:         c.QueueAlwaysQueue,
+		Workers:             c.QueueWorkers,
 	}
 }
 
@@ -1873,8 +1909,10 @@ func DefaultConfig() *Config {
 		ReceiverKeepAlivesEnabled:       true,
 		BufferSize:                      10000,
 		FlushInterval:                   5 * time.Second,
+		FlushTimeout:                    30 * time.Second,
 		MaxBatchSize:                    5000,
 		MaxBatchBytes:                   8388608, // 8MB
+		BufferFullPolicy:                "reject",
 		StatsAddr:                       ":9090",
 		StatsLabels:                     "",
 		LimitsConfig:                    "",
@@ -1902,7 +1940,7 @@ func DefaultConfig() *Config {
 		QueueBackoffEnabled:             true,
 		QueueBackoffMultiplier:          2.0,
 		QueueCircuitBreakerEnabled:      true,
-		QueueCircuitBreakerThreshold:    10,
+		QueueCircuitBreakerThreshold:    5,
 		QueueCircuitBreakerResetTimeout: 30 * time.Second,
 		QueueDirectExportTimeout:        5 * time.Second,
 		QueueBatchDrainSize:             10,
@@ -1913,6 +1951,10 @@ func DefaultConfig() *Config {
 		QueueDrainEntryTimeout:          5 * time.Second,
 		ExporterDialTimeout:             30 * time.Second,
 		MemoryLimitRatio:                0.9,
+		BufferMemoryPercent:             0.15,
+		QueueMemoryPercent:              0.15,
+		QueueAlwaysQueue:                true,
+		QueueWorkers:                    0, // 0 = 2×NumCPU
 		ShardingEnabled:                 false,
 		ShardingDNSRefreshInterval:      30 * time.Second,
 		ShardingDNSTimeout:              5 * time.Second,
@@ -2042,6 +2084,23 @@ func (c *Config) Validate() error {
 		errs = append(errs, fmt.Sprintf("queue-backoff-multiplier must be > 1.0 when backoff is enabled, got %f", c.QueueBackoffMultiplier))
 	}
 
+	// Buffer full policy validation
+	validBufferFullPolicies := map[string]bool{"reject": true, "drop_oldest": true, "block": true}
+	if c.BufferFullPolicy != "" && !validBufferFullPolicies[c.BufferFullPolicy] {
+		errs = append(errs, fmt.Sprintf("buffer-full-policy must be one of: reject, drop_oldest, block; got %q", c.BufferFullPolicy))
+	}
+
+	// Memory percent validation
+	if c.BufferMemoryPercent < 0 || c.BufferMemoryPercent > 1.0 {
+		errs = append(errs, fmt.Sprintf("buffer-memory-percent must be between 0.0 and 1.0, got %f", c.BufferMemoryPercent))
+	}
+	if c.QueueMemoryPercent < 0 || c.QueueMemoryPercent > 1.0 {
+		errs = append(errs, fmt.Sprintf("queue-memory-percent must be between 0.0 and 1.0, got %f", c.QueueMemoryPercent))
+	}
+	if c.BufferMemoryPercent+c.QueueMemoryPercent > 0.5 {
+		errs = append(errs, fmt.Sprintf("buffer-memory-percent + queue-memory-percent must leave >50%% for runtime, got %.0f%%", (c.BufferMemoryPercent+c.QueueMemoryPercent)*100))
+	}
+
 	// Bloom persistence compression level
 	if c.BloomPersistenceCompressionLevel < 0 || c.BloomPersistenceCompressionLevel > 9 {
 		errs = append(errs, fmt.Sprintf("bloom-persistence-compression-level must be between 0 and 9, got %d", c.BloomPersistenceCompressionLevel))
@@ -2051,4 +2110,37 @@ func (c *Config) Validate() error {
 		return nil
 	}
 	return errors.New("configuration validation failed:\n  - " + strings.Join(errs, "\n  - "))
+}
+
+// MemorySizing holds the derived byte sizes for buffer and queue
+// based on detected memory limit and configured percentages.
+type MemorySizing struct {
+	BufferMaxBytes int64 // Derived buffer capacity in bytes (0 = unbounded)
+	QueueMaxBytes  int64 // Derived queue in-memory capacity in bytes (0 = unbounded)
+	MemoryLimit    int64 // Effective memory limit used for derivation (0 = not detected)
+}
+
+// DeriveMemorySizing computes buffer and queue byte capacities from a raw
+// GOMEMLIMIT value and percentage-based config. It handles the critical edge
+// case where debug.SetMemoryLimit(-1) returns math.MaxInt64 when GOMEMLIMIT
+// was never set — which would otherwise produce 1.3+ exabyte capacities,
+// effectively making the buffer unbounded.
+func DeriveMemorySizing(rawMemoryLimit int64, bufferPercent, queuePercent float64) MemorySizing {
+	// math.MaxInt64 means GOMEMLIMIT was never set — treat as "no limit".
+	// Without this check, 15% of MaxInt64 ≈ 1.38 exabytes — effectively unbounded.
+	if rawMemoryLimit <= 0 || rawMemoryLimit == math.MaxInt64 {
+		return MemorySizing{MemoryLimit: 0}
+	}
+
+	var s MemorySizing
+	s.MemoryLimit = rawMemoryLimit
+
+	if bufferPercent > 0 {
+		s.BufferMaxBytes = int64(float64(rawMemoryLimit) * bufferPercent)
+	}
+	if queuePercent > 0 {
+		s.QueueMaxBytes = int64(float64(rawMemoryLimit) * queuePercent)
+	}
+
+	return s
 }

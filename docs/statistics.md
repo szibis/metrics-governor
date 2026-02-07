@@ -179,6 +179,10 @@ These metrics track dynamic configuration reloads via SIGHUP (see [reload.md](re
 | Metric | Type | Description |
 |--------|------|-------------|
 | `metrics_governor_buffer_size{protocol}` | gauge | Current buffer size by protocol |
+| `metrics_governor_buffer_bytes` | gauge | Current buffer memory usage in bytes |
+| `metrics_governor_buffer_max_bytes` | gauge | Configured buffer capacity limit in bytes |
+| `metrics_governor_buffer_rejected_total` | counter | Batches rejected by buffer full policy |
+| `metrics_governor_buffer_evictions_total` | counter | Data evicted by drop_oldest full policy |
 
 ### Byte Tracking Metrics
 
@@ -207,6 +211,13 @@ These metrics track dynamic configuration reloads via SIGHUP (see [reload.md](re
 | `metrics_governor_compression_buffer_pool_gets_total` | counter | Buffer pool Get() calls |
 | `metrics_governor_compression_buffer_pool_puts_total` | counter | Buffer pool Put() calls |
 
+### Worker Pool Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_queue_workers_active` | gauge | Active worker goroutines |
+| `metrics_governor_queue_workers_total` | gauge | Configured worker count |
+
 ### Queue & Resilience Metrics
 
 | Metric | Type | Description |
@@ -225,6 +236,7 @@ These metrics track dynamic configuration reloads via SIGHUP (see [reload.md](re
 | `metrics_governor_circuit_breaker_open_total` | counter | Times circuit breaker opened |
 | `metrics_governor_circuit_breaker_rejected_total` | counter | Requests rejected by open circuit |
 | `metrics_governor_queue_backoff_seconds` | gauge | Current exponential backoff delay |
+| `metrics_governor_batch_split_depth_exceeded_total` | counter | Batch split depth limit reached |
 
 ### FastQueue Metrics (Disk Mode)
 

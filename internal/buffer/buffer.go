@@ -4,22 +4,23 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/szibis/metrics-governor/internal/exporter"
 	"github.com/szibis/metrics-governor/internal/logging"
+	"github.com/szibis/metrics-governor/internal/queue"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	"google.golang.org/protobuf/proto"
 )
 
-var (
-	exportConcurrentWorkers = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "metrics_governor_export_concurrent_workers",
-		Help: "Number of active export worker goroutines",
-	})
+// ErrBufferFull is returned when the buffer's byte capacity is exceeded
+// and the full policy is "reject". Receivers should return 429/ResourceExhausted.
+var ErrBufferFull = errors.New("buffer capacity exceeded")
 
+var (
 	exportRetrySplitTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "metrics_governor_export_retry_split_total",
 		Help: "Total number of split-on-error retries",
@@ -39,20 +40,46 @@ var (
 		Name: "metrics_governor_failover_queue_drain_errors_total",
 		Help: "Total number of failover queue drain errors",
 	})
+
+	bufferBytesGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_buffer_bytes",
+		Help: "Current buffer memory usage in bytes",
+	})
+
+	bufferMaxBytesGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_buffer_max_bytes",
+		Help: "Configured buffer capacity limit in bytes",
+	})
+
+	bufferRejectedTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_buffer_rejected_total",
+		Help: "Total number of batches rejected due to buffer capacity (full policy: reject)",
+	})
+
+	bufferEvictionsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_buffer_evictions_total",
+		Help: "Total number of entries evicted due to buffer capacity (full policy: drop_oldest)",
+	})
 )
 
 func init() {
-	prometheus.MustRegister(exportConcurrentWorkers)
 	prometheus.MustRegister(exportRetrySplitTotal)
 	prometheus.MustRegister(failoverQueuePushTotal)
 	prometheus.MustRegister(failoverQueueDrainTotal)
 	prometheus.MustRegister(failoverQueueDrainErrorsTotal)
+	prometheus.MustRegister(bufferBytesGauge)
+	prometheus.MustRegister(bufferMaxBytesGauge)
+	prometheus.MustRegister(bufferRejectedTotal)
+	prometheus.MustRegister(bufferEvictionsTotal)
 
-	exportConcurrentWorkers.Set(0)
 	exportRetrySplitTotal.Add(0)
 	failoverQueuePushTotal.Add(0)
 	failoverQueueDrainTotal.Add(0)
 	failoverQueueDrainErrorsTotal.Add(0)
+	bufferBytesGauge.Set(0)
+	bufferMaxBytesGauge.Set(0)
+	bufferRejectedTotal.Add(0)
+	bufferEvictionsTotal.Add(0)
 }
 
 // Exporter defines the interface for sending metrics.
@@ -120,6 +147,9 @@ func WithMaxBatchBytes(n int) BufferOption {
 }
 
 // WithConcurrency sets the number of concurrent export workers per flush cycle.
+// Deprecated: In always-queue mode, concurrency is managed by the worker pool
+// in QueuedExporter. This option is kept for backwards compatibility with
+// non-always-queue configurations.
 func WithConcurrency(n int) BufferOption {
 	return func(b *MetricsBuffer) {
 		b.concurrency = exporter.NewConcurrencyLimiter(n)
@@ -153,9 +183,24 @@ func WithFailoverQueue(q FailoverQueue) BufferOption {
 
 // WithFlushTimeout sets the maximum time for a flush cycle. If exceeded,
 // the flush context is canceled — ongoing exports see ctx.Err() and fail.
-// Default 0 means no limit (Fixes 1-3 should make this unnecessary).
+// Default 0 means no limit.
 func WithFlushTimeout(d time.Duration) BufferOption {
 	return func(b *MetricsBuffer) { b.flushTimeout = d }
+}
+
+// WithMaxBufferBytes sets the maximum buffer memory capacity in bytes.
+// When exceeded, the buffer's full policy determines behavior:
+// reject (return ErrBufferFull), drop_oldest (evict), or block.
+func WithMaxBufferBytes(n int64) BufferOption {
+	return func(b *MetricsBuffer) {
+		b.maxBufferBytes = n
+		bufferMaxBytesGauge.Set(float64(n))
+	}
+}
+
+// WithBufferFullPolicy sets the behavior when the buffer exceeds its byte capacity.
+func WithBufferFullPolicy(p queue.FullBehavior) BufferOption {
+	return func(b *MetricsBuffer) { b.fullPolicy = p }
 }
 
 // MetricsBuffer buffers incoming metrics and flushes them periodically.
@@ -178,6 +223,10 @@ type MetricsBuffer struct {
 	sampler         MetricSampler
 	failoverQueue   FailoverQueue
 	tenantProcessor TenantProcessor
+	maxBufferBytes  int64              // 0 = no limit
+	currentBytes    atomic.Int64       // Current buffer size in bytes
+	fullPolicy      queue.FullBehavior // Default: reject (DropNewest)
+	spaceCond       *sync.Cond         // For block policy
 }
 
 // New creates a new MetricsBuffer.
@@ -193,26 +242,29 @@ func New(maxSize, maxBatchSize int, flushInterval time.Duration, exp Exporter, s
 		flushChan:     make(chan struct{}, 1),
 		doneChan:      make(chan struct{}),
 		logAggregator: logAggregator,
+		fullPolicy:    queue.DropNewest, // Default: reject incoming data
 	}
 	for _, opt := range opts {
 		opt(buf)
 	}
+	// Initialize spaceCond for block policy
+	buf.spaceCond = sync.NewCond(&buf.mu)
 	return buf
 }
 
 // AddWithTenant adds metrics to the buffer with a pre-extracted tenant header.
 // This is used by receivers that can extract tenant from HTTP/gRPC headers.
-func (b *MetricsBuffer) AddWithTenant(resourceMetrics []*metricspb.ResourceMetrics, headerTenant string) {
-	b.addInternal(resourceMetrics, headerTenant)
+func (b *MetricsBuffer) AddWithTenant(resourceMetrics []*metricspb.ResourceMetrics, headerTenant string) error {
+	return b.addInternal(resourceMetrics, headerTenant)
 }
 
 // Add adds metrics to the buffer.
-func (b *MetricsBuffer) Add(resourceMetrics []*metricspb.ResourceMetrics) {
-	b.addInternal(resourceMetrics, "")
+func (b *MetricsBuffer) Add(resourceMetrics []*metricspb.ResourceMetrics) error {
+	return b.addInternal(resourceMetrics, "")
 }
 
 // addInternal is the shared implementation for Add and AddWithTenant.
-func (b *MetricsBuffer) addInternal(resourceMetrics []*metricspb.ResourceMetrics, headerTenant string) {
+func (b *MetricsBuffer) addInternal(resourceMetrics []*metricspb.ResourceMetrics, headerTenant string) error {
 	// Track received datapoints and bytes
 	if b.stats != nil {
 		receivedCount := countDatapoints(resourceMetrics)
@@ -230,7 +282,7 @@ func (b *MetricsBuffer) addInternal(resourceMetrics []*metricspb.ResourceMetrics
 	if b.sampler != nil {
 		resourceMetrics = b.sampler.Sample(resourceMetrics)
 		if len(resourceMetrics) == 0 {
-			return
+			return nil
 		}
 	}
 
@@ -245,13 +297,25 @@ func (b *MetricsBuffer) addInternal(resourceMetrics []*metricspb.ResourceMetrics
 	}
 
 	if len(resourceMetrics) == 0 {
-		return
+		return nil
+	}
+
+	// Check buffer byte capacity before adding
+	incomingBytes := int64(estimateResourceMetricsSize(resourceMetrics))
+	if b.maxBufferBytes > 0 {
+		if err := b.enforceCapacity(incomingBytes); err != nil {
+			return err
+		}
 	}
 
 	b.mu.Lock()
 	b.metrics = append(b.metrics, resourceMetrics...)
 	bufferSize := len(b.metrics)
 	b.mu.Unlock()
+
+	// Update byte tracking
+	b.currentBytes.Add(incomingBytes)
+	bufferBytesGauge.Set(float64(b.currentBytes.Load()))
 
 	// Update buffer size metric
 	if b.stats != nil {
@@ -265,6 +329,63 @@ func (b *MetricsBuffer) addInternal(resourceMetrics []*metricspb.ResourceMetrics
 		default:
 		}
 	}
+
+	return nil
+}
+
+// enforceCapacity checks if adding incomingBytes would exceed the buffer limit
+// and applies the configured full policy.
+func (b *MetricsBuffer) enforceCapacity(incomingBytes int64) error {
+	current := b.currentBytes.Load()
+	if current+incomingBytes <= b.maxBufferBytes {
+		return nil
+	}
+
+	switch b.fullPolicy {
+	case queue.DropNewest:
+		// Reject incoming data
+		bufferRejectedTotal.Inc()
+		return ErrBufferFull
+
+	case queue.DropOldest:
+		// Evict oldest entries to make room
+		b.evictOldest(incomingBytes)
+		return nil
+
+	case queue.Block:
+		// Block until space is available
+		b.mu.Lock()
+		for b.currentBytes.Load()+incomingBytes > b.maxBufferBytes {
+			b.spaceCond.Wait()
+		}
+		b.mu.Unlock()
+		return nil
+
+	default:
+		bufferRejectedTotal.Inc()
+		return ErrBufferFull
+	}
+}
+
+// evictOldest removes the oldest entries from the buffer to make room for incomingBytes.
+func (b *MetricsBuffer) evictOldest(incomingBytes int64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	needed := b.currentBytes.Load() + incomingBytes - b.maxBufferBytes
+	evicted := int64(0)
+	evictCount := 0
+
+	for evicted < needed && len(b.metrics) > 0 {
+		entrySize := int64(proto.Size(b.metrics[0]))
+		b.metrics = b.metrics[1:]
+		evicted += entrySize
+		evictCount++
+	}
+
+	b.currentBytes.Add(-evicted)
+	bufferBytesGauge.Set(float64(b.currentBytes.Load()))
+	bufferEvictionsTotal.Add(float64(evictCount))
 }
 
 // Start starts the background flush routine.
@@ -334,6 +455,16 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 	b.metrics = make([]*metricspb.ResourceMetrics, 0, b.maxSize)
 	b.mu.Unlock()
 
+	// Reset byte tracking — data is now in toSend, no longer in buffer
+	flushedBytes := b.currentBytes.Swap(0)
+	bufferBytesGauge.Set(0)
+	_ = flushedBytes // Used for tracking; the data size is in toSend
+
+	// Signal blocked Add() calls that space is available
+	if b.spaceCond != nil {
+		b.spaceCond.Broadcast()
+	}
+
 	// Optional: cap the entire flush cycle duration
 	if b.flushTimeout > 0 {
 		var cancel context.CancelFunc
@@ -358,7 +489,9 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 		allBatches = append(allBatches, splitByBytes(countBatch, b.maxBatchBytes)...)
 	}
 
-	// Step 3: Export batches (concurrently if concurrency limiter is set)
+	// Step 3: Export batches
+	// In always-queue mode, each exportBatch() returns instantly (queue push is µs).
+	// In legacy mode with concurrency limiter, run in parallel with wg.Wait().
 	if b.concurrency == nil {
 		for _, batch := range allBatches {
 			b.exportBatch(ctx, batch)
@@ -370,17 +503,13 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 	for _, batch := range allBatches {
 		if !b.concurrency.TryAcquire() {
 			// All concurrency slots busy — export directly in the flush goroutine.
-			// If the circuit breaker is open, QueuedExporter will queue instantly (µs),
-			// so this won't block even under slow destinations.
 			b.exportBatch(ctx, batch)
 			continue
 		}
 		wg.Add(1)
-		exportConcurrentWorkers.Inc()
 		go func() {
 			defer wg.Done()
 			defer b.concurrency.Release()
-			defer exportConcurrentWorkers.Dec()
 			b.exportBatch(ctx, batch)
 		}()
 	}
@@ -466,6 +595,11 @@ func (b *MetricsBuffer) exportBatch(ctx context.Context, batch []*metricspb.Reso
 // Wait waits for the buffer to finish flushing.
 func (b *MetricsBuffer) Wait() {
 	<-b.doneChan
+}
+
+// CurrentBytes returns the current buffer size in bytes.
+func (b *MetricsBuffer) CurrentBytes() int64 {
+	return b.currentBytes.Load()
 }
 
 // countDatapoints counts total datapoints in a slice of resource metrics.

@@ -22,22 +22,39 @@ var (
 		Name: "metrics_governor_batch_too_large_total",
 		Help: "Total number of batches that exceeded max batch bytes",
 	})
+
+	batchSplitDepthExceededTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_batch_split_depth_exceeded_total",
+		Help: "Total number of times batch split depth limit was reached",
+	})
 )
+
+// defaultMaxSplitDepth limits recursive binary splitting to prevent stack overflow.
+// Depth 4 produces at most 2^4 = 16 sub-batches per original batch.
+const defaultMaxSplitDepth = 4
 
 func init() {
 	prometheus.MustRegister(batchSplitsTotal)
 	prometheus.MustRegister(batchBytes)
 	prometheus.MustRegister(batchTooLargeTotal)
+	prometheus.MustRegister(batchSplitDepthExceededTotal)
 
 	batchSplitsTotal.Add(0)
 	batchTooLargeTotal.Add(0)
+	batchSplitDepthExceededTotal.Add(0)
 }
 
 // splitByBytes recursively splits a batch of ResourceMetrics into sub-batches
 // that each fit within maxBytes. Uses the VMAgent-inspired binary split pattern.
 // If maxBytes <= 0, the batch is returned as-is (splitting disabled).
 // A single-element batch is never split further.
+// Recursion is limited to defaultMaxSplitDepth (4) to prevent stack overflow.
 func splitByBytes(batch []*metricspb.ResourceMetrics, maxBytes int) [][]*metricspb.ResourceMetrics {
+	return splitByBytesWithDepth(batch, maxBytes, 0)
+}
+
+// splitByBytesWithDepth is the depth-limited implementation of splitByBytes.
+func splitByBytesWithDepth(batch []*metricspb.ResourceMetrics, maxBytes int, depth int) [][]*metricspb.ResourceMetrics {
 	if maxBytes <= 0 || len(batch) <= 1 {
 		return [][]*metricspb.ResourceMetrics{batch}
 	}
@@ -49,13 +66,19 @@ func splitByBytes(batch []*metricspb.ResourceMetrics, maxBytes int) [][]*metrics
 		return [][]*metricspb.ResourceMetrics{batch}
 	}
 
+	// Check depth limit
+	if depth >= defaultMaxSplitDepth {
+		batchSplitDepthExceededTotal.Inc()
+		return [][]*metricspb.ResourceMetrics{batch}
+	}
+
 	batchTooLargeTotal.Inc()
 	batchSplitsTotal.Inc()
 
 	// Recursive binary split
 	mid := len(batch) / 2
-	left := splitByBytes(batch[:mid], maxBytes)
-	right := splitByBytes(batch[mid:], maxBytes)
+	left := splitByBytesWithDepth(batch[:mid], maxBytes, depth+1)
+	right := splitByBytesWithDepth(batch[mid:], maxBytes, depth+1)
 	return append(left, right...)
 }
 

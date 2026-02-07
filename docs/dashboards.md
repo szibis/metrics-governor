@@ -25,8 +25,8 @@ The primary dashboard for production deployments. Covers the complete metrics pi
 | **Limits Enforcement** | Violations by rule, dropped vs passed, cardinality tracking | Are limits firing? Which rules? |
 | **Cardinality Analysis** | Top 10 metrics by cardinality, top 10 by datapoints rate | What's driving cardinality? |
 | **Circuit Breaker & Backoff** | State indicator, current backoff, opens, rejections, timeline | Backend health |
-| **Queue & Persistence** | Queue size, max size, push/pop/retry operations | Queue filling up? |
-| **Buffer** | Buffer size, flush rate, batch size | Buffer pressure |
+| **Queue & Persistence** | Queue size, max size, push/pop/retry, workers active/total, workers utilization | Queue filling up? Workers saturated? |
+| **Buffer** | Buffer size, memory usage, utilization gauge, rejected/s, evictions/s, flush rate, batch size | Buffer pressure and backpressure |
 | **Sharding** | Active endpoints, datapoints by endpoint, DNS events | Shard distribution |
 | **Network I/O** | Bytes sent/received, packets, errors | Network health (Linux only) |
 | **Disk I/O** | Bytes read/written | Disk pressure (Linux only) |
