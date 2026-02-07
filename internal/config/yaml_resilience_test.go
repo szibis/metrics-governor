@@ -152,8 +152,8 @@ func TestApplyDefaults_ResilienceFields(t *testing.T) {
 	if !*cfg.Exporter.Queue.CircuitBreaker.Enabled {
 		t.Error("default CircuitBreaker.Enabled should be true")
 	}
-	if cfg.Exporter.Queue.CircuitBreaker.Threshold != 10 {
-		t.Errorf("default CircuitBreaker.Threshold = %d, want 10", cfg.Exporter.Queue.CircuitBreaker.Threshold)
+	if cfg.Exporter.Queue.CircuitBreaker.Threshold != 5 {
+		t.Errorf("default CircuitBreaker.Threshold = %d, want 5", cfg.Exporter.Queue.CircuitBreaker.Threshold)
 	}
 	if time.Duration(cfg.Exporter.Queue.CircuitBreaker.ResetTimeout) != 30*time.Second {
 		t.Errorf("default CircuitBreaker.ResetTimeout = %v, want 30s", cfg.Exporter.Queue.CircuitBreaker.ResetTimeout)
@@ -341,8 +341,8 @@ exporter:
 	if !cfg.QueueCircuitBreakerEnabled {
 		t.Error("default QueueCircuitBreakerEnabled should be true")
 	}
-	if cfg.QueueCircuitBreakerThreshold != 10 {
-		t.Errorf("default QueueCircuitBreakerThreshold = %d, want 10", cfg.QueueCircuitBreakerThreshold)
+	if cfg.QueueCircuitBreakerThreshold != 5 {
+		t.Errorf("default QueueCircuitBreakerThreshold = %d, want 5", cfg.QueueCircuitBreakerThreshold)
 	}
 	if cfg.QueueCircuitBreakerResetTimeout != 30*time.Second {
 		t.Errorf("default QueueCircuitBreakerResetTimeout = %v, want 30s", cfg.QueueCircuitBreakerResetTimeout)

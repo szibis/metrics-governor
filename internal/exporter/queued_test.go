@@ -632,8 +632,8 @@ func TestQueuedExporter_CircuitBreakerDefaults(t *testing.T) {
 	}
 
 	// Verify defaults
-	if qe.circuitBreaker.failureThreshold != 10 {
-		t.Errorf("Expected default threshold 10, got %d", qe.circuitBreaker.failureThreshold)
+	if qe.circuitBreaker.failureThreshold != 5 {
+		t.Errorf("Expected default threshold 5, got %d", qe.circuitBreaker.failureThreshold)
 	}
 	if qe.circuitBreaker.resetTimeout != 30*time.Second {
 		t.Errorf("Expected default reset timeout 30s, got %v", qe.circuitBreaker.resetTimeout)

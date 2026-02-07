@@ -13,25 +13,32 @@ graph TB
         BO[Exponential Backoff]
         SOE[Split-on-Error]
         ML[Memory Limits]
+        BP[Buffer Backpressure]
     end
 
-    subgraph "Queue System"
-        FQ[Failover Queue<br/>memory / disk]
-        R[Retry Worker]
+    subgraph "Pipeline"
+        RX[Receiver]
+        BUF[Buffer<br/>capacity-bounded]
+        Q[Queue<br/>always-queue]
+        WP[Worker Pool<br/>2×NumCPU]
     end
 
     subgraph "Backend"
         BE[Metrics Backend]
     end
 
-    FQ --> R
-    R --> CB
+    RX --> BUF
+    BUF --> Q
+    Q --> WP
+    WP --> CB
     CB -->|Closed| BE
-    CB -->|Open| FQ
-    R --> BO
-    BO -->|Calculates| R
-    SOE -->|"400/413"| R
-    ML -->|Controls| FQ
+    CB -->|Open| Q
+    WP -->|Failure| Q
+    BP -->|"429 / ResourceExhausted"| RX
+    ML -->|Controls| BUF
+    ML -->|Controls| Q
+    BO -->|Calculates| WP
+    SOE -->|"400/413"| WP
 ```
 
 ## Circuit Breaker
@@ -86,14 +93,14 @@ exporter:
   queue:
     circuit_breaker:
       enabled: true            # Enable circuit breaker (default: true)
-      threshold: 10            # Consecutive failures to trip (default: 10)
+      threshold: 5             # Consecutive failures to trip (default: 5)
       reset_timeout: 30s       # Time before testing recovery (default: 30s)
 ```
 
 CLI flags:
 ```bash
 -queue-circuit-breaker-enabled=true
--queue-circuit-breaker-threshold=10
+-queue-circuit-breaker-threshold=5
 -queue-circuit-breaker-reset-timeout=30s
 ```
 
@@ -109,7 +116,7 @@ CLI flags:
 
 | Scenario | Threshold | Reset Timeout |
 |----------|-----------|---------------|
-| **Stable backend** | 10-20 | 30s-60s |
+| **Stable backend** | 5-10 | 30s-60s |
 | **Flaky network** | 5-10 | 15s-30s |
 | **High availability** | 3-5 | 10s-15s |
 | **Batch processing** | 20-50 | 60s-120s |
@@ -246,6 +253,52 @@ CLI flags:
 
 > **Tip**: For large memory limits (8GB+), consider using 0.85 ratio to leave more headroom for spikes.
 
+## Buffer Backpressure
+
+When the buffer reaches its capacity limit, metrics-governor applies backpressure to prevent unbounded memory growth. This is a critical safety mechanism that was previously missing — without it, slow destinations cause heap spikes because data accumulates in memory faster than it can be exported.
+
+### Full Policies
+
+| Policy | Receiver Response | When to Use |
+|--------|------------------|-------------|
+| `reject` (default) | gRPC: `ResourceExhausted`, HTTP: `429 + Retry-After: 5` | Production: OTel SDKs handle retry automatically |
+| `drop_oldest` | Accepted (oldest data evicted) | Best-effort pipelines preferring fresh data |
+| `block` | Blocked until space available | True backpressure (like OTel Collector's `block_on_overflow`) |
+
+### Configuration
+
+```yaml
+buffer:
+  full_policy: "reject"       # reject | drop_oldest | block
+
+memory:
+  buffer_percent: 0.15         # Buffer capacity as % of detected memory
+  queue_percent: 0.15          # Queue in-memory as % of detected memory
+```
+
+### Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_buffer_bytes` | Gauge | Current buffer memory usage |
+| `metrics_governor_buffer_max_bytes` | Gauge | Configured buffer capacity limit |
+| `metrics_governor_buffer_rejected_total` | Counter | Batches rejected by full policy |
+| `metrics_governor_buffer_evictions_total` | Counter | Data evicted by drop_oldest policy |
+
+## Percentage-Based Memory Sizing
+
+Buffer and queue sizes are derived from the detected container memory limit using `debug.SetMemoryLimit(-1)`:
+
+```
+100% container memory
+ └── 90% GOMEMLIMIT (existing -memory-limit-ratio)
+      └── 15% buffer capacity (-buffer-memory-percent)
+      └── 15% queue in-memory (-queue-memory-percent)
+      └── 60% Go runtime, goroutines, processing overhead
+```
+
+Static byte values (e.g., `-buffer-max-bytes=157286400`) override percentage-based sizing when explicitly set.
+
 ## Combined Resilience Flow
 
 ```mermaid
@@ -254,14 +307,18 @@ flowchart TB
         IN[Metrics Received]
     end
 
-    subgraph "Buffer"
+    subgraph "Buffer (Capacity-Bounded)"
         BUF[In-Memory Buffer]
+        CAP{Capacity<br/>Check}
         SPLIT[Byte-Aware Split]
-        WORKERS[Concurrent Workers]
     end
 
-    subgraph "Export Attempt"
-        EXP[Export to Backend]
+    subgraph "Queue (Always)"
+        Q[Persistent Queue]
+    end
+
+    subgraph "Worker Pool"
+        WP[Pull Workers<br/>2×NumCPU]
     end
 
     subgraph "Error Handling"
@@ -271,66 +328,68 @@ flowchart TB
 
     subgraph "Resilience"
         CB{Circuit<br/>Breaker}
-        BO[Calculate<br/>Backoff]
-        FQ[Failover<br/>Queue]
+        BO[Per-Worker<br/>Backoff]
     end
 
     subgraph "Backend"
         BE[Metrics Backend]
     end
 
-    IN --> BUF
-    BUF --> SPLIT --> WORKERS --> EXP
+    subgraph "Backpressure"
+        REJECT["429 / ResourceExhausted"]
+    end
 
-    EXP -->|Success| BE
-    EXP -->|Failure| SOE
+    IN --> CAP
+    CAP -->|"Under limit"| BUF
+    CAP -->|"Over limit"| REJECT
+    BUF --> SPLIT --> Q
+    Q -->|Pull| WP
 
+    WP -->|"Export"| CB
+    CB -->|"Closed"| BE
+    CB -->|"Open"| BO
+    BO --> Q
+
+    WP -->|"Failure"| SOE
     SOE -->|"400/413"| HALF
-    HALF --> EXP
-    SOE -->|Other| FQ
-
-    FQ -->|Retry| CB
-    CB -->|Closed/HalfOpen| BO
-    CB -->|Open| FQ
-    BO --> FQ
-    FQ -->|After Delay| CB
+    HALF --> Q
+    SOE -->|"Other"| BO
 
     style CB fill:#f96,stroke:#333
     style BO fill:#9cf,stroke:#333
-    style FQ fill:#9f9,stroke:#333
+    style Q fill:#9f9,stroke:#333
     style SOE fill:#ff9,stroke:#333
+    style REJECT fill:#f66,stroke:#333
 ```
 
 ### Timeline Example
 
 ```mermaid
 gantt
-    title Backend Outage Recovery Timeline
+    title Backend Outage Recovery Timeline (Always-Queue)
     dateFormat HH:mm:ss
     axisFormat %H:%M:%S
 
     section Backend
-    Healthy           :done, b1, 00:00:00, 30s
+    Healthy           :done, b1, 00:00:00, 25s
     Outage            :crit, b2, after b1, 5m
     Recovered         :done, b3, after b2, 30s
 
     section Circuit
-    Closed            :done, c1, 00:00:00, 35s
+    Closed            :done, c1, 00:00:00, 30s
     Open              :crit, c2, after c1, 4m25s
     Half-Open Test    :active, c3, after c2, 5s
-    Closed            :done, c4, after c3, 25s
+    Closed            :done, c4, after c3, 30s
 
-    section Backoff
-    5s retry          :r1, 00:00:35, 5s
-    10s retry         :r2, after r1, 10s
-    20s retry         :r3, after r2, 20s
-    40s retry         :r4, after r3, 40s
-    80s retry         :r5, after r4, 80s
-    Circuit open      :crit, r6, after r5, 2m
+    section Workers
+    Normal export     :done, w1, 00:00:00, 25s
+    Backing off       :active, w2, 00:00:25, 5m
+    Draining queue    :done, w3, after w2, 30s
 
     section Queue
-    Queuing           :active, q1, 00:00:35, 5m
-    Draining          :done, q2, after q1, 30s
+    Low utilization   :done, q1, 00:00:00, 25s
+    Accumulating      :active, q2, 00:00:25, 5m
+    Draining          :done, q3, after q2, 30s
 ```
 
 ## Failover Queue
@@ -411,6 +470,8 @@ Both the OTLP and PRW pipelines now have identical resilience features:
 | Circuit breaker | Yes | Yes |
 | Exponential backoff | Yes | Yes |
 | Graceful drain on shutdown | Yes | Yes |
+| Worker pool | Yes | Yes |
+| Buffer backpressure | Yes | Yes |
 
 ## Monitoring and Alerting
 

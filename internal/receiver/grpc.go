@@ -2,6 +2,7 @@ package receiver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -16,10 +17,12 @@ import (
 	tlspkg "github.com/szibis/metrics-governor/internal/tls"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/encoding"
 	_ "google.golang.org/grpc/encoding/gzip" // Register gzip compressor
 	"google.golang.org/grpc/stats"
+	"google.golang.org/grpc/status"
 )
 
 func init() {
@@ -208,7 +211,12 @@ func NewGRPCWithConfig(cfg GRPCConfig, buf *buffer.MetricsBuffer) *GRPCReceiver 
 // Export implements the OTLP MetricsService Export method.
 func (r *GRPCReceiver) Export(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) (*colmetricspb.ExportMetricsServiceResponse, error) {
 	IncrementReceiverRequests("grpc")
-	r.buffer.Add(req.ResourceMetrics)
+	if err := r.buffer.Add(req.ResourceMetrics); err != nil {
+		if errors.Is(err, buffer.ErrBufferFull) {
+			return nil, status.Error(codes.ResourceExhausted, "buffer capacity exceeded")
+		}
+		return nil, status.Errorf(codes.Internal, "buffer add failed: %v", err)
+	}
 	return &colmetricspb.ExportMetricsServiceResponse{}, nil
 }
 

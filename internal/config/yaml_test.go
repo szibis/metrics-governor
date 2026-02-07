@@ -519,8 +519,8 @@ func TestApplyDefaultsCircuitBreaker(t *testing.T) {
 	if !*cfg.Exporter.Queue.CircuitBreaker.Enabled {
 		t.Error("expected default circuit breaker enabled true")
 	}
-	if cfg.Exporter.Queue.CircuitBreaker.Threshold != 10 {
-		t.Errorf("expected default threshold 10, got %d", cfg.Exporter.Queue.CircuitBreaker.Threshold)
+	if cfg.Exporter.Queue.CircuitBreaker.Threshold != 5 {
+		t.Errorf("expected default threshold 5, got %d", cfg.Exporter.Queue.CircuitBreaker.Threshold)
 	}
 	if time.Duration(cfg.Exporter.Queue.CircuitBreaker.ResetTimeout) != 30*time.Second {
 		t.Errorf("expected default reset timeout 30s, got %v", cfg.Exporter.Queue.CircuitBreaker.ResetTimeout)

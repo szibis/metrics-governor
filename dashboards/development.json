@@ -1502,6 +1502,461 @@
       }
     },
     {
+      "id": 50,
+      "type": "row",
+      "title": "Buffer & Workers",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 41
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 51,
+      "title": "Buffer Memory Usage",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 42
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_buffer_bytes",
+          "legendFormat": "Buffer Bytes",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_buffer_max_bytes",
+          "legendFormat": "Max Bytes",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "auto",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisBorderShow": false,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 52,
+      "title": "Buffer Utilization",
+      "type": "gauge",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 42
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_buffer_bytes / metrics_governor_buffer_max_bytes",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.7
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 53,
+      "title": "Buffer Rejected/s",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 42
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(metrics_governor_buffer_rejected_total[$__rate_interval])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 54,
+      "title": "Workers Active vs Total",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 50
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_queue_workers_active",
+          "legendFormat": "Active Workers",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_queue_workers_total",
+          "legendFormat": "Total Workers",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "auto",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisBorderShow": false,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 55,
+      "title": "Workers Utilization",
+      "type": "gauge",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 50
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_queue_workers_active / metrics_governor_queue_workers_total",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.7
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 56,
+      "title": "Buffer Evictions/s",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 50
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(metrics_governor_buffer_evictions_total[$__rate_interval])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
       "id": 23,
       "title": "Config & Health",
       "type": "row",
@@ -1510,7 +1965,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 66
       },
       "panels": []
     },
@@ -1526,7 +1981,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 50
+        "y": 67
       },
       "targets": [
         {
@@ -1584,7 +2039,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 50
+        "y": 67
       },
       "targets": [
         {
@@ -1642,7 +2097,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 50
+        "y": 67
       },
       "targets": [
         {
@@ -1700,7 +2155,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 50
+        "y": 67
       },
       "targets": [
         {
@@ -1758,7 +2213,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 50
+        "y": 67
       },
       "targets": [
         {
@@ -1816,7 +2271,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 50
+        "y": 67
       },
       "targets": [
         {
@@ -1874,7 +2329,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 54
+        "y": 71
       },
       "targets": [
         {
@@ -1972,7 +2427,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 54
+        "y": 71
       },
       "targets": [
         {
@@ -2058,7 +2513,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 66
+        "y": 83
       },
       "panels": []
     },
@@ -2074,7 +2529,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 67
+        "y": 84
       },
       "targets": [
         {
@@ -2163,7 +2618,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 67
+        "y": 84
       },
       "targets": [
         {
@@ -2252,7 +2707,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 75
+        "y": 92
       },
       "targets": [
         {
@@ -2332,7 +2787,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 75
+        "y": 92
       },
       "targets": [
         {
@@ -2409,7 +2864,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 83
+        "y": 100
       },
       "panels": []
     },
@@ -2425,7 +2880,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 84
+        "y": 101
       },
       "targets": [
         {
@@ -2514,7 +2969,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 84
+        "y": 101
       },
       "targets": [
         {
@@ -2603,7 +3058,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 92
+        "y": 109
       },
       "targets": [
         {
@@ -2661,7 +3116,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 92
+        "y": 109
       },
       "targets": [
         {
@@ -2719,7 +3174,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 92
+        "y": 109
       },
       "targets": [
         {
@@ -2785,7 +3240,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 92
+        "y": 109
       },
       "targets": [
         {
@@ -2861,7 +3316,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 96
+        "y": 113
       },
       "targets": [
         {
@@ -2959,7 +3414,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 96
+        "y": 113
       },
       "targets": [
         {

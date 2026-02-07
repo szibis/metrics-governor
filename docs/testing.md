@@ -106,7 +106,7 @@ Full system tests with complete pipeline.
 | `compression` | 8 | Concurrent compress/decompress across gzip/zstd/snappy |
 | `intern` | 8 | Pool concurrent intern, reset cycles, global pool access |
 | `queue` | 8 | SendQueue/FastQueue concurrent push/pop, compression |
-| `exporter` | 7 | ConcurrencyLimiter acquire/release, circuit breaker state changes |
+| `exporter` | 7 | Worker pool lifecycle, circuit breaker state changes |
 | `stats` | 6 | Collector concurrent Process, ServeHTTP, periodic logging |
 | `auth` | 5 | HTTP middleware concurrent requests, bearer/basic auth |
 | `logging` | 5 | Concurrent logging, SetOutput during logging, mixed levels |

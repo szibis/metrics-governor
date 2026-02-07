@@ -22,7 +22,7 @@
 |-----------|----------|
 | **Cardinality explosions** crushing your backend | **Adaptive limiting** drops only the worst offenders, preserving well-behaved services |
 | **Single backend bottleneck** limiting throughput | **Consistent sharding** distributes load across multiple endpoints via K8s DNS discovery |
-| **Data loss during outages** | **Circuit breaker + persistent queue** with batch/burst drain and exponential backoff |
+| **Data loss during outages** | **Always-queue + circuit breaker + persistent queue** with backpressure (429/ResourceExhausted), batch/burst drain, and exponential backoff |
 | **No visibility** into metrics pipeline | **Real-time statistics** with per-metric cardinality, datapoints, and Prometheus metrics |
 | **Unpredictable costs** from runaway metrics | **Per-group tracking** with configurable limits and dry-run mode for safe testing |
 
@@ -32,11 +32,18 @@
 - **Intelligent Limiting** - Unlike simple rate limiters that drop everything, metrics-governor identifies and drops only the top offenders while preserving data from well-behaved services
 - **Consistent Sharding** - Automatic endpoint discovery from Kubernetes headless services with consistent hashing ensures the same time-series always route to the same backend (works for both OTLP and PRW)
 - **Pipeline Parity** - OTLP and PRW pipelines have identical resilience: circuit breaker gate, persistent disk queue, batch and burst drain, split-on-error, exponential backoff, and graceful shutdown drain
-- **Production-Ready** - Byte-aware batch splitting, concurrent exports, circuit breaker with CAS half-open transitions, FastQueue durable persistence with configurable batch/burst drain, auto memory limits, TLS/mTLS, authentication, compression (gzip/zstd/snappy), and Helm chart included
-- **High-Performance Optimizations** - String interning reduces allocations by 76%, concurrency limiting prevents goroutine explosion. Three cardinality modes: Bloom filters (98% less memory), HyperLogLog (constant memory), and Hybrid auto-switching (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
+- **Production-Ready** - Always-queue architecture with worker pool exports, byte-aware batch splitting, circuit breaker with CAS half-open transitions, FastQueue durable persistence with configurable batch/burst drain, percentage-based memory sizing, TLS/mTLS, authentication, compression (gzip/zstd/snappy), and Helm chart included
+- **High-Performance Optimizations** - String interning reduces allocations by 76%, pull-based worker pool prevents goroutine explosion. Three cardinality modes: Bloom filters (98% less memory), HyperLogLog (constant memory), and Hybrid auto-switching (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
 - **Zero Configuration Start** - Works out of the box with sensible defaults; add limits and sharding when needed
 
 ## Architecture
+
+<p align="center">
+  <img src="docs/images/architecture.svg" alt="metrics-governor architecture diagram" width="100%">
+</p>
+
+<details>
+<summary>Mermaid diagram (click to expand)</summary>
 
 ```mermaid
 flowchart LR
@@ -52,31 +59,27 @@ flowchart LR
             direction LR
             O_RX["Receiver<br/>gRPC :4317<br/>HTTP :4318"]
             O_PROC["Stats → Limits"]
-            O_SPLIT["Byte-Aware<br/>Splitting"]
+            O_BUF["Buffer<br/>capacity-bounded"]
+            O_Q["Queue<br/>always-queue"]
+            O_WP["Worker Pool<br/>2×NumCPU"]
             O_CB{"Circuit<br/>Breaker"}
-            O_EXP["Concurrent<br/>Export Workers"]
-            O_Q["Persistent Queue<br/>disk-backed"]
-            O_RETRY["Retry Loop<br/>batch + burst drain"]
-            O_RX --> O_PROC --> O_SPLIT --> O_CB
-            O_CB -->|"closed"| O_EXP
+            O_RX --> O_PROC --> O_BUF --> O_Q --> O_WP --> O_CB
+            O_CB -->|"closed"| O_EXP["Export"]
             O_CB -->|"open"| O_Q
-            O_EXP -.->|"fail / split-on-error"| O_Q
-            O_Q --> O_RETRY --> O_EXP
+            O_WP -.->|"fail / split-on-error"| O_Q
         end
 
         subgraph PRW["PRW Pipeline"]
             direction LR
             P_RX["Receiver<br/>HTTP :9091"]
             P_PROC["Stats → Limits"]
+            P_Q["Queue<br/>always-queue"]
+            P_WP["Worker Pool<br/>2×NumCPU"]
             P_CB{"Circuit<br/>Breaker"}
-            P_EXP["Exporter"]
-            P_Q["Persistent Queue<br/>disk-backed"]
-            P_RETRY["Retry Loop<br/>batch + burst drain"]
-            P_RX --> P_PROC --> P_CB
-            P_CB -->|"closed"| P_EXP
+            P_RX --> P_PROC --> P_Q --> P_WP --> P_CB
+            P_CB -->|"closed"| P_EXP["Export"]
             P_CB -->|"open"| P_Q
-            P_EXP -.->|"fail / split-on-error"| P_Q
-            P_Q --> P_RETRY --> P_EXP
+            P_WP -.->|"fail / split-on-error"| P_Q
         end
     end
 
@@ -89,16 +92,21 @@ flowchart LR
     PROM -->|PRW| P_RX
     O_EXP --> OTLP_BE
     P_EXP --> PRW_BE
+    O_BUF -.->|"429 / ResourceExhausted"| O_RX
 ```
+
+</details>
 
 **Pipeline Features:**
 - **Stats** - Real-time cardinality and datapoint tracking per metric/service
 - **Limits** - Adaptive limiting that drops only top offenders, preserving well-behaved services
-- **Byte-Aware Splitting** - Recursive binary split ensures batches stay under backend size limits (default 8MB)
-- **Concurrent Export** - Parallel export workers maximize throughput during flush cycles
-- **Circuit Breaker Gate** - When the destination is down, exports bypass the slow HTTP path and queue instantly (26us vs 30s), preventing goroutine pile-up and memory spikes
+- **Always-Queue Architecture** - Data always flows through the queue (VMAgent/OTel-inspired), eliminating flush-time blocking and memory spikes
+- **Worker Pool** - Pull-based workers (2×NumCPU) drain the queue concurrently, self-regulating export rate with per-worker backoff
+- **Buffer Backpressure** - Capacity-bounded buffer returns 429/ResourceExhausted when full, preventing unbounded memory growth
+- **Circuit Breaker Gate** - When the destination is down, workers pause exports and back off, preventing goroutine pile-up
 - **Persistent Queue** - Disk-backed queue with batch drain (10/tick) and burst drain (100 on recovery) catches failed exports instead of dropping data
-- **Split-on-Error** - Oversized batches automatically split and retry on HTTP 400/413 responses
+- **Split-on-Error** - Oversized batches automatically split and retry on HTTP 400/413 responses (depth-limited to prevent unbounded recursion)
+- **Percentage-Based Memory Sizing** - Buffer and queue sizes scale automatically with container resources (15% each by default)
 - **Configurable Resilience** - 20+ tunable parameters for retry timeouts, drain rates, circuit breaker thresholds, and backoff delays
 
 ## Quick Start
@@ -198,7 +206,7 @@ Plan your deployment in seconds. The **interactive Configuration Helper** estima
 |------------|-------------|
 | **OTLP Protocol** | Full gRPC and HTTP receiver/exporter with TLS, mTLS, and authentication (bearer token, basic auth) |
 | **[PRW Protocol](docs/prw.md)** | Prometheus Remote Write 1.0/2.0 with native histograms, VictoriaMetrics mode, custom endpoint paths |
-| **Intelligent Buffering** | Configurable buffer with byte-aware batch splitting, concurrent export workers, and failover queue (both OTLP and PRW) |
+| **Intelligent Buffering** | Capacity-bounded buffer with byte-aware batch splitting, always-queue architecture, worker pool exports, and backpressure (429/ResourceExhausted) (both OTLP and PRW) |
 | **[Adaptive Limits](docs/limits.md)** | Per-group tracking with smart dropping of top offenders only, dry-run mode for safe rollouts |
 | **[Real-time Statistics](docs/statistics.md)** | Per-metric cardinality, datapoints, and limit violation tracking with Prometheus metrics |
 | **[Consistent Sharding](docs/sharding.md)** | Distribute metrics across multiple backends via K8s DNS discovery with virtual nodes (OTLP and PRW) |
@@ -208,7 +216,7 @@ Plan your deployment in seconds. The **interactive Configuration Helper** estima
 | **[Split-on-Error](docs/resilience.md)** | Oversized batches automatically split in half and retry on HTTP 413 and "too big" errors from backends like VictoriaMetrics, Thanos, Mimir, and Cortex |
 | **[Cardinality Tracking](docs/cardinality-tracking.md)** | Three modes: **Bloom filter** (98% less memory, 1.2MB vs 75MB per 1M series), **HyperLogLog** (constant ~12KB per tracker, ideal for high-cardinality metrics), and **Hybrid** (auto-switches Bloom→HLL at configurable threshold) |
 | **[Bloom Persistence](docs/bloom-persistence.md)** | Save and restore Bloom/HLL filter state across pod restarts — eliminates cold-start re-learning period with configurable save intervals and TTL |
-| **[Performance Optimized](docs/performance.md)** | String interning (76% fewer allocations), concurrency limiting, and configurable cardinality mode selection |
+| **[Performance Optimized](docs/performance.md)** | String interning (76% fewer allocations), pull-based worker pool, percentage-based memory sizing, and configurable cardinality mode selection |
 | **[Human-Readable Config](docs/configuration.md)** | CLI flags and YAML config accept Mi/Gi/Ti notation for all byte-size values (e.g. `--queue-max-bytes 2Gi`) |
 | **[Configuration Helper](docs/config-helper.md)** | Interactive browser-based tool for deployment planning — estimates CPU, memory, disk I/O, K8s pod sizing, per-pod traffic splitting, and generates ready-to-use YAML |
 | **Cloud Storage Guidance** | Auto-recommends AWS, Azure, and GCP block storage classes based on calculated per-pod IOPS and throughput requirements |

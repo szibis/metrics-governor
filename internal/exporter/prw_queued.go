@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -31,7 +33,7 @@ type PRWQueueConfig struct {
 	BackoffMultiplier float64
 	// Circuit breaker settings
 	CircuitBreakerEnabled   bool          // Enable circuit breaker (default: true)
-	CircuitFailureThreshold int           // Failures before opening (default: 10)
+	CircuitFailureThreshold int           // Failures before opening (default: 5)
 	CircuitResetTimeout     time.Duration // Time to wait before half-open (default: 30s)
 	// Direct export timeout — fail fast on slow destinations to trigger CB → queue.
 	// Default: 0 (disabled; caller must set explicitly).
@@ -43,6 +45,10 @@ type PRWQueueConfig struct {
 	CloseTimeout       time.Duration // Close() wait timeout (default: 60s)
 	DrainTimeout       time.Duration // drainQueue overall timeout (default: 30s)
 	DrainEntryTimeout  time.Duration // Per-entry drain timeout (default: 5s)
+	// AlwaysQueue routes all data through the queue instead of trying direct export.
+	AlwaysQueue bool
+	// Workers is the number of worker goroutines (default: 2 × NumCPU).
+	Workers int
 }
 
 // DefaultPRWQueueConfig returns default queue configuration.
@@ -54,8 +60,10 @@ func DefaultPRWQueueConfig() PRWQueueConfig {
 		RetryInterval:           5 * time.Second,
 		MaxRetryDelay:           5 * time.Minute,
 		CircuitBreakerEnabled:   true,
-		CircuitFailureThreshold: 10,
+		CircuitFailureThreshold: 5,
 		CircuitResetTimeout:     30 * time.Second,
+		AlwaysQueue:             true,
+		Workers:                 0, // 0 = 2 × NumCPU
 	}
 }
 
@@ -73,6 +81,10 @@ type PRWQueuedExporter struct {
 	maxDelay       time.Duration
 	circuitBreaker *CircuitBreaker
 
+	// Always-queue mode
+	alwaysQueue bool
+	workers     int
+
 	// Direct export timeout — prevents slow destinations from blocking flush goroutines.
 	directExportTimeout time.Duration
 
@@ -88,11 +100,12 @@ type PRWQueuedExporter struct {
 	drainTimeout       time.Duration // drainQueue overall timeout (default: 30s)
 	drainEntryTimeout  time.Duration // Per-entry timeout during drain (default: 5s)
 
-	retryStop  chan struct{}
-	retryDone  chan struct{}
-	mu         sync.Mutex
-	closed     bool
-	closedOnce sync.Once
+	retryStop   chan struct{}
+	retryDone   chan struct{}
+	workersDone chan struct{}
+	mu          sync.Mutex
+	closed      bool
+	closedOnce  sync.Once
 }
 
 // NewPRWQueued creates a new queued PRW exporter.
@@ -164,12 +177,19 @@ func NewPRWQueued(exporter prwExporterInterface, cfg PRWQueueConfig) (*PRWQueued
 		drainEntryTimeout = 5 * time.Second
 	}
 
+	workers := cfg.Workers
+	if workers <= 0 {
+		workers = 2 * runtime.NumCPU()
+	}
+
 	qe := &PRWQueuedExporter{
 		exporter:            exporter,
 		queue:               q,
 		baseDelay:           baseDelay,
 		maxDelay:            maxDelay,
 		directExportTimeout: cfg.DirectExportTimeout,
+		alwaysQueue:         cfg.AlwaysQueue,
+		workers:             workers,
 		backoffEnabled:      cfg.BackoffEnabled,
 		backoffMultiplier:   backoffMultiplier,
 		batchDrainSize:      batchDrainSize,
@@ -192,7 +212,7 @@ func NewPRWQueued(exporter prwExporterInterface, cfg PRWQueueConfig) (*PRWQueued
 	if cfg.CircuitBreakerEnabled {
 		threshold := cfg.CircuitFailureThreshold
 		if threshold == 0 {
-			threshold = 10
+			threshold = 5
 		}
 		resetTimeout := cfg.CircuitResetTimeout
 		if resetTimeout == 0 {
@@ -205,20 +225,43 @@ func NewPRWQueued(exporter prwExporterInterface, cfg PRWQueueConfig) (*PRWQueued
 		))
 	}
 
-	// Start retry loop
-	go qe.retryLoop()
+	if qe.alwaysQueue {
+		logging.Info("PRW always-queue mode enabled with worker pool", logging.F(
+			"workers", workers,
+		))
+		qe.workersDone = make(chan struct{})
+		qe.startWorkers()
+	} else {
+		// Start legacy retry loop
+		go qe.retryLoop()
+	}
 
 	return qe, nil
 }
 
-// Export sends the PRW request, queuing it for retry on failure.
-// When the circuit breaker is open, data is queued immediately (µs)
-// instead of attempting a doomed HTTP export (30s timeout).
+// Export sends the PRW request. In always-queue mode, data is pushed to the queue
+// instantly and workers handle the actual export.
 func (qe *PRWQueuedExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 	if req == nil || len(req.Timeseries) == 0 {
 		return nil
 	}
 
+	if qe.alwaysQueue {
+		data, marshalErr := req.Marshal()
+		if marshalErr != nil {
+			return fmt.Errorf("marshal failed: %w", marshalErr)
+		}
+		if pushErr := qe.queue.PushData(data); pushErr != nil {
+			return fmt.Errorf("queue push failed: %w", pushErr)
+		}
+		return nil
+	}
+
+	return qe.legacyExport(ctx, req)
+}
+
+// legacyExport implements the original try-direct/queue-on-failure behavior.
+func (qe *PRWQueuedExporter) legacyExport(ctx context.Context, req *prw.WriteRequest) error {
 	// Check circuit breaker BEFORE attempting direct export
 	if qe.circuitBreaker != nil && !qe.circuitBreaker.AllowRequest() {
 		queue.IncrementCircuitRejected()
@@ -233,7 +276,6 @@ func (qe *PRWQueuedExporter) Export(ctx context.Context, req *prw.WriteRequest) 
 	}
 
 	// Circuit closed or half-open — try direct export.
-	// Wrap with directExportTimeout to fail fast on slow destinations.
 	exportCtx := ctx
 	if qe.directExportTimeout > 0 {
 		var cancel context.CancelFunc
@@ -295,7 +337,142 @@ func (qe *PRWQueuedExporter) Export(ctx context.Context, req *prw.WriteRequest) 
 	return ErrExportQueued
 }
 
-// retryLoop continuously retries queued requests.
+// startWorkers launches N worker goroutines for PRW export.
+func (qe *PRWQueuedExporter) startWorkers() {
+	var wg sync.WaitGroup
+	wg.Add(qe.workers)
+
+	for i := 0; i < qe.workers; i++ {
+		go func(id int) {
+			defer wg.Done()
+			qe.workerLoop(id)
+		}(i)
+	}
+
+	go func() {
+		wg.Wait()
+		close(qe.workersDone)
+	}()
+}
+
+// workerLoop is the main loop for each PRW worker goroutine.
+func (qe *PRWQueuedExporter) workerLoop(id int) {
+	currentBackoff := qe.baseDelay
+	if currentBackoff <= 0 {
+		currentBackoff = 5 * time.Second
+	}
+
+	for {
+		select {
+		case <-qe.retryStop:
+			return
+		default:
+		}
+
+		entry, err := qe.queue.Pop()
+		if err != nil {
+			qe.workerSleep(100 * time.Millisecond)
+			continue
+		}
+		if entry == nil {
+			qe.workerSleep(100 * time.Millisecond)
+			continue
+		}
+
+		req, err := prw.UnmarshalWriteRequest(entry.Data)
+		if err != nil {
+			logging.Error("PRW worker: failed to deserialize", logging.F("worker_id", id, "error", err.Error()))
+			continue
+		}
+
+		// Check circuit breaker
+		if qe.circuitBreaker != nil && !qe.circuitBreaker.AllowRequest() {
+			queue.IncrementCircuitRejected()
+			_ = qe.queue.PushData(entry.Data)
+			qe.workerSleep(currentBackoff)
+			continue
+		}
+
+		prwRetryTotal.Inc()
+
+		ctx, cancel := context.WithTimeout(context.Background(), qe.retryExportTimeout)
+		exportErr := qe.exporter.Export(ctx, req)
+		cancel()
+
+		if exportErr == nil {
+			if qe.circuitBreaker != nil {
+				qe.circuitBreaker.RecordSuccess()
+			}
+			prwRetrySuccessTotal.Inc()
+			currentBackoff = qe.baseDelay
+			if currentBackoff <= 0 {
+				currentBackoff = 5 * time.Second
+			}
+			continue
+		}
+
+		// Failure
+		if qe.circuitBreaker != nil {
+			qe.circuitBreaker.RecordFailure()
+		}
+
+		errType := classifyPRWError(exportErr)
+		prwRetryFailureTotal.WithLabelValues(string(errType)).Inc()
+
+		// Check if splittable
+		var expErr *ExportError
+		if errors.As(exportErr, &expErr) {
+			if expErr.IsSplittable() && len(req.Timeseries) > 1 {
+				mid := len(req.Timeseries) / 2
+				req1 := &prw.WriteRequest{Timeseries: req.Timeseries[:mid], Metadata: req.Metadata}
+				req2 := &prw.WriteRequest{Timeseries: req.Timeseries[mid:], Metadata: req.Metadata}
+				data1, _ := req1.Marshal()
+				data2, _ := req2.Marshal()
+				_ = qe.queue.PushData(data1)
+				_ = qe.queue.PushData(data2)
+				continue
+			}
+			if !expErr.IsRetryable() {
+				logging.Warn("PRW worker: dropping non-retryable entry", logging.F(
+					"worker_id", id,
+					"error", exportErr.Error(),
+				))
+				continue
+			}
+		}
+
+		// Re-push for retry
+		_ = qe.queue.PushData(entry.Data)
+
+		if qe.backoffEnabled {
+			qe.workerSleep(currentBackoff)
+			newBackoff := time.Duration(float64(currentBackoff) * qe.backoffMultiplier)
+			if newBackoff > qe.maxDelay && qe.maxDelay > 0 {
+				newBackoff = qe.maxDelay
+			}
+			currentBackoff = newBackoff
+		} else {
+			qe.workerSleep(currentBackoff)
+		}
+	}
+}
+
+// workerSleep sleeps with jitter and shutdown awareness.
+func (qe *PRWQueuedExporter) workerSleep(d time.Duration) {
+	jitter := time.Duration(float64(d) * 0.1 * (2*rand.Float64() - 1)) //nolint:gosec // jitter doesn't need crypto randomness
+	d += jitter
+	if d <= 0 {
+		d = time.Millisecond
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-qe.retryStop:
+	case <-timer.C:
+	}
+}
+
+// retryLoop continuously retries queued requests (legacy mode).
 func (qe *PRWQueuedExporter) retryLoop() {
 	defer close(qe.retryDone)
 
@@ -608,16 +785,27 @@ func (qe *PRWQueuedExporter) Close() error {
 		qe.closed = true
 		qe.mu.Unlock()
 
-		// Signal retry loop to stop
+		// Signal workers/retry loop to stop
 		close(qe.retryStop)
 
-		// Wait for retry loop to finish (includes drain) before closing queue
-		select {
-		case <-qe.retryDone:
-		case <-time.After(qe.closeTimeout):
-			logging.Warn("PRW timeout waiting for retry loop to finish", logging.F(
-				"close_timeout", qe.closeTimeout.String(),
-			))
+		if qe.alwaysQueue {
+			select {
+			case <-qe.workersDone:
+			case <-time.After(qe.closeTimeout):
+				logging.Warn("PRW timeout waiting for workers to finish", logging.F(
+					"close_timeout", qe.closeTimeout.String(),
+				))
+			}
+			qe.drainQueue()
+		} else {
+			// Wait for retry loop to finish (includes drain) before closing queue
+			select {
+			case <-qe.retryDone:
+			case <-time.After(qe.closeTimeout):
+				logging.Warn("PRW timeout waiting for retry loop to finish", logging.F(
+					"close_timeout", qe.closeTimeout.String(),
+				))
+			}
 		}
 
 		// Close the queue

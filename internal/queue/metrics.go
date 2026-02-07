@@ -130,6 +130,17 @@ var (
 		Name: "metrics_governor_queue_backoff_seconds",
 		Help: "Current exponential backoff delay in seconds",
 	})
+
+	// Worker pool metrics
+	queueWorkersActive = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_queue_workers_active",
+		Help: "Number of active worker goroutines pulling from queue",
+	})
+
+	queueWorkersTotal = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_queue_workers_total",
+		Help: "Configured number of worker goroutines",
+	})
 )
 
 func init() {
@@ -159,6 +170,9 @@ func init() {
 	prometheus.MustRegister(circuitBreakerRejectedTotal)
 	prometheus.MustRegister(directExportTimeoutTotal)
 	prometheus.MustRegister(currentBackoffSeconds)
+	// Worker pool metrics
+	prometheus.MustRegister(queueWorkersActive)
+	prometheus.MustRegister(queueWorkersTotal)
 
 	// Initialize gauges to 0 so they appear in Prometheus immediately
 	// (before queue is created or used)
@@ -173,6 +187,8 @@ func init() {
 	fastqueueInmemoryBlocks.Set(0)
 	fastqueueDiskBytes.Set(0)
 	currentBackoffSeconds.Set(0)
+	queueWorkersActive.Set(0)
+	queueWorkersTotal.Set(0)
 
 	// Initialize counters to 0
 	queuePushTotal.Add(0)
@@ -303,4 +319,19 @@ func IncrementDirectExportTimeout() {
 // SetCurrentBackoff sets the current backoff delay metric.
 func SetCurrentBackoff(d time.Duration) {
 	currentBackoffSeconds.Set(d.Seconds())
+}
+
+// IncrementWorkersActive increments the active workers gauge.
+func IncrementWorkersActive() {
+	queueWorkersActive.Inc()
+}
+
+// DecrementWorkersActive decrements the active workers gauge.
+func DecrementWorkersActive() {
+	queueWorkersActive.Dec()
+}
+
+// SetWorkersTotal sets the configured worker count gauge.
+func SetWorkersTotal(n float64) {
+	queueWorkersTotal.Set(n)
 }

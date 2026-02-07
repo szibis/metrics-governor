@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -157,6 +159,10 @@ func (cb *CircuitBreaker) RecordFailure() {
 }
 
 // QueuedExporter wraps an Exporter with a persistent queue for retry.
+// When AlwaysQueue is true (default), Export() always pushes to the queue
+// (returns instantly in µs) and N worker goroutines pull from the queue
+// and export concurrently. This prevents slow destinations from blocking
+// the buffer flush path.
 type QueuedExporter struct {
 	exporter       Exporter
 	queue          *queue.SendQueue
@@ -164,9 +170,13 @@ type QueuedExporter struct {
 	maxDelay       time.Duration
 	circuitBreaker *CircuitBreaker
 
+	// Always-queue mode: when true, Export() pushes to queue, workers export.
+	alwaysQueue bool
+	// Number of worker goroutines for always-queue mode.
+	workers int
+
 	// Direct export timeout — prevents slow destinations from blocking flush goroutines.
-	// When > 0, wraps the export context so slow-but-succeeding exports fail fast
-	// and trigger the circuit breaker → queue path.
+	// Only used in legacy (non-always-queue) mode.
 	directExportTimeout time.Duration
 
 	// Backoff configuration
@@ -186,6 +196,8 @@ type QueuedExporter struct {
 
 	retryStop chan struct{}
 	retryDone chan struct{}
+	// workersDone is closed when all worker goroutines have exited (always-queue mode).
+	workersDone chan struct{}
 
 	mu     sync.Mutex
 	closed bool
@@ -236,12 +248,20 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 	directExportTimeout := queueCfg.DirectExportTimeout
 	// 0 means disabled (caller must explicitly set)
 
+	// Worker count: default to 2 × NumCPU (I/O-bound, benefits from oversubscription)
+	workers := queueCfg.Workers
+	if workers <= 0 {
+		workers = 2 * runtime.NumCPU()
+	}
+
 	qe := &QueuedExporter{
 		exporter:            exporter,
 		queue:               q,
 		baseDelay:           queueCfg.RetryInterval,
 		maxDelay:            queueCfg.MaxRetryDelay,
 		directExportTimeout: directExportTimeout,
+		alwaysQueue:         queueCfg.AlwaysQueue,
+		workers:             workers,
 		backoffEnabled:      backoffEnabled,
 		backoffMultiplier:   backoffMultiplier,
 		batchDrainSize:      batchDrainSize,
@@ -261,7 +281,7 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 	if queueCfg.CircuitBreakerEnabled {
 		threshold := queueCfg.CircuitBreakerThreshold
 		if threshold <= 0 {
-			threshold = 10 // Default threshold
+			threshold = 5 // Default threshold
 		}
 		resetTimeout := queueCfg.CircuitBreakerResetTimeout
 		if resetTimeout <= 0 {
@@ -275,30 +295,57 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 		))
 	}
 
-	if directExportTimeout > 0 {
-		logging.Info("direct export timeout enabled", logging.F(
-			"timeout", directExportTimeout.String(),
+	if qe.alwaysQueue {
+		// Always-queue mode: start N worker goroutines that pull from queue
+		logging.Info("always-queue mode enabled with worker pool", logging.F(
+			"workers", workers,
 		))
-	}
+		qe.workersDone = make(chan struct{})
+		qe.startWorkers()
+	} else {
+		// Legacy mode: single retry loop
+		if directExportTimeout > 0 {
+			logging.Info("direct export timeout enabled", logging.F(
+				"timeout", directExportTimeout.String(),
+			))
+		}
 
-	if backoffEnabled {
-		logging.Info("exponential backoff enabled", logging.F(
-			"multiplier", backoffMultiplier,
-			"base_delay", queueCfg.RetryInterval.String(),
-			"max_delay", queueCfg.MaxRetryDelay.String(),
-		))
-	}
+		if backoffEnabled {
+			logging.Info("exponential backoff enabled", logging.F(
+				"multiplier", backoffMultiplier,
+				"base_delay", queueCfg.RetryInterval.String(),
+				"max_delay", queueCfg.MaxRetryDelay.String(),
+			))
+		}
 
-	// Start the retry loop
-	go qe.retryLoop()
+		// Start the single retry loop (legacy mode)
+		go qe.retryLoop()
+	}
 
 	return qe, nil
 }
 
-// Export attempts to export immediately, queueing on failure.
-// When the circuit breaker is open, data is queued immediately (µs)
-// instead of attempting a doomed HTTP export (30s timeout).
+// Export sends data for export. In always-queue mode, data is pushed to the queue
+// instantly (µs) and workers handle the actual export. In legacy mode, data is
+// exported directly with fallback to the queue on failure.
 func (e *QueuedExporter) Export(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error {
+	if e.alwaysQueue {
+		// Always-queue mode: push to queue, workers will export.
+		// This returns in microseconds regardless of destination speed.
+		if err := e.queue.Push(req); err != nil {
+			return fmt.Errorf("queue push failed: %w", err)
+		}
+		// Queuing IS the success path — return nil, not ErrExportQueued.
+		// The buffer layer doesn't need to distinguish queued vs exported.
+		return nil
+	}
+
+	// Legacy mode: try direct export, queue on failure
+	return e.legacyExport(ctx, req)
+}
+
+// legacyExport implements the original try-direct/queue-on-failure behavior.
+func (e *QueuedExporter) legacyExport(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error {
 	// Check circuit breaker BEFORE attempting direct export
 	if e.circuitBreaker != nil && !e.circuitBreaker.AllowRequest() {
 		queue.IncrementCircuitRejected()
@@ -354,7 +401,7 @@ func (e *QueuedExporter) Export(ctx context.Context, req *colmetricspb.ExportMet
 	return ErrExportQueued
 }
 
-// Close stops the retry loop and closes the queue.
+// Close stops workers/retry loop and closes the queue.
 func (e *QueuedExporter) Close() error {
 	e.mu.Lock()
 	if e.closed {
@@ -364,16 +411,30 @@ func (e *QueuedExporter) Close() error {
 	e.closed = true
 	e.mu.Unlock()
 
-	// Signal retry loop to stop
+	// Signal workers/retry loop to stop
 	close(e.retryStop)
 
-	// Wait for retry loop to finish (includes drain) before closing queue
-	select {
-	case <-e.retryDone:
-	case <-time.After(e.closeTimeout):
-		logging.Warn("timeout waiting for retry loop to finish", logging.F(
-			"close_timeout", e.closeTimeout.String(),
-		))
+	if e.alwaysQueue {
+		// Wait for all workers to finish
+		select {
+		case <-e.workersDone:
+		case <-time.After(e.closeTimeout):
+			logging.Warn("timeout waiting for workers to finish", logging.F(
+				"close_timeout", e.closeTimeout.String(),
+			))
+		}
+
+		// Drain remaining queue entries best-effort
+		e.drainQueue()
+	} else {
+		// Wait for retry loop to finish (includes drain) before closing queue
+		select {
+		case <-e.retryDone:
+		case <-time.After(e.closeTimeout):
+			logging.Warn("timeout waiting for retry loop to finish", logging.F(
+				"close_timeout", e.closeTimeout.String(),
+			))
+		}
 	}
 
 	// Safe to close queue now — drain is done or timed out
@@ -385,7 +446,178 @@ func (e *QueuedExporter) Close() error {
 	return e.exporter.Close()
 }
 
-// retryLoop processes queued entries in the background.
+// startWorkers launches N worker goroutines that pull from the queue and export.
+func (e *QueuedExporter) startWorkers() {
+	var wg sync.WaitGroup
+	wg.Add(e.workers)
+	queue.SetWorkersTotal(float64(e.workers))
+
+	for i := 0; i < e.workers; i++ {
+		go func(id int) {
+			defer wg.Done()
+			e.workerLoop(id)
+		}(i)
+	}
+
+	go func() {
+		wg.Wait()
+		close(e.workersDone)
+	}()
+}
+
+// workerLoop is the main loop for each worker goroutine. Workers pull entries
+// from the queue and export them. On failure, entries are re-pushed with backoff.
+func (e *QueuedExporter) workerLoop(id int) {
+	queue.IncrementWorkersActive()
+	defer queue.DecrementWorkersActive()
+
+	// Per-worker backoff state
+	currentBackoff := e.baseDelay
+	if currentBackoff <= 0 {
+		currentBackoff = 5 * time.Second
+	}
+
+	for {
+		// Check for shutdown
+		select {
+		case <-e.retryStop:
+			return
+		default:
+		}
+
+		// Pop from queue (non-blocking)
+		entry, err := e.queue.Pop()
+		if err != nil {
+			logging.Error("worker: failed to pop queue", logging.F(
+				"worker_id", id,
+				"error", err.Error(),
+			))
+			// Back off on pop errors
+			e.workerSleep(100 * time.Millisecond)
+			continue
+		}
+
+		if entry == nil {
+			// Queue empty — back off to avoid busy-loop
+			e.workerSleep(100 * time.Millisecond)
+			continue
+		}
+
+		req, err := entry.GetRequest()
+		if err != nil {
+			logging.Error("worker: failed to deserialize queued request", logging.F(
+				"worker_id", id,
+				"error", err.Error(),
+			))
+			// Don't re-push corrupted data
+			continue
+		}
+
+		// Check circuit breaker before export
+		if e.circuitBreaker != nil && !e.circuitBreaker.AllowRequest() {
+			queue.IncrementCircuitRejected()
+			// Re-push and back off — CB is open
+			_ = e.queue.Push(req)
+			e.workerSleep(currentBackoff)
+			continue
+		}
+
+		queue.IncrementRetryTotal()
+
+		// Export with timeout
+		ctx, cancel := context.WithTimeout(context.Background(), e.retryExportTimeout)
+		err = e.exporter.Export(ctx, req)
+		cancel()
+
+		if err == nil {
+			// Success
+			queue.IncrementRetrySuccessTotal()
+			if e.circuitBreaker != nil {
+				e.circuitBreaker.RecordSuccess()
+			}
+			// Reset backoff on success
+			currentBackoff = e.baseDelay
+			if currentBackoff <= 0 {
+				currentBackoff = 5 * time.Second
+			}
+			continue
+		}
+
+		// Failure — record with circuit breaker
+		if e.circuitBreaker != nil {
+			e.circuitBreaker.RecordFailure()
+		}
+
+		// Classify error for metrics
+		errType := classifyExportError(err)
+		queue.IncrementRetryFailure(string(errType))
+
+		// Check if error is splittable (payload too large)
+		var exportErr *ExportError
+		if errors.As(err, &exportErr) {
+			if exportErr.IsSplittable() && len(req.ResourceMetrics) > 1 {
+				mid := len(req.ResourceMetrics) / 2
+				req1 := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: req.ResourceMetrics[:mid]}
+				req2 := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: req.ResourceMetrics[mid:]}
+				_ = e.queue.Push(req1)
+				_ = e.queue.Push(req2)
+				logging.Info("worker: split and re-queued", logging.F(
+					"worker_id", id,
+					"original_size", len(req.ResourceMetrics),
+				))
+				continue // No backoff needed — split may work at smaller size
+			}
+			if !exportErr.IsRetryable() {
+				logging.Warn("worker: dropping non-retryable entry", logging.F(
+					"worker_id", id,
+					"error", err.Error(),
+					"error_type", string(exportErr.Type),
+				))
+				continue
+			}
+		}
+
+		// Re-push for retry and backoff
+		if pushErr := e.queue.Push(req); pushErr != nil {
+			logging.Error("worker: failed to re-queue", logging.F(
+				"worker_id", id,
+				"error", pushErr.Error(),
+			))
+		}
+
+		// Exponential backoff with jitter
+		if e.backoffEnabled {
+			e.workerSleep(currentBackoff)
+			newBackoff := time.Duration(float64(currentBackoff) * e.backoffMultiplier)
+			if newBackoff > e.maxDelay && e.maxDelay > 0 {
+				newBackoff = e.maxDelay
+			}
+			currentBackoff = newBackoff
+		} else {
+			e.workerSleep(currentBackoff)
+		}
+	}
+}
+
+// workerSleep sleeps for the given duration but wakes up early on shutdown.
+// Adds ±10% jitter to prevent thundering herd.
+func (e *QueuedExporter) workerSleep(d time.Duration) {
+	// Add jitter: ±10%
+	jitter := time.Duration(float64(d) * 0.1 * (2*rand.Float64() - 1)) //nolint:gosec // jitter doesn't need crypto randomness
+	d += jitter
+	if d <= 0 {
+		d = time.Millisecond
+	}
+
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-e.retryStop:
+	case <-timer.C:
+	}
+}
+
+// retryLoop processes queued entries in the background (legacy mode only).
 func (e *QueuedExporter) retryLoop() {
 	defer close(e.retryDone)
 
@@ -732,4 +964,14 @@ func (e *QueuedExporter) QueueLen() int {
 // QueueSize returns the current queue size in bytes (for testing/monitoring).
 func (e *QueuedExporter) QueueSize() int64 {
 	return e.queue.Size()
+}
+
+// AlwaysQueue returns whether always-queue mode is enabled.
+func (e *QueuedExporter) AlwaysQueue() bool {
+	return e.alwaysQueue
+}
+
+// Workers returns the configured number of worker goroutines.
+func (e *QueuedExporter) Workers() int {
+	return e.workers
 }
