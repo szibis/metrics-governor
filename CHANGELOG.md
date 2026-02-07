@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.28.0] - 2026-02-07
+
+### Added
+
+- feat: pipeline component utilization metrics, worker utilization fix, and stability tuning (#123)
+
+
 ## [0.27.2] - 2026-02-07
 
 ### Fixed
