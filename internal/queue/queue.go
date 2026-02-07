@@ -69,6 +69,20 @@ type Config struct {
 	// CircuitBreakerResetTimeout is time to wait before half-open state (default: 30s).
 	CircuitBreakerResetTimeout time.Duration
 
+	// Retry drain settings
+	// BatchDrainSize is the number of entries processed per retry tick (default: 10).
+	BatchDrainSize int
+	// BurstDrainSize is the number of entries drained on recovery (default: 100).
+	BurstDrainSize int
+	// RetryExportTimeout is the per-retry export timeout (default: 10s).
+	RetryExportTimeout time.Duration
+	// CloseTimeout is the Close() wait for retry loop to finish (default: 60s).
+	CloseTimeout time.Duration
+	// DrainTimeout is the drainQueue overall timeout (default: 30s).
+	DrainTimeout time.Duration
+	// DrainEntryTimeout is the per-entry timeout during drain (default: 5s).
+	DrainEntryTimeout time.Duration
+
 	// FastQueue settings
 	// InmemoryBlocks is the in-memory channel size (default: 2048).
 	InmemoryBlocks int

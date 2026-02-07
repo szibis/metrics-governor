@@ -119,6 +119,8 @@ type HTTPClientConfig struct {
 	// IdleConnTimeout is the maximum amount of time an idle connection will
 	// remain idle before closing itself. Zero means no limit.
 	IdleConnTimeout time.Duration
+	// DialTimeout is the TCP connection setup timeout (default: 30s).
+	DialTimeout time.Duration
 	// DisableKeepAlives, if true, disables HTTP keep-alives and will only use
 	// the connection to the server for a single HTTP request.
 	DisableKeepAlives bool
@@ -236,10 +238,15 @@ func newGRPCExporter(_ context.Context, cfg Config) (*OTLPExporter, error) {
 
 // newHTTPExporter creates an HTTP-based exporter.
 func newHTTPExporter(_ context.Context, cfg Config) (*OTLPExporter, error) {
+	dialTimeout := cfg.HTTPClient.DialTimeout
+	if dialTimeout <= 0 {
+		dialTimeout = 30 * time.Second
+	}
+
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
+			Timeout:   dialTimeout,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
 		ForceAttemptHTTP2:     cfg.HTTPClient.ForceAttemptHTTP2,
@@ -258,6 +265,9 @@ func newHTTPExporter(_ context.Context, cfg Config) (*OTLPExporter, error) {
 	}
 	if transport.MaxIdleConnsPerHost == 0 {
 		transport.MaxIdleConnsPerHost = 100
+	}
+	if transport.MaxConnsPerHost == 0 {
+		transport.MaxConnsPerHost = 100
 	}
 	if transport.IdleConnTimeout == 0 {
 		transport.IdleConnTimeout = 90 * time.Second

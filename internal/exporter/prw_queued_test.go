@@ -204,8 +204,8 @@ func TestPRWQueuedExporter_Export_RetryableError(t *testing.T) {
 
 	// First export will fail, but should be queued
 	err = qe.Export(context.Background(), req)
-	if err != nil {
-		t.Errorf("Export() should return nil for retryable error (queued), got %v", err)
+	if err != nil && !errors.Is(err, ErrExportQueued) {
+		t.Errorf("Export() should return nil or ErrExportQueued for retryable error (queued), got %v", err)
 	}
 
 	// Queue should have 1 entry

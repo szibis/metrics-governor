@@ -2,6 +2,7 @@ package exporter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -156,7 +157,7 @@ func TestResilience_QueuedExporter_NetworkFailureRecovery(t *testing.T) {
 
 	// Export 10 requests — all fail, all get queued
 	for i := 0; i < 10; i++ {
-		if err := qe.Export(context.Background(), makeResilienceRequest(1)); err != nil {
+		if err := qe.Export(context.Background(), makeResilienceRequest(1)); err != nil && !errors.Is(err, ErrExportQueued) {
 			t.Fatalf("Export %d: %v", i, err)
 		}
 	}

@@ -3,6 +3,8 @@ package exporter
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,6 +13,11 @@ import (
 	"github.com/szibis/metrics-governor/internal/queue"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 )
+
+// ErrExportQueued is a sentinel error indicating data was queued for retry
+// rather than exported directly. Callers can use errors.Is to distinguish
+// "exported" from "queued" for accurate metrics tracking.
+var ErrExportQueued = errors.New("export queued for retry")
 
 // CircuitState represents the state of a circuit breaker.
 type CircuitState int32
@@ -69,14 +76,17 @@ func (cb *CircuitBreaker) AllowRequest() bool {
 		// Check if reset timeout has passed
 		lastFail := cb.lastFailure.Load()
 		if time.Now().Unix()-lastFail >= int64(cb.resetTimeout.Seconds()) {
-			// Transition to half-open
-			cb.state.Store(int32(CircuitHalfOpen))
-			cb.lastStateChange.Store(time.Now().Unix())
-			queue.SetCircuitState("half_open")
-			logging.Info("circuit breaker transitioning to half-open", logging.F(
-				"reset_timeout", cb.resetTimeout.String(),
-			))
-			return true
+			// CAS: only one goroutine wins the Open → HalfOpen transition
+			if cb.state.CompareAndSwap(int32(CircuitOpen), int32(CircuitHalfOpen)) {
+				cb.lastStateChange.Store(time.Now().Unix())
+				queue.SetCircuitState("half_open")
+				logging.Info("circuit breaker transitioning to half-open", logging.F(
+					"reset_timeout", cb.resetTimeout.String(),
+				))
+				return true
+			}
+			// Another goroutine already transitioned — reject this one
+			return false
 		}
 		return false
 	case CircuitHalfOpen:
@@ -148,6 +158,14 @@ type QueuedExporter struct {
 	backoffEnabled    bool
 	backoffMultiplier float64
 
+	// Drain configuration
+	batchDrainSize     int           // Entries processed per retry tick (default: 10)
+	burstDrainSize     int           // Entries drained on recovery (default: 100)
+	retryExportTimeout time.Duration // Per-retry export timeout (default: 10s)
+	closeTimeout       time.Duration // Close() wait for retry loop (default: 60s)
+	drainTimeout       time.Duration // drainQueue overall timeout (default: 30s)
+	drainEntryTimeout  time.Duration // Per-entry timeout during drain (default: 5s)
+
 	// Backoff state
 	currentDelay atomic.Int64 // Current backoff delay in nanoseconds
 
@@ -173,15 +191,47 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 		backoffMultiplier = 2.0 // Default multiplier
 	}
 
+	// Apply defaults for drain settings
+	batchDrainSize := queueCfg.BatchDrainSize
+	if batchDrainSize <= 0 {
+		batchDrainSize = 10
+	}
+	burstDrainSize := queueCfg.BurstDrainSize
+	if burstDrainSize <= 0 {
+		burstDrainSize = 100
+	}
+	retryExportTimeout := queueCfg.RetryExportTimeout
+	if retryExportTimeout <= 0 {
+		retryExportTimeout = 10 * time.Second
+	}
+	closeTimeout := queueCfg.CloseTimeout
+	if closeTimeout <= 0 {
+		closeTimeout = 60 * time.Second
+	}
+	drainTimeout := queueCfg.DrainTimeout
+	if drainTimeout <= 0 {
+		drainTimeout = 30 * time.Second
+	}
+	drainEntryTimeout := queueCfg.DrainEntryTimeout
+	if drainEntryTimeout <= 0 {
+		drainEntryTimeout = 5 * time.Second
+	}
+
 	qe := &QueuedExporter{
-		exporter:          exporter,
-		queue:             q,
-		baseDelay:         queueCfg.RetryInterval,
-		maxDelay:          queueCfg.MaxRetryDelay,
-		backoffEnabled:    backoffEnabled,
-		backoffMultiplier: backoffMultiplier,
-		retryStop:         make(chan struct{}),
-		retryDone:         make(chan struct{}),
+		exporter:           exporter,
+		queue:              q,
+		baseDelay:          queueCfg.RetryInterval,
+		maxDelay:           queueCfg.MaxRetryDelay,
+		backoffEnabled:     backoffEnabled,
+		backoffMultiplier:  backoffMultiplier,
+		batchDrainSize:     batchDrainSize,
+		burstDrainSize:     burstDrainSize,
+		retryExportTimeout: retryExportTimeout,
+		closeTimeout:       closeTimeout,
+		drainTimeout:       drainTimeout,
+		drainEntryTimeout:  drainEntryTimeout,
+		retryStop:          make(chan struct{}),
+		retryDone:          make(chan struct{}),
 	}
 
 	// Initialize current delay to base delay
@@ -220,11 +270,30 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 }
 
 // Export attempts to export immediately, queueing on failure.
+// When the circuit breaker is open, data is queued immediately (µs)
+// instead of attempting a doomed HTTP export (30s timeout).
 func (e *QueuedExporter) Export(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error {
-	// Try immediate export
+	// Check circuit breaker BEFORE attempting direct export
+	if e.circuitBreaker != nil && !e.circuitBreaker.AllowRequest() {
+		queue.IncrementCircuitRejected()
+		if queueErr := e.queue.Push(req); queueErr != nil {
+			return fmt.Errorf("circuit open and queue push failed: %w", queueErr)
+		}
+		return ErrExportQueued
+	}
+
+	// Circuit closed or half-open — try direct export
 	err := e.exporter.Export(ctx, req)
 	if err == nil {
+		if e.circuitBreaker != nil {
+			e.circuitBreaker.RecordSuccess()
+		}
 		return nil
+	}
+
+	// Record failure with circuit breaker
+	if e.circuitBreaker != nil {
+		e.circuitBreaker.RecordFailure()
 	}
 
 	// On failure, queue for retry
@@ -241,8 +310,8 @@ func (e *QueuedExporter) Export(ctx context.Context, req *colmetricspb.ExportMet
 		return err
 	}
 
-	// Return nil - data is queued, will be retried
-	return nil
+	// Data is safe in queue — return sentinel so callers can track accurately
+	return ErrExportQueued
 }
 
 // Close stops the retry loop and closes the queue.
@@ -258,14 +327,16 @@ func (e *QueuedExporter) Close() error {
 	// Signal retry loop to stop
 	close(e.retryStop)
 
-	// Wait for retry loop to finish (with timeout)
+	// Wait for retry loop to finish (includes drain) before closing queue
 	select {
 	case <-e.retryDone:
-	case <-time.After(30 * time.Second):
-		logging.Warn("timeout waiting for retry loop to finish")
+	case <-time.After(e.closeTimeout):
+		logging.Warn("timeout waiting for retry loop to finish", logging.F(
+			"close_timeout", e.closeTimeout.String(),
+		))
 	}
 
-	// Close the queue
+	// Safe to close queue now — drain is done or timed out
 	if err := e.queue.Close(); err != nil {
 		logging.Error("failed to close queue", logging.F("error", err.Error()))
 	}
@@ -301,10 +372,28 @@ func (e *QueuedExporter) retryLoop() {
 				continue
 			}
 
-			success := e.processQueue()
+			// Batch drain: process up to batchDrainSize entries per tick
+			drained := 0
+			overallSuccess := false
+			for drained < e.batchDrainSize {
+				success := e.processQueue()
+				if !success {
+					break // Stop on first failure
+				}
+				drained++
+				overallSuccess = true
+				if e.queue.Len() == 0 {
+					break
+				}
+			}
+
+			// If nothing was drained and queue is empty, count as success for backoff
+			if drained == 0 && e.queue.Len() == 0 {
+				overallSuccess = true
+			}
 
 			// Adjust backoff based on result
-			if success {
+			if overallSuccess {
 				// Reset to base delay on success
 				baseDelay := e.baseDelay
 				if baseDelay <= 0 {
@@ -316,6 +405,22 @@ func (e *QueuedExporter) retryLoop() {
 					logging.Info("backoff reset to base delay", logging.F(
 						"delay", currentDelay.String(),
 					))
+				}
+				// Burst drain on recovery: rapidly clear backlog
+				if drained > 0 && e.queue.Len() > 0 {
+					burstDrained := 0
+					for burstDrained < e.burstDrainSize && e.queue.Len() > 0 {
+						if !e.processQueue() {
+							break
+						}
+						burstDrained++
+					}
+					if burstDrained > 0 {
+						logging.Info("burst drain completed", logging.F(
+							"drained", burstDrained,
+							"queue_remaining", e.queue.Len(),
+						))
+					}
 				}
 			} else {
 				// Exponential backoff on failure (only if enabled and we actually tried)
@@ -371,7 +476,7 @@ func (e *QueuedExporter) processQueue() bool {
 
 	queue.IncrementRetryTotal()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), e.retryExportTimeout)
 	err = e.exporter.Export(ctx, req)
 	cancel()
 
@@ -458,79 +563,56 @@ func (e *QueuedExporter) getCircuitState() string {
 
 // classifyExportError categorizes an export error for metrics.
 // Uses the same error types as the main exporter for consistency.
+// Lowercases the error string once to avoid repeated allocations.
 func classifyExportError(err error) ErrorType {
 	if err == nil {
 		return ErrorTypeUnknown
 	}
 
-	errStr := err.Error()
+	errLower := strings.ToLower(err.Error())
 
 	// Check for timeout patterns
-	if containsStr(errStr, "timeout") ||
-		containsStr(errStr, "deadline exceeded") ||
-		containsStr(errStr, "context deadline") {
+	if strings.Contains(errLower, "timeout") ||
+		strings.Contains(errLower, "deadline exceeded") ||
+		strings.Contains(errLower, "context deadline") {
 		return ErrorTypeTimeout
 	}
 
 	// Check for network patterns
-	if containsStr(errStr, "connection refused") ||
-		containsStr(errStr, "no such host") ||
-		containsStr(errStr, "network is unreachable") ||
-		containsStr(errStr, "connection reset") ||
-		containsStr(errStr, "broken pipe") ||
-		containsStr(errStr, "EOF") ||
-		containsStr(errStr, "i/o timeout") {
+	if strings.Contains(errLower, "connection refused") ||
+		strings.Contains(errLower, "no such host") ||
+		strings.Contains(errLower, "network is unreachable") ||
+		strings.Contains(errLower, "connection reset") ||
+		strings.Contains(errLower, "broken pipe") ||
+		strings.Contains(errLower, "eof") ||
+		strings.Contains(errLower, "i/o timeout") {
 		return ErrorTypeNetwork
 	}
 
 	// Check for HTTP status codes in error message
-	if containsStr(errStr, "status code: 401") ||
-		containsStr(errStr, "status code: 403") ||
-		containsStr(errStr, "Unauthenticated") ||
-		containsStr(errStr, "PermissionDenied") {
+	if strings.Contains(errLower, "status code: 401") ||
+		strings.Contains(errLower, "status code: 403") ||
+		strings.Contains(errLower, "unauthenticated") ||
+		strings.Contains(errLower, "permissiondenied") {
 		return ErrorTypeAuth
 	}
 
-	if containsStr(errStr, "status code: 429") ||
-		containsStr(errStr, "ResourceExhausted") {
+	if strings.Contains(errLower, "status code: 429") ||
+		strings.Contains(errLower, "resourceexhausted") {
 		return ErrorTypeRateLimit
 	}
 
-	if containsStr(errStr, "status code: 5") ||
-		containsStr(errStr, "Internal") ||
-		containsStr(errStr, "Unavailable") {
+	if strings.Contains(errLower, "status code: 5") ||
+		strings.Contains(errLower, "internal") ||
+		strings.Contains(errLower, "unavailable") {
 		return ErrorTypeServerError
 	}
 
-	if containsStr(errStr, "status code: 4") {
+	if strings.Contains(errLower, "status code: 4") {
 		return ErrorTypeClientError
 	}
 
 	return ErrorTypeUnknown
-}
-
-// containsStr is a simple case-insensitive substring check.
-func containsStr(s, substr string) bool {
-	sLower := toLowerStr(s)
-	substrLower := toLowerStr(substr)
-	for i := 0; i+len(substrLower) <= len(sLower); i++ {
-		if sLower[i:i+len(substrLower)] == substrLower {
-			return true
-		}
-	}
-	return false
-}
-
-func toLowerStr(s string) string {
-	b := make([]byte, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 'a' - 'A'
-		}
-		b[i] = c
-	}
-	return string(b)
 }
 
 // drainQueue attempts to export all remaining entries.
@@ -538,7 +620,7 @@ func toLowerStr(s string) string {
 func (e *QueuedExporter) drainQueue() {
 	logging.Info("draining queue", logging.F("queue_size", e.queue.Len()))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), e.drainTimeout)
 	defer cancel()
 
 	// Track failed entries to re-push after draining
@@ -567,7 +649,7 @@ func (e *QueuedExporter) drainQueue() {
 			continue
 		}
 
-		exportCtx, exportCancel := context.WithTimeout(ctx, 5*time.Second)
+		exportCtx, exportCancel := context.WithTimeout(ctx, e.drainEntryTimeout)
 		err = e.exporter.Export(exportCtx, req)
 		exportCancel()
 

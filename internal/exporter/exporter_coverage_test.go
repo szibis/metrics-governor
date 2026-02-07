@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -1168,10 +1169,10 @@ func TestToLower(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// containsStr / toLowerStr (from queued.go)
+// Case-insensitive string matching (replaces removed containsStr/toLowerStr)
 // ---------------------------------------------------------------------------
 
-func TestContainsStr(t *testing.T) {
+func TestCaseInsensitiveContains(t *testing.T) {
 	tests := []struct {
 		s, substr string
 		want      bool
@@ -1188,9 +1189,9 @@ func TestContainsStr(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%q_in_%q", tt.substr, tt.s), func(t *testing.T) {
-			got := containsStr(tt.s, tt.substr)
+			got := strings.Contains(strings.ToLower(tt.s), strings.ToLower(tt.substr))
 			if got != tt.want {
-				t.Errorf("containsStr(%q, %q) = %v, want %v", tt.s, tt.substr, got, tt.want)
+				t.Errorf("Contains(%q, %q) = %v, want %v", tt.s, tt.substr, got, tt.want)
 			}
 		})
 	}

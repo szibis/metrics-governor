@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +33,13 @@ type PRWQueueConfig struct {
 	CircuitBreakerEnabled   bool          // Enable circuit breaker (default: true)
 	CircuitFailureThreshold int           // Failures before opening (default: 10)
 	CircuitResetTimeout     time.Duration // Time to wait before half-open (default: 30s)
+	// Drain settings
+	BatchDrainSize     int           // Entries per retry tick (default: 10)
+	BurstDrainSize     int           // Entries on recovery (default: 100)
+	RetryExportTimeout time.Duration // Per-retry export timeout (default: 10s)
+	CloseTimeout       time.Duration // Close() wait timeout (default: 60s)
+	DrainTimeout       time.Duration // drainQueue overall timeout (default: 30s)
+	DrainEntryTimeout  time.Duration // Per-entry drain timeout (default: 5s)
 }
 
 // DefaultPRWQueueConfig returns default queue configuration.
@@ -65,6 +73,14 @@ type PRWQueuedExporter struct {
 	// Backoff configuration
 	backoffEnabled    bool
 	backoffMultiplier float64
+
+	// Drain configuration
+	batchDrainSize     int           // Entries processed per retry tick (default: 10)
+	burstDrainSize     int           // Entries drained on recovery (default: 100)
+	retryExportTimeout time.Duration // Per-retry export timeout (default: 10s)
+	closeTimeout       time.Duration // Close() wait for retry loop (default: 60s)
+	drainTimeout       time.Duration // drainQueue overall timeout (default: 30s)
+	drainEntryTimeout  time.Duration // Per-entry timeout during drain (default: 5s)
 
 	retryStop  chan struct{}
 	retryDone  chan struct{}
@@ -116,15 +132,47 @@ func NewPRWQueued(exporter prwExporterInterface, cfg PRWQueueConfig) (*PRWQueued
 		return nil, fmt.Errorf("failed to create PRW queue: %w", err)
 	}
 
+	// Apply defaults for drain settings
+	batchDrainSize := cfg.BatchDrainSize
+	if batchDrainSize <= 0 {
+		batchDrainSize = 10
+	}
+	burstDrainSize := cfg.BurstDrainSize
+	if burstDrainSize <= 0 {
+		burstDrainSize = 100
+	}
+	retryExportTimeout := cfg.RetryExportTimeout
+	if retryExportTimeout <= 0 {
+		retryExportTimeout = 10 * time.Second
+	}
+	closeTimeout := cfg.CloseTimeout
+	if closeTimeout <= 0 {
+		closeTimeout = 60 * time.Second
+	}
+	drainTimeout := cfg.DrainTimeout
+	if drainTimeout <= 0 {
+		drainTimeout = 30 * time.Second
+	}
+	drainEntryTimeout := cfg.DrainEntryTimeout
+	if drainEntryTimeout <= 0 {
+		drainEntryTimeout = 5 * time.Second
+	}
+
 	qe := &PRWQueuedExporter{
-		exporter:          exporter,
-		queue:             q,
-		baseDelay:         baseDelay,
-		maxDelay:          maxDelay,
-		backoffEnabled:    cfg.BackoffEnabled,
-		backoffMultiplier: backoffMultiplier,
-		retryStop:         make(chan struct{}),
-		retryDone:         make(chan struct{}),
+		exporter:           exporter,
+		queue:              q,
+		baseDelay:          baseDelay,
+		maxDelay:           maxDelay,
+		backoffEnabled:     cfg.BackoffEnabled,
+		backoffMultiplier:  backoffMultiplier,
+		batchDrainSize:     batchDrainSize,
+		burstDrainSize:     burstDrainSize,
+		retryExportTimeout: retryExportTimeout,
+		closeTimeout:       closeTimeout,
+		drainTimeout:       drainTimeout,
+		drainEntryTimeout:  drainEntryTimeout,
+		retryStop:          make(chan struct{}),
+		retryDone:          make(chan struct{}),
 	}
 
 	// Initialize circuit breaker if enabled
@@ -151,15 +199,38 @@ func NewPRWQueued(exporter prwExporterInterface, cfg PRWQueueConfig) (*PRWQueued
 }
 
 // Export sends the PRW request, queuing it for retry on failure.
+// When the circuit breaker is open, data is queued immediately (µs)
+// instead of attempting a doomed HTTP export (30s timeout).
 func (qe *PRWQueuedExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 	if req == nil || len(req.Timeseries) == 0 {
 		return nil
 	}
 
-	// Try immediate export
+	// Check circuit breaker BEFORE attempting direct export
+	if qe.circuitBreaker != nil && !qe.circuitBreaker.AllowRequest() {
+		queue.IncrementCircuitRejected()
+		data, marshalErr := req.Marshal()
+		if marshalErr != nil {
+			return fmt.Errorf("circuit open and marshal failed: %w", marshalErr)
+		}
+		if pushErr := qe.queue.PushData(data); pushErr != nil {
+			return fmt.Errorf("circuit open and queue push failed: %w", pushErr)
+		}
+		return ErrExportQueued
+	}
+
+	// Circuit closed or half-open — try direct export
 	err := qe.exporter.Export(ctx, req)
 	if err == nil {
+		if qe.circuitBreaker != nil {
+			qe.circuitBreaker.RecordSuccess()
+		}
 		return nil
+	}
+
+	// Record failure with circuit breaker
+	if qe.circuitBreaker != nil {
+		qe.circuitBreaker.RecordFailure()
 	}
 
 	// Check if error is retryable or splittable
@@ -195,7 +266,7 @@ func (qe *PRWQueuedExporter) Export(ctx context.Context, req *prw.WriteRequest) 
 		"queue_size", qe.queue.Len(),
 	))
 
-	return nil
+	return ErrExportQueued
 }
 
 // retryLoop continuously retries queued requests.
@@ -223,9 +294,27 @@ func (qe *PRWQueuedExporter) retryLoop() {
 				continue
 			}
 
-			success := qe.processQueue()
+			// Batch drain: process up to batchDrainSize entries per tick
+			drained := 0
+			overallSuccess := false
+			for drained < qe.batchDrainSize {
+				success := qe.processQueue()
+				if !success {
+					break
+				}
+				drained++
+				overallSuccess = true
+				if qe.queue.Len() == 0 {
+					break
+				}
+			}
 
-			if success {
+			// If nothing was drained and queue is empty, count as success
+			if drained == 0 && qe.queue.Len() == 0 {
+				overallSuccess = true
+			}
+
+			if overallSuccess {
 				// Reset to base delay on success
 				baseDelay := qe.baseDelay
 				if baseDelay <= 0 {
@@ -237,6 +326,22 @@ func (qe *PRWQueuedExporter) retryLoop() {
 					logging.Info("PRW backoff reset to base delay", logging.F(
 						"delay", currentDelay.String(),
 					))
+				}
+				// Burst drain on recovery
+				if drained > 0 && qe.queue.Len() > 0 {
+					burstDrained := 0
+					for burstDrained < qe.burstDrainSize && qe.queue.Len() > 0 {
+						if !qe.processQueue() {
+							break
+						}
+						burstDrained++
+					}
+					if burstDrained > 0 {
+						logging.Info("PRW burst drain completed", logging.F(
+							"drained", burstDrained,
+							"queue_remaining", qe.queue.Len(),
+						))
+					}
 				}
 			} else {
 				// Exponential backoff on failure (only if enabled and we actually tried)
@@ -293,7 +398,7 @@ func (qe *PRWQueuedExporter) processQueue() bool {
 
 	prwRetryTotal.Inc()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), qe.retryExportTimeout)
 	exportErr := qe.exporter.Export(ctx, req)
 	cancel()
 
@@ -378,23 +483,23 @@ func classifyPRWError(err error) ErrorType {
 	}
 
 	// Fall back to generic error classification
-	errStr := err.Error()
+	errLower := strings.ToLower(err.Error())
 
 	// Check for timeout patterns
-	if containsStr(errStr, "timeout") ||
-		containsStr(errStr, "deadline exceeded") ||
-		containsStr(errStr, "context deadline") {
+	if strings.Contains(errLower, "timeout") ||
+		strings.Contains(errLower, "deadline exceeded") ||
+		strings.Contains(errLower, "context deadline") {
 		return ErrorTypeTimeout
 	}
 
 	// Check for network patterns
-	if containsStr(errStr, "connection refused") ||
-		containsStr(errStr, "no such host") ||
-		containsStr(errStr, "network is unreachable") ||
-		containsStr(errStr, "connection reset") ||
-		containsStr(errStr, "broken pipe") ||
-		containsStr(errStr, "EOF") ||
-		containsStr(errStr, "i/o timeout") {
+	if strings.Contains(errLower, "connection refused") ||
+		strings.Contains(errLower, "no such host") ||
+		strings.Contains(errLower, "network is unreachable") ||
+		strings.Contains(errLower, "connection reset") ||
+		strings.Contains(errLower, "broken pipe") ||
+		strings.Contains(errLower, "eof") ||
+		strings.Contains(errLower, "i/o timeout") {
 		return ErrorTypeNetwork
 	}
 
@@ -422,7 +527,7 @@ func (qe *PRWQueuedExporter) getCircuitState() string {
 func (qe *PRWQueuedExporter) drainQueue() {
 	logging.Info("PRW draining queue", logging.F("queue_size", qe.queue.Len()))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), qe.drainTimeout)
 	defer cancel()
 
 	var failedEntries [][]byte
@@ -448,7 +553,7 @@ func (qe *PRWQueuedExporter) drainQueue() {
 			continue // Skip corrupted entries
 		}
 
-		exportCtx, exportCancel := context.WithTimeout(ctx, 5*time.Second)
+		exportCtx, exportCancel := context.WithTimeout(ctx, qe.drainEntryTimeout)
 		err = qe.exporter.Export(exportCtx, req)
 		exportCancel()
 
@@ -480,11 +585,13 @@ func (qe *PRWQueuedExporter) Close() error {
 		// Signal retry loop to stop
 		close(qe.retryStop)
 
-		// Wait for retry loop to finish (with timeout)
+		// Wait for retry loop to finish (includes drain) before closing queue
 		select {
 		case <-qe.retryDone:
-		case <-time.After(30 * time.Second):
-			logging.Warn("PRW timeout waiting for retry loop to finish")
+		case <-time.After(qe.closeTimeout):
+			logging.Warn("PRW timeout waiting for retry loop to finish", logging.F(
+				"close_timeout", qe.closeTimeout.String(),
+			))
 		}
 
 		// Close the queue

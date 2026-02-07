@@ -241,10 +241,30 @@ type Config struct {
 	// Debug
 	PprofEnabled bool
 
+	// Queue resilience settings (drain/retry tuning)
+	QueueBatchDrainSize    int           // Entries per retry tick (default: 10)
+	QueueBurstDrainSize    int           // Entries on recovery burst (default: 100)
+	QueueRetryTimeout      time.Duration // Per-retry export timeout (default: 10s)
+	QueueCloseTimeout      time.Duration // Close() wait for retry loop (default: 60s)
+	QueueDrainTimeout      time.Duration // drainQueue overall timeout (default: 30s)
+	QueueDrainEntryTimeout time.Duration // Per-entry timeout during drain (default: 5s)
+
+	// Exporter transport settings
+	ExporterDialTimeout time.Duration // TCP connection setup timeout (default: 30s)
+
 	// Telemetry settings (OTLP self-monitoring export)
-	TelemetryEndpoint string // OTLP endpoint for self-monitoring (empty = disabled)
-	TelemetryProtocol string // "grpc" or "http" (default: "grpc")
-	TelemetryInsecure bool   // Use insecure connection (default: true)
+	TelemetryEndpoint         string        // OTLP endpoint for self-monitoring (empty = disabled)
+	TelemetryProtocol         string        // "grpc" or "http" (default: "grpc")
+	TelemetryInsecure         bool          // Use insecure connection (default: true)
+	TelemetryTimeout          time.Duration // Per-export timeout (default: 10s, 0 = SDK default)
+	TelemetryPushInterval     time.Duration // Metric push interval (default: 30s)
+	TelemetryCompression      string        // "gzip" or "" (default: "")
+	TelemetryShutdownTimeout  time.Duration // Shutdown grace period (default: 5s)
+	TelemetryRetryEnabled     bool          // Enable retry (default: true)
+	TelemetryRetryInitial     time.Duration // Initial retry interval (default: 5s)
+	TelemetryRetryMaxInterval time.Duration // Max retry interval (default: 30s)
+	TelemetryRetryMaxElapsed  time.Duration // Max total retry time (default: 1m)
+	TelemetryHeaders          string        // Custom headers (key1=val1,key2=val2)
 
 	// Flags
 	ShowHelp    bool
@@ -530,10 +550,30 @@ func ParseFlags() *Config {
 
 	flag.BoolVar(&cfg.PprofEnabled, "pprof-enabled", false, "Enable /debug/pprof/ endpoints on stats server (for debugging only)")
 
+	// Queue resilience flags
+	flag.IntVar(&cfg.QueueBatchDrainSize, "queue-batch-drain-size", 10, "Entries processed per retry tick")
+	flag.IntVar(&cfg.QueueBurstDrainSize, "queue-burst-drain-size", 100, "Entries drained in burst on recovery")
+	flag.DurationVar(&cfg.QueueRetryTimeout, "queue-retry-timeout", 10*time.Second, "Per-retry export timeout")
+	flag.DurationVar(&cfg.QueueCloseTimeout, "queue-close-timeout", 60*time.Second, "Close() wait for retry loop to finish")
+	flag.DurationVar(&cfg.QueueDrainTimeout, "queue-drain-timeout", 30*time.Second, "Overall drain queue timeout on shutdown")
+	flag.DurationVar(&cfg.QueueDrainEntryTimeout, "queue-drain-entry-timeout", 5*time.Second, "Per-entry timeout during drain")
+
+	// Exporter transport flags
+	flag.DurationVar(&cfg.ExporterDialTimeout, "exporter-dial-timeout", 30*time.Second, "TCP connection setup timeout for exporter")
+
 	// Telemetry flags
 	flag.StringVar(&cfg.TelemetryEndpoint, "telemetry-endpoint", "", "OTLP endpoint for self-monitoring telemetry (empty = disabled)")
 	flag.StringVar(&cfg.TelemetryProtocol, "telemetry-protocol", "grpc", "OTLP protocol for self-monitoring (grpc or http)")
 	flag.BoolVar(&cfg.TelemetryInsecure, "telemetry-insecure", true, "Use insecure connection for OTLP telemetry")
+	flag.DurationVar(&cfg.TelemetryTimeout, "telemetry-timeout", 0, "Per-export timeout for telemetry (0 = SDK default 10s)")
+	flag.DurationVar(&cfg.TelemetryPushInterval, "telemetry-push-interval", 30*time.Second, "Metric push interval for telemetry")
+	flag.StringVar(&cfg.TelemetryCompression, "telemetry-compression", "", "Compression for telemetry exports (gzip or empty)")
+	flag.DurationVar(&cfg.TelemetryShutdownTimeout, "telemetry-shutdown-timeout", 5*time.Second, "Telemetry shutdown grace period")
+	flag.BoolVar(&cfg.TelemetryRetryEnabled, "telemetry-retry-enabled", true, "Enable retry for telemetry exports")
+	flag.DurationVar(&cfg.TelemetryRetryInitial, "telemetry-retry-initial", 5*time.Second, "Initial retry interval for telemetry")
+	flag.DurationVar(&cfg.TelemetryRetryMaxInterval, "telemetry-retry-max-interval", 30*time.Second, "Max retry interval for telemetry")
+	flag.DurationVar(&cfg.TelemetryRetryMaxElapsed, "telemetry-retry-max-elapsed", 1*time.Minute, "Max total retry time for telemetry")
+	flag.StringVar(&cfg.TelemetryHeaders, "telemetry-headers", "", "Custom headers for telemetry (key1=val1,key2=val2)")
 
 	flag.BoolVar(&cfg.ShowHelp, "help", false, "Show help message")
 	flag.BoolVar(&cfg.ShowHelp, "h", false, "Show help message (shorthand)")
@@ -1065,6 +1105,68 @@ func applyFlagOverrides(cfg *Config) {
 			cfg.TenancyStripSource = f.Value.String() == "true"
 		case "tenancy-config":
 			cfg.TenancyConfigFile = f.Value.String()
+		case "queue-batch-drain-size":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.QueueBatchDrainSize = i
+				}
+			}
+		case "queue-burst-drain-size":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.QueueBurstDrainSize = i
+				}
+			}
+		case "queue-retry-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.QueueRetryTimeout = d
+			}
+		case "queue-close-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.QueueCloseTimeout = d
+			}
+		case "queue-drain-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.QueueDrainTimeout = d
+			}
+		case "queue-drain-entry-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.QueueDrainEntryTimeout = d
+			}
+		case "exporter-dial-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.ExporterDialTimeout = d
+			}
+		case "telemetry-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.TelemetryTimeout = d
+			}
+		case "telemetry-push-interval":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.TelemetryPushInterval = d
+			}
+		case "telemetry-compression":
+			cfg.TelemetryCompression = f.Value.String()
+		case "telemetry-shutdown-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.TelemetryShutdownTimeout = d
+			}
+		case "telemetry-retry-enabled":
+			cfg.TelemetryRetryEnabled = f.Value.String() == "true"
+		case "telemetry-retry-initial":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.TelemetryRetryInitial = d
+			}
+		case "telemetry-retry-max-interval":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.TelemetryRetryMaxInterval = d
+			}
+		case "telemetry-retry-max-elapsed":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.TelemetryRetryMaxElapsed = d
+			}
+		case "telemetry-headers":
+			cfg.TelemetryHeaders = f.Value.String()
 		case "help", "h":
 			cfg.ShowHelp = f.Value.String() == "true"
 		case "version", "v":
@@ -1174,6 +1276,7 @@ func (c *Config) ExporterHTTPClientConfig() exporter.HTTPClientConfig {
 		ForceAttemptHTTP2:    c.ExporterForceHTTP2,
 		HTTP2ReadIdleTimeout: c.ExporterHTTP2ReadIdleTimeout,
 		HTTP2PingTimeout:     c.ExporterHTTP2PingTimeout,
+		DialTimeout:          c.ExporterDialTimeout,
 	}
 }
 
@@ -1445,11 +1548,17 @@ func (c *Config) PRWBufferConfig() prw.BufferConfig {
 // PRWQueueConfig returns the PRW queue configuration.
 func (c *Config) PRWQueueConfig() exporter.PRWQueueConfig {
 	return exporter.PRWQueueConfig{
-		Path:          c.PRWQueuePath,
-		MaxSize:       c.PRWQueueMaxSize,
-		MaxBytes:      c.PRWQueueMaxBytes,
-		RetryInterval: c.PRWQueueRetryInterval,
-		MaxRetryDelay: c.PRWQueueMaxRetryDelay,
+		Path:               c.PRWQueuePath,
+		MaxSize:            c.PRWQueueMaxSize,
+		MaxBytes:           c.PRWQueueMaxBytes,
+		RetryInterval:      c.PRWQueueRetryInterval,
+		MaxRetryDelay:      c.PRWQueueMaxRetryDelay,
+		BatchDrainSize:     c.QueueBatchDrainSize,
+		BurstDrainSize:     c.QueueBurstDrainSize,
+		RetryExportTimeout: c.QueueRetryTimeout,
+		CloseTimeout:       c.QueueCloseTimeout,
+		DrainTimeout:       c.QueueDrainTimeout,
+		DrainEntryTimeout:  c.QueueDrainEntryTimeout,
 	}
 }
 
@@ -1777,6 +1886,13 @@ func DefaultConfig() *Config {
 		QueueCircuitBreakerEnabled:      true,
 		QueueCircuitBreakerThreshold:    10,
 		QueueCircuitBreakerResetTimeout: 30 * time.Second,
+		QueueBatchDrainSize:             10,
+		QueueBurstDrainSize:             100,
+		QueueRetryTimeout:               10 * time.Second,
+		QueueCloseTimeout:               60 * time.Second,
+		QueueDrainTimeout:               30 * time.Second,
+		QueueDrainEntryTimeout:          5 * time.Second,
+		ExporterDialTimeout:             30 * time.Second,
 		MemoryLimitRatio:                0.9,
 		ShardingEnabled:                 false,
 		ShardingDNSRefreshInterval:      30 * time.Second,
@@ -1839,6 +1955,15 @@ func DefaultConfig() *Config {
 		TenancyInjectLabelName: "__tenant__",
 		// Shutdown defaults
 		ShutdownTimeout: 30 * time.Second,
+		// Telemetry defaults
+		TelemetryProtocol:         "grpc",
+		TelemetryInsecure:         true,
+		TelemetryPushInterval:     30 * time.Second,
+		TelemetryShutdownTimeout:  5 * time.Second,
+		TelemetryRetryEnabled:     true,
+		TelemetryRetryInitial:     5 * time.Second,
+		TelemetryRetryMaxInterval: 30 * time.Second,
+		TelemetryRetryMaxElapsed:  1 * time.Minute,
 	}
 }
 
