@@ -455,6 +455,7 @@ func (fq *FastQueue) recover() error {
 			return fmt.Errorf("failed to open writer chunk: %w", err)
 		}
 		fq.writerChunk = writerChunk
+		fq.writerBuf = bufio.NewWriterSize(writerChunk, fq.cfg.WriteBufferSize)
 
 		// Seek to the correct position within the chunk
 		chunkOffset := fq.writerOffset % fq.cfg.ChunkFileSize
