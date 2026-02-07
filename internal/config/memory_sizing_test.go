@@ -182,3 +182,46 @@ func TestDeriveMemorySizing_LargeValues_NoOverflow(t *testing.T) {
 		t.Errorf("expected BufferMaxBytes=%d (~9.6GB), got %d", expectedBuffer, s.BufferMaxBytes)
 	}
 }
+
+// TestDeriveMemorySizing_QueueBytesCorrect verifies QueueMaxBytes is computed
+// as limit × queuePercent — the value that must be wired into cfg.QueueMaxBytes.
+func TestDeriveMemorySizing_QueueBytesCorrect(t *testing.T) {
+	const limit int64 = 2700 * 1024 * 1024 // 2.7GB — production container size
+	const queuePct = 0.15
+
+	s := DeriveMemorySizing(limit, 0.10, queuePct)
+
+	expected := deriveExpected(limit, queuePct) // ~405 MB
+	if s.QueueMaxBytes != expected {
+		t.Errorf("QueueMaxBytes: got %d, want %d (%.0fMB)", s.QueueMaxBytes, expected, float64(expected)/1e6)
+	}
+	if s.QueueMaxBytes <= 0 {
+		t.Error("QueueMaxBytes must be positive for a valid limit + percent")
+	}
+}
+
+// TestDeriveMemorySizing_QueueAndBufferIndependent verifies that buffer and
+// queue percentages produce independent values — changing one doesn't affect the other.
+func TestDeriveMemorySizing_QueueAndBufferIndependent(t *testing.T) {
+	const limit int64 = 4 * (1 << 30) // 4GB
+
+	s1 := DeriveMemorySizing(limit, 0.10, 0.20)
+	s2 := DeriveMemorySizing(limit, 0.25, 0.05)
+
+	// s1: buffer=10%, queue=20%
+	// s2: buffer=25%, queue=5%
+	// Queue values must differ
+	if s1.QueueMaxBytes == s2.QueueMaxBytes {
+		t.Errorf("queue bytes should differ: s1=%d, s2=%d", s1.QueueMaxBytes, s2.QueueMaxBytes)
+	}
+	// Buffer values must differ
+	if s1.BufferMaxBytes == s2.BufferMaxBytes {
+		t.Errorf("buffer bytes should differ: s1=%d, s2=%d", s1.BufferMaxBytes, s2.BufferMaxBytes)
+	}
+	// Cross-check: changing buffer% shouldn't affect queue
+	s3 := DeriveMemorySizing(limit, 0.30, 0.20)
+	if s3.QueueMaxBytes != s1.QueueMaxBytes {
+		t.Errorf("changing buffer%% should not affect queue: s1.queue=%d, s3.queue=%d",
+			s1.QueueMaxBytes, s3.QueueMaxBytes)
+	}
+}

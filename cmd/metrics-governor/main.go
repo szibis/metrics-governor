@@ -448,6 +448,17 @@ func main() {
 		bufOpts = append(bufOpts, buffer.WithMaxBufferBytes(memorySizing.BufferMaxBytes))
 	}
 
+	// Apply derived queue byte capacity from GOMEMLIMIT percentage
+	if memorySizing.QueueMaxBytes > 0 {
+		cfg.QueueMaxBytes = memorySizing.QueueMaxBytes
+		cfg.PRWQueueMaxBytes = memorySizing.QueueMaxBytes
+		logging.Info("percentage-based queue sizing", logging.F(
+			"memory_limit_bytes", memorySizing.MemoryLimit,
+			"queue_percent", cfg.QueueMemoryPercent,
+			"queue_max_bytes", memorySizing.QueueMaxBytes,
+		))
+	}
+
 	// Set up tenant processor in buffer (if tenancy enabled)
 	if tenantPipeline != nil {
 		bufOpts = append(bufOpts, buffer.WithTenantProcessor(tenantPipeline))
