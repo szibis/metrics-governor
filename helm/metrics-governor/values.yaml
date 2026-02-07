@@ -94,56 +94,34 @@ ports:
   stats: 9090
 
 # -- metrics-governor configuration
+# All application settings are defined in rawConfig as a YAML config file.
+# This is mounted as config.yaml into the container.
+# See internal/config/yaml.go for the full schema reference.
 config:
-  # -- gRPC listen address
-  grpcListen: ":4317"
-  # -- HTTP listen address
-  httpListen: ":4318"
-  # -- Stats/metrics HTTP endpoint address
-  statsAddr: ":9090"
-  # -- OTLP exporter endpoint
-  exporterEndpoint: "localhost:4317"
-  # -- Exporter protocol: "grpc" or "http"
-  exporterProtocol: "grpc"
-  # -- Use insecure connection for exporter
-  exporterInsecure: true
-  # -- Exporter request timeout
-  exporterTimeout: "30s"
-  # -- Maximum number of metrics to buffer
-  bufferSize: 10000
-  # -- Buffer flush interval
-  flushInterval: "5s"
-  # -- Maximum batch size for export
-  batchSize: 1000
-  # -- Comma-separated labels to track
-  statsLabels: ""
-  # -- Dry run mode for limits
-  limitsDryRun: true
   # -- Extra CLI arguments (advanced use only; prefer config file settings)
   extraArgs: []
-  # -- Raw YAML config override.
-  # When set, this is used verbatim as config.yaml instead of the template-generated config.
-  # This gives full control over all configuration options.
-  # Example:
-  #   rawConfig: |
-  #     receiver:
-  #       grpc:
-  #         address: ":4317"
-  #       http:
-  #         address: ":4318"
-  #     exporter:
-  #       endpoint: "otel-collector:4317"
-  #       protocol: "grpc"
-  #       insecure: true
-  #     buffer:
-  #       size: 10000
-  #       batch_size: 1000
-  #       flush_interval: "5s"
-  #     stats:
-  #       address: ":9090"
-  #     limits:
-  #       dry_run: true
-  rawConfig: ""
+  # -- YAML config file content. This is used verbatim as config.yaml.
+  # All receiver, exporter, buffer, queue, performance, and stats settings
+  # are configured here. Adjust values below to match your environment.
+  rawConfig: |
+    receiver:
+      grpc:
+        address: ":4317"
+      http:
+        address: ":4318"
+    exporter:
+      endpoint: "localhost:4317"
+      protocol: "grpc"
+      insecure: true
+      timeout: "30s"
+    buffer:
+      size: 10000
+      batch_size: 1000
+      flush_interval: "5s"
+    stats:
+      address: ":9090"
+    limits:
+      dry_run: true
 
 # -- Receiver TLS configuration
 receiverTLS:
@@ -211,85 +189,13 @@ exporterAuth:
   # -- Custom headers for exporter (format: "key1=value1,key2=value2")
   headers: ""
 
-# -- Exporter compression configuration (HTTP only)
-exporterCompression:
-  # -- Compression type: none, gzip, zstd, snappy, zlib, deflate
-  type: "none"
-  # -- Compression level (algorithm-specific, 0 for default)
-  level: 0
-
-# -- Exporter HTTP client configuration
-exporterHTTPClient:
-  # -- Maximum idle connections across all hosts
-  maxIdleConns: 100
-  # -- Maximum idle connections per host
-  maxIdleConnsPerHost: 100
-  # -- Maximum total connections per host (0 = no limit)
-  maxConnsPerHost: 0
-  # -- Idle connection timeout
-  idleConnTimeout: "90s"
-  # -- Disable HTTP keep-alives
-  disableKeepAlives: false
-  # -- Force HTTP/2 for non-TLS connections
-  forceHTTP2: false
-  # -- HTTP/2 read idle timeout for health checks
-  http2ReadIdleTimeout: ""
-  # -- HTTP/2 ping timeout
-  http2PingTimeout: ""
-
-# -- Persistent queue configuration for export retries (FastQueue-based)
+# -- Queue volume management (for Kubernetes volume provisioning only).
+# Queue behavior is configured in config.rawConfig under exporter.queue.
 queue:
-  # -- Enable persistent queue
+  # -- Enable persistent queue volume (creates emptyDir or uses PVC)
   enabled: false
-  # -- Queue storage directory (must be writable, use persistence for StatefulSet)
+  # -- Queue storage mount path
   path: "/data/queue"
-  # -- Maximum number of batches in queue
-  maxSize: 10000
-  # -- Maximum total queue size in bytes (1GB default)
-  maxBytes: 1073741824
-  # -- Initial retry interval
-  retryInterval: "5s"
-  # -- Maximum retry backoff delay
-  maxRetryDelay: "5m"
-  # -- Queue full behavior: drop_oldest, drop_newest, or block
-  fullBehavior: "drop_oldest"
-  # -- Target disk utilization for adaptive sizing (0.0-1.0)
-  targetUtilization: 0.85
-  # -- Enable adaptive queue sizing based on disk space
-  adaptiveEnabled: true
-  # -- In-memory channel size (number of blocks)
-  inmemoryBlocks: 256
-  # -- Chunk file size for disk storage
-  chunkSize: "512MB"
-  # -- Metadata sync interval
-  metaSyncInterval: "1s"
-  # -- Stale flush interval (flush in-memory to disk)
-  staleFlushInterval: "5s"
-
-# -- Receiver HTTP server configuration
-receiverHTTPServer:
-  # -- Maximum request body size in bytes (0 = no limit)
-  maxRequestBodySize: 0
-  # -- HTTP server read timeout (empty = no timeout)
-  readTimeout: ""
-  # -- HTTP server read header timeout
-  readHeaderTimeout: "1m"
-  # -- HTTP server write timeout
-  writeTimeout: "30s"
-  # -- HTTP server idle timeout
-  idleTimeout: "1m"
-  # -- Enable HTTP keep-alives for receiver
-  keepAlivesEnabled: true
-
-# -- Performance tuning configuration
-# Techniques inspired by VictoriaMetrics articles (original implementations)
-performance:
-  # -- Max concurrent export goroutines (0 = NumCPU * 4)
-  exportConcurrency: 0
-  # -- Enable string interning for label/attribute deduplication
-  stringInterning: true
-  # -- Max length for label value interning (longer values not interned)
-  internMaxValueLength: 64
 
 # -- Limits configuration (creates ConfigMap)
 limits:

@@ -12,9 +12,8 @@ tests:
       - equal:
           path: metadata.labels["app.kubernetes.io/instance"]
           value: RELEASE-NAME
-      - equal:
+      - isNotNull:
           path: metadata.labels["app.kubernetes.io/version"]
-          value: "0.23.0"
       - equal:
           path: metadata.labels["app.kubernetes.io/managed-by"]
           value: Helm

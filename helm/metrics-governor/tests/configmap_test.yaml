@@ -15,31 +15,31 @@ tests:
       - isNotNull:
           path: data["config.yaml"]
 
-  - it: generated config includes receiver section
+  - it: default config includes receiver section
     asserts:
       - matchRegex:
           path: data["config.yaml"]
           pattern: "receiver:"
 
-  - it: generated config includes exporter section
+  - it: default config includes exporter section
     asserts:
       - matchRegex:
           path: data["config.yaml"]
           pattern: "exporter:"
 
-  - it: generated config includes buffer section
+  - it: default config includes buffer section
     asserts:
       - matchRegex:
           path: data["config.yaml"]
           pattern: "buffer:"
 
-  - it: generated config includes stats section
+  - it: default config includes stats section
     asserts:
       - matchRegex:
           path: data["config.yaml"]
           pattern: "stats:"
 
-  - it: rawConfig overrides template-generated config
+  - it: rawConfig is used verbatim
     set:
       config.rawConfig: |
         custom: true
