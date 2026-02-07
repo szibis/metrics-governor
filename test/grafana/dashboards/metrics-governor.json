@@ -2095,16 +2095,17 @@
         "showThresholdLabels": false,
         "showThresholdMarkers": true
       },
-      "title": "Workers Utilization",
-      "type": "gauge",
+      "title": "Queue Items per Worker",
+      "description": "Queue backlog pressure per worker. Shows how many queued items each worker is responsible for.",
+      "type": "stat",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "metrics_governor_queue_workers_active / metrics_governor_queue_workers_total",
-          "legendFormat": "Utilization"
+          "expr": "metrics_governor_queue_size / clamp_min(metrics_governor_queue_workers_total, 1)",
+          "legendFormat": "Items/Worker"
         }
       ]
     },
