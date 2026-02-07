@@ -23,20 +23,16 @@ Get the application URL by running these commands:
   kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
 {{- end }}
 
-Endpoints:
-  - gRPC receiver:  {{ .Values.config.grpcListen }}
-  - HTTP receiver:  {{ .Values.config.httpListen }}
-  - Stats/Metrics:  {{ .Values.config.statsAddr }}
-  - Exporter:       {{ .Values.config.exporterEndpoint }}
+Ports:
+  - gRPC receiver:  {{ .Values.ports.grpc }}
+  - HTTP receiver:  {{ .Values.ports.http }}
+  - Stats/Metrics:  {{ .Values.ports.stats }}
+
+Configuration is defined in config.rawConfig (mounted as config.yaml).
 
 {{- if .Values.limits.enabled }}
 
 Limits enforcement is ENABLED.
-{{- if .Values.config.limitsDryRun }}
-  Mode: DRY-RUN (violations logged but data not dropped)
-{{- else }}
-  Mode: ENFORCING (violations will drop/filter metrics)
-{{- end }}
 {{- if .Values.limits.existingConfigMap }}
   Config: Using existing ConfigMap '{{ .Values.limits.existingConfigMap }}'
 {{- else }}
