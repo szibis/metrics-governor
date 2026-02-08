@@ -324,6 +324,38 @@ serviceMonitor:
   # -- Extra endpoints
   extraEndpoints: []
 
+alerting:
+  # -- Enable PrometheusRule for alert rules
+  enabled: false
+  # -- Namespace for PrometheusRule (defaults to release namespace)
+  namespace: ""
+  # -- Additional labels for PrometheusRule (must match Prometheus ruleSelector)
+  additionalLabels: {}
+  # -- Annotations for PrometheusRule
+  annotations: {}
+  # -- Alert evaluation interval
+  interval: "30s"
+  # -- Override individual alert thresholds. Unset values use defaults.
+  thresholds:
+    # -- Export error rate threshold (0.0-1.0)
+    exportErrorRate: 0.1
+    # -- Queue utilization threshold (0.0-1.0)
+    queueUtilization: 0.85
+    # -- Memory usage threshold (0.0-1.0)
+    memoryUsage: 0.90
+    # -- Backpressure rate (events/sec)
+    backpressureRate: 1
+    # -- Worker utilization threshold (0.0-1.0)
+    workerUtilization: 0.90
+    # -- Config staleness (seconds, 86400 = 24h)
+    configStaleness: 86400
+  # -- Disable specific alerts by name
+  disabledAlerts: []
+  #   - MetricsGovernorConfigStale
+  #   - MetricsGovernorWorkersSaturated
+  # -- Additional custom alert rules (raw PrometheusRule rules spec)
+  additionalRules: []
+
 ingress:
   # -- Enable ingress
   enabled: false

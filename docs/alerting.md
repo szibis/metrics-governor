@@ -1,195 +1,280 @@
 # Alerting
 
-Recommended alerting rules for monitoring metrics-governor in production. These rules cover all critical failure modes: backend outages, cardinality explosions, export failures, memory pressure, and configuration drift.
+## Table of Contents
 
-## Prometheus Alerting Rules
+- [Overview](#overview)
+- [Quick Start](#quick-start)
+- [Alert Rules — 10 Alerts, Zero Overlap](#alert-rules--10-alerts-zero-overlap)
+  - [Signal Chain — How Alerts Escalate](#signal-chain--how-alerts-escalate)
+  - [Complete Alert Reference](#complete-alert-reference)
+- [Importing Rules](#importing-rules)
+  - [Prometheus / VictoriaMetrics / Thanos](#prometheus--victoriametrics--thanos)
+  - [Kubernetes (Prometheus Operator)](#kubernetes-prometheus-operator)
+  - [Helm Chart](#helm-chart)
+  - [VMAlert](#vmalert)
+  - [Grafana Unified Alerting](#grafana-unified-alerting)
+- [Threshold Tuning](#threshold-tuning)
+  - [Helm Chart Thresholds — What Changes What](#helm-chart-thresholds--what-changes-what)
+  - [Profile-Specific Thresholds](#profile-specific-thresholds)
+  - [Playground — Interactive Tuning](#playground--interactive-tuning)
+- [Disabling Alerts](#disabling-alerts)
+- [Notification Channels](#notification-channels)
+  - [Alertmanager — Slack](#alertmanager--slack)
+  - [Alertmanager — PagerDuty](#alertmanager--pagerduty)
+  - [Alertmanager — Email](#alertmanager--email)
+- [Runbooks](#runbooks)
+  - [MetricsGovernorDown](#metricsgovernordown)
+  - [MetricsGovernorDataLoss](#metricsgovernordataloss)
+  - [MetricsGovernorExportDegraded](#metricsgovernorexportdegraded)
+  - [MetricsGovernorQueueSaturated](#metricsgovernorqueuesaturated)
+  - [MetricsGovernorCircuitOpen](#metricsgovernorcircuitopen)
+  - [MetricsGovernorOOMRisk](#metricsgovernoroomrisk)
+  - [MetricsGovernorBackpressure](#metricsgovernorbackpressure)
+  - [MetricsGovernorWorkersSaturated](#metricsgovernorworkerssaturated)
+  - [MetricsGovernorCardinalityExplosion](#metricsgovernorcardinalityexplosion)
+  - [MetricsGovernorConfigStale](#metricsgovernorconfigstale)
+- [See Also](#see-also)
 
-Save as `metrics-governor-alerts.rules.yml` and load into Prometheus or VMAlert.
+---
+
+## Overview
+
+metrics-governor ships with **10 production-ready alert rules** designed around three principles:
+
+1. **Zero overlap** — each alert fires for a distinct failure mode. No two alerts fire for the same root cause.
+2. **Signal chain** — alerts are ordered by timing: leading indicators warn early, trailing indicators demand action.
+3. **Every alert is actionable** — each has a runbook with exact commands to investigate and resolve.
+
+All rules are in the `alerts/` folder, ready to import into any Prometheus-compatible system.
+
+---
+
+## Quick Start
+
+**Fastest path to production alerting:**
 
 ```yaml
-groups:
-  - name: metrics-governor
-    rules:
-      # --- Circuit Breaker ---
-      - alert: MetricsGovernorCircuitOpen
-        expr: metrics_governor_queue_circuit_breaker_state > 0
-        for: 1m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Circuit breaker open"
-          description: "Queue circuit breaker is {{ if eq $value 1.0 }}OPEN{{ else }}HALF-OPEN{{ end }}. Backend may be unavailable."
-
-      - alert: MetricsGovernorHighRejectionRate
-        expr: rate(metrics_governor_queue_circuit_breaker_rejections_total[5m]) > 10
-        for: 5m
-        labels:
-          severity: critical
-        annotations:
-          summary: "High circuit breaker rejection rate"
-          description: "{{ $value | humanize }} rejections/sec — data is being lost."
-
-      # --- Cardinality ---
-      - alert: MetricsGovernorCardinalitySpike
-        expr: sum(metrics_governor_metric_cardinality) > 500000
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High total cardinality"
-          description: "Total cardinality {{ $value | humanize }} exceeds threshold. Check for label explosions."
-
-      - alert: MetricsGovernorLimitViolations
-        expr: rate(metrics_governor_limit_cardinality_exceeded_total[5m]) > 0
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Sustained limit violations"
-          description: "Rule {{ $labels.rule }} has been exceeding cardinality limits for 10+ minutes."
-
-      # --- Drop Rate ---
-      - alert: MetricsGovernorHighDropRate
-        expr: |
-          rate(metrics_governor_limit_datapoints_dropped_total[5m])
-          / (rate(metrics_governor_limit_datapoints_dropped_total[5m])
-             + rate(metrics_governor_limit_datapoints_passed_total[5m])) > 0.1
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High datapoint drop rate"
-          description: "Rule {{ $labels.rule }} is dropping {{ $value | humanizePercentage }} of datapoints."
-
-      # --- Export Errors ---
-      - alert: MetricsGovernorExportErrors
-        expr: rate(metrics_governor_prw_export_errors_total[5m]) > 0 or rate(metrics_governor_export_errors_total[5m]) > 0
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Export errors detected"
-          description: "Metrics export is failing. Check backend connectivity."
-
-      # --- Backoff ---
-      - alert: MetricsGovernorHighBackoff
-        expr: metrics_governor_queue_current_backoff_seconds > 120
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High queue backoff delay"
-          description: "Current backoff delay is {{ $value | humanize }}s. Backend may be slow to recover."
-
-      # --- Memory ---
-      - alert: MetricsGovernorHighMemory
-        expr: process_resident_memory_bytes{job="metrics-governor"} / on() metrics_governor_memory_limit_bytes > 0.85
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High memory usage"
-          description: "metrics-governor is using {{ $value | humanizePercentage }} of its memory limit."
-
-      # --- Health ---
-      - alert: MetricsGovernorUnhealthy
-        expr: up{job="metrics-governor"} == 0
-        for: 1m
-        labels:
-          severity: critical
-        annotations:
-          summary: "metrics-governor is down"
-          description: "Instance {{ $labels.instance }} is unreachable."
-
-      # --- Config Reload ---
-      - alert: MetricsGovernorStaleConfig
-        expr: |
-          metrics_governor_config_reload_last_success_timestamp_seconds > 0
-          and time() - metrics_governor_config_reload_last_success_timestamp_seconds > 86400
-        for: 5m
-        labels:
-          severity: info
-        annotations:
-          summary: "Config not reloaded in 24h"
-          description: "The config-reload sidecar may not be working."
-
-      # --- Buffer Backpressure ---
-      - alert: MetricsGovernorBufferFull
-        expr: metrics_governor_buffer_bytes / metrics_governor_buffer_max_bytes > 0.9
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Buffer near capacity"
-          description: "Buffer is at {{ $value | humanizePercentage }} utilization. Incoming data may be rejected."
-
-      - alert: MetricsGovernorBufferRejecting
-        expr: rate(metrics_governor_buffer_rejected_total[5m]) > 0
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Buffer rejecting data"
-          description: "Buffer is full and rejecting {{ $value | humanize }} batches/sec. Senders will receive 429/ResourceExhausted."
-
-      # --- Worker Pool ---
-      - alert: MetricsGovernorWorkersSaturated
-        expr: metrics_governor_queue_workers_active / metrics_governor_queue_workers_total > 0.9
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Worker pool saturated"
-          description: "{{ $value | humanizePercentage }} of workers are active. Queue may accumulate. Consider increasing -queue-workers."
-
-      # --- Queue ---
-      - alert: MetricsGovernorQueueBacklog
-        expr: metrics_governor_queue_size > metrics_governor_queue_max_size * 0.8
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Failover queue filling up"
-          description: "Queue is at {{ $value | humanize }} entries (80%+ capacity). Entries may be evicted."
+# Helm values.yaml — one line enables all 10 alerts
+alerting:
+  enabled: true
 ```
 
-## VMAlert Integration
+Or import manually:
 
-For VictoriaMetrics users, load the same rules file via VMAlert:
+```bash
+# Prometheus / VictoriaMetrics
+cp alerts/prometheus-rules.yaml /etc/prometheus/rules/metrics-governor.yaml
+kill -HUP $(pidof prometheus)
+
+# Kubernetes (Prometheus Operator)
+kubectl apply -f alerts/prometheusrule.yaml
+```
+
+---
+
+## Alert Rules — 10 Alerts, Zero Overlap
+
+### Signal Chain — How Alerts Escalate
+
+Alerts are not independent — they form escalation chains. During a backend outage, you'll see them fire in sequence:
+
+```
+Leading indicators (warn early)      Trailing indicators (act now)
+────────────────────────────────     ────────────────────────────
+ExportDegraded ──> CircuitOpen ──> QueueSaturated ──> DataLoss
+Backpressure ──> WorkersSaturated
+CardinalityExplosion
+                                     OOMRisk ──> Down
+```
+
+This means:
+- If you see `ExportDegraded`, fix it before `CircuitOpen` fires
+- If you see `QueueSaturated`, the backend has been down long enough to fill the queue — `DataLoss` is next
+- If you see `OOMRisk`, the process will crash (`Down`) unless you act
+
+### Complete Alert Reference
+
+| # | Alert | Severity | What It Detects | Fire Condition | Runbook |
+|---|-------|----------|----------------|----------------|---------|
+| 1 | **Down** | critical | Process unavailable | `up == 0` for 2m | [Runbook](#metricsgovernordown) |
+| 2 | **DataLoss** | critical | Permanent data loss | `data_loss_total` increasing | [Runbook](#metricsgovernordataloss) |
+| 3 | **ExportDegraded** | warning | Backend errors | Error rate > 10% for 5m | [Runbook](#metricsgovernorexportdegraded) |
+| 4 | **QueueSaturated** | warning | Queue filling up | Queue > 85% for 5m | [Runbook](#metricsgovernorqueuesaturated) |
+| 5 | **CircuitOpen** | warning | Backend protection active | CB open for 2m | [Runbook](#metricsgovernorcircuitopen) |
+| 6 | **OOMRisk** | critical | Memory pressure | Heap > 90% limit for 5m | [Runbook](#metricsgovernoroomrisk) |
+| 7 | **Backpressure** | warning | Pipeline bottleneck | Buffer rejecting > 1/s for 5m | [Runbook](#metricsgovernorbackpressure) |
+| 8 | **WorkersSaturated** | warning | CPU/export ceiling | Workers > 90% for 10m | [Runbook](#metricsgovernorworkerssaturated) |
+| 9 | **CardinalityExplosion** | warning | Governance breach | Cardinality violations for 10m | [Runbook](#metricsgovernorcardinalityexplosion) |
+| 10 | **ConfigStale** | info | Operational drift | No reload in 24h | [Runbook](#metricsgovernorconfigstale) |
+
+**Coverage by dimension** (no dimension has duplicate coverage):
+
+| Dimension | Alerts | Why These |
+|-----------|--------|-----------|
+| **Availability** | `Down` | Binary — up or down |
+| **Reliability** | `DataLoss`, `ExportDegraded` | Leading (recoverable) vs trailing (permanent) |
+| **Resilience** | `QueueSaturated`, `CircuitOpen` | Independent signals — capacity vs circuit state |
+| **Performance** | `Backpressure`, `WorkersSaturated`, `CardinalityExplosion` | Three independent bottleneck points |
+| **Resource** | `OOMRisk` | Memory is the binding constraint |
+| **Operational** | `ConfigStale` | Config freshness |
+
+---
+
+## Importing Rules
+
+### Prometheus / VictoriaMetrics / Thanos
+
+```bash
+cp alerts/prometheus-rules.yaml /etc/prometheus/rules/metrics-governor.yaml
+# Reload Prometheus
+kill -HUP $(pidof prometheus)
+```
+
+The file is a standard Prometheus rules group. Works with Prometheus, VictoriaMetrics, Thanos Ruler, and Cortex Ruler.
+
+### Kubernetes (Prometheus Operator)
+
+```bash
+kubectl apply -f alerts/prometheusrule.yaml
+```
+
+Edit `alerts/prometheusrule.yaml` to match your Prometheus Operator's `ruleSelector` labels (default: `prometheus: kube-prometheus`).
+
+### Helm Chart
+
+```yaml
+# values.yaml
+alerting:
+  enabled: true
+  additionalLabels:
+    prometheus: kube-prometheus   # must match your Prometheus Operator's ruleSelector
+```
+
+This creates a `PrometheusRule` CRD with all 10 alerts. See [Threshold Tuning](#threshold-tuning) for customization.
+
+### VMAlert
 
 ```yaml
 # vmalert config
 rule:
-  - /etc/vmalert/rules/metrics-governor-alerts.rules.yml
+  - /etc/vmalert/rules/metrics-governor.yaml
 datasource:
   url: http://victoriametrics:8428
 notifier:
   url: http://alertmanager:9093
-remoteWrite:
-  url: http://victoriametrics:8428
 ```
 
 ```bash
+# Copy rules
+cp alerts/prometheus-rules.yaml /etc/vmalert/rules/metrics-governor.yaml
+
+# Or run directly
 vmalert \
-  -rule=/etc/vmalert/rules/metrics-governor-alerts.rules.yml \
+  -rule=alerts/prometheus-rules.yaml \
   -datasource.url=http://victoriametrics:8428 \
   -notifier.url=http://alertmanager:9093
 ```
 
-## Grafana Alert Integration
+### Grafana Unified Alerting
 
 The operations dashboard panels can be converted to Grafana alerts:
 
-1. Open a panel (e.g., "Circuit Breaker State") → Edit → Alert tab
-2. Set condition: `WHEN last() OF query IS ABOVE 0`
-3. Configure notification channel
-4. Set evaluation interval and pending period
+1. Open a panel (e.g., "Circuit Breaker State") in the dashboard
+2. Click Edit, then the Alert tab
+3. Set condition matching the alert expression from `alerts/prometheus-rules.yaml`
+4. Configure notification channel and evaluation interval
 
-Key panels to alert on:
-- **Circuit Breaker State** — alert when open
-- **Drop Rate** — alert when > 10%
-- **Export Errors** — alert when rate > 0
-- **Queue Size** — alert when > 80% capacity
+---
+
+## Threshold Tuning
+
+### Helm Chart Thresholds — What Changes What
+
+Each `alerting.thresholds.*` value maps to exactly one alert. This table shows what to change, how it modifies the alert, and which runbook to consult when it fires.
+
+| Helm Value | Type | Default | Alert | What Changes | Runbook |
+|-----------|------|---------|-------|-------------|---------|
+| `thresholds.exportErrorRate` | float (0-1) | `0.1` | **ExportDegraded** | Fire at this error rate (0.1 = 10%) | [Runbook](#metricsgovernorexportdegraded) |
+| `thresholds.queueUtilization` | float (0-1) | `0.85` | **QueueSaturated** | Fire at this queue fill level | [Runbook](#metricsgovernorqueuesaturated) |
+| `thresholds.memoryUsage` | float (0-1) | `0.90` | **OOMRisk** | Fire at this heap % of limit | [Runbook](#metricsgovernoroomrisk) |
+| `thresholds.backpressureRate` | float (events/s) | `1` | **Backpressure** | Fire at this reject+evict rate | [Runbook](#metricsgovernorbackpressure) |
+| `thresholds.workerUtilization` | float (0-1) | `0.90` | **WorkersSaturated** | Fire at this worker usage level | [Runbook](#metricsgovernorworkerssaturated) |
+| `thresholds.configStaleness` | int (seconds) | `86400` | **ConfigStale** | Fire after this many seconds without reload | [Runbook](#metricsgovernorconfigstale) |
+
+**Alerts with fixed thresholds** (not tunable — any occurrence is significant):
+
+| Alert | Why Fixed |
+|-------|-----------|
+| **Down** | Binary — process is either up or down |
+| **DataLoss** | Any data loss is critical |
+| **CircuitOpen** | Binary — CB is either open or closed |
+| **CardinalityExplosion** | Any sustained violation needs investigation |
+
+### Profile-Specific Thresholds
+
+Different profiles have different operating envelopes:
+
+| Alert | `minimal` | `balanced` | `performance` |
+|-------|-----------|-----------|---------------|
+| `ExportDegraded` | > 10% | > 10% | > 5% |
+| `QueueSaturated` | N/A (no queue) | > 85% | > 90% |
+| `CircuitOpen` | N/A (CB off) | 2m | 1m |
+| `OOMRisk` | > 85% | > 90% | > 85% |
+| `Backpressure` | > 0.5/s | > 1/s | > 5/s |
+| `WorkersSaturated` | N/A (1 worker) | > 90% | > 95% |
+| `ConfigStale` | N/A (dev) | 24h | 12h |
+
+**Example Helm values for performance profile:**
+
+```yaml
+alerting:
+  enabled: true
+  thresholds:
+    exportErrorRate: 0.05
+    queueUtilization: 0.90
+    memoryUsage: 0.85
+    backpressureRate: 5
+    workerUtilization: 0.95
+    configStaleness: 43200
+```
+
+**Example for minimal profile (disable inapplicable alerts):**
+
+```yaml
+alerting:
+  enabled: true
+  thresholds:
+    memoryUsage: 0.85
+    backpressureRate: 0.5
+  disabledAlerts:
+    - MetricsGovernorQueueSaturated
+    - MetricsGovernorCircuitOpen
+    - MetricsGovernorWorkersSaturated
+    - MetricsGovernorConfigStale
+```
+
+### Playground — Interactive Tuning
+
+The **Alert rules** tab in `tools/playground/index.html` lets you:
+
+1. Adjust each threshold with inputs — live preview of the YAML
+2. Toggle between Prometheus rules and Kubernetes PrometheusRule CRD format
+3. View the coverage map showing which alert each threshold affects
+4. Copy or download the generated rules
+
+---
+
+## Disabling Alerts
+
+Use `alerting.disabledAlerts` in Helm values to skip alerts that don't apply to your profile:
+
+| Profile | Recommended `disabledAlerts` | Why |
+|---------|------------------------------|-----|
+| `minimal` | `QueueSaturated`, `CircuitOpen`, `WorkersSaturated`, `ConfigStale` | No queue, no CB, single worker, dev |
+| `balanced` | (none) | All features enabled |
+| `performance` | (none) | All features enabled |
+
+---
 
 ## Notification Channels
 
@@ -207,6 +292,7 @@ route:
     - match:
         severity: critical
       receiver: 'slack-critical'
+      repeat_interval: 30m
 
 receivers:
   - name: 'slack-notifications'
@@ -214,14 +300,14 @@ receivers:
       - api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
         channel: '#observability-alerts'
         title: '{{ .CommonAnnotations.summary }}'
-        text: '{{ .CommonAnnotations.description }}'
+        text: '{{ .CommonAnnotations.description }}\nRunbook: {{ .CommonAnnotations.runbook_url }}'
 
   - name: 'slack-critical'
     slack_configs:
       - api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
         channel: '#on-call'
         title: 'CRITICAL: {{ .CommonAnnotations.summary }}'
-        text: '{{ .CommonAnnotations.description }}'
+        text: '{{ .CommonAnnotations.description }}\nRunbook: {{ .CommonAnnotations.runbook_url }}'
 ```
 
 ### Alertmanager — PagerDuty
@@ -235,6 +321,7 @@ receivers:
         description: '{{ .CommonAnnotations.summary }}'
         details:
           description: '{{ .CommonAnnotations.description }}'
+          runbook: '{{ .CommonAnnotations.runbook_url }}'
 ```
 
 ### Alertmanager — Email
@@ -250,23 +337,288 @@ receivers:
         auth_password: 'password'
 ```
 
-## Runbook References
+---
 
-| Alert | Runbook Section |
-|-------|-----------------|
-| `MetricsGovernorCircuitOpen` | [Resilience — Circuit Breaker Keeps Opening](resilience.md#circuit-breaker-keeps-opening) |
-| `MetricsGovernorHighBackoff` | [Resilience — Backoff Delay Too Long](resilience.md#backoff-delay-too-long) |
-| `MetricsGovernorExportErrors` | [Resilience — Backend Rejecting Batches](resilience.md#backend-rejecting-batches-as-too-large) |
-| `MetricsGovernorHighMemory` | [Resilience — OOM Kills](resilience.md#oom-kills-despite-memory-limits) |
-| `MetricsGovernorCardinalitySpike` | [Limits — Adaptive Limiting](limits.md#adaptive-limiting-recommended) |
-| `MetricsGovernorStaleConfig` | [Reload — Monitoring Reloads](reload.md#monitoring-reloads) |
-| `MetricsGovernorBufferFull` | [Resilience — Buffer Backpressure](resilience.md#buffer-backpressure) |
-| `MetricsGovernorBufferRejecting` | [Resilience — Buffer Backpressure](resilience.md#buffer-backpressure) |
-| `MetricsGovernorWorkersSaturated` | [Performance — Worker Pool](performance.md#worker-pool-architecture) |
+## Runbooks
+
+Each runbook follows the same structure: **what fired** → **what it means** → **impact** → **investigate** → **resolve** → **prevent**.
+
+### MetricsGovernorDown
+
+**Severity:** Critical | **Fires when:** `up == 0` for 2 minutes
+
+**What it means:** The metrics-governor process is not responding to scrapes. All metrics ingestion is stopped.
+
+**Impact:** Complete metrics pipeline outage.
+
+**Investigate:**
+```bash
+kubectl get pods -l app.kubernetes.io/name=metrics-governor
+kubectl describe pod <pod-name>
+kubectl get events --field-selector reason=OOMKilled --sort-by=.lastTimestamp
+kubectl logs <pod-name> --previous --tail=100
+# Bare metal:
+systemctl status metrics-governor
+journalctl -u metrics-governor --since "5 minutes ago"
+dmesg | grep -i "oom\|killed" | tail -5
+```
+
+**Resolve:**
+
+| Root Cause | Fix |
+|-----------|-----|
+| OOM killed | Increase memory limit or switch to higher profile |
+| CrashLoopBackOff | Check logs: bad config, port conflict, missing PVC |
+| Node pressure | Check node resources, ensure PDB is set |
+| Bad deployment | Roll back: `kubectl rollout undo deployment/metrics-governor` |
+
+**Prevent:** Set `memory.limit_ratio: 0.85`, enable PDB, monitor `OOMRisk` alert.
+
+---
+
+### MetricsGovernorDataLoss
+
+**Severity:** Critical | **Fires when:** `data_loss_total` increasing for 1 minute
+
+**What it means:** Batches failed export AND failed to push to queue. Data is permanently lost.
+
+**Impact:** Gaps in metrics data. Dashboard holes. SLO calculations affected.
+
+**Investigate:**
+```bash
+curl -s http://<governor>:9090/metrics | grep 'export_data_loss_total'
+curl -s http://<governor>:9090/metrics | grep -E 'queue_bytes|queue_max_bytes|queue_dropped'
+kubectl exec <pod> -- df -h /data/queue
+```
+
+**Resolve:**
+
+| Root Cause | Fix |
+|-----------|-----|
+| Queue disabled (minimal profile) | Switch to `balanced` or `performance` profile |
+| Queue full + backend down | Increase `queue.max_bytes`, expand PVC, fix backend |
+| Disk full | Expand PVC or reduce retention |
+| Network failure | Check connectivity to backend |
+
+**Prevent:** Enable persistent queue (`balanced` profile minimum). Size queue for outage buffer target.
+
+---
+
+### MetricsGovernorExportDegraded
+
+**Severity:** Warning | **Fires when:** Error rate > 10% for 5 minutes
+
+**What it means:** Backend is returning errors. Queue is absorbing failed batches — no data loss yet, but queue will eventually fill.
+
+**Investigate:**
+```bash
+curl -s http://<governor>:9090/metrics | grep 'otlp_export_errors_total'
+# Look at error_type label: network, timeout, server_error, client_error, auth, rate_limit
+curl -s http://<governor>:9090/metrics | grep 'queue_export_latency_ewma'
+kubectl logs -l app=otel-collector --tail=50
+```
+
+**Resolve:**
+
+| Error Type | Fix |
+|-----------|-----|
+| `network` | Check DNS, Service, NetworkPolicy |
+| `timeout` | Increase `exporter.timeout` |
+| `server_error` (5xx) | Scale backend or reduce throughput |
+| `client_error` (413) | Batch tuner auto-adjusts; or reduce `buffer.batch_size` |
+| `rate_limit` (429) | Enable backoff, reduce concurrency |
+
+**Prevent:** Use `balanced` profile (enables adaptive batch tuning and circuit breaker).
+
+---
+
+### MetricsGovernorQueueSaturated
+
+**Severity:** Warning | **Fires when:** Queue > 85% full for 5 minutes
+
+**What it means:** Queue filling faster than draining. Data loss imminent.
+
+**Investigate:**
+```bash
+curl -s http://<governor>:9090/metrics | grep -E 'queue_bytes|queue_max_bytes'
+curl -s http://<governor>:9090/metrics | grep 'export_errors_total'
+curl -s http://<governor>:9090/metrics | grep 'circuit_breaker_state'
+kubectl exec <pod> -- df -h /data/queue
+```
+
+**Resolve:**
+
+| Root Cause | Fix |
+|-----------|-----|
+| Backend down | Fix backend. Queue auto-drains on recovery. |
+| Queue too small | Increase `queue.max_bytes`, expand PVC |
+| Disk full | Expand storage or set `full_behavior: drop_oldest` |
+
+**Prevent:** Size queue for 30+ minutes of outage buffer. Use `performance` profile with disk queue for critical workloads.
+
+---
+
+### MetricsGovernorCircuitOpen
+
+**Severity:** Warning | **Fires when:** Circuit breaker open for 2 minutes
+
+**What it means:** The CB tripped after consecutive export failures. All exports are blocked. Data accumulates in queue.
+
+**Investigate:**
+```bash
+curl -s http://<governor>:9090/metrics | grep 'circuit_breaker_state'
+curl -s http://<governor>:9090/metrics | grep 'circuit_breaker_open_total'
+curl -s http://<governor>:9090/metrics | grep 'queue_backoff_seconds'
+kubectl exec <pod> -- curl -v http://<backend>:4317/
+```
+
+**Resolve:**
+
+| Root Cause | Fix |
+|-----------|-----|
+| Backend maintenance | Wait. Circuit auto-probes every `reset_timeout`. |
+| Backend crash | Restart backend. |
+| Network partition | Fix connectivity. |
+| Won't close | Increase `circuit_breaker.threshold` temporarily, or set `resilience_level: low` |
+
+**Prevent:** Use `resilience_level: high` for fast recovery. Size queue for outage duration.
+
+---
+
+### MetricsGovernorOOMRisk
+
+**Severity:** Critical | **Fires when:** Heap > 90% of memory limit for 5 minutes
+
+**What it means:** Go runtime under severe memory pressure. OOM kill imminent.
+
+**Investigate:**
+```bash
+curl -s http://<governor>:9090/metrics | grep -E 'heap_alloc_bytes|memory_limit_bytes'
+curl -s http://<governor>:9090/metrics | grep -E 'intern_pool_estimated|cardinality_memory|queue_bytes|buffer_bytes'
+curl -s http://<governor>:9090/metrics | grep -E 'gc_cycles_total|gc_cpu_percent'
+```
+
+**Resolve:**
+
+| Root Cause | Fix |
+|-----------|-----|
+| High cardinality | Tighten limits, use `bloom` or `hybrid` mode |
+| Large buffer | Reduce `buffer.size` or `buffer.memory_percent` |
+| Memory queue | Reduce `queue.memory_percent` or switch to disk queue |
+| Container limit too low | Increase limit, use VPA |
+
+**Prevent:** Set `memory.limit_ratio: 0.85`, use `--memory-budget-percent`, enable bloom cardinality.
+
+---
+
+### MetricsGovernorBackpressure
+
+**Severity:** Warning | **Fires when:** Buffer rejecting/evicting > 1/s for 5 minutes
+
+**What it means:** Incoming rate exceeds buffer processing capacity. With `reject` policy: senders get errors. With `drop_oldest`: silent data loss.
+
+**Investigate:**
+```bash
+curl -s http://<governor>:9090/metrics | grep -E 'buffer_rejected|buffer_evictions'
+curl -s http://<governor>:9090/metrics | grep -E 'receiver_datapoints_total|export_datapoints_total'
+curl -s http://<governor>:9090/metrics | grep -E 'workers_active|workers_total'
+```
+
+**Resolve:**
+
+| Root Cause | Fix |
+|-----------|-----|
+| Throughput exceeds capacity | Switch to higher profile, increase `--parallelism`, or scale out (HPA) |
+| Buffer too small | Increase `buffer.size` |
+| Slow exports | Enable pipeline split (`performance` profile) |
+| Burst traffic | Enable queue to absorb spikes |
+
+**Prevent:** Use `balanced` profile (adaptive workers), size buffer for 2x expected burst.
+
+---
+
+### MetricsGovernorWorkersSaturated
+
+**Severity:** Warning | **Fires when:** Workers > 90% utilized for 10 minutes
+
+**What it means:** Export workers at capacity. Adaptive scaler hit ceiling or is disabled.
+
+**Investigate:**
+```bash
+curl -s http://<governor>:9090/metrics | grep -E 'workers_active|workers_total|workers_desired'
+curl -s http://<governor>:9090/metrics | grep 'export_latency_ewma'
+curl -s http://<governor>:9090/metrics | grep -E 'preparers_active|senders_active'
+```
+
+**Resolve:**
+
+| Root Cause | Fix |
+|-----------|-----|
+| Max workers reached | Increase `adaptive_workers.max_workers` or `--parallelism` |
+| Scaling disabled | Switch to `balanced` profile |
+| High export latency | Fix backend latency — workers are waiting, not working |
+| Compression bottleneck | Enable pipeline split (`performance` profile) |
+
+**Prevent:** Use `performance` profile, set HPA at 70% CPU.
+
+---
+
+### MetricsGovernorCardinalityExplosion
+
+**Severity:** Warning | **Fires when:** Cardinality violations sustained for 10 minutes
+
+**What it means:** Upstream services generating metrics with unbounded label values.
+
+**Investigate:**
+```bash
+curl -s http://<governor>:9090/metrics | grep 'cardinality_exceeded_total'
+curl -s http://<governor>:9090/metrics | grep 'rule_group_cardinality' | sort -t' ' -k2 -rn | head -10
+curl -s http://<governor>:9090/metrics | grep 'cardinality_memory_bytes'
+```
+
+**Resolve:**
+
+| Root Cause | Fix |
+|-----------|-----|
+| Unbounded labels | Add relabeling rule to drop or aggregate |
+| New high-cardinality service | Add limits rule with appropriate threshold |
+| Limit too low | Increase `default_max_cardinality` or per-rule limits |
+
+**Prevent:** Define limits rules for all services. Use `limits.action: adaptive`. Monitor per-group cardinality.
+
+---
+
+### MetricsGovernorConfigStale
+
+**Severity:** Info | **Fires when:** No config reload in 24 hours
+
+**What it means:** Config reload mechanism may not be working. If no changes were expected, this is informational.
+
+**Investigate:**
+```bash
+curl -s http://<governor>:9090/metrics | grep -E 'config_reload_total|reload_last_success'
+kubectl logs <pod> -c config-reloader --tail=20
+kubectl get configmap <config-name> -o jsonpath='{.metadata.resourceVersion}'
+```
+
+**Resolve:**
+
+| Root Cause | Fix |
+|-----------|-----|
+| Sidecar not running | Check `config-reloader` container |
+| Volume with `subPath` | Switch to directory mount |
+| No changes needed | Suppress alert or increase threshold |
+
+**Prevent:** Use directory mounts, enable `configReload.enabled: true`.
+
+---
 
 ## See Also
 
-- [Resilience](resilience.md) — Circuit breaker, backoff, troubleshooting
-- [Statistics](statistics.md) — All available Prometheus metrics
-- [Dashboards](dashboards.md) — Grafana dashboard documentation
-- [Limits](limits.md) — Limits enforcement configuration
+- [Production Guide](production-guide.md) — Deployment sizing, resilience tuning, HPA/VPA
+- [Resilience](resilience.md) — Circuit breaker, backoff, failure modes
+- [Performance](performance.md) — Internals, benchmarks, pipeline tuning
+- [Limits](limits.md) — Rule syntax, adaptive limiting, cardinality
+- [Configuration Profiles](profiles.md) — Profile presets, parameter tables
+- [Alert Rules](../alerts/) — Importable rule files
+- [Alert Runbooks](../alerts/README.md) — Detailed runbooks for each alert

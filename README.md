@@ -22,7 +22,7 @@
 
 [![OTLP](https://img.shields.io/badge/OTLP-gRPC_%7C_HTTP-4a90d9?style=flat&logo=opentelemetry&logoColor=white)](docs/receiving.md)
 [![PRW](https://img.shields.io/badge/PRW-1.0_%7C_2.0-e8833a?style=flat&logo=prometheus&logoColor=white)](docs/receiving.md#prometheus-remote-write-receiver)
-[![Alerts](https://img.shields.io/badge/Alerts-14_Rules-dc3545?style=flat&logo=prometheus&logoColor=white)](docs/alerting.md)
+[![Alerts](https://img.shields.io/badge/Alerts-10_Rules_%2B_Runbooks-dc3545?style=flat&logo=prometheus&logoColor=white)](docs/alerting.md)
 [![Helm Chart](https://img.shields.io/badge/Helm-Chart_Included-0F1689?style=flat&logo=helm&logoColor=white)](helm/metrics-governor/)
 [![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F46800?style=flat&logo=grafana&logoColor=white)](dashboards/)
 [![Playground](https://img.shields.io/badge/Playground-Config_Tool-20c997?style=flat&logo=googlechrome&logoColor=white)](https://szibis.github.io/metrics-governor/)
@@ -225,6 +225,9 @@ Plan your deployment in seconds. The **interactive Playground** estimates CPU, m
 | 🏥 | [**Health Endpoints**](docs/health.md) | Kubernetes liveness and readiness probes (`/live`, `/ready`) |
 | 🔄 | [**Dynamic Reload**](docs/reload.md) | Hot-reload limits config via SIGHUP with ConfigMap sidecar support |
 | 🖥️ | [**Playground**](docs/playground.md) | Interactive browser tool for deployment planning |
+| 🚨 | [**Alerting**](docs/alerting.md) | 10 production alerts with runbooks, Helm integration, threshold tuning |
+| 🏭 | [**Production Guide**](docs/production-guide.md) | Sizing, auto-derivation, HPA/VPA, DaemonSet, bare metal, resilience tuning |
+| 📋 | [**Profiles**](docs/profiles.md) | `minimal`, `balanced`, `performance` presets with full parameter tables |
 
 ---
 
