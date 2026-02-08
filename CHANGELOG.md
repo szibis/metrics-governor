@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.36.0] - 2026-02-08
+
+### Added
+
+- feat: 5-test benchmark matrix with OTLP HTTP input and dual export paths (#142)
+
+
 ## [0.35.0] - 2026-02-08
 
 ### Added
