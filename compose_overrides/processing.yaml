@@ -1,0 +1,116 @@
+# Processing rules integration test — performance profile + processing pipeline
+#
+# WITH processing (default):
+#   docker compose -f docker-compose.yaml -f compose_overrides/processing.yaml up -d --build
+#
+# WITHOUT processing (pure export performance):
+#   PROC=processing-noop.yaml docker compose -f docker-compose.yaml -f compose_overrides/processing.yaml up -d --build
+#
+# Monitor in Grafana (http://localhost:3000):
+#   - Export pipeline: EWMA latency, worker count, queue depth
+#   - Pipeline split: preparer/sender activity
+#   - Processing Rules (when enabled): input/output rates, per-rule reduction %
+
+services:
+  metrics-generator:
+    environment:
+      - OTLP_ENDPOINT=otel-collector:4317
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=lowmemory
+      - METRICS_INTERVAL=50ms
+      - SERVICES=payment-api,order-api,inventory-api,user-api,auth-api,billing-api,search-api,analytics-api
+      - ENVIRONMENTS=prod,staging,dev,qa
+      - ENABLE_EDGE_CASES=true
+      - ENABLE_HIGH_CARDINALITY=true
+      - ENABLE_BURST_TRAFFIC=true
+      - ENABLE_DIVERSE_METRICS=true
+      - HIGH_CARDINALITY_COUNT=500
+      - DIVERSE_METRIC_COUNT=300
+      - BURST_SIZE=5000
+      - BURST_INTERVAL_SEC=15
+      - STATS_INTERVAL_SEC=5
+      - TARGET_METRICS_PER_SEC=200000
+      - TARGET_DATAPOINTS_PER_SEC=200000
+      - METRICS_PORT=9091
+      - ENABLE_SPIKE_SCENARIOS=true
+      - SPIKE_MODE=realistic
+      - SPIKE_CARDINALITY=500
+      - SPIKE_DURATION_SEC=30
+      - SPIKE_INTERVAL_MIN_SEC=15
+      - SPIKE_INTERVAL_MAX_SEC=30
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: "2"
+
+  metrics-governor:
+    command:
+      # Performance profile: pipeline split + adaptive workers + batch auto-tune
+      - "--profile=performance"
+      # Processing config: real rules or noop based on NOPROCESSING env var
+      - "-processing-config=/etc/metrics-governor/processing.yaml"
+      # Export target
+      - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
+      - "-exporter-protocol=http"
+      - "-exporter-insecure=true"
+      - "-exporter-compression=zstd"
+      # Override profile defaults for latency (profile uses 2s/1000)
+      - "-flush-interval=75ms"
+      - "-batch-size=500"
+      - "-max-batch-bytes=4194304"
+      # Stats
+      - "-stats-labels=service,env"
+      # Disk queue path (profile enables disk queue with snappy)
+      - "-queue-path=/data/queue"
+      # Rule cache
+      - "-rule-cache-max-size=50000"
+    volumes:
+      # PROC=processing-noop.yaml → mounts noop config (all passthrough)
+      # default → mounts real processing rules
+      - ./examples/${PROC:-processing-testing.yaml}:/etc/metrics-governor/processing.yaml:ro
+      - ./examples/limits.yaml:/etc/metrics-governor/limits.yaml:ro
+      - mg-queue-processing-data:/data/queue
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "4"
+
+  otel-collector:
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
+
+  victoriametrics:
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: "2"
+    command:
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=1d"
+      - "--search.latencyOffset=0s"
+      - "--promscrape.config=/etc/victoriametrics/scrape.yaml"
+      - "--maxInsertRequestSize=256MB"
+      - "--opentelemetry.maxRequestSize=256MB"
+      - "--opentelemetry.convertMetricNamesToPrometheus"
+      - "--memory.allowedPercent=85"
+      - "--search.maxUniqueTimeseries=5000000"
+      - "--search.maxConcurrentRequests=64"
+
+  verifier:
+    environment:
+      - VM_ENDPOINT=http://victoriametrics:8428
+      - MG_ENDPOINT=http://metrics-governor:9090
+      - CHECK_INTERVAL=10s
+      - VERIFICATION_METRIC=generator_verification_counter
+      - PASS_THRESHOLD=70.0
+      - METRICS_PORT=9092
+
+volumes:
+  mg-queue-processing-data:
+    driver: local

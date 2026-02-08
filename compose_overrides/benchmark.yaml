@@ -1,0 +1,95 @@
+# Benchmark overlay — flat-rate 100k dps with zero variability
+#
+# Produces exactly 100,000 datapoints/sec using stable mode:
+#   100 metrics × 100 series/metric = 10,000 unique series
+#   10,000 series × 10 exports/sec (100ms interval) = 100,000 dps
+#
+# Usage (governor benchmark):
+#   docker compose -f docker-compose.yaml -f compose_overrides/benchmark.yaml up -d --build
+#
+# Usage (passthrough, no processing):
+#   docker compose -f docker-compose.yaml -f compose_overrides/benchmark.yaml up -d --build
+#
+# Full benchmark (governor vs collector vs vmagent):
+#   ./test/benchmark-proxy.sh
+
+services:
+  metrics-generator:
+    environment:
+      - OTLP_ENDPOINT=otel-collector:4317
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=lowmemory
+      - METRICS_INTERVAL=100ms
+      # ── Stable mode: perfectly flat 100k dps ──
+      - ENABLE_STABLE_MODE=true
+      - STABLE_METRIC_COUNT=100
+      - STABLE_CARDINALITY=100
+      - STABLE_DATAPOINTS=1
+      # ── Disable ALL variability sources ──
+      - ENABLE_EDGE_CASES=false
+      - ENABLE_HIGH_CARDINALITY=false
+      - ENABLE_BURST_TRAFFIC=false
+      - ENABLE_DIVERSE_METRICS=false
+      - ENABLE_SPIKE_SCENARIOS=false
+      # ── Stats ──
+      - STATS_INTERVAL_SEC=5
+      - METRICS_PORT=9091
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
+
+  metrics-governor:
+    command:
+      # Performance profile: pipeline split + adaptive workers + batch auto-tune
+      - "--profile=performance"
+      # Export target — passthrough to VictoriaMetrics
+      - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
+      - "-exporter-protocol=http"
+      - "-exporter-insecure=true"
+      - "-exporter-compression=zstd"
+      # Override profile defaults for low-latency benchmarking
+      - "-flush-interval=75ms"
+      - "-batch-size=500"
+      - "-max-batch-bytes=4194304"
+      # Stats
+      - "-stats-labels=service,env"
+      # Disk queue
+      - "-queue-path=/data/queue"
+    volumes:
+      - mg-queue-benchmark-data:/data/queue
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "4"
+
+  otel-collector:
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
+
+  victoriametrics:
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: "2"
+    command:
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=1d"
+      - "--search.latencyOffset=0s"
+      - "--promscrape.config=/etc/victoriametrics/scrape.yaml"
+      - "--maxInsertRequestSize=256MB"
+      - "--opentelemetry.maxRequestSize=256MB"
+      - "--opentelemetry.convertMetricNamesToPrometheus"
+      - "--memory.allowedPercent=85"
+      - "--search.maxUniqueTimeseries=5000000"
+      - "--search.maxConcurrentRequests=64"
+
+volumes:
+  mg-queue-benchmark-data:
+    driver: local
