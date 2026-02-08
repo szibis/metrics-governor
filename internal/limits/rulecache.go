@@ -116,6 +116,23 @@ func (c *ruleCache) NegativeEntries() int {
 	return count
 }
 
+// EstimatedMemoryBytes returns an estimate of the memory used by the cache.
+// Per entry: ~192 bytes overhead (list.Element + map bucket + pointers) + key length.
+func (c *ruleCache) EstimatedMemoryBytes() int64 {
+	if c == nil {
+		return 0
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	var total int64
+	for e := c.order.Front(); e != nil; e = e.Next() {
+		entry := e.Value.(*ruleCacheEntry)
+		// 192 bytes overhead (list.Element ~64 + map entry ~80 + entry struct ~48) + key string data
+		total += 192 + int64(len(entry.key))
+	}
+	return total
+}
+
 // ClearCache removes all entries.
 func (c *ruleCache) ClearCache() {
 	if c == nil {

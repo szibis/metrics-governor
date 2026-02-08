@@ -96,6 +96,9 @@ var (
 	compressionPoolNews     atomic.Int64
 	bufferPoolGets          atomic.Int64
 	bufferPoolPuts          atomic.Int64
+
+	// Active buffer tracking — number of buffers currently checked out from pool.
+	bufferActive atomic.Int64
 )
 
 // PoolStatsSnapshot holds a point-in-time snapshot of pool counters.
@@ -120,6 +123,11 @@ func PoolStats() PoolStatsSnapshot {
 	}
 }
 
+// BufferActiveCount returns the number of compression buffers currently checked out.
+func BufferActiveCount() int64 {
+	return bufferActive.Load()
+}
+
 // ResetPoolStats resets all pool metric counters to zero (useful in tests).
 func ResetPoolStats() {
 	compressionPoolGets.Store(0)
@@ -128,6 +136,7 @@ func ResetPoolStats() {
 	compressionPoolNews.Store(0)
 	bufferPoolGets.Store(0)
 	bufferPoolPuts.Store(0)
+	bufferActive.Store(0)
 }
 
 // -----------------------------------------------------------------------
@@ -204,6 +213,7 @@ func Compress(data []byte, cfg Config) ([]byte, error) {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	bufferPoolGets.Add(1)
+	bufferActive.Add(1)
 
 	var err error
 	switch cfg.Type {
@@ -217,12 +227,14 @@ func Compress(data []byte, cfg Config) ([]byte, error) {
 		err = compressDeflate(buf, data, cfg.Level)
 	default:
 		bufferPoolPuts.Add(1)
+		bufferActive.Add(-1)
 		bufPool.Put(buf)
 		return nil, fmt.Errorf("unsupported compression type: %s", cfg.Type)
 	}
 
 	if err != nil {
 		bufferPoolPuts.Add(1)
+		bufferActive.Add(-1)
 		bufPool.Put(buf)
 		return nil, err
 	}
@@ -231,6 +243,7 @@ func Compress(data []byte, cfg Config) ([]byte, error) {
 	result := make([]byte, buf.Len())
 	copy(result, buf.Bytes())
 	bufferPoolPuts.Add(1)
+	bufferActive.Add(-1)
 	bufPool.Put(buf)
 	return result, nil
 }

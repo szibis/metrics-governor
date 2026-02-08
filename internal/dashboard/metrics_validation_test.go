@@ -51,13 +51,24 @@ var knownMetrics = []string{
 	"metrics_governor_grpc_received_bytes_total",
 	"metrics_governor_receiver_errors_total",
 
-	// Buffer stats (stats.go)
+	// Buffer stats (stats.go, buffer/buffer.go)
 	"metrics_governor_buffer_size",
+	"metrics_governor_buffer_bytes",
+	"metrics_governor_buffer_max_bytes",
+	"metrics_governor_buffer_evictions_total",
+	"metrics_governor_buffer_rejected_total",
 
 	// Batch splitting metrics (buffer/splitter.go)
 	"metrics_governor_batch_splits_total",
 	"metrics_governor_batch_bytes",
 	"metrics_governor_batch_too_large_total",
+	"metrics_governor_batch_split_depth_exceeded_total",
+
+	// Batch auto-tuning metrics (exporter/batchtuner.go)
+	"metrics_governor_batch_current_max_bytes",
+	"metrics_governor_batch_hard_ceiling_bytes",
+	"metrics_governor_batch_tuning_adjustments_total",
+	"metrics_governor_batch_success_streak",
 
 	// Concurrent export metrics (buffer/buffer.go)
 	"metrics_governor_export_concurrent_workers",
@@ -97,6 +108,24 @@ var knownMetrics = []string{
 	"metrics_governor_fastqueue_meta_sync_total",
 	"metrics_governor_fastqueue_chunk_rotations",
 	"metrics_governor_fastqueue_inmemory_flushes",
+	// Worker pool metrics (queue/metrics.go)
+	"metrics_governor_queue_workers_active",
+	"metrics_governor_queue_workers_total",
+	"metrics_governor_queue_workers_desired",
+	"metrics_governor_queue_non_retryable_dropped_total",
+	// Pipeline split metrics (queue/metrics.go)
+	"metrics_governor_queue_preparers_active",
+	"metrics_governor_queue_senders_active",
+	"metrics_governor_queue_preparers_total",
+	"metrics_governor_queue_senders_total",
+	"metrics_governor_queue_prepared_channel_length",
+	"metrics_governor_queue_requeue_data_loss_total",
+	// Async send metrics (queue/metrics.go)
+	"metrics_governor_queue_sends_inflight",
+	"metrics_governor_queue_sends_inflight_max",
+	// Adaptive scaler metrics (queue/metrics.go)
+	"metrics_governor_queue_scaler_adjustments_total",
+	"metrics_governor_queue_export_latency_ewma_seconds",
 	// Circuit breaker and backoff metrics (queue/metrics.go)
 	"metrics_governor_circuit_breaker_state",
 	"metrics_governor_circuit_breaker_open_total",
@@ -163,11 +192,14 @@ var knownMetrics = []string{
 	"metrics_governor_rule_cache_misses_total",
 	"metrics_governor_rule_cache_negative_entries",
 	"metrics_governor_rule_cache_size",
+	"metrics_governor_rule_cache_estimated_bytes",
 
 	// Compression pool metrics (compression/metrics.go)
 	"metrics_governor_compression_buffer_pool_gets_total",
 	"metrics_governor_compression_buffer_pool_puts_total",
+	"metrics_governor_compression_buffers_active",
 	"metrics_governor_compression_pool_discards_total",
+	"metrics_governor_compression_pool_estimated_bytes",
 	"metrics_governor_compression_pool_gets_total",
 	"metrics_governor_compression_pool_new_total",
 	"metrics_governor_compression_pool_puts_total",
@@ -175,6 +207,7 @@ var knownMetrics = []string{
 	// String intern pool metrics (intern/metrics.go)
 	"metrics_governor_intern_hits_total",
 	"metrics_governor_intern_misses_total",
+	"metrics_governor_intern_pool_estimated_bytes",
 	"metrics_governor_intern_pool_size",
 
 	// Series key pool metrics (stats.go, limits/enforcer.go)
@@ -260,11 +293,46 @@ var knownMetrics = []string{
 	"metrics_governor_network_transmit_errors_total",
 	"metrics_governor_network_receive_dropped_total",
 	"metrics_governor_network_transmit_dropped_total",
+
+	// OS memory metrics (stats/runtime.go) - Linux only
+	"metrics_governor_os_memory_rss_bytes",
+	"metrics_governor_os_memory_rss_anon_bytes",
+	"metrics_governor_os_memory_rss_file_bytes",
+	"metrics_governor_os_memory_rss_shmem_bytes",
+	"metrics_governor_os_memory_vm_peak_bytes",
+	"metrics_governor_os_memory_vm_size_bytes",
+	"metrics_governor_os_memory_vm_hwm_bytes",
+	"metrics_governor_os_memory_vm_data_bytes",
+	"metrics_governor_os_memory_vm_stack_bytes",
+	"metrics_governor_os_memory_vm_swap_bytes",
+
+	// Cgroup v2 metrics (stats/runtime.go) - Linux only
+	"metrics_governor_cgroup_memory_current_bytes",
+	"metrics_governor_cgroup_memory_limit_bytes",
+	"metrics_governor_cgroup_memory_peak_bytes",
+	"metrics_governor_cgroup_memory_anon_bytes",
+	"metrics_governor_cgroup_memory_file_bytes",
+	"metrics_governor_cgroup_memory_kernel_bytes",
+	"metrics_governor_cgroup_memory_kernel_stack_bytes",
+	"metrics_governor_cgroup_memory_pagetables_bytes",
+	"metrics_governor_cgroup_memory_slab_bytes",
+	"metrics_governor_cgroup_memory_sock_bytes",
+	"metrics_governor_cgroup_memory_pgfault_total",
+	"metrics_governor_cgroup_memory_pgmajfault_total",
+	"metrics_governor_cgroup_swap_current_bytes",
+
+	// Pipeline component timing (pipeline/timing.go)
+	"metrics_governor_component_seconds_total",
+	"metrics_governor_component_bytes_processed_total",
+
+	// Export data loss (queue/metrics.go + exporter)
+	"metrics_governor_export_data_loss_total",
 }
 
 // goRuntimeMetrics lists standard Go runtime metrics that are expected.
 var goRuntimeMetrics = []string{
 	"go_memstats_heap_alloc_bytes",
+	"go_memstats_heap_sys_bytes",
 	"go_memstats_heap_inuse_bytes",
 	"go_memstats_stack_inuse_bytes",
 	"go_memstats_gc_sys_bytes",
@@ -494,6 +562,11 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_disk_",
 		"metrics_governor_io_",
 		"metrics_governor_network",
+		// OS and cgroup metrics prefixes
+		"metrics_governor_os_memory",
+		"metrics_governor_cgroup",
+		// Pipeline component metrics
+		"metrics_governor_component",
 	}
 
 	// Just verify list is valid - no sorting requirement

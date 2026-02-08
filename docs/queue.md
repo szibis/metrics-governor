@@ -89,12 +89,6 @@ sequenceDiagram
             Note over W: Back off, wait for half-open
         end
     end
-
-    style FL fill:#9b59b6,stroke:#6c3483,color:#fff
-    style SQ fill:#4a90d9,stroke:#2c5f8a,color:#fff
-    style W fill:#f5a623,stroke:#c47d12,color:#fff
-    style EX fill:#1abc9c,stroke:#148f77,color:#fff
-    style CB fill:#e74c3c,stroke:#a93226,color:#fff
 ```
 
 ## FastQueue (Persistent Disk Queue)

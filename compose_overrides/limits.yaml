@@ -64,23 +64,23 @@ services:
       - "-limits-dry-run=false"      # Real enforcement!
       - "-flush-interval=75ms"
       - "-batch-size=350"
-      - "-max-batch-bytes=8388608"   # 8MB
-      - "-buffer-size=25000"
+      - "-max-batch-bytes=4194304"   # 4MB (was 8MB)
+      - "-buffer-size=10000"         # Sized for 100k dp/s (was 25000)
       # Performance tuning
-      - "-export-concurrency=32"     # Half of perf (64)
+      - "-export-concurrency=16"     # Proportional to memory (was 32)
       - "-string-interning=true"
       - "-intern-max-value-length=64"
       # Disk queue - persistent failover
       - "-queue-enabled=true"
       - "-queue-type=disk"
       - "-queue-path=/data/queue"
-      - "-queue-max-size=25000"
-      - "-queue-max-bytes=5368709120"      # 5GB
+      - "-queue-max-size=10000"      # Proportional (was 25000)
+      - "-queue-max-bytes=2147483648"      # 2GB (was 5GB)
       - "-queue-retry-interval=3s"
       - "-queue-full-behavior=drop_oldest"
       - "-queue-adaptive-enabled=true"
-      - "-queue-inmemory-blocks=384"
-      - "-queue-chunk-size=201326592"      # 192MB
+      - "-queue-inmemory-blocks=128"       # Proportional (was 384)
+      - "-queue-chunk-size=67108864"       # 64MB (was 192MB)
       - "-queue-meta-sync=750ms"
       - "-queue-stale-flush=3s"
       # Queue resilience
@@ -91,14 +91,14 @@ services:
       - "-queue-circuit-breaker-reset-timeout=20s"
       - "-queue-direct-export-timeout=5s"
       # Rule cache
-      - "-rule-cache-max-size=35000"
+      - "-rule-cache-max-size=10000"       # Proportional (was 35000)
       # Hybrid cardinality tracking (auto Bloom→HLL)
       - "-cardinality-mode=hybrid"
       - "-cardinality-hll-threshold=5000"
       # Structured logging
       - "-stats-log-interval=10s"
       - "-limits-log-interval=10s"
-      # Memory limit
+      # Memory limit - automemlimit auto-detects cgroup and sets GOMEMLIMIT
       - "-memory-limit-ratio=0.85"
     volumes:
       - mg-queue-limits-data:/data/queue
@@ -106,7 +106,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 3G
+          memory: 1536M              # 1.5GB — proportional to 100k dp/s (was 3GB)
           cpus: "1.5"
 
   victoriametrics:
