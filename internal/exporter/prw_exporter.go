@@ -157,11 +157,16 @@ func NewPRW(ctx context.Context, cfg PRWExporterConfig) (*PRWExporter, error) {
 		dialTimeout = 30 * time.Second
 	}
 
+	keepAliveInterval := cfg.HTTPClient.KeepAliveInterval
+	if keepAliveInterval <= 0 {
+		keepAliveInterval = 30 * time.Second
+	}
+
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
 			Timeout:   dialTimeout,
-			KeepAlive: 30 * time.Second,
+			KeepAlive: keepAliveInterval,
 		}).DialContext,
 		ForceAttemptHTTP2:     cfg.HTTPClient.ForceAttemptHTTP2,
 		MaxIdleConns:          cfg.HTTPClient.MaxIdleConns,
@@ -169,8 +174,11 @@ func NewPRW(ctx context.Context, cfg PRWExporterConfig) (*PRWExporter, error) {
 		MaxConnsPerHost:       cfg.HTTPClient.MaxConnsPerHost,
 		IdleConnTimeout:       cfg.HTTPClient.IdleConnTimeout,
 		DisableKeepAlives:     cfg.HTTPClient.DisableKeepAlives,
+		DisableCompression:    true,      // Disable Go's automatic Accept-Encoding/response decompression; our manual gzip/zstd/snappy compression on the request body is unaffected
+		WriteBufferSize:       64 * 1024, // Reduce write syscalls for large payloads
+		ReadBufferSize:        4 * 1024,  // Responses are small
 		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
+		ExpectContinueTimeout: 0, // Disable Expect: 100-Continue for same-datacenter traffic
 	}
 
 	// Apply default values if not set
@@ -405,6 +413,105 @@ func (e *PRWExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 
 	return nil
 }
+
+// ExportData sends pre-serialized PRW proto bytes, skipping unmarshal→remarshal.
+// This is the fast path for always-queue workers. Only usable when no extra labels
+// are configured (extra labels require modifying the deserialized request).
+// When extra labels are present, returns ErrExtraLabelsRequireDeserialize.
+func (e *PRWExporter) ExportData(ctx context.Context, data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+
+	// Extra labels require deserialization to modify the request
+	if len(e.extraLabels) > 0 {
+		return ErrExtraLabelsRequireDeserialize
+	}
+
+	body := data
+
+	// Compress the body
+	compressStart := time.Now()
+	compressedBody, err := compression.Compress(body, compression.Config{
+		Type: e.compression,
+	})
+	pipeline.Record("compress", pipeline.Since(compressStart))
+	if err != nil {
+		return fmt.Errorf("failed to compress PRW request: %w", err)
+	}
+	pipeline.RecordBytes("compress", len(compressedBody))
+
+	// Create HTTP request
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.endpoint, bytes.NewReader(compressedBody))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	// Set headers
+	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	httpReq.Header.Set("Content-Encoding", e.compression.ContentEncoding())
+
+	// Set PRW version header — use configured version or default to v1
+	switch e.version {
+	case prw.Version2:
+		httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "2.0.0")
+	default:
+		httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+	}
+
+	prwExportRequestsTotal.Inc()
+
+	// Send request
+	httpStart := time.Now()
+	resp, err := e.httpClient.Do(httpReq)
+	pipeline.Record("export_http", pipeline.Since(httpStart))
+	pipeline.RecordBytes("export_http", len(compressedBody))
+	if err != nil {
+		errType := classifyError(err)
+		prwExportErrorsTotal.WithLabelValues(string(errType)).Inc()
+		return fmt.Errorf("failed to send PRW request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response body for error detection
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	bodyStr := string(bodyBytes)
+
+	// Check response status
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		errType := classifyHTTPStatusCode(resp.StatusCode)
+		prwExportErrorsTotal.WithLabelValues(string(errType)).Inc()
+
+		msg := bodyStr
+		if msg == "" {
+			msg = fmt.Sprintf("PRW endpoint returned status %d", resp.StatusCode)
+		}
+
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			return &ExportError{
+				Err:        &PRWClientError{StatusCode: resp.StatusCode, Message: msg},
+				Type:       errType,
+				StatusCode: resp.StatusCode,
+				Message:    msg,
+			}
+		}
+		return &ExportError{
+			Err:        &PRWServerError{StatusCode: resp.StatusCode, Message: msg},
+			Type:       errType,
+			StatusCode: resp.StatusCode,
+			Message:    msg,
+		}
+	}
+
+	// Track successful export — bytes only (timeseries/samples counted at push time)
+	prwExportBytesTotal.WithLabelValues(string(e.compression)).Add(float64(len(compressedBody)))
+
+	return nil
+}
+
+// ErrExtraLabelsRequireDeserialize is returned by ExportData when extra labels
+// are configured, indicating the caller must fall back to full Export().
+var ErrExtraLabelsRequireDeserialize = fmt.Errorf("extra labels configured: must use Export() with deserialized request")
 
 // countPRWSamples counts the total number of samples in a PRW WriteRequest.
 func countPRWSamples(req *prw.WriteRequest) int64 {

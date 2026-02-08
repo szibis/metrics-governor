@@ -122,6 +122,9 @@ type HTTPClientConfig struct {
 	IdleConnTimeout time.Duration
 	// DialTimeout is the TCP connection setup timeout (default: 30s).
 	DialTimeout time.Duration
+	// KeepAliveInterval controls how often TCP keep-alive probes are sent on
+	// idle connections. Zero means 30s (Go default).
+	KeepAliveInterval time.Duration
 	// DisableKeepAlives, if true, disables HTTP keep-alives and will only use
 	// the connection to the server for a single HTTP request.
 	DisableKeepAlives bool
@@ -244,11 +247,16 @@ func newHTTPExporter(_ context.Context, cfg Config) (*OTLPExporter, error) {
 		dialTimeout = 30 * time.Second
 	}
 
+	keepAliveInterval := cfg.HTTPClient.KeepAliveInterval
+	if keepAliveInterval <= 0 {
+		keepAliveInterval = 30 * time.Second
+	}
+
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
 			Timeout:   dialTimeout,
-			KeepAlive: 30 * time.Second,
+			KeepAlive: keepAliveInterval,
 		}).DialContext,
 		ForceAttemptHTTP2:     cfg.HTTPClient.ForceAttemptHTTP2,
 		MaxIdleConns:          cfg.HTTPClient.MaxIdleConns,
@@ -256,8 +264,11 @@ func newHTTPExporter(_ context.Context, cfg Config) (*OTLPExporter, error) {
 		MaxConnsPerHost:       cfg.HTTPClient.MaxConnsPerHost,
 		IdleConnTimeout:       cfg.HTTPClient.IdleConnTimeout,
 		DisableKeepAlives:     cfg.HTTPClient.DisableKeepAlives,
+		DisableCompression:    true,      // Disable Go's automatic Accept-Encoding/response decompression; our manual gzip/zstd/snappy compression on the request body is unaffected
+		WriteBufferSize:       64 * 1024, // Reduce write syscalls for large payloads
+		ReadBufferSize:        4 * 1024,  // Responses are small (204 No Content)
 		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
+		ExpectContinueTimeout: 0, // Disable Expect: 100-Continue for same-datacenter traffic
 	}
 
 	// Apply default values if not set
@@ -501,6 +512,94 @@ func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportM
 		otlpExportBytesTotal.WithLabelValues("uncompressed").Add(float64(uncompressedSize))
 	}
 	recordExportSuccess(datapoints)
+
+	return nil
+}
+
+// ExportData exports pre-serialized proto bytes, skipping the unmarshal→remarshal
+// roundtrip that happens when data flows through the disk queue. This is the fast
+// path for always-queue workers: raw bytes → compress → HTTP send.
+// For gRPC protocol, this falls back to unmarshal + standard export.
+func (e *OTLPExporter) ExportData(ctx context.Context, data []byte) error {
+	if e.protocol == ProtocolGRPC {
+		// gRPC requires the Go struct; fall back to unmarshal + export
+		var req colmetricspb.ExportMetricsServiceRequest
+		if err := proto.Unmarshal(data, &req); err != nil {
+			return fmt.Errorf("failed to unmarshal for gRPC export: %w", err)
+		}
+		return e.exportGRPC(ctx, &req)
+	}
+	return e.exportHTTPData(ctx, data)
+}
+
+// exportHTTPData sends pre-serialized proto bytes via HTTP, bypassing marshal.
+// This eliminates the double-serialization: queue stores proto bytes, and we send
+// those bytes directly after compression instead of unmarshal→remarshal.
+func (e *OTLPExporter) exportHTTPData(ctx context.Context, data []byte) error {
+	body := data
+	uncompressedSize := len(body)
+	compressionLabel := "none"
+
+	// Apply compression if configured
+	if e.compression.Type != compression.TypeNone && e.compression.Type != "" {
+		compressStart := time.Now()
+		var err error
+		body, err = compression.Compress(body, e.compression)
+		pipeline.Record("compress", pipeline.Since(compressStart))
+		if err != nil {
+			return fmt.Errorf("failed to compress request: %w", err)
+		}
+		pipeline.RecordBytes("compress", len(body))
+		compressionLabel = string(e.compression.Type)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.httpEndpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+
+	// Set Content-Encoding header if compression is used
+	if encoding := e.compression.Type.ContentEncoding(); encoding != "" {
+		httpReq.Header.Set("Content-Encoding", encoding)
+	}
+
+	otlpExportRequestsTotal.Inc()
+
+	httpStart := time.Now()
+	resp, err := e.httpClient.Do(httpReq)
+	pipeline.Record("export_http", pipeline.Since(httpStart))
+	if err != nil {
+		errType := classifyError(err)
+		recordExportError(errType)
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Read body (up to 4KB) for error message before discarding
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		_, _ = io.Copy(io.Discard, resp.Body)
+		errType := classifyHTTPStatusCode(resp.StatusCode)
+		recordExportError(errType)
+		return &ExportError{
+			Err:        fmt.Errorf("unexpected status code: %d: %s", resp.StatusCode, string(bodyBytes)),
+			Type:       errType,
+			StatusCode: resp.StatusCode,
+			Message:    string(bodyBytes),
+		}
+	}
+
+	// Read and discard body to allow connection reuse
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	// Track exported bytes
+	otlpExportBytesTotal.WithLabelValues(compressionLabel).Add(float64(len(body)))
+	if compressionLabel != "none" {
+		otlpExportBytesTotal.WithLabelValues("uncompressed").Add(float64(uncompressedSize))
+	}
+	// Note: datapoint counting is handled at push time in always-queue mode
 
 	return nil
 }

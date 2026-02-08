@@ -212,6 +212,7 @@ type HTTPClientYAMLConfig struct {
 	MaxIdleConnsPerHost  int      `yaml:"max_idle_conns_per_host"`
 	MaxConnsPerHost      int      `yaml:"max_conns_per_host"`
 	IdleConnTimeout      Duration `yaml:"idle_conn_timeout"`
+	KeepAliveInterval    Duration `yaml:"keep_alive_interval"`
 	DisableKeepAlives    bool     `yaml:"disable_keep_alives"`
 	ForceHTTP2           bool     `yaml:"force_http2"`
 	HTTP2ReadIdleTimeout Duration `yaml:"http2_read_idle_timeout"`
@@ -698,6 +699,7 @@ func (y *YAMLConfig) ToConfig() *Config {
 		ExporterMaxIdleConnsPerHost:  y.Exporter.HTTPClient.MaxIdleConnsPerHost,
 		ExporterMaxConnsPerHost:      y.Exporter.HTTPClient.MaxConnsPerHost,
 		ExporterIdleConnTimeout:      time.Duration(y.Exporter.HTTPClient.IdleConnTimeout),
+		ExporterKeepAliveInterval:    time.Duration(y.Exporter.HTTPClient.KeepAliveInterval),
 		ExporterDisableKeepAlives:    y.Exporter.HTTPClient.DisableKeepAlives,
 		ExporterForceHTTP2:           y.Exporter.HTTPClient.ForceHTTP2,
 		ExporterHTTP2ReadIdleTimeout: time.Duration(y.Exporter.HTTPClient.HTTP2ReadIdleTimeout),

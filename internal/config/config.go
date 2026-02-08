@@ -71,6 +71,7 @@ type Config struct {
 	ExporterMaxIdleConnsPerHost  int
 	ExporterMaxConnsPerHost      int
 	ExporterIdleConnTimeout      time.Duration
+	ExporterKeepAliveInterval    time.Duration
 	ExporterDisableKeepAlives    bool
 	ExporterForceHTTP2           bool
 	ExporterHTTP2ReadIdleTimeout time.Duration
@@ -393,6 +394,7 @@ func ParseFlags() *Config {
 	flag.IntVar(&cfg.ExporterMaxIdleConnsPerHost, "exporter-max-idle-conns-per-host", 100, "Maximum idle connections per host")
 	flag.IntVar(&cfg.ExporterMaxConnsPerHost, "exporter-max-conns-per-host", 0, "Maximum total connections per host (0 = no limit)")
 	flag.DurationVar(&cfg.ExporterIdleConnTimeout, "exporter-idle-conn-timeout", 90*time.Second, "Idle connection timeout")
+	flag.DurationVar(&cfg.ExporterKeepAliveInterval, "exporter-keep-alive-interval", 30*time.Second, "TCP keep-alive probe interval")
 	flag.BoolVar(&cfg.ExporterDisableKeepAlives, "exporter-disable-keep-alives", false, "Disable HTTP keep-alives")
 	flag.BoolVar(&cfg.ExporterForceHTTP2, "exporter-force-http2", false, "Force HTTP/2 for non-TLS connections")
 	flag.DurationVar(&cfg.ExporterHTTP2ReadIdleTimeout, "exporter-http2-read-idle-timeout", 0, "HTTP/2 read idle timeout for health checks")
@@ -712,6 +714,10 @@ func applyFlagOverrides(cfg *Config) {
 		case "exporter-idle-conn-timeout":
 			if d, err := time.ParseDuration(f.Value.String()); err == nil {
 				cfg.ExporterIdleConnTimeout = d
+			}
+		case "exporter-keep-alive-interval":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.ExporterKeepAliveInterval = d
 			}
 		case "exporter-disable-keep-alives":
 			cfg.ExporterDisableKeepAlives = f.Value.String() == "true"
@@ -1322,6 +1328,7 @@ func (c *Config) ExporterHTTPClientConfig() exporter.HTTPClientConfig {
 		MaxIdleConnsPerHost:  c.ExporterMaxIdleConnsPerHost,
 		MaxConnsPerHost:      c.ExporterMaxConnsPerHost,
 		IdleConnTimeout:      c.ExporterIdleConnTimeout,
+		KeepAliveInterval:    c.ExporterKeepAliveInterval,
 		DisableKeepAlives:    c.ExporterDisableKeepAlives,
 		ForceAttemptHTTP2:    c.ExporterForceHTTP2,
 		HTTP2ReadIdleTimeout: c.ExporterHTTP2ReadIdleTimeout,

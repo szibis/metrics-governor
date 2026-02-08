@@ -2,6 +2,7 @@ package stats
 
 import (
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -372,5 +373,208 @@ func TestWriteNetworkIOHeaderOnly(t *testing.T) {
 
 	if !strings.Contains(body, "metrics_governor_network_receive_bytes_total 0") {
 		t.Error("Expected zero counters for header-only data")
+	}
+}
+
+// TestWriteMemoryStatus tests /proc/self/status memory parsing.
+func TestWriteMemoryStatus(t *testing.T) {
+	data := `Name:	metrics-governor
+Umask:	0022
+State:	S (sleeping)
+Tgid:	1
+Pid:	1
+VmPeak:	 1764000 kB
+VmSize:	 1200000 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	  832000 kB
+VmRSS:	  600000 kB
+RssAnon:	  550000 kB
+RssFile:	   45000 kB
+RssShmem:	    5000 kB
+VmData:	  400000 kB
+VmStk:	     132 kB
+VmExe:	     832 kB
+VmLib:	     656 kB
+VmPTE:	      44 kB
+VmSwap:	    1024 kB
+HugetlbPages:	       0 kB
+Threads:	10
+`
+
+	w := httptest.NewRecorder()
+	writeMemoryStatus(w, data)
+
+	body := w.Body.String()
+
+	expected := []struct {
+		metric string
+		value  string
+	}{
+		{"metrics_governor_os_memory_vm_peak_bytes", "1806336000"}, // 1764000 * 1024
+		{"metrics_governor_os_memory_vm_size_bytes", "1228800000"}, // 1200000 * 1024
+		{"metrics_governor_os_memory_vm_hwm_bytes", "851968000"},   // 832000 * 1024
+		{"metrics_governor_os_memory_rss_bytes", "614400000"},      // 600000 * 1024
+		{"metrics_governor_os_memory_rss_anon_bytes", "563200000"}, // 550000 * 1024
+		{"metrics_governor_os_memory_rss_file_bytes", "46080000"},  // 45000 * 1024
+		{"metrics_governor_os_memory_rss_shmem_bytes", "5120000"},  // 5000 * 1024
+		{"metrics_governor_os_memory_vm_data_bytes", "409600000"},  // 400000 * 1024
+		{"metrics_governor_os_memory_vm_stack_bytes", "135168"},    // 132 * 1024
+		{"metrics_governor_os_memory_vm_swap_bytes", "1048576"},    // 1024 * 1024
+	}
+
+	for _, exp := range expected {
+		line := exp.metric + " " + exp.value
+		if !strings.Contains(body, line) {
+			t.Errorf("Expected output to contain %q, got:\n%s", line, body)
+		}
+	}
+
+	// All should be gauge type
+	if !strings.Contains(body, "# TYPE metrics_governor_os_memory_rss_bytes gauge") {
+		t.Error("Missing gauge TYPE for rss_bytes")
+	}
+
+	// Non-memory fields should not appear
+	if strings.Contains(body, "Threads") || strings.Contains(body, "Name") {
+		t.Error("Non-memory fields should not be emitted")
+	}
+}
+
+// TestWriteMemoryStatusEmpty tests graceful handling of empty data.
+func TestWriteMemoryStatusEmpty(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeMemoryStatus(w, "")
+
+	if w.Body.String() != "" {
+		t.Error("Expected empty output for empty data")
+	}
+}
+
+// TestWriteMemoryStatusMalformed tests various malformed inputs.
+func TestWriteMemoryStatusMalformed(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+	}{
+		{"no colon", "VmRSS 600000 kB"},
+		{"no unit", "VmRSS:	600000"},
+		{"non-numeric", "VmRSS:	not_a_number kB"},
+		{"only spaces", "   "},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			writeMemoryStatus(w, tt.data)
+			// Should not panic
+		})
+	}
+}
+
+// TestWriteCgroupMemoryStat tests cgroup v2 memory.stat parsing.
+func TestWriteCgroupMemoryStat(t *testing.T) {
+	data := `anon 547655680
+file 4382720
+kernel 4333568
+kernel_stack 147456
+pagetables 3350528
+sec_pagetables 0
+percpu 35712
+sock 262144
+vmalloc 16384
+shmem 0
+zswap 0
+zswapped 0
+slab 731352
+inactive_anon 133009408
+active_anon 414580736
+inactive_file 2908160
+active_file 1478656
+pgfault 40242894
+pgmajfault 15
+`
+
+	w := httptest.NewRecorder()
+	writeCgroupMemoryStat(w, data)
+
+	body := w.Body.String()
+
+	expected := []struct {
+		metric string
+		value  string
+		mtype  string
+	}{
+		{"metrics_governor_cgroup_memory_anon_bytes", "547655680", "gauge"},
+		{"metrics_governor_cgroup_memory_file_bytes", "4382720", "gauge"},
+		{"metrics_governor_cgroup_memory_kernel_bytes", "4333568", "gauge"},
+		{"metrics_governor_cgroup_memory_kernel_stack_bytes", "147456", "gauge"},
+		{"metrics_governor_cgroup_memory_pagetables_bytes", "3350528", "gauge"},
+		{"metrics_governor_cgroup_memory_slab_bytes", "731352", "gauge"},
+		{"metrics_governor_cgroup_memory_sock_bytes", "262144", "gauge"},
+		{"metrics_governor_cgroup_memory_inactive_anon_bytes", "133009408", "gauge"},
+		{"metrics_governor_cgroup_memory_active_anon_bytes", "414580736", "gauge"},
+		{"metrics_governor_cgroup_memory_inactive_file_bytes", "2908160", "gauge"},
+		{"metrics_governor_cgroup_memory_active_file_bytes", "1478656", "gauge"},
+		{"metrics_governor_cgroup_memory_pgfault_total", "40242894", "counter"},
+		{"metrics_governor_cgroup_memory_pgmajfault_total", "15", "counter"},
+	}
+
+	for _, exp := range expected {
+		line := exp.metric + " " + exp.value
+		if !strings.Contains(body, line) {
+			t.Errorf("Expected output to contain %q", line)
+		}
+		typeComment := "# TYPE " + exp.metric + " " + exp.mtype
+		if !strings.Contains(body, typeComment) {
+			t.Errorf("Expected %q", typeComment)
+		}
+	}
+
+	// Fields we don't track should not appear
+	if strings.Contains(body, "percpu") || strings.Contains(body, "vmalloc") {
+		t.Error("Unexpected untracked field in output")
+	}
+}
+
+// TestWriteCgroupMemoryStatEmpty tests graceful handling of empty data.
+func TestWriteCgroupMemoryStatEmpty(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeCgroupMemoryStat(w, "")
+
+	if w.Body.String() != "" {
+		t.Error("Expected empty output for empty data")
+	}
+}
+
+// TestReadCgroupUint64 tests cgroup file reading helper.
+func TestReadCgroupUint64(t *testing.T) {
+	// Test "max" value (unlimited)
+	tmpFile := t.TempDir() + "/memory.max"
+	if err := os.WriteFile(tmpFile, []byte("max\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := readCgroupUint64(tmpFile)
+	if err == nil {
+		t.Error("Expected error for 'max' value")
+	}
+
+	// Test numeric value
+	tmpFile2 := t.TempDir() + "/memory.current"
+	if err := os.WriteFile(tmpFile2, []byte("3221225472\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	val, err := readCgroupUint64(tmpFile2)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if val != 3221225472 {
+		t.Errorf("Expected 3221225472, got %d", val)
+	}
+
+	// Test non-existent file
+	_, err = readCgroupUint64("/nonexistent/file")
+	if err == nil {
+		t.Error("Expected error for non-existent file")
 	}
 }

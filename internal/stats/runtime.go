@@ -129,6 +129,12 @@ func (r *RuntimeStats) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprintf(w, "# TYPE metrics_governor_go_info gauge\n")
 	fmt.Fprintf(w, "metrics_governor_go_info{version=%q} 1\n", runtime.Version())
 
+	// OS-level process memory (Linux only — /proc/self/status)
+	r.writeProcessMemoryStatus(w)
+
+	// Container/cgroup memory (Linux only — /sys/fs/cgroup/)
+	r.writeCgroupMemoryMetrics(w)
+
 	// PSI metrics (Linux only)
 	r.writePSIMetrics(w)
 
@@ -505,4 +511,199 @@ func writeNetworkIO(w http.ResponseWriter, data string) {
 	fmt.Fprintf(w, "# HELP metrics_governor_network_transmit_dropped_total Total transmit packets dropped\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_network_transmit_dropped_total counter\n")
 	fmt.Fprintf(w, "metrics_governor_network_transmit_dropped_total %d\n", totalTxDropped)
+}
+
+// writeProcessMemoryStatus writes real OS-level memory metrics from /proc/self/status.
+// These reflect the kernel's view of the process, not Go's internal bookkeeping.
+func (r *RuntimeStats) writeProcessMemoryStatus(w http.ResponseWriter) {
+	if runtime.GOOS != "linux" {
+		return
+	}
+
+	data, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return
+	}
+
+	writeMemoryStatus(w, string(data))
+}
+
+// writeMemoryStatus parses /proc/self/status and writes real memory metrics.
+// Fields are in kB and need conversion to bytes.
+func writeMemoryStatus(w http.ResponseWriter, data string) {
+	fields := map[string]string{
+		"VmPeak":   "metrics_governor_os_memory_vm_peak_bytes",
+		"VmSize":   "metrics_governor_os_memory_vm_size_bytes",
+		"VmHWM":    "metrics_governor_os_memory_vm_hwm_bytes",
+		"VmRSS":    "metrics_governor_os_memory_rss_bytes",
+		"RssAnon":  "metrics_governor_os_memory_rss_anon_bytes",
+		"RssFile":  "metrics_governor_os_memory_rss_file_bytes",
+		"RssShmem": "metrics_governor_os_memory_rss_shmem_bytes",
+		"VmData":   "metrics_governor_os_memory_vm_data_bytes",
+		"VmStk":    "metrics_governor_os_memory_vm_stack_bytes",
+		"VmSwap":   "metrics_governor_os_memory_vm_swap_bytes",
+	}
+
+	help := map[string]string{
+		"VmPeak":   "Peak virtual memory size (high-water mark)",
+		"VmSize":   "Current virtual memory size",
+		"VmHWM":    "Peak resident set size (high-water mark)",
+		"VmRSS":    "Current resident set size (physical memory)",
+		"RssAnon":  "Anonymous RSS (heap, stack, mmap'd private)",
+		"RssFile":  "File-backed RSS (shared libraries, mapped files)",
+		"RssShmem": "Shared memory RSS",
+		"VmData":   "Data + stack segment size",
+		"VmStk":    "Stack segment size",
+		"VmSwap":   "Swap usage",
+	}
+
+	for _, line := range strings.Split(data, "\n") {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		metricName, ok := fields[key]
+		if !ok {
+			continue
+		}
+
+		// Value is like "12345 kB"
+		valStr := strings.TrimSpace(parts[1])
+		valStr = strings.TrimSuffix(valStr, " kB")
+		valStr = strings.TrimSpace(valStr)
+		kbVal, err := strconv.ParseUint(valStr, 10, 64)
+		if err != nil {
+			continue
+		}
+		bytesVal := kbVal * 1024
+
+		fmt.Fprintf(w, "# HELP %s %s\n", metricName, help[key])
+		fmt.Fprintf(w, "# TYPE %s gauge\n", metricName)
+		fmt.Fprintf(w, "%s %d\n", metricName, bytesVal)
+	}
+}
+
+// writeCgroupMemoryMetrics writes container-level memory metrics from cgroup v2.
+// These are what Docker/Kubernetes actually use for limits and OOM decisions.
+func (r *RuntimeStats) writeCgroupMemoryMetrics(w http.ResponseWriter) {
+	if runtime.GOOS != "linux" {
+		return
+	}
+
+	// memory.current — what Docker reports as container memory usage
+	if val, err := readCgroupUint64("/sys/fs/cgroup/memory.current"); err == nil {
+		fmt.Fprintf(w, "# HELP metrics_governor_cgroup_memory_current_bytes Current cgroup memory usage (what Docker reports)\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_cgroup_memory_current_bytes gauge\n")
+		fmt.Fprintf(w, "metrics_governor_cgroup_memory_current_bytes %d\n", val)
+	}
+
+	// memory.max — the container memory limit
+	if val, err := readCgroupUint64("/sys/fs/cgroup/memory.max"); err == nil {
+		fmt.Fprintf(w, "# HELP metrics_governor_cgroup_memory_limit_bytes Cgroup memory limit (container memory limit)\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_cgroup_memory_limit_bytes gauge\n")
+		fmt.Fprintf(w, "metrics_governor_cgroup_memory_limit_bytes %d\n", val)
+	}
+
+	// memory.peak — highest memory.current ever reached
+	if val, err := readCgroupUint64("/sys/fs/cgroup/memory.peak"); err == nil {
+		fmt.Fprintf(w, "# HELP metrics_governor_cgroup_memory_peak_bytes Peak cgroup memory usage (high-water mark)\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_cgroup_memory_peak_bytes gauge\n")
+		fmt.Fprintf(w, "metrics_governor_cgroup_memory_peak_bytes %d\n", val)
+	}
+
+	// memory.swap.current — swap usage
+	if val, err := readCgroupUint64("/sys/fs/cgroup/memory.swap.current"); err == nil {
+		fmt.Fprintf(w, "# HELP metrics_governor_cgroup_swap_current_bytes Current cgroup swap usage\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_cgroup_swap_current_bytes gauge\n")
+		fmt.Fprintf(w, "metrics_governor_cgroup_swap_current_bytes %d\n", val)
+	}
+
+	// memory.stat — detailed breakdown
+	data, err := os.ReadFile("/sys/fs/cgroup/memory.stat")
+	if err != nil {
+		return
+	}
+
+	writeCgroupMemoryStat(w, string(data))
+}
+
+// writeCgroupMemoryStat parses cgroup memory.stat and writes key fields.
+func writeCgroupMemoryStat(w http.ResponseWriter, data string) {
+	fields := map[string]string{
+		"anon":          "metrics_governor_cgroup_memory_anon_bytes",
+		"file":          "metrics_governor_cgroup_memory_file_bytes",
+		"kernel":        "metrics_governor_cgroup_memory_kernel_bytes",
+		"kernel_stack":  "metrics_governor_cgroup_memory_kernel_stack_bytes",
+		"pagetables":    "metrics_governor_cgroup_memory_pagetables_bytes",
+		"slab":          "metrics_governor_cgroup_memory_slab_bytes",
+		"sock":          "metrics_governor_cgroup_memory_sock_bytes",
+		"inactive_anon": "metrics_governor_cgroup_memory_inactive_anon_bytes",
+		"active_anon":   "metrics_governor_cgroup_memory_active_anon_bytes",
+		"inactive_file": "metrics_governor_cgroup_memory_inactive_file_bytes",
+		"active_file":   "metrics_governor_cgroup_memory_active_file_bytes",
+		"pgfault":       "metrics_governor_cgroup_memory_pgfault_total",
+		"pgmajfault":    "metrics_governor_cgroup_memory_pgmajfault_total",
+	}
+
+	help := map[string]string{
+		"anon":          "Anonymous memory (heap, stack, mmap private)",
+		"file":          "File-backed memory (page cache)",
+		"kernel":        "Kernel memory (slab, stack, pagetables)",
+		"kernel_stack":  "Kernel stack memory",
+		"pagetables":    "Page table memory",
+		"slab":          "Slab allocator memory",
+		"sock":          "Socket buffer memory",
+		"inactive_anon": "Inactive anonymous pages (reclaimable under pressure)",
+		"active_anon":   "Active anonymous pages",
+		"inactive_file": "Inactive file pages (easily reclaimable)",
+		"active_file":   "Active file pages",
+		"pgfault":       "Total page faults",
+		"pgmajfault":    "Total major page faults (required disk I/O)",
+	}
+
+	metricType := map[string]string{
+		"pgfault":    "counter",
+		"pgmajfault": "counter",
+	}
+
+	for _, line := range strings.Split(data, "\n") {
+		parts := strings.Fields(line)
+		if len(parts) != 2 {
+			continue
+		}
+		key := parts[0]
+		metricName, ok := fields[key]
+		if !ok {
+			continue
+		}
+
+		val, err := strconv.ParseUint(parts[1], 10, 64)
+		if err != nil {
+			continue
+		}
+
+		mType := "gauge"
+		if t, ok := metricType[key]; ok {
+			mType = t
+		}
+
+		fmt.Fprintf(w, "# HELP %s %s\n", metricName, help[key])
+		fmt.Fprintf(w, "# TYPE %s %s\n", metricName, mType)
+		fmt.Fprintf(w, "%s %d\n", metricName, val)
+	}
+}
+
+// readCgroupUint64 reads a single uint64 value from a cgroup file.
+// Returns an error for "max" (unlimited) values.
+func readCgroupUint64(path string) (uint64, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	s := strings.TrimSpace(string(data))
+	if s == "max" {
+		return 0, fmt.Errorf("unlimited")
+	}
+	return strconv.ParseUint(s, 10, 64)
 }
