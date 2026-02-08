@@ -1,5 +1,36 @@
 # Limits Configuration
 
+## Table of Contents
+
+- [Architecture Overview](#architecture-overview)
+- [Configuration Structure](#configuration-structure)
+- [Actions](#actions)
+- [Adaptive Limiting (Recommended)](#adaptive-limiting-recommended)
+  - [How Adaptive Works](#how-adaptive-works)
+  - [Adaptive Configuration Example](#adaptive-configuration-example)
+- [Matching Rules](#matching-rules)
+- [Dry Run Mode](#dry-run-mode)
+- [Metadata Labels](#metadata-labels)
+- [Action Examples](#action-examples)
+  - [Adaptive Action (Intelligent Limiting)](#adaptive-action-intelligent-limiting)
+  - [Log Action (Monitoring Only)](#log-action-monitoring-only)
+  - [Drop Action (Hard Limit)](#drop-action-hard-limit)
+- [Complete Configuration Example](#complete-configuration-example)
+- [Rule Matching Cache](#rule-matching-cache)
+  - [How It Works](#how-it-works)
+  - [Configuration](#configuration)
+  - [Cache Metrics](#cache-metrics)
+- [Cardinality Tracking Modes](#cardinality-tracking-modes)
+  - [Configuration with Limits](#configuration-with-limits)
+- [Per-Group Stats Threshold](#per-group-stats-threshold)
+  - [Configuration](#configuration-1)
+  - [What Gets Filtered](#what-gets-filtered)
+  - [Performance Impact](#performance-impact)
+  - [Recommended Settings](#recommended-settings)
+  - [Monitoring](#monitoring)
+- [Prometheus Metrics](#prometheus-metrics)
+- [Dynamic Config Reload](#dynamic-config-reload)
+
 Limits are configured via a YAML file specified with `-limits-config`. See [examples/limits.yaml](../examples/limits.yaml) for a complete example.
 
 > **Dual Pipeline Support**: Limits work identically for both OTLP and PRW pipelines. The same configuration file applies to both - they are completely separate pipelines using the same rules.

@@ -1,5 +1,34 @@
 # Cardinality Tracking Modes
 
+## Table of Contents
+
+- [Mode Comparison](#mode-comparison)
+- [Bloom Filter Mode](#bloom-filter-mode)
+  - [How It Works](#how-it-works)
+  - [Memory Sizing](#memory-sizing)
+  - [Configuration](#configuration)
+  - [When to Use](#when-to-use)
+- [HyperLogLog Mode](#hyperloglog-mode)
+  - [How It Works](#how-it-works-1)
+  - [Key Characteristics](#key-characteristics)
+  - [Configuration](#configuration-1)
+  - [When to Use](#when-to-use-1)
+  - [Limitations](#limitations)
+- [Hybrid Mode](#hybrid-mode)
+  - [How It Works](#how-it-works-2)
+  - [Switch Behavior](#switch-behavior)
+  - [Configuration](#configuration-2)
+  - [Threshold Tuning](#threshold-tuning)
+  - [When to Use](#when-to-use-2)
+- [Configuration Reference](#configuration-reference)
+  - [CLI Flags](#cli-flags)
+  - [YAML Configuration](#yaml-configuration)
+- [Prometheus Metrics](#prometheus-metrics)
+  - [Monitoring Queries](#monitoring-queries)
+- [Production Recommendations](#production-recommendations)
+  - [With Bloom Persistence](#with-bloom-persistence)
+- [See Also](#see-also)
+
 metrics-governor supports three cardinality tracking modes for efficient metric series counting: **Bloom filter** (default), **HyperLogLog**, and **Hybrid** (auto-switching). Each mode trades off between memory usage, accuracy, and feature support.
 
 ## Mode Comparison

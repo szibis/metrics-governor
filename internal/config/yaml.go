@@ -11,6 +11,13 @@ import (
 
 // YAMLConfig represents the YAML configuration file structure.
 type YAMLConfig struct {
+	// Profile & simplified config (top-level)
+	Profile         string   `yaml:"profile"`
+	Parallelism     *int     `yaml:"parallelism"`
+	MemoryBudgetPct *float64 `yaml:"memory_budget_percent"`
+	ExportTimeout   Duration `yaml:"export_timeout"`
+	ResilienceLevel string   `yaml:"resilience_level"`
+
 	Receiver    ReceiverYAMLConfig    `yaml:"receiver"`
 	Exporter    ExporterYAMLConfig    `yaml:"exporter"`
 	Buffer      BufferYAMLConfig      `yaml:"buffer"`
@@ -702,6 +709,11 @@ func (y *YAMLConfig) ApplyDefaults() {
 // ToConfig converts YAMLConfig to the flat Config struct.
 func (y *YAMLConfig) ToConfig() *Config {
 	cfg := &Config{
+		// Profile & simplified config
+		Profile:           y.Profile,
+		ExportTimeoutBase: time.Duration(y.ExportTimeout),
+		ResilienceLevel:   y.ResilienceLevel,
+
 		// Receiver
 		GRPCListenAddr: y.Receiver.GRPC.Address,
 		HTTPListenAddr: y.Receiver.HTTP.Address,
@@ -869,6 +881,14 @@ func (y *YAMLConfig) ToConfig() *Config {
 		TelemetryRetryMaxInterval: time.Duration(y.Telemetry.Retry.MaxInterval),
 		TelemetryRetryMaxElapsed:  time.Duration(y.Telemetry.Retry.MaxElapsed),
 		TelemetryHeaders:          headersMapToString(y.Telemetry.Headers),
+	}
+
+	// Handle pointer-typed YAML fields (distinguish unset from zero)
+	if y.Parallelism != nil {
+		cfg.Parallelism = *y.Parallelism
+	}
+	if y.MemoryBudgetPct != nil {
+		cfg.MemoryBudgetPct = *y.MemoryBudgetPct
 	}
 
 	return cfg

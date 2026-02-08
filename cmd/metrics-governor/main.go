@@ -58,19 +58,71 @@ func main() {
 
 	cfg := config.ParseFlags()
 
+	// Handle early-exit introspection flags (--show-profile, --show-deprecations, --help, --version)
+	if config.HandleEarlyExits(cfg) {
+		os.Exit(0)
+	}
+
+	// Collect explicitly-set CLI flags for profile/derivation precedence
+	explicitFields := config.ExplicitFlags()
+
+	// Apply configuration profile (balanced is default)
+	// Profile values only fill fields NOT explicitly set by the user
+	if cfg.Profile != "" {
+		if err := config.ApplyProfile(cfg, config.ProfileName(cfg.Profile), explicitFields); err != nil {
+			fmt.Fprintf(os.Stderr, "Error applying profile: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	// Re-apply CLI overrides after profile (CLI always wins)
+	config.ReapplyFlagOverrides(cfg)
+
+	// Expand consolidated params (parallelism → workers, timeout → cascade, etc.)
+	consolidatedDerived := config.ExpandConsolidatedParams(cfg, explicitFields)
+
+	// Auto-derive resource-based values (CPU count, memory limits)
+	resources := config.DetectResources()
+	autoDerived := config.AutoDerive(cfg, resources, explicitFields)
+	allDerived := append(consolidatedDerived, autoDerived...)
+
+	// Check deprecation warnings
+	deprecationRegistry := config.NewDeprecationRegistry(config.GetVersion())
+	for _, entry := range config.DefaultDeprecations() {
+		deprecationRegistry.Register(entry)
+	}
+	deprecationWarnings := deprecationRegistry.CheckAndWarn(explicitFields)
+
+	// Handle --show-effective-config (after full pipeline)
+	if cfg.ShowEffectiveConfig {
+		result := &config.BuildResult{
+			Config:         cfg,
+			ExplicitFields: explicitFields,
+			ProfileApplied: config.ProfileName(cfg.Profile),
+			Derivations:    allDerived,
+			Deprecations:   deprecationWarnings,
+		}
+		fmt.Println(config.DumpEffectiveConfig(result))
+		os.Exit(0)
+	}
+
+	// Handle --strict-deprecations
+	if cfg.StrictDeprecations {
+		if err := config.CheckStrictDeprecations(deprecationWarnings); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	// Re-validate after profile + derivation
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Auto-detect and set GOMEMLIMIT based on container memory limits (cgroups)
 	// Uses configurable ratio (default 90%) to leave headroom for other processes
 	initMemoryLimit(cfg.MemoryLimitRatio)
-
-	if cfg.ShowHelp {
-		config.PrintUsage()
-		os.Exit(0)
-	}
-
-	if cfg.ShowVersion {
-		config.PrintVersion()
-		os.Exit(0)
-	}
 
 	// Set OTEL-compatible resource attributes for structured logging
 	logging.SetResource(map[string]string{

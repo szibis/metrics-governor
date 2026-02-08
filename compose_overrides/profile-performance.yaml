@@ -1,0 +1,94 @@
+# Performance profile stress test - push to resource limits with full pipeline
+# Usage: docker compose -f docker-compose.yaml -f compose_overrides/profile-performance.yaml up -d
+#
+# Tests the performance profile at its resource ceiling:
+# - 4 CPU, 4 GB memory, disk queue
+# - Generator sends ~500k dps (profile's max throughput)
+# - Pipeline split, adaptive workers, batch auto-tune ALL active
+# - Verifier threshold 98%
+
+services:
+  metrics-generator:
+    environment:
+      - OTLP_ENDPOINT=otel-collector:4317
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=lowmemory
+      - METRICS_INTERVAL=50ms
+      - SERVICES=payment-api,order-api,inventory-api,user-api,auth-api,billing-api,search-api,analytics-api
+      - ENVIRONMENTS=prod,staging,dev,qa
+      - ENABLE_EDGE_CASES=true
+      - ENABLE_HIGH_CARDINALITY=true
+      - ENABLE_BURST_TRAFFIC=true
+      - ENABLE_DIVERSE_METRICS=true
+      - HIGH_CARDINALITY_COUNT=500
+      - DIVERSE_METRIC_COUNT=300
+      - BURST_SIZE=10000
+      - BURST_INTERVAL_SEC=10
+      - TARGET_METRICS_PER_SEC=200000
+      - TARGET_DATAPOINTS_PER_SEC=500000
+      - STATS_INTERVAL_SEC=5
+      - ENABLE_SPIKE_SCENARIOS=true
+      - SPIKE_MODE=realistic
+      - SPIKE_CARDINALITY=1000
+      - SPIKE_DURATION_SEC=30
+      - SPIKE_INTERVAL_MIN_SEC=10
+      - SPIKE_INTERVAL_MAX_SEC=20
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: "4"
+
+  metrics-governor:
+    command:
+      - "--profile=performance"
+      - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
+      - "-exporter-protocol=http"
+      - "-exporter-insecure=true"
+      - "-exporter-compression=zstd"
+      - "-stats-labels=service,env"
+      - "-limits-config=/etc/metrics-governor/limits.yaml"
+      - "-limits-dry-run=false"
+      - "-queue-path=/data/queue"
+    volumes:
+      - ./examples/limits.yaml:/etc/metrics-governor/limits.yaml:ro
+      - mg-queue-perf-profile-data:/data/queue
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "4"
+
+  otel-collector:
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
+
+  victoriametrics:
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+          cpus: "4"
+    command:
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=1d"
+      - "--search.latencyOffset=0s"
+      - "--promscrape.config=/etc/victoriametrics/scrape.yaml"
+      - "--maxInsertRequestSize=256MB"
+      - "--opentelemetry.maxRequestSize=256MB"
+      - "--opentelemetry.convertMetricNamesToPrometheus"
+      - "--memory.allowedPercent=85"
+      - "--search.maxUniqueTimeseries=5000000"
+      - "--search.maxConcurrentRequests=64"
+
+  verifier:
+    environment:
+      - CHECK_INTERVAL=10s
+      - PASS_THRESHOLD=98.0
+
+volumes:
+  mg-queue-perf-profile-data:
+    driver: local
