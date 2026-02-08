@@ -41,7 +41,7 @@ jobs:
         id: run
         run: |
           set +e
-          go test -race -run 'TestDataIntegrity_' -count=1 -timeout=5m -v ./internal/... 2>&1 | tee results.txt
+          go test -run 'TestDataIntegrity_' -timeout=5m -v ./internal/... 2>&1 | tee results.txt
           EXIT_CODE=${PIPESTATUS[0]}
 
           PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
@@ -86,7 +86,7 @@ jobs:
         id: run
         run: |
           set +e
-          go test -race -run 'TestDurability_' -count=1 -timeout=5m -v ./internal/... 2>&1 | tee results.txt
+          go test -run 'TestDurability_' -timeout=5m -v ./internal/... 2>&1 | tee results.txt
           EXIT_CODE=${PIPESTATUS[0]}
 
           PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
@@ -131,7 +131,7 @@ jobs:
         id: run
         run: |
           set +e
-          go test -race -run 'TestResilience_' -count=1 -timeout=5m -v ./internal/... 2>&1 | tee results.txt
+          go test -run 'TestResilience_' -timeout=5m -v ./internal/... 2>&1 | tee results.txt
           EXIT_CODE=${PIPESTATUS[0]}
 
           PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
@@ -176,7 +176,7 @@ jobs:
         id: run
         run: |
           set +e
-          go test -race -run 'TestConsistency_' -count=1 -timeout=5m -v ./internal/... 2>&1 | tee results.txt
+          go test -run 'TestConsistency_' -timeout=5m -v ./internal/... 2>&1 | tee results.txt
           EXIT_CODE=${PIPESTATUS[0]}
 
           PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
