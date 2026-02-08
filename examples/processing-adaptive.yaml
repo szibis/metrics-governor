@@ -1,0 +1,54 @@
+# Processing Rules — Adaptive Downsampling Examples
+#
+# Adaptive downsampling dynamically adjusts keep rate based on signal variance:
+#   Stable → drop most (min_rate)
+#   Volatile → keep most (max_rate)
+
+staleness_interval: 10m
+
+rules:
+  # Server room temperature: mostly constant, spikes on AC failure
+  # Normal day: 1440 → 72 points. AC failure event: all points preserved.
+  - name: temp-adaptive
+    input: "sensor_temperature_celsius"
+    action: downsample
+    method: adaptive
+    interval: 1m
+    min_rate: 0.05     # 5% during stable (24°C ± 0.1°C)
+    max_rate: 1.0      # 100% during anomaly
+    variance_window: 50 # larger window = fewer false positives
+
+  # Node-level metrics: DaemonSet aggressive pre-processing
+  - name: node-metrics-adaptive
+    input: "node_(cpu|memory|disk|network)_.*"
+    action: downsample
+    method: adaptive
+    interval: 30s
+    min_rate: 0.1
+    max_rate: 1.0
+    variance_window: 30
+
+  # Business metrics: keep more during variance
+  - name: business-adaptive
+    input: "(revenue|orders|conversions)_.*"
+    action: downsample
+    method: adaptive
+    interval: 15s
+    min_rate: 0.5      # never drop below 50% for business metrics
+    max_rate: 1.0
+    variance_window: 20
+
+  # SDT for near-constant signals (complementary to adaptive)
+  - name: temperature-sdt
+    input: "sensor_humidity_.*"
+    action: downsample
+    method: sdt
+    deviation: 0.5     # deadband — compress near-constant signals
+
+  # LTTB for visual-preserving downsample
+  - name: latency-shape
+    input: "http_request_latency_.*"
+    action: downsample
+    method: lttb
+    interval: 5m
+    resolution: 20     # 20 points per 5m window (preserves spikes)

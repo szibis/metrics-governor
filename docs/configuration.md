@@ -231,7 +231,7 @@ The OTLP exporter supports any OTLP-compatible backend via gRPC or HTTP protocol
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-limits-config` | | Path to limits configuration YAML file |
-| `-limits-dry-run` | `true` | Dry run mode: log violations but don't drop/sample |
+| `-limits-dry-run` | `true` | Dry run mode: log violations but don't enforce |
 
 ### Queue Options (FastQueue)
 
@@ -647,7 +647,7 @@ metrics-governor -queue-workers 64 -buffer-size 100000 -batch-size 5000 -max-bat
 # Enable limits enforcement (dry-run by default)
 metrics-governor -limits-config /etc/metrics-governor/limits.yaml
 
-# Enable limits enforcement with actual drop/sample
+# Enable limits enforcement with actual enforcement
 metrics-governor -limits-config /etc/metrics-governor/limits.yaml -limits-dry-run=false
 ```
 

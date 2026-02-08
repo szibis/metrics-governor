@@ -1,0 +1,108 @@
+# Processing Rules — Tier 2: StatefulSet Gateway Global Aggregation
+#
+# Deploy as a StatefulSet (2-3 replicas). Receives pre-processed data from
+# all Tier 1 DaemonSets. Performs cross-node aggregation and final cardinality
+# reduction before sending to long-term storage.
+#
+# Architecture:
+#   Tier 1 (DaemonSet) → Tier 2 (StatefulSet, this config) → VictoriaMetrics/Thanos
+#
+# Expected reduction: 5-20x additional on top of Tier 1 processing.
+
+staleness_interval: 15m
+
+rules:
+  # ── Cross-Node Aggregation ────────────────────────────────────────
+
+  # Aggregate CPU across all nodes by cluster
+  - name: cluster-cpu
+    input: "node_cpu_seconds_total"
+    output: "cluster_cpu_seconds_total"
+    action: aggregate
+    interval: 1m
+    group_by: [cluster, mode]
+    functions: [sum, avg]
+    keep_input: false
+
+  # Aggregate memory by cluster
+  - name: cluster-memory
+    input: "node_memory_.*"
+    output: "cluster_memory"
+    action: aggregate
+    interval: 1m
+    group_by: [cluster]
+    functions: [sum, avg, max]
+    keep_input: false
+
+  # Aggregate network by cluster and interface type
+  - name: cluster-network
+    input: "node_network_.*"
+    output: "cluster_network"
+    action: aggregate
+    interval: 1m
+    group_by: [cluster, device]
+    functions: [sum]
+    keep_input: false
+
+  # ── Application Metric Aggregation ────────────────────────────────
+
+  # HTTP requests: aggregate by service, dropping pod-level detail
+  - name: http-by-service
+    input: "http_requests_total"
+    output: "http_requests_by_service"
+    action: aggregate
+    interval: 30s
+    group_by: [service, method, status_code, env]
+    functions: [sum]
+    keep_input: false
+
+  # HTTP latency: compute percentiles by service
+  - name: http-latency-percentiles
+    input: "http_request_duration_seconds"
+    action: aggregate
+    interval: 1m
+    group_by: [service, method]
+    functions: [avg, quantiles(0.5, 0.9, 0.95, 0.99)]
+    keep_input: false
+
+  # gRPC requests: aggregate by service
+  - name: grpc-by-service
+    input: "grpc_server_handled_total"
+    output: "grpc_requests_by_service"
+    action: aggregate
+    interval: 30s
+    group_by: [grpc_service, grpc_method, grpc_code]
+    functions: [sum]
+    keep_input: false
+
+  # ── Kubernetes Pod Churn Reduction ────────────────────────────────
+
+  # Strip pod-specific labels from kube-state-metrics
+  - name: kube-strip-pods
+    input: "kube_pod_.*"
+    action: aggregate
+    interval: 1m
+    drop_labels: [pod, pod_ip, uid, container_id, instance]
+    functions: [last]
+    keep_input: false
+
+  # Deployment-level rollup
+  - name: kube-deployments
+    input: "kube_deployment_.*"
+    action: aggregate
+    interval: 1m
+    drop_labels: [instance, pod]
+    functions: [last]
+    keep_input: false
+
+  # ── Final Safety Drops ────────────────────────────────────────────
+
+  # Drop any remaining internal metrics that slipped through
+  - name: drop-internal
+    input: "internal_.*"
+    action: drop
+
+  # Drop test/debug metrics
+  - name: drop-debug
+    input: "debug_.*"
+    action: drop

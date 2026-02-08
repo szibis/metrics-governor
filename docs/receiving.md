@@ -57,7 +57,7 @@ graph LR
 
         subgraph Processing Pipeline
             ST[Stats Collection]
-            SA[Sampling]
+            SA[Processing]
             TE[Tenant Detection]
             LI[Limits Enforcement]
         end
@@ -382,7 +382,7 @@ sequenceDiagram
     R->>B: buffer.Add(resourceMetrics)
 
     alt Buffer has capacity
-        B->>B: Stats + Sampling + Limits
+        B->>B: Stats + Processing + Limits
         B-->>R: nil (success)
         R-->>C: 200 OK / gRPC OK / 204 No Content
     else Buffer full (reject policy)
@@ -391,13 +391,13 @@ sequenceDiagram
         Note over C: Client retries with backoff
     else Buffer full (drop_oldest policy)
         B->>B: Evict oldest entries
-        B->>B: Stats + Sampling + Limits
+        B->>B: Stats + Processing + Limits
         B-->>R: nil (success)
         R-->>C: 200 OK / gRPC OK / 204 No Content
     else Buffer full (block policy)
         B->>B: Wait for space (cond.Wait)
         Q->>B: Flush completes, signal spaceCond
-        B->>B: Stats + Sampling + Limits
+        B->>B: Stats + Processing + Limits
         B-->>R: nil (success)
         R-->>C: 200 OK / gRPC OK / 204 No Content
     end
@@ -446,8 +446,8 @@ sequenceDiagram
     B->>ST: Process() + RecordReceived()
     Note over ST: Count datapoints,<br/>track labels,<br/>estimate bytes
 
-    B->>SA: Sample(resourceMetrics)
-    Note over SA: Hash-based sampling,<br/>head/tail sampling
+    B->>SA: Process(resourceMetrics)
+    Note over SA: Processing rules:<br/>sample/downsample/aggregate/transform/drop
 
     B->>TP: ProcessBatch(rm, headerTenant)
     Note over TP: Detect tenant,<br/>apply per-tenant quotas
@@ -477,7 +477,7 @@ Each pipeline stage is instrumented with `pipeline.Record()` for latency trackin
 | Decompression | `receive_decompress` | Content-Encoding decompression time and bytes |
 | Unmarshal | `receive_unmarshal` | Protobuf/JSON decode time and bytes |
 | Stats | `stats` | Stats collection processing time |
-| Sampling | `sampling` | Sampling filter processing time |
+| Processing | `processing` | Processing rules evaluation time |
 | Tenant | `tenant` | Tenant detection and quota enforcement time |
 | Limits | `limits` | Limits enforcement processing time |
 | Batch Split | `batch_split` | Batch splitting by count and bytes |

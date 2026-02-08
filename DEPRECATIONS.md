@@ -3,6 +3,8 @@
 ## Table of Contents
 
 - [Active Deprecations](#active-deprecations)
+  - [v0.34.0 — Processing Rules](#v0340--processing-rules)
+    - [Sampling to Processing Migration](#sampling-to-processing-migration)
   - [v0.30.0 — Configuration Simplification](#v0300--configuration-simplification)
     - [Parallelism Consolidation](#parallelism-consolidation)
     - [Memory Budget Consolidation](#memory-budget-consolidation)
@@ -21,6 +23,43 @@ Use `--show-deprecations` to see the current status of all deprecations at runti
 Use `--strict-deprecations` in CI to fail on removed parameters.
 
 ## Active Deprecations
+
+### v0.34.0 — Processing Rules
+
+The sampling system has been replaced by the unified Processing Rules engine.
+All deprecated parameters continue to work identically — they are not removed.
+
+#### Sampling to Processing Migration
+
+| Parameter | Replacement | Stage | Removal Target |
+|-----------|-------------|-------|---------------|
+| `--sampling-config` | `--processing-config` | Announced | v1.0 |
+| `sampling.enabled` (Helm) | `processing.enabled` | Announced | v1.0 |
+| `metrics_governor_sampling_*` | `metrics_governor_processing_*` | Announced | v1.0 |
+| `metrics_governor_downsampling_*` | `metrics_governor_processing_*` | Announced | v1.0 |
+
+**Migration:** Replace `--sampling-config=sampling.yaml` with `--processing-config=processing.yaml`. The old YAML format (with `default_rate`, `strategy`, individual `rules`) is auto-detected and converted internally. New format uses unified `rules` with explicit `action` field. See [docs/processing-rules.md](docs/processing-rules.md) for the full reference.
+
+In Helm, replace:
+```yaml
+sampling:
+  enabled: true
+  config: |
+    default_rate: 1.0
+    rules: [...]
+```
+with:
+```yaml
+processing:
+  enabled: true
+  config: |
+    staleness_interval: 10m
+    rules:
+      - name: my-rule
+        input: ".*"
+        action: sample
+        rate: 1.0
+```
 
 ### v0.30.0 — Configuration Simplification
 

@@ -321,6 +321,22 @@ var knownMetrics = []string{
 	"metrics_governor_cgroup_memory_pgmajfault_total",
 	"metrics_governor_cgroup_swap_current_bytes",
 
+	// Processing rules metrics (sampling/processing_metrics.go)
+	"metrics_governor_processing_aggregate_flush_duration_seconds_bucket",
+	"metrics_governor_processing_aggregate_groups_active",
+	"metrics_governor_processing_aggregate_stale_cleaned_total",
+	"metrics_governor_processing_duration_seconds_bucket",
+	"metrics_governor_processing_input_datapoints_total",
+	"metrics_governor_processing_output_datapoints_total",
+	"metrics_governor_processing_rule_dropped_total",
+	"metrics_governor_processing_rule_input_total",
+	"metrics_governor_processing_rule_output_total",
+	"metrics_governor_processing_rules_active",
+	"metrics_governor_processing_transform_labels_added_total",
+	"metrics_governor_processing_transform_labels_modified_total",
+	"metrics_governor_processing_transform_labels_removed_total",
+	"metrics_governor_processing_transform_operations_total",
+
 	// Pipeline component timing (pipeline/timing.go)
 	"metrics_governor_component_seconds_total",
 	"metrics_governor_component_bytes_processed_total",

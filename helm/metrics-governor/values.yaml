@@ -228,7 +228,22 @@ relabeling:
   config: |
     relabel_configs: []
 
-# -- Sampling configuration (creates ConfigMap)
+# -- Processing rules configuration (creates ConfigMap)
+# Unified processing engine: sample, downsample, aggregate, transform, drop.
+# See docs/processing-rules.md for full reference.
+processing:
+  # -- Enable processing rules (takes precedence over sampling)
+  enabled: false
+  # -- Use existing ConfigMap for processing
+  existingConfigMap: ""
+  # -- Processing rules configuration content
+  config: |
+    staleness_interval: 10m
+    rules: []
+
+# -- Sampling configuration (DEPRECATED: use processing instead)
+# Kept for backward compatibility. If processing.enabled is true,
+# sampling is ignored.
 sampling:
   # -- Enable metric sampling
   enabled: false
@@ -349,6 +364,12 @@ alerting:
     workerUtilization: 0.90
     # -- Config staleness (seconds, 86400 = 24h)
     configStaleness: 86400
+    # -- Processing duration P99 threshold (seconds, 0.1 = 100ms)
+    processingDurationP99: 0.1
+    # -- Aggregate group count limit before warning
+    aggregateGroupLimit: 100000
+    # -- Processing drop rate threshold (0.0-1.0, 0.95 = 95%)
+    processingDropRate: 0.95
   # -- Disable specific alerts by name
   disabledAlerts: []
   #   - MetricsGovernorConfigStale

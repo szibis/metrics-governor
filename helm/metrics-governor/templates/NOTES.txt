@@ -61,9 +61,17 @@ To enable relabeling, set:
   relabeling.enabled=true
 {{- end }}
 
-{{- if .Values.sampling.enabled }}
+{{- if .Values.processing.enabled }}
 
-Metric sampling is ENABLED.
+Processing rules are ENABLED.
+{{- if .Values.processing.existingConfigMap }}
+  Config: Using existing ConfigMap '{{ .Values.processing.existingConfigMap }}'
+{{- else }}
+  Config: {{ include "metrics-governor.processingConfigMapName" . }}
+{{- end }}
+{{- else if .Values.sampling.enabled }}
+
+Metric sampling is ENABLED (deprecated: use processing.enabled instead).
 {{- if .Values.sampling.existingConfigMap }}
   Config: Using existing ConfigMap '{{ .Values.sampling.existingConfigMap }}'
 {{- else }}
@@ -71,9 +79,9 @@ Metric sampling is ENABLED.
 {{- end }}
 {{- else }}
 
-Metric sampling is DISABLED.
-To enable sampling, set:
-  sampling.enabled=true
+Processing rules are DISABLED.
+To enable processing, set:
+  processing.enabled=true
 {{- end }}
 
 {{- if .Values.tenancy.enabled }}

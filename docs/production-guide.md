@@ -146,7 +146,7 @@ How each metrics-governor feature reduces your metrics bill:
 | **Adaptive Limiting** | 15-30% series | $600-$1,200/mo |
 | **Stats Threshold** | 40-50% scrape bytes | TSDB storage savings |
 | **Cardinality Tracking** | Prevents 10-100x blow-ups | Prevents $4K-$40K incidents |
-| **Sampling** | 50-90% for sampled metrics | $200-$800/mo |
+| **Processing Rules** | 50-90% for processed metrics | $200-$800/mo |
 | **Relabeling** | 10-20% series | $400-$800/mo |
 | **Multi-tenancy Quotas** | Per-tenant caps | Prevents surprise bills |
 | **Compression (zstd)** | 60% network bytes | $5-$50/mo network |
@@ -639,7 +639,7 @@ podDisruptionBudget:
 
 ### ConfigMap Reload
 
-For hot-reloading limits, relabeling, and sampling configs without pod restart:
+For hot-reloading limits, relabeling, and processing configs without pod restart:
 
 ```yaml
 configReload:
@@ -950,7 +950,7 @@ Without Kubernetes ConfigMap + sidecar, use file-based reload with SIGHUP:
 # Edit config
 vim /etc/metrics-governor/config.yaml
 
-# Trigger reload (limits, relabeling, sampling rules only)
+# Trigger reload (limits, relabeling, processing rules only)
 kill -HUP $(pidof metrics-governor)
 ```
 
@@ -1582,7 +1582,7 @@ All CLI flags can also be set via the YAML config file. The config file is the r
 | `-limits-stats-threshold` | `0` | Min datapoints/cardinality for group reporting |
 | `-rule-cache-max-size` | `10000` | LRU cache size for rule matching |
 | `-relabel-config` | `""` | Path to relabeling configuration file |
-| `-sampling-config` | `""` | Path to sampling configuration file |
+| `-processing-config` | `""` | Path to processing rules configuration file |
 | `-cardinality-mode` | `exact` | Cardinality mode: `exact`, `bloom`, `hll`, `hybrid` |
 | `-cardinality-expected-items` | `100000` | Expected items for bloom filter |
 | `-cardinality-fp-rate` | `0.01` | False positive rate for bloom filter |

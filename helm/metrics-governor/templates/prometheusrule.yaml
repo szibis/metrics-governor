@@ -165,6 +165,47 @@ spec:
             runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorconfigstale"
         {{- end }}
 
+        {{- if not (has "MetricsGovernorProcessingOverloaded" .Values.alerting.disabledAlerts) }}
+        - alert: MetricsGovernorProcessingOverloaded
+          expr: |
+            histogram_quantile(0.99, rate(metrics_governor_processing_duration_seconds_bucket[5m]))
+            > {{ .Values.alerting.thresholds.processingDurationP99 | default 0.1 }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "metrics-governor processing rules taking too long"
+            description: "{{`{{ $labels.instance }}`}} P99 processing duration > {{`{{ $value | humanizeDuration }}`}}."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorprocessingoverloaded"
+        {{- end }}
+
+        {{- if not (has "MetricsGovernorAggregateGroupExplosion" .Values.alerting.disabledAlerts) }}
+        - alert: MetricsGovernorAggregateGroupExplosion
+          expr: sum(metrics_governor_processing_aggregate_groups_active) > {{ .Values.alerting.thresholds.aggregateGroupLimit | default 100000 }}
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "metrics-governor too many aggregate groups"
+            description: "{{`{{ $labels.instance }}`}} has {{`{{ $value }}`}} active aggregate groups."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernoraggregategroupexplosion"
+        {{- end }}
+
+        {{- if not (has "MetricsGovernorProcessingHighDropRate" .Values.alerting.disabledAlerts) }}
+        - alert: MetricsGovernorProcessingHighDropRate
+          expr: |
+            rate(metrics_governor_processing_dropped_datapoints_total[5m])
+            / clamp_min(rate(metrics_governor_processing_input_datapoints_total[5m]), 0.001)
+            > {{ .Values.alerting.thresholds.processingDropRate | default 0.95 }}
+          for: 5m
+          labels:
+            severity: info
+          annotations:
+            summary: "metrics-governor processing dropping >95% of datapoints"
+            description: "{{`{{ $labels.instance }}`}} processing rules are very aggressive — verify this is intentional."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorprocessinghighdroprate"
+        {{- end }}
+
         {{- with .Values.alerting.additionalRules }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

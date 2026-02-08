@@ -17,12 +17,12 @@
 [![Coverage](https://img.shields.io/badge/Coverage-88%25-brightgreen?style=flat&logo=codecov&logoColor=white)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
 [![Race Detector](https://img.shields.io/badge/Race_Detector-passing-success?style=flat&logo=go&logoColor=white)](docs/testing.md)
 [![Go Lines](https://img.shields.io/badge/Go_Code-115k_lines-informational?style=flat&logo=go&logoColor=white)](.)
-[![Docs](https://img.shields.io/badge/Docs-26_guides-8A2BE2?style=flat&logo=readthedocs&logoColor=white)](docs/)
+[![Docs](https://img.shields.io/badge/Docs-28_guides-8A2BE2?style=flat&logo=readthedocs&logoColor=white)](docs/)
 [![Benchmarks](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml)
 
 [![OTLP](https://img.shields.io/badge/OTLP-gRPC_%7C_HTTP-4a90d9?style=flat&logo=opentelemetry&logoColor=white)](docs/receiving.md)
 [![PRW](https://img.shields.io/badge/PRW-1.0_%7C_2.0-e8833a?style=flat&logo=prometheus&logoColor=white)](docs/receiving.md#prometheus-remote-write-receiver)
-[![Alerts](https://img.shields.io/badge/Alerts-10_Rules_%2B_Runbooks-dc3545?style=flat&logo=prometheus&logoColor=white)](docs/alerting.md)
+[![Alerts](https://img.shields.io/badge/Alerts-13_Rules_%2B_Runbooks-dc3545?style=flat&logo=prometheus&logoColor=white)](docs/alerting.md)
 [![Helm Chart](https://img.shields.io/badge/Helm-Chart_Included-0F1689?style=flat&logo=helm&logoColor=white)](helm/metrics-governor/)
 [![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F46800?style=flat&logo=grafana&logoColor=white)](dashboards/)
 [![Playground](https://img.shields.io/badge/Playground-Config_Tool-20c997?style=flat&logo=googlechrome&logoColor=white)](https://szibis.github.io/metrics-governor/)
@@ -44,10 +44,12 @@
 | **Data loss during outages** | **Always-queue + circuit breaker + persistent queue** with backpressure (429/ResourceExhausted), batch/burst drain, and exponential backoff |
 | **No visibility** into metrics pipeline | **Real-time statistics** with per-metric cardinality, datapoints, and Prometheus metrics |
 | **Unpredictable costs** from runaway metrics | **Per-group tracking** with configurable limits and dry-run mode for safe testing |
+| **Raw metrics volume** too high for storage | **Processing rules** — sample, downsample, aggregate, transform, or drop metrics in-flight before they reach your backend |
 
 ## Key Features
 
 - **Dual Protocol Support** - Native OTLP (gRPC/HTTP) and Prometheus Remote Write (PRW 1.0/2.0) pipelines, each running independently with zero conversion overhead
+- **Unified Processing Rules** - Five processing actions (sample, downsample, aggregate, transform, drop) handle all metric transformation in-flight: cross-series aggregation reduces cardinality, adaptive downsampling preserves signal fidelity, label transforms normalize naming conventions, and drop rules eliminate noise before storage
 - **Intelligent Limiting** - Unlike simple rate limiters that drop everything, metrics-governor identifies and drops only the top offenders while preserving data from well-behaved services
 - **Consistent Sharding** - Automatic endpoint discovery from Kubernetes headless services with consistent hashing ensures the same time-series always route to the same backend (works for both OTLP and PRW)
 - **Pipeline Parity** - OTLP and PRW pipelines have identical resilience: circuit breaker gate, persistent disk queue, batch and burst drain, split-on-error, exponential backoff, and graceful shutdown drain
@@ -122,6 +124,7 @@ flowchart LR
 
 **Pipeline Features:**
 - **Stats** - Real-time cardinality and datapoint tracking per metric/service
+- **Processing Rules** - Unified metric transformation engine: sample (stochastic reduction), downsample (per-series compression with 10 methods including adaptive CV-based), aggregate (cross-series reduction with group_by), transform (12 label operations), and drop
 - **Limits** - Adaptive limiting that drops only top offenders, preserving well-behaved services
 - **Always-Queue Architecture** - Data always flows through the queue (VMAgent/OTel-inspired), eliminating flush-time blocking and memory spikes
 - **Pipeline Split** - CPU-bound preparers (NumCPU) handle compression, I/O-bound senders (NumCPU×2) handle HTTP sends, connected by a bounded channel for optimal resource utilization
@@ -207,6 +210,8 @@ Plan your deployment in seconds. The **interactive Playground** estimates CPU, m
 | 🚀 | [**Installation**](docs/installation.md) | Install from source, Docker, or Helm chart |
 | ⚙️ | [**Configuration**](docs/configuration.md) | YAML config and CLI flags reference |
 | 📡 | [**Prometheus Remote Write**](docs/prw.md) | PRW 1.0/2.0 protocol, VictoriaMetrics mode |
+| 🔄 | [**Processing Rules**](docs/processing-rules.md) | Sample, downsample, aggregate, transform, drop — unified metric transformation |
+| 🏗️ | [**Two-Tier Architecture**](docs/two-tier-architecture.md) | DaemonSet edge + StatefulSet gateway deployment pattern |
 | 🎯 | [**Limits**](docs/limits.md) | Adaptive limiting, cardinality control, dry-run mode |
 | 🔀 | [**Sharding**](docs/sharding.md) | Consistent hashing, K8s DNS discovery, horizontal scaling |
 | 📊 | [**Statistics**](docs/statistics.md) | Prometheus metrics, per-metric tracking, observability |
@@ -225,7 +230,7 @@ Plan your deployment in seconds. The **interactive Playground** estimates CPU, m
 | 🏥 | [**Health Endpoints**](docs/health.md) | Kubernetes liveness and readiness probes (`/live`, `/ready`) |
 | 🔄 | [**Dynamic Reload**](docs/reload.md) | Hot-reload limits config via SIGHUP with ConfigMap sidecar support |
 | 🖥️ | [**Playground**](docs/playground.md) | Interactive browser tool for deployment planning |
-| 🚨 | [**Alerting**](docs/alerting.md) | 10 production alerts with runbooks, Helm integration, threshold tuning |
+| 🚨 | [**Alerting**](docs/alerting.md) | 13 production alerts with runbooks, Helm integration, threshold tuning |
 | 🏭 | [**Production Guide**](docs/production-guide.md) | Sizing, auto-derivation, HPA/VPA, DaemonSet, bare metal, resilience tuning |
 | 📋 | [**Profiles**](docs/profiles.md) | `minimal`, `balanced`, `performance` presets with full parameter tables |
 
@@ -238,6 +243,8 @@ Plan your deployment in seconds. The **interactive Playground** estimates CPU, m
 | **OTLP Protocol** | Full gRPC and HTTP receiver/exporter with TLS, mTLS, and authentication (bearer token, basic auth) |
 | **[PRW Protocol](docs/prw.md)** | Prometheus Remote Write 1.0/2.0 with native histograms, VictoriaMetrics mode, custom endpoint paths |
 | **Intelligent Buffering** | Capacity-bounded buffer with byte-aware batch splitting, always-queue architecture, AIMD batch auto-tuning, pipeline split exports, and backpressure (429/ResourceExhausted) (both OTLP and PRW) |
+| **[Processing Rules](docs/processing-rules.md)** | Unified metric transformation engine with 5 actions: sample (head/probabilistic), downsample (10 methods including adaptive/LTTB/SDT), aggregate (cross-series with group_by/drop_labels), transform (12 label operations), drop. Multi-touch routing: transforms chain, other actions are terminal. |
+| **[Two-Tier Architecture](docs/two-tier-architecture.md)** | DaemonSet per-node edge processing (Tier 1) feeds StatefulSet global gateway (Tier 2) for cross-node aggregation — 10-50x traffic reduction between nodes |
 | **[Adaptive Limits](docs/limits.md)** | Per-group tracking with smart dropping of top offenders only, dry-run mode for safe rollouts |
 | **[Real-time Statistics](docs/statistics.md)** | Per-metric cardinality, datapoints, and limit violation tracking with Prometheus metrics |
 | **[Consistent Sharding](docs/sharding.md)** | Distribute metrics across multiple backends via K8s DNS discovery with virtual nodes (OTLP and PRW) |

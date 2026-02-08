@@ -1,0 +1,233 @@
+# Processing Rules — Label Transformation Examples
+#
+# Demonstrates all 12 transform operations for common real-world scenarios:
+# label normalization, PII removal, routing, naming conventions, and more.
+#
+# Transform rules are non-terminal: they modify labels and pass through to
+# subsequent rules. Chain multiple transforms before a terminal action
+# (sample, downsample, aggregate, drop).
+
+staleness_interval: 10m
+
+rules:
+  # ── Naming Convention Normalization ───────────────────────────────
+
+  # Different teams use different label names for environment
+  # Team A: env=prod, Team B: environment=production, Team C: ENV=Production
+  - name: normalize-env-label
+    input: ".*"
+    action: transform
+    when:
+      - label: environment
+        matches: ".*"
+    operations:
+      - lower:
+          label: environment
+      - rename:
+          source: environment
+          target: env
+      - map:
+          source: env
+          target: env
+          values:
+            "production": "prod"
+            "staging": "stg"
+            "development": "dev"
+          default: ""
+
+  # Normalize uppercase ENV label
+  - name: normalize-env-uppercase
+    input: ".*"
+    action: transform
+    when:
+      - label: ENV
+        matches: ".*"
+    operations:
+      - lower:
+          label: ENV
+      - rename:
+          source: ENV
+          target: env
+      - map:
+          source: env
+          target: env
+          values:
+            "production": "prod"
+            "staging": "stg"
+            "development": "dev"
+          default: ""
+
+  # ── Service Name Normalization ────────────────────────────────────
+
+  # Strip version suffix from canary deployments: "api-v2" → "api"
+  - name: strip-service-version
+    input: "http_.*"
+    action: transform
+    operations:
+      - extract:
+          source: service
+          target: service_base
+          pattern: "(.+)-v\\d+$"
+          group: 1
+
+  # Build FQDN label from service + namespace
+  - name: build-fqdn
+    input: ".*"
+    action: transform
+    when:
+      - label: namespace
+        matches: ".*"
+      - label: service
+        matches: ".*"
+    operations:
+      - set:
+          label: fqdn
+          value: "${service}.${namespace}.svc.cluster.local"
+      - lower:
+          label: fqdn
+
+  # ── Instance Label Cleanup ───────────────────────────────────────
+
+  # Strip port from instance labels: "10.0.1.5:9090" → "10.0.1.5"
+  - name: instance-strip-port
+    input: ".*"
+    action: transform
+    when:
+      - label: instance
+        matches: "\\d+\\.\\d+\\.\\d+\\.\\d+:\\d+"
+    operations:
+      - replace:
+          label: instance
+          pattern: "^(\\d+\\.\\d+\\.\\d+\\.\\d+):\\d+$"
+          replacement: "$1"
+
+  # ── PII Removal ──────────────────────────────────────────────────
+
+  # Hash user identifiers before storage — preserves cardinality analysis
+  # without storing actual user IDs
+  - name: hash-user-ids
+    input: ".*"
+    action: transform
+    when:
+      - label: user_id
+        matches: ".*"
+    operations:
+      - hash_mod:
+          source: user_id
+          target: user_hash
+          modulus: 65536
+      - remove: [user_id]
+
+  # Remove email labels entirely
+  - name: remove-email
+    input: ".*"
+    action: transform
+    when:
+      - label: user_email
+        matches: ".*"
+    operations:
+      - remove: [user_email]
+
+  # ── Routing & Sharding ───────────────────────────────────────────
+
+  # Add shard label based on service name (for downstream routing)
+  - name: add-shard
+    input: ".*"
+    action: transform
+    when:
+      - label: service
+        matches: ".*"
+    operations:
+      - hash_mod:
+          source: service
+          target: shard_id
+          modulus: 16
+
+  # ── Datacenter / Region Merging ──────────────────────────────────
+
+  # Merge datacenter + environment into a combined label
+  - name: merge-dc-env
+    input: ".*"
+    action: transform
+    when:
+      - label: datacenter
+        matches: ".*"
+      - label: env
+        matches: ".*"
+    operations:
+      - set:
+          label: region_env
+          value: "${datacenter}-${env}"
+      - remove: [datacenter]
+
+  # ── Tier Classification ──────────────────────────────────────────
+
+  # Classify namespaces into service tiers for cost attribution
+  - name: classify-tier
+    input: ".*"
+    action: transform
+    when:
+      - label: namespace
+        matches: ".*"
+    operations:
+      - map:
+          source: namespace
+          target: tier
+          values:
+            "production": "tier-1"
+            "prod-.*": "tier-1"
+            "staging": "tier-2"
+            "stg-.*": "tier-2"
+            "dev.*": "tier-3"
+            "test.*": "tier-3"
+          default: "tier-unknown"
+
+  # ── Replica Grouping ─────────────────────────────────────────────
+
+  # Group replicas into batches of 3 for canary analysis
+  - name: replica-group
+    input: "kube_pod_.*"
+    action: transform
+    when:
+      - label: replica_index
+        matches: "\\d+"
+    operations:
+      - math:
+          source: replica_index
+          target: replica_group
+          operation: div
+          operand: 3
+
+  # ── Multi-Label Concat ───────────────────────────────────────────
+
+  # Create a composite key from multiple labels
+  - name: build-composite-key
+    input: "http_requests_total"
+    action: transform
+    when:
+      - label: service
+        matches: ".*"
+      - label: method
+        matches: ".*"
+    operations:
+      - concat:
+          sources: [service, method]
+          target: service_method
+          separator: ":"
+
+  # ── Legacy Label Migration ───────────────────────────────────────
+
+  # Rename old labels to new naming conventions
+  - name: migrate-legacy-labels
+    input: "legacy_.*"
+    action: transform
+    operations:
+      - rename:
+          source: old_service_name
+          target: service
+      - rename:
+          source: old_env
+          target: env
+      - copy:
+          source: service
+          target: app
