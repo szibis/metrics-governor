@@ -49,24 +49,45 @@ func init() {
 // If maxBytes <= 0, the batch is returned as-is (splitting disabled).
 // A single-element batch is never split further.
 // Recursion is limited to defaultMaxSplitDepth (4) to prevent stack overflow.
+// Proto sizes are computed once upfront to avoid redundant walks during recursion.
 func splitByBytes(batch []*metricspb.ResourceMetrics, maxBytes int) [][]*metricspb.ResourceMetrics {
-	return splitByBytesWithDepth(batch, maxBytes, 0)
-}
-
-// splitByBytesWithDepth is the depth-limited implementation of splitByBytes.
-func splitByBytesWithDepth(batch []*metricspb.ResourceMetrics, maxBytes int, depth int) [][]*metricspb.ResourceMetrics {
 	if maxBytes <= 0 || len(batch) <= 1 {
 		return [][]*metricspb.ResourceMetrics{batch}
 	}
 
-	size := estimateBatchSize(batch)
-	batchBytes.Observe(float64(size))
+	// Pre-compute sizes once — avoids redundant proto.Size during recursion.
+	sizes := make([]int, len(batch))
+	total := 0
+	for i, rm := range batch {
+		sizes[i] = proto.Size(rm)
+		total += sizes[i]
+	}
 
-	if size <= maxBytes {
+	batchBytes.Observe(float64(total))
+
+	if total <= maxBytes {
 		return [][]*metricspb.ResourceMetrics{batch}
 	}
 
-	// Check depth limit
+	return splitWithCachedSizes(batch, sizes, maxBytes, 0)
+}
+
+// splitWithCachedSizes is the depth-limited recursive splitter using pre-computed sizes.
+func splitWithCachedSizes(batch []*metricspb.ResourceMetrics, sizes []int, maxBytes int, depth int) [][]*metricspb.ResourceMetrics {
+	if len(batch) <= 1 {
+		return [][]*metricspb.ResourceMetrics{batch}
+	}
+
+	total := 0
+	for _, s := range sizes {
+		total += s
+	}
+	batchBytes.Observe(float64(total))
+
+	if total <= maxBytes {
+		return [][]*metricspb.ResourceMetrics{batch}
+	}
+
 	if depth >= defaultMaxSplitDepth {
 		batchSplitDepthExceededTotal.Inc()
 		return [][]*metricspb.ResourceMetrics{batch}
@@ -75,11 +96,23 @@ func splitByBytesWithDepth(batch []*metricspb.ResourceMetrics, maxBytes int, dep
 	batchTooLargeTotal.Inc()
 	batchSplitsTotal.Inc()
 
-	// Recursive binary split
 	mid := len(batch) / 2
-	left := splitByBytesWithDepth(batch[:mid], maxBytes, depth+1)
-	right := splitByBytesWithDepth(batch[mid:], maxBytes, depth+1)
+	left := splitWithCachedSizes(batch[:mid], sizes[:mid], maxBytes, depth+1)
+	right := splitWithCachedSizes(batch[mid:], sizes[mid:], maxBytes, depth+1)
 	return append(left, right...)
+}
+
+// splitByBytesWithDepth is the depth-limited implementation of splitByBytes.
+// Retained for test compatibility.
+func splitByBytesWithDepth(batch []*metricspb.ResourceMetrics, maxBytes int, depth int) [][]*metricspb.ResourceMetrics {
+	if maxBytes <= 0 || len(batch) <= 1 {
+		return [][]*metricspb.ResourceMetrics{batch}
+	}
+	sizes := make([]int, len(batch))
+	for i, rm := range batch {
+		sizes[i] = proto.Size(rm)
+	}
+	return splitWithCachedSizes(batch, sizes, maxBytes, depth)
 }
 
 // estimateBatchSize estimates the serialized protobuf size of a batch.

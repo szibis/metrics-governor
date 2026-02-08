@@ -2,6 +2,7 @@ package sampling
 
 import (
 	"math"
+	"math/rand"
 	"sort"
 )
 
@@ -218,23 +219,38 @@ func (a *stdvarAccum) Result() float64 {
 }
 
 // --- quantilesAccum ---
-// Collects all values and computes exact quantiles at flush time.
-// Memory: O(n) where n is datapoints per window — suitable for
-// pre-aggregated data (not raw high-cardinality).
+// Collects values and computes approximate quantiles at flush time.
+// Uses reservoir sampling (Algorithm R) to cap memory at maxQuantileSamples,
+// ensuring O(1) memory regardless of window size while maintaining
+// statistically accurate quantile estimates.
+
+const maxQuantileSamples = 10000
 
 type quantilesAccum struct {
 	values    []float64
-	quantiles []float64 // target quantile levels (e.g. 0.5, 0.9, 0.99)
+	quantiles []float64  // target quantile levels (e.g. 0.5, 0.9, 0.99)
+	count     int64      // total items seen (for reservoir sampling)
+	rng       *rand.Rand // per-accumulator RNG (avoids global lock)
 }
 
 func newQuantilesAccum(quantiles []float64) *quantilesAccum {
 	return &quantilesAccum{
 		quantiles: quantiles,
+		rng:       rand.New(rand.NewSource(rand.Int63())), //nolint:gosec // G404: math/rand is intentional — reservoir sampling needs speed, not crypto security
 	}
 }
 
 func (a *quantilesAccum) Add(v float64) {
-	a.values = append(a.values, v)
+	a.count++
+	if len(a.values) < maxQuantileSamples {
+		a.values = append(a.values, v)
+		return
+	}
+	// Reservoir sampling: replace random element with probability k/n.
+	j := a.rng.Int63n(a.count)
+	if j < maxQuantileSamples {
+		a.values[j] = v
+	}
 }
 
 // Result returns the first quantile value. For multiple quantiles,
@@ -267,6 +283,7 @@ func (a *quantilesAccum) Results() []float64 {
 
 func (a *quantilesAccum) Reset() {
 	a.values = a.values[:0]
+	a.count = 0
 }
 
 // quantileFromSorted computes the q-th quantile from a sorted slice

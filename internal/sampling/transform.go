@@ -36,60 +36,60 @@ func evaluateConditions(conditions []Condition, attrs []*commonpb.KeyValue) bool
 }
 
 // applyTransformOperations applies all compiled operations to the attributes in order.
-// Returns the modified attributes slice.
-func applyTransformOperations(attrs []*commonpb.KeyValue, ops []compiledOperation, ruleName string) []*commonpb.KeyValue {
+// Returns the modified attributes slice. Uses pre-resolved metrics to avoid WithLabelValues hashing.
+func applyTransformOperations(attrs []*commonpb.KeyValue, ops []compiledOperation, metrics *ruleMetrics) []*commonpb.KeyValue {
 	for _, cop := range ops {
-		attrs = applyOperation(attrs, cop, ruleName)
+		attrs = applyOperation(attrs, cop, metrics)
 	}
 	return attrs
 }
 
 // applyOperation applies a single compiled operation.
-func applyOperation(attrs []*commonpb.KeyValue, cop compiledOperation, ruleName string) []*commonpb.KeyValue {
+func applyOperation(attrs []*commonpb.KeyValue, cop compiledOperation, metrics *ruleMetrics) []*commonpb.KeyValue {
 	op := cop.op
 
 	if len(op.Remove) > 0 {
-		return applyRemove(attrs, op.Remove, ruleName)
+		return applyRemove(attrs, op.Remove, metrics)
 	}
 	if op.Set != nil {
-		return applySet(attrs, op.Set, ruleName)
+		return applySet(attrs, op.Set, metrics)
 	}
 	if op.Rename != nil {
-		return applyRename(attrs, op.Rename, ruleName)
+		return applyRename(attrs, op.Rename, metrics)
 	}
 	if op.Copy != nil {
-		return applyCopy(attrs, op.Copy, ruleName)
+		return applyCopy(attrs, op.Copy, metrics)
 	}
 	if op.Replace != nil {
-		return applyReplace(attrs, op.Replace, cop.compiledReplace, ruleName)
+		return applyReplace(attrs, op.Replace, cop.compiledReplace, metrics)
 	}
 	if op.Extract != nil {
-		return applyExtract(attrs, op.Extract, cop.compiledExtract, ruleName)
+		return applyExtract(attrs, op.Extract, cop.compiledExtract, metrics)
 	}
 	if op.HashMod != nil {
-		return applyHashMod(attrs, op.HashMod, ruleName)
+		return applyHashMod(attrs, op.HashMod, metrics)
 	}
 	if op.Lower != nil {
-		return applyLower(attrs, op.Lower, ruleName)
+		return applyLower(attrs, op.Lower, metrics)
 	}
 	if op.Upper != nil {
-		return applyUpper(attrs, op.Upper, ruleName)
+		return applyUpper(attrs, op.Upper, metrics)
 	}
 	if op.Concat != nil {
-		return applyConcat(attrs, op.Concat, ruleName)
+		return applyConcat(attrs, op.Concat, metrics)
 	}
 	if op.Map != nil {
-		return applyMap(attrs, op.Map, cop.compiledMap, ruleName)
+		return applyMap(attrs, op.Map, cop.compiledMap, metrics)
 	}
 	if op.Math != nil {
-		return applyMath(attrs, op.Math, ruleName)
+		return applyMath(attrs, op.Math, metrics)
 	}
 
 	return attrs
 }
 
 // applyRemove removes the specified labels.
-func applyRemove(attrs []*commonpb.KeyValue, labels []string, ruleName string) []*commonpb.KeyValue {
+func applyRemove(attrs []*commonpb.KeyValue, labels []string, metrics *ruleMetrics) []*commonpb.KeyValue {
 	remove := make(map[string]bool, len(labels))
 	for _, l := range labels {
 		remove[l] = true
@@ -104,29 +104,30 @@ func applyRemove(attrs []*commonpb.KeyValue, labels []string, ruleName string) [
 			result = append(result, kv)
 		}
 	}
-	if removed > 0 {
-		processingTransformLabelsRemovedTotal.WithLabelValues(ruleName).Add(float64(removed))
-		processingTransformOperationsTotal.WithLabelValues(ruleName, "remove").Inc()
+	if removed > 0 && metrics != nil {
+		metrics.transformRemove.Add(float64(removed))
 	}
 	return result
 }
 
 // applySet sets a label to a value with interpolation support.
-func applySet(attrs []*commonpb.KeyValue, op *SetOp, ruleName string) []*commonpb.KeyValue {
+func applySet(attrs []*commonpb.KeyValue, op *SetOp, metrics *ruleMetrics) []*commonpb.KeyValue {
 	value := interpolateLabels(op.Value, attrs)
 	attrs = setLabel(attrs, op.Label, value)
-	processingTransformLabelsAddedTotal.WithLabelValues(ruleName).Inc()
-	processingTransformOperationsTotal.WithLabelValues(ruleName, "set").Inc()
+	if metrics != nil {
+		metrics.transformAdd.Inc()
+	}
 	return attrs
 }
 
 // applyRename renames a label.
-func applyRename(attrs []*commonpb.KeyValue, op *RenameOp, ruleName string) []*commonpb.KeyValue {
+func applyRename(attrs []*commonpb.KeyValue, op *RenameOp, metrics *ruleMetrics) []*commonpb.KeyValue {
 	for _, kv := range attrs {
 		if kv.Key == op.Source {
 			kv.Key = op.Target
-			processingTransformLabelsModifiedTotal.WithLabelValues(ruleName).Inc()
-			processingTransformOperationsTotal.WithLabelValues(ruleName, "rename").Inc()
+			if metrics != nil {
+				metrics.transformMod.Inc()
+			}
 			return attrs
 		}
 	}
@@ -134,27 +135,33 @@ func applyRename(attrs []*commonpb.KeyValue, op *RenameOp, ruleName string) []*c
 }
 
 // applyCopy copies a label value to a new name.
-func applyCopy(attrs []*commonpb.KeyValue, op *CopyOp, ruleName string) []*commonpb.KeyValue {
+func applyCopy(attrs []*commonpb.KeyValue, op *CopyOp, metrics *ruleMetrics) []*commonpb.KeyValue {
 	value := getLabelValue(attrs, op.Source)
 	if value != "" {
 		attrs = setLabel(attrs, op.Target, value)
-		processingTransformLabelsAddedTotal.WithLabelValues(ruleName).Inc()
-		processingTransformOperationsTotal.WithLabelValues(ruleName, "copy").Inc()
+		if metrics != nil {
+			metrics.transformAdd.Inc()
+		}
 	}
 	return attrs
 }
 
 // applyReplace does regex replacement on a label value.
-func applyReplace(attrs []*commonpb.KeyValue, op *ReplaceOp, re *regexp.Regexp, ruleName string) []*commonpb.KeyValue {
+func applyReplace(attrs []*commonpb.KeyValue, op *ReplaceOp, re *regexp.Regexp, metrics *ruleMetrics) []*commonpb.KeyValue {
 	for _, kv := range attrs {
 		if kv.Key == op.Label {
 			oldVal := kv.Value.GetStringValue()
 			newVal := re.ReplaceAllString(oldVal, op.Replacement)
 			if newVal != oldVal {
-				kv.Value = &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: newVal}}
-				processingTransformLabelsModifiedTotal.WithLabelValues(ruleName).Inc()
+				if sv, ok := kv.Value.GetValue().(*commonpb.AnyValue_StringValue); ok {
+					sv.StringValue = newVal
+				} else {
+					kv.Value = &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: newVal}}
+				}
+				if metrics != nil {
+					metrics.transformMod.Inc()
+				}
 			}
-			processingTransformOperationsTotal.WithLabelValues(ruleName, "replace").Inc()
 			return attrs
 		}
 	}
@@ -162,7 +169,7 @@ func applyReplace(attrs []*commonpb.KeyValue, op *ReplaceOp, re *regexp.Regexp, 
 }
 
 // applyExtract extracts a regex capture group to a new label.
-func applyExtract(attrs []*commonpb.KeyValue, op *ExtractOp, re *regexp.Regexp, ruleName string) []*commonpb.KeyValue {
+func applyExtract(attrs []*commonpb.KeyValue, op *ExtractOp, re *regexp.Regexp, metrics *ruleMetrics) []*commonpb.KeyValue {
 	sourceVal := getLabelValue(attrs, op.Source)
 	if sourceVal == "" {
 		return attrs
@@ -171,14 +178,15 @@ func applyExtract(attrs []*commonpb.KeyValue, op *ExtractOp, re *regexp.Regexp, 
 	matches := re.FindStringSubmatch(sourceVal)
 	if matches != nil && op.Group < len(matches) {
 		attrs = setLabel(attrs, op.Target, matches[op.Group])
-		processingTransformLabelsAddedTotal.WithLabelValues(ruleName).Inc()
+		if metrics != nil {
+			metrics.transformAdd.Inc()
+		}
 	}
-	processingTransformOperationsTotal.WithLabelValues(ruleName, "extract").Inc()
 	return attrs
 }
 
 // applyHashMod hashes a label value mod N to a new label.
-func applyHashMod(attrs []*commonpb.KeyValue, op *HashModOp, ruleName string) []*commonpb.KeyValue {
+func applyHashMod(attrs []*commonpb.KeyValue, op *HashModOp, metrics *ruleMetrics) []*commonpb.KeyValue {
 	sourceVal := getLabelValue(attrs, op.Source)
 	if sourceVal == "" {
 		return attrs
@@ -189,22 +197,28 @@ func applyHashMod(attrs []*commonpb.KeyValue, op *HashModOp, ruleName string) []
 	result := h.Sum64() % op.Modulus
 
 	attrs = setLabel(attrs, op.Target, strconv.FormatUint(result, 10))
-	processingTransformLabelsAddedTotal.WithLabelValues(ruleName).Inc()
-	processingTransformOperationsTotal.WithLabelValues(ruleName, "hash_mod").Inc()
+	if metrics != nil {
+		metrics.transformAdd.Inc()
+	}
 	return attrs
 }
 
 // applyLower lowercases a label value.
-func applyLower(attrs []*commonpb.KeyValue, op *LabelRef, ruleName string) []*commonpb.KeyValue {
+func applyLower(attrs []*commonpb.KeyValue, op *LabelRef, metrics *ruleMetrics) []*commonpb.KeyValue {
 	for _, kv := range attrs {
 		if kv.Key == op.Label {
 			oldVal := kv.Value.GetStringValue()
 			newVal := strings.ToLower(oldVal)
 			if newVal != oldVal {
-				kv.Value = &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: newVal}}
-				processingTransformLabelsModifiedTotal.WithLabelValues(ruleName).Inc()
+				if sv, ok := kv.Value.GetValue().(*commonpb.AnyValue_StringValue); ok {
+					sv.StringValue = newVal
+				} else {
+					kv.Value = &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: newVal}}
+				}
+				if metrics != nil {
+					metrics.transformMod.Inc()
+				}
 			}
-			processingTransformOperationsTotal.WithLabelValues(ruleName, "lower").Inc()
 			return attrs
 		}
 	}
@@ -212,16 +226,21 @@ func applyLower(attrs []*commonpb.KeyValue, op *LabelRef, ruleName string) []*co
 }
 
 // applyUpper uppercases a label value.
-func applyUpper(attrs []*commonpb.KeyValue, op *LabelRef, ruleName string) []*commonpb.KeyValue {
+func applyUpper(attrs []*commonpb.KeyValue, op *LabelRef, metrics *ruleMetrics) []*commonpb.KeyValue {
 	for _, kv := range attrs {
 		if kv.Key == op.Label {
 			oldVal := kv.Value.GetStringValue()
 			newVal := strings.ToUpper(oldVal)
 			if newVal != oldVal {
-				kv.Value = &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: newVal}}
-				processingTransformLabelsModifiedTotal.WithLabelValues(ruleName).Inc()
+				if sv, ok := kv.Value.GetValue().(*commonpb.AnyValue_StringValue); ok {
+					sv.StringValue = newVal
+				} else {
+					kv.Value = &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: newVal}}
+				}
+				if metrics != nil {
+					metrics.transformMod.Inc()
+				}
 			}
-			processingTransformOperationsTotal.WithLabelValues(ruleName, "upper").Inc()
 			return attrs
 		}
 	}
@@ -229,27 +248,29 @@ func applyUpper(attrs []*commonpb.KeyValue, op *LabelRef, ruleName string) []*co
 }
 
 // applyConcat concatenates multiple label values with a separator.
-func applyConcat(attrs []*commonpb.KeyValue, op *ConcatOp, ruleName string) []*commonpb.KeyValue {
-	var parts []string
+func applyConcat(attrs []*commonpb.KeyValue, op *ConcatOp, metrics *ruleMetrics) []*commonpb.KeyValue {
+	parts := make([]string, 0, len(op.Sources))
 	for _, src := range op.Sources {
 		parts = append(parts, getLabelValue(attrs, src))
 	}
 	attrs = setLabel(attrs, op.Target, strings.Join(parts, op.Separator))
-	processingTransformLabelsAddedTotal.WithLabelValues(ruleName).Inc()
-	processingTransformOperationsTotal.WithLabelValues(ruleName, "concat").Inc()
+	if metrics != nil {
+		metrics.transformAdd.Inc()
+	}
 	return attrs
 }
 
 // applyMap maps a label value via lookup table (supports regex keys).
-func applyMap(attrs []*commonpb.KeyValue, op *MapOp, compiled []compiledMapEntry, ruleName string) []*commonpb.KeyValue {
+func applyMap(attrs []*commonpb.KeyValue, op *MapOp, compiled []compiledMapEntry, metrics *ruleMetrics) []*commonpb.KeyValue {
 	sourceVal := getLabelValue(attrs, op.Source)
 
 	// Try each compiled pattern.
 	for _, entry := range compiled {
 		if entry.pattern.MatchString(sourceVal) {
 			attrs = setLabel(attrs, op.Target, entry.value)
-			processingTransformLabelsAddedTotal.WithLabelValues(ruleName).Inc()
-			processingTransformOperationsTotal.WithLabelValues(ruleName, "map").Inc()
+			if metrics != nil {
+				metrics.transformAdd.Inc()
+			}
 			return attrs
 		}
 	}
@@ -257,14 +278,15 @@ func applyMap(attrs []*commonpb.KeyValue, op *MapOp, compiled []compiledMapEntry
 	// No match — use default.
 	if op.Default != "" {
 		attrs = setLabel(attrs, op.Target, op.Default)
-		processingTransformLabelsAddedTotal.WithLabelValues(ruleName).Inc()
+		if metrics != nil {
+			metrics.transformAdd.Inc()
+		}
 	}
-	processingTransformOperationsTotal.WithLabelValues(ruleName, "map").Inc()
 	return attrs
 }
 
 // applyMath performs math on a numeric label value.
-func applyMath(attrs []*commonpb.KeyValue, op *MathOp, ruleName string) []*commonpb.KeyValue {
+func applyMath(attrs []*commonpb.KeyValue, op *MathOp, metrics *ruleMetrics) []*commonpb.KeyValue {
 	sourceVal := getLabelValue(attrs, op.Source)
 	if sourceVal == "" {
 		return attrs
@@ -307,8 +329,9 @@ func applyMath(attrs []*commonpb.KeyValue, op *MathOp, ruleName string) []*commo
 	}
 
 	attrs = setLabel(attrs, op.Target, formatted)
-	processingTransformLabelsModifiedTotal.WithLabelValues(ruleName).Inc()
-	processingTransformOperationsTotal.WithLabelValues(ruleName, "math").Inc()
+	if metrics != nil {
+		metrics.transformMod.Inc()
+	}
 	return attrs
 }
 
@@ -324,10 +347,17 @@ func getLabelValue(attrs []*commonpb.KeyValue, key string) string {
 	return ""
 }
 
-// setLabel sets or adds a label. If the label already exists, its value is updated.
+// setLabel sets or adds a label. If the label already exists, its value is updated in-place
+// (zero allocation when the existing value is already a StringValue wrapper).
 func setLabel(attrs []*commonpb.KeyValue, key, value string) []*commonpb.KeyValue {
 	for _, kv := range attrs {
 		if kv.Key == key {
+			// Fast path: reuse existing StringValue wrapper (zero alloc).
+			if sv, ok := kv.Value.GetValue().(*commonpb.AnyValue_StringValue); ok {
+				sv.StringValue = value
+				return attrs
+			}
+			// Type changed — must allocate.
 			kv.Value = &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: value}}
 			return attrs
 		}

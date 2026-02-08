@@ -430,7 +430,14 @@ func buildGroupKey(labels []*commonpb.KeyValue) string {
 		return sorted[i].Key < sorted[j].Key
 	})
 
+	// Pre-size: each label contributes key + "=" + value, separated by "|".
+	size := len(sorted) - 1 // separators
+	for _, kv := range sorted {
+		size += len(kv.Key) + 1 + len(kv.Value.GetStringValue())
+	}
+
 	var b strings.Builder
+	b.Grow(size)
 	for i, kv := range sorted {
 		if i > 0 {
 			b.WriteByte('|')

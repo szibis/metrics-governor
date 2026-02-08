@@ -6,6 +6,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -679,7 +680,12 @@ func (s *Sampler) processMetric(m *metricspb.Metric, rules []ProcessingRule) *me
 }
 
 // matchProcessingRule checks if a metric name and attributes match a processing rule.
+// Uses literal prefix short-circuit to avoid regex engine for non-matching metrics.
 func matchProcessingRule(rule *ProcessingRule, metricName string, attrs []*commonpb.KeyValue) bool {
+	// Fast path: literal prefix check before invoking regex engine.
+	if rule.inputPrefix != "" && !strings.HasPrefix(metricName, rule.inputPrefix) {
+		return false
+	}
 	if rule.compiledInput != nil && !rule.compiledInput.MatchString(metricName) {
 		return false
 	}
@@ -731,7 +737,7 @@ func (s *Sampler) applyProcessingRules(metricName string, dp *metricspb.NumberDa
 			continue
 		}
 
-		processingRuleEvaluationsTotal.WithLabelValues(rule.Name, string(rule.Action)).Inc()
+		rule.metrics.evalCounter.Inc()
 
 		switch rule.Action {
 		case ActionTransform:
@@ -739,33 +745,33 @@ func (s *Sampler) applyProcessingRules(metricName string, dp *metricspb.NumberDa
 			if len(rule.When) > 0 && !evaluateConditions(rule.When, dp.Attributes) {
 				continue
 			}
-			dp.Attributes = applyTransformOperations(dp.Attributes, rule.compiledOps, rule.Name)
-			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionTransform)).Inc()
-			processingRuleOutputTotal.WithLabelValues(rule.Name, string(ActionTransform), "").Inc()
+			dp.Attributes = applyTransformOperations(dp.Attributes, rule.compiledOps, &rule.metrics)
+			rule.metrics.inputCounter.Inc()
+			rule.metrics.outputCounter.Inc()
 			continue // Non-terminal — check next rule.
 
 		case ActionDrop:
-			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionDrop)).Inc()
-			processingRuleDroppedTotal.WithLabelValues(rule.Name, string(ActionDrop)).Inc()
+			rule.metrics.inputCounter.Inc()
+			rule.metrics.droppedCounter.Inc()
 			processingDroppedDatapointsTotal.Inc()
 			return false // Terminal — drop.
 
 		case ActionSample:
-			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionSample)).Inc()
+			rule.metrics.inputCounter.Inc()
 			strategy := StrategyHead
 			if rule.Method == "probabilistic" {
 				strategy = StrategyProbabilistic
 			}
 			if s.shouldKeep(rule.Rate, strategy) {
-				processingRuleOutputTotal.WithLabelValues(rule.Name, string(ActionSample), "").Inc()
+				rule.metrics.outputCounter.Inc()
 				return true // Terminal — kept.
 			}
-			processingRuleDroppedTotal.WithLabelValues(rule.Name, string(ActionSample)).Inc()
+			rule.metrics.droppedCounter.Inc()
 			processingDroppedDatapointsTotal.Inc()
 			return false // Terminal — dropped.
 
 		case ActionDownsample:
-			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionDownsample)).Inc()
+			rule.metrics.inputCounter.Inc()
 			if rule.dsConfig != nil && s.dsEngine != nil {
 				seriesKey := buildDSSeriesKey(metricName, dp.Attributes)
 				emitted := s.dsEngine.ingestAndEmit(seriesKey, rule.dsConfig, dp.TimeUnixNano, getNumberValue(dp))
@@ -789,7 +795,7 @@ func (s *Sampler) applyProcessingRules(metricName string, dp *metricspb.NumberDa
 			return true // No engine — pass through.
 
 		case ActionAggregate:
-			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionAggregate)).Inc()
+			rule.metrics.inputCounter.Inc()
 			if s.aggEngine != nil {
 				s.aggEngine.Ingest(rule, metricName, dp)
 			}
@@ -888,36 +894,36 @@ func (s *Sampler) applyProcessingRulesGeneric(metricName string, attrs []*common
 			continue
 		}
 
-		processingRuleEvaluationsTotal.WithLabelValues(rule.Name, string(rule.Action)).Inc()
+		rule.metrics.evalCounter.Inc()
 
 		switch rule.Action {
 		case ActionTransform:
 			if len(rule.When) > 0 && !evaluateConditions(rule.When, attrs) {
 				continue
 			}
-			attrs = applyTransformOperations(attrs, rule.compiledOps, rule.Name)
+			attrs = applyTransformOperations(attrs, rule.compiledOps, &rule.metrics)
 			setAttrs(attrs)
-			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionTransform)).Inc()
-			processingRuleOutputTotal.WithLabelValues(rule.Name, string(ActionTransform), "").Inc()
+			rule.metrics.inputCounter.Inc()
+			rule.metrics.outputCounter.Inc()
 			continue // Non-terminal.
 
 		case ActionDrop:
-			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionDrop)).Inc()
-			processingRuleDroppedTotal.WithLabelValues(rule.Name, string(ActionDrop)).Inc()
+			rule.metrics.inputCounter.Inc()
+			rule.metrics.droppedCounter.Inc()
 			processingDroppedDatapointsTotal.Inc()
 			return false
 
 		case ActionSample:
-			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionSample)).Inc()
+			rule.metrics.inputCounter.Inc()
 			strategy := StrategyHead
 			if rule.Method == "probabilistic" {
 				strategy = StrategyProbabilistic
 			}
 			if s.shouldKeep(rule.Rate, strategy) {
-				processingRuleOutputTotal.WithLabelValues(rule.Name, string(ActionSample), "").Inc()
+				rule.metrics.outputCounter.Inc()
 				return true
 			}
-			processingRuleDroppedTotal.WithLabelValues(rule.Name, string(ActionSample)).Inc()
+			rule.metrics.droppedCounter.Inc()
 			processingDroppedDatapointsTotal.Inc()
 			return false
 
