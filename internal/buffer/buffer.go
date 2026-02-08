@@ -117,6 +117,9 @@ type MetricSampler interface {
 	Sample(resourceMetrics []*metricspb.ResourceMetrics) []*metricspb.ResourceMetrics
 }
 
+// MetricProcessor is an alias for MetricSampler — the new name for the processing stage.
+type MetricProcessor = MetricSampler
+
 // TenantProcessor detects tenants and applies per-tenant quotas.
 // It runs before the LimitsEnforcer in the pipeline.
 type TenantProcessor interface {
@@ -174,6 +177,12 @@ func WithRelabeler(r MetricRelabeler) BufferOption {
 // applied in Add() before limits enforcement.
 func WithSampler(s MetricSampler) BufferOption {
 	return func(b *MetricsBuffer) { b.sampler = s }
+}
+
+// WithProcessor sets a metric processor for the buffer.
+// This is the preferred name for WithSampler.
+func WithProcessor(p MetricProcessor) BufferOption {
+	return WithSampler(p)
 }
 
 // WithTenantProcessor sets a tenant processor for the buffer. When set,
@@ -285,6 +294,61 @@ func (b *MetricsBuffer) Add(resourceMetrics []*metricspb.ResourceMetrics) error 
 	return b.addInternal(resourceMetrics, "")
 }
 
+// AddAggregated adds aggregated metrics to the buffer, bypassing stats and processing
+// to avoid infinite loops. Tenant and limits enforcement are still applied.
+func (b *MetricsBuffer) AddAggregated(resourceMetrics []*metricspb.ResourceMetrics) {
+	if len(resourceMetrics) == 0 {
+		return
+	}
+
+	// Apply tenant detection and quota enforcement.
+	if b.tenantProcessor != nil {
+		start := time.Now()
+		resourceMetrics = b.tenantProcessor.ProcessBatch(resourceMetrics, "")
+		pipeline.Record("tenant", pipeline.Since(start))
+	}
+
+	// Apply limits enforcement.
+	if b.limits != nil {
+		start := time.Now()
+		resourceMetrics = b.limits.Process(resourceMetrics)
+		pipeline.Record("limits", pipeline.Since(start))
+	}
+
+	if len(resourceMetrics) == 0 {
+		return
+	}
+
+	// Check buffer byte capacity before adding.
+	incomingBytes := int64(estimateResourceMetricsSize(resourceMetrics))
+	if b.maxBufferBytes > 0 {
+		if err := b.enforceCapacity(incomingBytes); err != nil {
+			return // Silently drop — aggregate output is best-effort.
+		}
+	}
+
+	b.mu.Lock()
+	b.metrics = append(b.metrics, resourceMetrics...)
+	bufferSize := len(b.metrics)
+	b.mu.Unlock()
+
+	// Update byte tracking.
+	b.currentBytes.Add(incomingBytes)
+	bufferBytesGauge.Set(float64(b.currentBytes.Load()))
+
+	if b.stats != nil {
+		b.stats.SetOTLPBufferSize(bufferSize)
+	}
+
+	// Trigger flush if buffer is full.
+	if bufferSize >= b.maxSize {
+		select {
+		case b.flushChan <- struct{}{}:
+		default:
+		}
+	}
+}
+
 // addInternal is the shared implementation for Add and AddWithTenant.
 func (b *MetricsBuffer) addInternal(resourceMetrics []*metricspb.ResourceMetrics, headerTenant string) error {
 	// Track received datapoints and bytes
@@ -302,11 +366,11 @@ func (b *MetricsBuffer) addInternal(resourceMetrics []*metricspb.ResourceMetrics
 		pipeline.Record("stats", pipeline.Since(start))
 	}
 
-	// Apply sampling filter (reduces volume before limits)
+	// Apply processing/sampling filter (reduces volume before limits)
 	if b.sampler != nil {
 		start := time.Now()
 		resourceMetrics = b.sampler.Sample(resourceMetrics)
-		pipeline.Record("sampling", pipeline.Since(start))
+		pipeline.Record("processing", pipeline.Since(start))
 		if len(resourceMetrics) == 0 {
 			return nil
 		}

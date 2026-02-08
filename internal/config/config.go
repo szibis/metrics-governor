@@ -105,8 +105,9 @@ type Config struct {
 	// Relabeling settings
 	RelabelConfig string
 
-	// Sampling settings
-	SamplingConfig string
+	// Processing/sampling settings
+	ProcessingConfig string // Unified processing rules config (--processing-config)
+	SamplingConfig   string // Deprecated: use ProcessingConfig. Kept for backward compat.
 
 	// Queue settings
 	QueueType              string // "memory" or "disk"
@@ -478,8 +479,9 @@ func ParseFlags() *Config {
 	// Relabeling flags
 	flag.StringVar(&cfg.RelabelConfig, "relabel-config", "", "Path to relabel configuration YAML file")
 
-	// Sampling flags
-	flag.StringVar(&cfg.SamplingConfig, "sampling-config", "", "Path to sampling configuration YAML file")
+	// Processing/sampling flags
+	flag.StringVar(&cfg.ProcessingConfig, "processing-config", "", "Path to processing rules configuration YAML file")
+	flag.StringVar(&cfg.SamplingConfig, "sampling-config", "", "Deprecated: use --processing-config. Path to sampling configuration YAML file")
 
 	// Queue flags
 	flag.BoolVar(&cfg.QueueEnabled, "queue-enabled", true, "Enable queue for export retries (default: true)")
@@ -853,6 +855,8 @@ func applyFlagOverrides(cfg *Config) {
 			}
 		case "relabel-config":
 			cfg.RelabelConfig = f.Value.String()
+		case "processing-config":
+			cfg.ProcessingConfig = f.Value.String()
 		case "sampling-config":
 			cfg.SamplingConfig = f.Value.String()
 		case "queue-enabled":
@@ -1816,8 +1820,9 @@ OPTIONS:
     Relabeling:
         -relabel-config <path>           Path to relabel configuration YAML file (Prometheus-compatible)
 
-    Sampling:
-        -sampling-config <path>          Path to sampling configuration YAML file
+    Processing:
+        -processing-config <path>        Path to processing rules configuration YAML file
+        -sampling-config <path>          Deprecated: use --processing-config
 
     Cardinality Tracking:
         -cardinality-mode <mode>         Tracking mode: bloom, exact, or hybrid (auto Bloom→HLL) (default: bloom)
@@ -2019,6 +2024,7 @@ func DefaultConfig() *Config {
 		LimitsDryRun:                    true,
 		RuleCacheMaxSize:                10000,
 		RelabelConfig:                   "",
+		ProcessingConfig:                "",
 		SamplingConfig:                  "",
 		QueueType:                       "memory",
 		QueueEnabled:                    true,

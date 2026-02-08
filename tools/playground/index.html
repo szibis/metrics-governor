@@ -737,6 +737,9 @@
       <button class="tab-btn" :class="activeTab === 'alerts' ? 'active' : ''" @click="activeTab = 'alerts'">
         <span class="dot dot-green"></span> Alert rules
       </button>
+      <button class="tab-btn" :class="activeTab === 'processing' ? 'active' : ''" @click="activeTab = 'processing'">
+        <span class="dot" :class="!procValid ? 'dot-red' : procHasWarns ? 'dot-yellow' : 'dot-green'"></span> Processing rules
+      </button>
     </div>
 
     <!-- Helm values.yaml -->
@@ -815,7 +818,7 @@
     <template x-if="activeTab === 'alerts'">
       <div>
         <p style="font-size:.9em;color:var(--pico-muted-color);margin-bottom:.75rem">
-          10 non-overlapping alerts covering availability, reliability, resilience, performance.
+          13 non-overlapping alerts covering availability, reliability, resilience, performance.
           Thresholds auto-adjusted based on your throughput and configuration.
           <a href="https://github.com/your-org/metrics-governor/blob/main/alerts/README.md" target="_blank">Runbooks</a>
         </p>
@@ -886,6 +889,445 @@
             <span x-text="alertK8sFormat ? 'Download prometheusrule.yaml' : 'Download prometheus-rules.yaml'"></span>
           </button>
           <span class="copy-ok" x-show="copyOk === 'alerts'" x-transition>Copied!</span>
+        </div>
+      </div>
+    </template>
+
+    <!-- Processing rules -->
+    <template x-if="activeTab === 'processing'">
+      <div>
+        <p style="font-size:.9em;color:var(--pico-muted-color);margin-bottom:.75rem">
+          Define processing rules to sample, downsample, aggregate, transform, or drop metrics before export.
+          Rules are evaluated in order; the first matching rule wins.
+        </p>
+
+        <!-- Staleness interval -->
+        <div class="grid-2" style="margin-bottom:1rem">
+          <label>
+            Staleness interval
+            <input type="text" x-model="procStalenessInterval" placeholder="10m">
+            <small class="help-tip">How long a series is kept in processing state after its last datapoint. Default: 10m.</small>
+          </label>
+        </div>
+
+        <!-- Rule builder -->
+        <details open style="margin-bottom:1rem">
+          <summary>Processing Rules Builder</summary>
+          <div style="margin-top:.5rem">
+            <template x-for="(rule, idx) in procRules" :key="rule.id">
+              <div class="rule-card">
+                <div class="rule-header" @click="rule.expanded = !rule.expanded">
+                  <h4>
+                    <span x-text="rule.expanded ? '\u25BC' : '\u25B6'" style="font-size:.8em;margin-right:.25rem"></span>
+                    <span x-text="rule.name || ('Rule #' + (idx + 1))"></span>
+                    <small style="margin-left:.5rem;color:var(--pico-muted-color)" x-text="rule.action"></small>
+                  </h4>
+                  <div style="display:flex;gap:.25rem" @click.stop>
+                    <button class="outline secondary" style="font-size:.75em;padding:2px 8px;margin:0" @click="moveProcRule(idx, -1)" :disabled="idx === 0">Up</button>
+                    <button class="outline secondary" style="font-size:.75em;padding:2px 8px;margin:0" @click="moveProcRule(idx, 1)" :disabled="idx === procRules.length - 1">Down</button>
+                    <button class="outline" style="font-size:.75em;padding:2px 8px;margin:0;border-color:var(--status-red);color:var(--status-red)" @click="procRules.splice(idx, 1)">Delete</button>
+                  </div>
+                </div>
+                <template x-if="rule.expanded">
+                  <div style="margin-top:.75rem">
+                    <div class="grid-3">
+                      <label>
+                        Rule name
+                        <input type="text" x-model="rule.name" placeholder="e.g. sample-debug-metrics">
+                      </label>
+                      <label>
+                        Input pattern (regex)
+                        <input type="text" x-model="rule.input" placeholder=".*">
+                        <small class="help-tip">Regex matching metric __name__</small>
+                      </label>
+                      <label>
+                        Action
+                        <select x-model="rule.action">
+                          <option value="sample">Sample</option>
+                          <option value="downsample">Downsample</option>
+                          <option value="aggregate">Aggregate</option>
+                          <option value="transform">Transform</option>
+                          <option value="drop">Drop</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    <!-- Input labels (optional) -->
+                    <details style="margin-top:.5rem">
+                      <summary style="font-size:.9em">Input label matchers (optional)</summary>
+                      <div style="margin-top:.25rem">
+                        <template x-for="(lbl, li) in rule.inputLabels" :key="li">
+                          <div class="label-pair">
+                            <input type="text" x-model="lbl.key" placeholder="label key" style="max-width:180px">
+                            <input type="text" x-model="lbl.value" placeholder="label value (regex)">
+                            <button class="outline" style="font-size:.75em;padding:2px 8px;margin:0;border-color:var(--status-red);color:var(--status-red)" @click="rule.inputLabels.splice(li, 1)">&times;</button>
+                          </div>
+                        </template>
+                        <button class="outline secondary" style="font-size:.8em;padding:4px 10px;margin-top:.25rem" @click="rule.inputLabels.push({key:'', value:''})">+ Add label matcher</button>
+                      </div>
+                    </details>
+
+                    <!-- ======= SAMPLE ======= -->
+                    <template x-if="rule.action === 'sample'">
+                      <div style="margin-top:.75rem;padding:.75rem;border:1px solid var(--pico-muted-border-color);border-radius:8px">
+                        <h5 style="margin:0 0 .5rem 0;font-size:.9em">Sample Configuration</h5>
+                        <div class="grid-2">
+                          <label>
+                            Sample rate
+                            <input type="range" x-model.number="rule.rate" min="0" max="1" step="0.01" style="margin-bottom:0">
+                            <div style="display:flex;justify-content:space-between;font-size:.8em;color:var(--pico-muted-color)">
+                              <span>0% (drop all)</span>
+                              <span x-text="(rule.rate * 100).toFixed(0) + '%'" style="font-weight:700"></span>
+                              <span>100% (keep all)</span>
+                            </div>
+                          </label>
+                          <label>
+                            Method
+                            <div style="display:flex;gap:1rem;margin-top:.25rem">
+                              <label style="display:flex;align-items:center;gap:.3rem;font-size:.9em;margin:0">
+                                <input type="radio" x-model="rule.method" value="head" style="margin:0"> Head (first N)
+                              </label>
+                              <label style="display:flex;align-items:center;gap:.3rem;font-size:.9em;margin:0">
+                                <input type="radio" x-model="rule.method" value="probabilistic" style="margin:0"> Probabilistic
+                              </label>
+                            </div>
+                            <small class="help-tip">Head keeps the first N%; probabilistic uses random sampling.</small>
+                          </label>
+                        </div>
+                      </div>
+                    </template>
+
+                    <!-- ======= DOWNSAMPLE ======= -->
+                    <template x-if="rule.action === 'downsample'">
+                      <div style="margin-top:.75rem;padding:.75rem;border:1px solid var(--pico-muted-border-color);border-radius:8px">
+                        <h5 style="margin:0 0 .5rem 0;font-size:.9em">Downsample Configuration</h5>
+                        <div class="grid-3">
+                          <label>
+                            Method
+                            <select x-model="rule.dsMethod">
+                              <template x-for="m in procDownsampleMethods" :key="m">
+                                <option :value="m" x-text="m"></option>
+                              </template>
+                            </select>
+                          </label>
+                          <label>
+                            Interval
+                            <input type="text" x-model="rule.dsInterval" placeholder="1m">
+                            <small class="help-tip">Output interval (e.g. 1m, 5m, 1h)</small>
+                          </label>
+                          <!-- LTTB: resolution -->
+                          <label x-show="rule.dsMethod === 'lttb'">
+                            Resolution (points)
+                            <input type="number" x-model.number="rule.dsResolution" min="3" step="1">
+                            <small class="help-tip">Target number of points to keep per window</small>
+                          </label>
+                          <!-- SDT: deviation -->
+                          <label x-show="rule.dsMethod === 'sdt'">
+                            Deviation threshold
+                            <input type="number" x-model.number="rule.dsDeviation" min="0" step="0.01">
+                            <small class="help-tip">Minimum deviation to emit a point</small>
+                          </label>
+                          <!-- Adaptive: min_rate, max_rate, variance_window -->
+                          <template x-if="rule.dsMethod === 'adaptive'">
+                            <label>
+                              Min rate
+                              <input type="number" x-model.number="rule.dsMinRate" min="0" max="1" step="0.01">
+                              <small class="help-tip">Minimum output rate (0-1)</small>
+                            </label>
+                          </template>
+                        </div>
+                        <template x-if="rule.dsMethod === 'adaptive'">
+                          <div class="grid-2" style="margin-top:.5rem">
+                            <label>
+                              Max rate
+                              <input type="number" x-model.number="rule.dsMaxRate" min="0" max="1" step="0.01">
+                              <small class="help-tip">Maximum output rate (0-1)</small>
+                            </label>
+                            <label>
+                              Variance window
+                              <input type="number" x-model.number="rule.dsVarianceWindow" min="1" step="1">
+                              <small class="help-tip">Number of samples for variance calculation</small>
+                            </label>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+
+                    <!-- ======= AGGREGATE ======= -->
+                    <template x-if="rule.action === 'aggregate'">
+                      <div style="margin-top:.75rem;padding:.75rem;border:1px solid var(--pico-muted-border-color);border-radius:8px">
+                        <h5 style="margin:0 0 .5rem 0;font-size:.9em">Aggregate Configuration</h5>
+                        <div class="grid-3">
+                          <label>
+                            Output metric name
+                            <input type="text" x-model="rule.aggOutput" placeholder="e.g. request_total:5m_sum">
+                            <small class="help-tip">Name of the aggregated output metric</small>
+                          </label>
+                          <label>
+                            Interval
+                            <input type="text" x-model="rule.aggInterval" placeholder="1m">
+                            <small class="help-tip">Aggregation window (e.g. 1m, 5m)</small>
+                          </label>
+                          <label>
+                            <input type="checkbox" x-model="rule.aggKeepInput" role="switch" style="margin-top:.25rem"> Keep original input
+                            <small class="help-tip">Forward both original and aggregated series</small>
+                          </label>
+                        </div>
+
+                        <!-- Functions multi-select -->
+                        <div style="margin-top:.5rem">
+                          <label style="margin-bottom:.25rem;font-size:.9em">Aggregation functions</label>
+                          <div style="display:flex;flex-wrap:wrap;gap:4px">
+                            <template x-for="f in procFunctionOptions" :key="f">
+                              <span class="tag" :class="rule.aggFunctions.includes(f) ? 'selected' : ''"
+                                    @click="toggleProcFunction(rule, f)" x-text="f"></span>
+                            </template>
+                          </div>
+                        </div>
+
+                        <!-- Group by -->
+                        <div style="margin-top:.5rem">
+                          <label style="margin-bottom:.25rem;font-size:.9em">Group by labels</label>
+                          <div style="display:flex;flex-wrap:wrap;align-items:center;border:1px solid var(--pico-muted-border-color);border-radius:8px;padding:4px 6px;min-height:36px;gap:4px">
+                            <template x-for="(g, gi) in rule.aggGroupBy" :key="gi">
+                              <span class="tag selected">
+                                <span x-text="g"></span>
+                                <span style="cursor:pointer;font-weight:700;margin-left:2px" @click="rule.aggGroupBy.splice(gi, 1)">&times;</span>
+                              </span>
+                            </template>
+                            <input type="text" x-model="rule.aggCustomGroupBy" placeholder="type label, press Enter"
+                                   style="border:none;outline:none;background:transparent;flex:1;min-width:120px;font-size:.85em;padding:4px;margin:0"
+                                   @keydown.enter.prevent="addProcGroupByLabel(rule)"
+                                   @keydown.comma.prevent="addProcGroupByLabel(rule)"
+                                   @keydown.backspace="if(!rule.aggCustomGroupBy && rule.aggGroupBy.length) rule.aggGroupBy.pop()">
+                          </div>
+                          <div style="margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                            <small class="help-tip" style="margin:0">Quick add:</small>
+                            <template x-for="s in procGroupByOptions" :key="s">
+                              <button class="outline secondary" style="font-size:.75em;padding:2px 8px;margin:0;border-radius:12px"
+                                      @click="if(!rule.aggGroupBy.includes(s)) rule.aggGroupBy.push(s)"
+                                      x-text="'+ ' + s" :disabled="rule.aggGroupBy.includes(s)"></button>
+                            </template>
+                          </div>
+                        </div>
+
+                        <!-- Drop labels -->
+                        <div style="margin-top:.5rem">
+                          <label style="margin-bottom:.25rem;font-size:.9em">Drop labels (mutually exclusive with group_by)</label>
+                          <div style="display:flex;flex-wrap:wrap;align-items:center;border:1px solid var(--pico-muted-border-color);border-radius:8px;padding:4px 6px;min-height:36px;gap:4px">
+                            <template x-for="(dl, dli) in rule.aggDropLabels" :key="dli">
+                              <span class="tag selected">
+                                <span x-text="dl"></span>
+                                <span style="cursor:pointer;font-weight:700;margin-left:2px" @click="rule.aggDropLabels.splice(dli, 1)">&times;</span>
+                              </span>
+                            </template>
+                            <input type="text" x-model="rule.aggCustomDropLabel" placeholder="type label, press Enter"
+                                   style="border:none;outline:none;background:transparent;flex:1;min-width:120px;font-size:.85em;padding:4px;margin:0"
+                                   @keydown.enter.prevent="addProcDropLabel(rule)"
+                                   @keydown.comma.prevent="addProcDropLabel(rule)"
+                                   @keydown.backspace="if(!rule.aggCustomDropLabel && rule.aggDropLabels.length) rule.aggDropLabels.pop()">
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+
+                    <!-- ======= TRANSFORM ======= -->
+                    <template x-if="rule.action === 'transform'">
+                      <div style="margin-top:.75rem;padding:.75rem;border:1px solid var(--pico-muted-border-color);border-radius:8px">
+                        <h5 style="margin:0 0 .5rem 0;font-size:.9em">Transform Configuration</h5>
+
+                        <!-- When conditions -->
+                        <div style="margin-bottom:.5rem">
+                          <label style="font-size:.9em;margin-bottom:.25rem">When conditions (optional)</label>
+                          <template x-for="(cond, ci) in rule.transformWhen" :key="ci">
+                            <div class="label-pair" style="margin-bottom:.25rem">
+                              <input type="text" x-model="cond.label" placeholder="label name" style="max-width:150px">
+                              <select x-model="cond.type" style="max-width:130px">
+                                <option value="equals">equals</option>
+                                <option value="not_equals">not equals</option>
+                                <option value="matches">matches (regex)</option>
+                                <option value="not_matches">not matches</option>
+                                <option value="exists">exists</option>
+                                <option value="not_exists">not exists</option>
+                              </select>
+                              <input type="text" x-model="cond.value" placeholder="value" x-show="!['exists','not_exists'].includes(cond.type)">
+                              <button class="outline" style="font-size:.75em;padding:2px 8px;margin:0;border-color:var(--status-red);color:var(--status-red)" @click="rule.transformWhen.splice(ci, 1)">&times;</button>
+                            </div>
+                          </template>
+                          <button class="outline secondary" style="font-size:.8em;padding:4px 10px" @click="addProcTransformWhen(rule)">+ Add condition</button>
+                        </div>
+
+                        <!-- Operations -->
+                        <div>
+                          <label style="font-size:.9em;margin-bottom:.25rem">Operations</label>
+                          <template x-for="(op, oi) in rule.transformOps" :key="oi">
+                            <div class="rule-card" style="padding:.5rem;margin-bottom:.5rem">
+                              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+                                <select x-model="op.type" style="max-width:180px;margin:0">
+                                  <template x-for="t in procTransformOps" :key="t">
+                                    <option :value="t" x-text="t"></option>
+                                  </template>
+                                </select>
+                                <button class="outline" style="font-size:.75em;padding:2px 8px;margin:0;border-color:var(--status-red);color:var(--status-red)" @click="rule.transformOps.splice(oi, 1)">&times;</button>
+                              </div>
+                              <!-- set: label + value -->
+                              <div x-show="op.type === 'set'" class="grid-2">
+                                <label style="margin:0">Label <input type="text" x-model="op.label" placeholder="label name"></label>
+                                <label style="margin:0">Value <input type="text" x-model="op.value" placeholder="label value"></label>
+                              </div>
+                              <!-- remove: label -->
+                              <div x-show="op.type === 'remove'">
+                                <label style="margin:0">Label <input type="text" x-model="op.label" placeholder="label to remove"></label>
+                              </div>
+                              <!-- rename: source + target -->
+                              <div x-show="op.type === 'rename'" class="grid-2">
+                                <label style="margin:0">Source <input type="text" x-model="op.source" placeholder="old label name"></label>
+                                <label style="margin:0">Target <input type="text" x-model="op.target" placeholder="new label name"></label>
+                              </div>
+                              <!-- copy: source + target -->
+                              <div x-show="op.type === 'copy'" class="grid-2">
+                                <label style="margin:0">Source <input type="text" x-model="op.source" placeholder="source label"></label>
+                                <label style="margin:0">Target <input type="text" x-model="op.target" placeholder="target label"></label>
+                              </div>
+                              <!-- replace: label + pattern + replacement -->
+                              <div x-show="op.type === 'replace'" class="grid-3">
+                                <label style="margin:0">Label <input type="text" x-model="op.label" placeholder="label name"></label>
+                                <label style="margin:0">Pattern <input type="text" x-model="op.pattern" placeholder="regex pattern"></label>
+                                <label style="margin:0">Replacement <input type="text" x-model="op.replacement" placeholder="replacement string"></label>
+                              </div>
+                              <!-- extract: source + pattern + target + group -->
+                              <div x-show="op.type === 'extract'" class="grid-2">
+                                <label style="margin:0">Source label <input type="text" x-model="op.source" placeholder="source label"></label>
+                                <label style="margin:0">Pattern (regex) <input type="text" x-model="op.pattern" placeholder="regex with capture group"></label>
+                                <label style="margin:0">Target label <input type="text" x-model="op.target" placeholder="target label"></label>
+                                <label style="margin:0">Group index <input type="number" x-model.number="op.group" min="0" step="1"></label>
+                              </div>
+                              <!-- hash_mod: label + modulus + target -->
+                              <div x-show="op.type === 'hash_mod'" class="grid-3">
+                                <label style="margin:0">Source label <input type="text" x-model="op.label" placeholder="label to hash"></label>
+                                <label style="margin:0">Modulus <input type="number" x-model.number="op.modulus" min="1" step="1"></label>
+                                <label style="margin:0">Target label <input type="text" x-model="op.target" placeholder="output label"></label>
+                              </div>
+                              <!-- lower/upper: label -->
+                              <div x-show="op.type === 'lower' || op.type === 'upper'">
+                                <label style="margin:0">Label <input type="text" x-model="op.label" placeholder="label to transform"></label>
+                              </div>
+                              <!-- concat: sources + separator + target -->
+                              <div x-show="op.type === 'concat'" class="grid-3">
+                                <label style="margin:0">Source labels (comma-separated) <input type="text" x-model="op.sources" placeholder="label1,label2"></label>
+                                <label style="margin:0">Separator <input type="text" x-model="op.separator" placeholder="."></label>
+                                <label style="margin:0">Target label <input type="text" x-model="op.target" placeholder="output label"></label>
+                              </div>
+                              <!-- map: label + mapValues + mapDefault -->
+                              <div x-show="op.type === 'map'" class="grid-3">
+                                <label style="margin:0">Label <input type="text" x-model="op.label" placeholder="label to map"></label>
+                                <label style="margin:0">Map values (key=val,...) <input type="text" x-model="op.mapValues" placeholder="old1=new1,old2=new2"></label>
+                                <label style="margin:0">Default value <input type="text" x-model="op.mapDefault" placeholder="fallback value"></label>
+                              </div>
+                              <!-- math: label + operation + operand -->
+                              <div x-show="op.type === 'math'" class="grid-3">
+                                <label style="margin:0">Label <input type="text" x-model="op.label" placeholder="numeric label"></label>
+                                <label style="margin:0">Operation
+                                  <select x-model="op.operation" style="margin:0">
+                                    <option value="add">add</option>
+                                    <option value="sub">subtract</option>
+                                    <option value="mul">multiply</option>
+                                    <option value="div">divide</option>
+                                    <option value="mod">modulo</option>
+                                  </select>
+                                </label>
+                                <label style="margin:0">Operand <input type="number" x-model.number="op.operand" step="any"></label>
+                              </div>
+                            </div>
+                          </template>
+                          <button class="outline secondary" style="font-size:.8em;padding:4px 10px" @click="addProcTransformOp(rule)">+ Add operation</button>
+                        </div>
+                      </div>
+                    </template>
+
+                    <!-- ======= DROP ======= -->
+                    <template x-if="rule.action === 'drop'">
+                      <div style="margin-top:.75rem;padding:.75rem;border:1px solid var(--pico-muted-border-color);border-radius:8px">
+                        <h5 style="margin:0 0 .25rem 0;font-size:.9em">Drop Configuration</h5>
+                        <p style="font-size:.85em;color:var(--pico-muted-color);margin:0">
+                          All matching metrics will be silently dropped. No additional configuration needed.
+                        </p>
+                      </div>
+                    </template>
+
+                  </div>
+                </template>
+              </div>
+            </template>
+            <button class="outline" @click="addProcRule()" style="margin-top:.5rem">+ Add processing rule</button>
+          </div>
+        </details>
+
+        <!-- Impact estimator -->
+        <details open style="margin-bottom:1rem">
+          <summary>Impact Estimator</summary>
+          <div style="margin-top:.5rem">
+            <template x-if="procRules.length === 0">
+              <p style="font-size:.85em;color:var(--pico-muted-color)">Add processing rules above to see estimated impact on your datapoint throughput.</p>
+            </template>
+            <template x-if="procRules.length > 0">
+              <div>
+                <div class="grid-4" style="margin-bottom:.75rem">
+                  <div class="est-card">
+                    <h4 style="font-size:.85em;color:var(--pico-muted-color)">Input dps</h4>
+                    <div class="est-val" x-text="procImpactEstimate.inputDps.toLocaleString()"></div>
+                  </div>
+                  <div class="est-card">
+                    <h4 style="font-size:.85em;color:var(--pico-muted-color)">Output dps</h4>
+                    <div class="est-val" :class="procImpactEstimate.outputDps < procImpactEstimate.inputDps ? 'status-green' : ''" x-text="procImpactEstimate.outputDps.toLocaleString()"></div>
+                  </div>
+                  <div class="est-card">
+                    <h4 style="font-size:.85em;color:var(--pico-muted-color)">Total reduction</h4>
+                    <div class="est-val" :class="parseFloat(procImpactEstimate.reductionPct) > 0 ? 'status-green' : ''" x-text="procImpactEstimate.reductionPct + '%'"></div>
+                  </div>
+                  <div class="est-card">
+                    <h4 style="font-size:.85em;color:var(--pico-muted-color)">Memory overhead</h4>
+                    <div class="est-val" x-text="fmtBytes(procImpactEstimate.memOverhead)"></div>
+                  </div>
+                </div>
+                <table style="font-size:.85em;width:100%">
+                  <thead><tr><th>#</th><th>Rule</th><th>Action</th><th>Input dps</th><th>Output dps</th><th>Reduction</th></tr></thead>
+                  <tbody>
+                    <template x-for="(pr, pri) in procImpactEstimate.perRule" :key="pri">
+                      <tr>
+                        <td x-text="pri + 1"></td>
+                        <td x-text="pr.name"></td>
+                        <td><code x-text="pr.action"></code></td>
+                        <td x-text="pr.inputDps.toLocaleString()"></td>
+                        <td x-text="pr.outputDps.toLocaleString()"></td>
+                        <td x-text="(pr.reduction * 100).toFixed(0) + '%'"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+          </div>
+        </details>
+
+        <!-- YAML Preview -->
+        <div class="yaml-toolbar">
+          <small>Edit YAML directly or use the rule builder above</small>
+          <button class="outline secondary" style="font-size:.8em;padding:2px 10px;margin:0" @click="procText = processingYaml">Reset to generated</button>
+        </div>
+        <textarea class="yaml-edit" x-model.debounce.500ms="procText" @focus="editingTab='processing'" @blur="editingTab=null" spellcheck="false" style="min-height:300px"></textarea>
+        <div class="lint-panel">
+          <template x-for="issue in procLint" :key="issue.msg">
+            <div class="lint-item" :class="'lint-' + issue.type">
+              <span class="lint-icon" x-text="issue.type === 'error' ? '\u2716' : issue.type === 'warn' ? '\u26A0' : '\u2714'"></span>
+              <span x-text="issue.msg"></span>
+            </div>
+          </template>
+        </div>
+        <div class="btn-row">
+          <button @click="copyToClipboard(procText, 'processing')">Copy to Clipboard</button>
+          <button class="outline" @click="downloadFile(procText, 'processing.yaml')">Download processing.yaml</button>
+          <span class="copy-ok" x-show="copyOk === 'processing'" x-transition>Copied!</span>
         </div>
       </div>
     </template>
@@ -1152,6 +1594,7 @@ function configHelper() {
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
         'rules','middleTab','activeTab',
         'alertExportErrorPct','alertQueuePct','alertMemoryPct','alertBackpressureRate','alertWorkerPct','alertConfigStaleHours','alertK8sFormat',
+        'procRules','procStalenessInterval',
       ];
       for (const f of fields) {
         this.$watch(f, () => {
@@ -1182,6 +1625,7 @@ function configHelper() {
       this.appText = this.appYaml;
       this.limitsText = this.limitsYaml;
       this.alertsText = this.alertsYaml;
+      this.procText = this.processingYaml;
 
       // Auto-sync alerts YAML when thresholds or format change
       for (const f of ['alertExportErrorPct','alertQueuePct','alertMemoryPct','alertBackpressureRate','alertWorkerPct','alertConfigStaleHours','alertK8sFormat']) {
@@ -1197,6 +1641,9 @@ function configHelper() {
       });
       this.$watch('limitsYaml', (val) => {
         if (this.editingTab !== 'limits' && !this._updatingFromYaml) this.limitsText = val;
+      });
+      this.$watch('processingYaml', (val) => {
+        if (this.editingTab !== 'processing' && !this._updatingFromYaml) this.procText = val;
       });
 
       // Textarea → Inputs: parse edited YAML back into state (debounced via x-model.debounce)
@@ -1254,6 +1701,7 @@ function configHelper() {
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
         'rules','middleTab','activeTab','ruleIdCounter',
         'alertExportErrorPct','alertQueuePct','alertMemoryPct','alertBackpressureRate','alertWorkerPct','alertConfigStaleHours','alertK8sFormat',
+        'procRules','procRuleIdCounter','procStalenessInterval',
       ];
       for (const f of fields) state[f] = this[f];
       try { localStorage.setItem('mg-config-state', JSON.stringify(state)); } catch(e) {}
@@ -1274,6 +1722,7 @@ function configHelper() {
           'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
           'rules','middleTab','activeTab','ruleIdCounter',
           'alertExportErrorPct','alertQueuePct','alertMemoryPct','alertBackpressureRate','alertWorkerPct','alertConfigStaleHours','alertK8sFormat',
+          'procRules','procRuleIdCounter','procStalenessInterval',
         ];
         for (const k of loadable) {
           if (state[k] !== undefined && state[k] !== null) this[k] = state[k];
@@ -1357,6 +1806,18 @@ function configHelper() {
     alertK8sFormat: false,
     alertsText: '',
 
+    // ---- Processing rules ----
+    procRules: [],
+    procRuleIdCounter: 0,
+    procStalenessInterval: '10m',
+    procText: '',
+
+    // Processing group_by/functions options
+    procGroupByOptions: ['service', 'env', 'namespace', 'cluster', 'method', 'status_code', 'job', 'instance'],
+    procFunctionOptions: ['sum', 'avg', 'min', 'max', 'count', 'last', 'increase', 'rate', 'stddev'],
+    procDownsampleMethods: ['avg', 'min', 'max', 'sum', 'count', 'last', 'delta', 'lttb', 'sdt', 'adaptive'],
+    procTransformOps: ['remove', 'set', 'rename', 'copy', 'replace', 'extract', 'hash_mod', 'lower', 'upper', 'concat', 'map', 'math'],
+
     // ---- Bidirectional YAML editing state ----
     helmText: '',
     appText: '',
@@ -1399,6 +1860,94 @@ function configHelper() {
         rule.groupBy.push(val);
       }
       rule.customGroupBy = '';
+    },
+
+    // ---- Processing rule methods ----
+    addProcRule() {
+      this.procRuleIdCounter++;
+      this.procRules.push({
+        id: this.procRuleIdCounter,
+        name: '',
+        input: '.*',
+        inputLabels: [],
+        action: 'sample',
+        expanded: true,
+        // Sample
+        rate: 1.0,
+        method: 'head',
+        // Downsample
+        dsMethod: 'avg',
+        dsInterval: '1m',
+        dsResolution: 10,
+        dsDeviation: 0.5,
+        dsMinRate: 0.1,
+        dsMaxRate: 1.0,
+        dsVarianceWindow: 20,
+        // Aggregate
+        aggOutput: '',
+        aggInterval: '1m',
+        aggGroupBy: [],
+        aggDropLabels: [],
+        aggFunctions: ['sum'],
+        aggKeepInput: false,
+        aggCustomGroupBy: '',
+        aggCustomDropLabel: '',
+        // Transform
+        transformWhen: [],
+        transformOps: [],
+        // Transform custom entries
+        transformCustomWhenLabel: '',
+      });
+    },
+
+    moveProcRule(idx, dir) {
+      const target = idx + dir;
+      if (target < 0 || target >= this.procRules.length) return;
+      const tmp = this.procRules[idx];
+      this.procRules[idx] = this.procRules[target];
+      this.procRules[target] = tmp;
+    },
+
+    addProcTransformWhen(rule) {
+      rule.transformWhen.push({ label: '', type: 'equals', value: '' });
+    },
+
+    addProcTransformOp(rule) {
+      rule.transformOps.push({ type: 'set', label: '', value: '', source: '', target: '', pattern: '', replacement: '', group: 1, modulus: 16, separator: '.', sources: '', operation: 'div', operand: 1, mapValues: '', mapDefault: '' });
+    },
+
+    toggleProcGroupBy(rule, g) {
+      const i = rule.aggGroupBy.indexOf(g);
+      if (i >= 0) rule.aggGroupBy.splice(i, 1);
+      else rule.aggGroupBy.push(g);
+    },
+
+    toggleProcFunction(rule, f) {
+      const i = rule.aggFunctions.indexOf(f);
+      if (i >= 0) rule.aggFunctions.splice(i, 1);
+      else rule.aggFunctions.push(f);
+    },
+
+    toggleProcDropLabel(rule, l) {
+      const i = rule.aggDropLabels.indexOf(l);
+      if (i >= 0) rule.aggDropLabels.splice(i, 1);
+      else rule.aggDropLabels.push(l);
+    },
+
+    addProcGroupByLabel(rule) {
+      const val = rule.aggCustomGroupBy.replace(/,/g, '').trim();
+      if (val && !rule.aggGroupBy.includes(val)) {
+        rule.aggGroupBy.push(val);
+      }
+      rule.aggCustomGroupBy = '';
+    },
+
+    addProcDropLabel(rule) {
+      const val = rule.aggCustomDropLabel.replace(/,/g, '').trim();
+      if (val && !rule.aggDropLabels.includes(val)) {
+        rule.aggDropLabels.push(val);
+      }
+      rule.aggCustomDropLabel = '';
     },
 
     // ---- Formatters ----
@@ -1898,6 +2447,207 @@ function configHelper() {
       return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     },
 
+    // ---- Processing YAML generation ----
+    get processingYaml() {
+      let y = '# Processing Rules Configuration\n';
+      y += '# Generated by metrics-governor Playground\n\n';
+      y += `staleness_interval: ${this.procStalenessInterval}\n\n`;
+      y += 'rules:\n';
+      if (this.procRules.length === 0) {
+        y += '  # No rules defined - all metrics pass through unchanged\n';
+        return y;
+      }
+      for (const rule of this.procRules) {
+        y += `  - name: "${this.escYaml(rule.name)}"\n`;
+        y += `    input: "${this.escYaml(rule.input)}"\n`;
+        // input_labels if any
+        const validLabels = (rule.inputLabels || []).filter(l => l.key && l.key.trim());
+        if (validLabels.length > 0) {
+          y += `    input_labels:\n`;
+          for (const lbl of validLabels) {
+            y += `      ${lbl.key}: "${this.escYaml(lbl.value)}"\n`;
+          }
+        }
+        y += `    action: ${rule.action}\n`;
+
+        // Action-specific fields
+        if (rule.action === 'sample') {
+          y += `    rate: ${rule.rate}\n`;
+          y += `    method: ${rule.method}\n`;
+        } else if (rule.action === 'downsample') {
+          y += `    method: ${rule.dsMethod}\n`;
+          y += `    interval: ${rule.dsInterval}\n`;
+          if (rule.dsMethod === 'lttb') {
+            y += `    resolution: ${rule.dsResolution}\n`;
+          } else if (rule.dsMethod === 'sdt') {
+            y += `    deviation: ${rule.dsDeviation}\n`;
+          } else if (rule.dsMethod === 'adaptive') {
+            y += `    min_rate: ${rule.dsMinRate}\n`;
+            y += `    max_rate: ${rule.dsMaxRate}\n`;
+            y += `    variance_window: ${rule.dsVarianceWindow}\n`;
+          }
+        } else if (rule.action === 'aggregate') {
+          if (rule.aggOutput) y += `    output: "${this.escYaml(rule.aggOutput)}"\n`;
+          y += `    interval: ${rule.aggInterval}\n`;
+          if (rule.aggGroupBy.length > 0) {
+            y += `    group_by: [${rule.aggGroupBy.map(g => '"' + g + '"').join(', ')}]\n`;
+          }
+          if (rule.aggDropLabels.length > 0) {
+            y += `    drop_labels: [${rule.aggDropLabels.map(l => '"' + l + '"').join(', ')}]\n`;
+          }
+          if (rule.aggFunctions.length > 0) {
+            y += `    functions: [${rule.aggFunctions.map(f => '"' + f + '"').join(', ')}]\n`;
+          }
+          if (rule.aggKeepInput) {
+            y += `    keep_input: true\n`;
+          }
+        } else if (rule.action === 'transform') {
+          if (rule.transformWhen && rule.transformWhen.length > 0) {
+            const validWhen = rule.transformWhen.filter(w => w.label && w.label.trim());
+            if (validWhen.length > 0) {
+              y += `    when:\n`;
+              for (const w of validWhen) {
+                y += `      - label: "${this.escYaml(w.label)}"\n`;
+                y += `        type: ${w.type}\n`;
+                if (!['exists', 'not_exists'].includes(w.type) && w.value) {
+                  y += `        value: "${this.escYaml(w.value)}"\n`;
+                }
+              }
+            }
+          }
+          if (rule.transformOps && rule.transformOps.length > 0) {
+            y += `    operations:\n`;
+            for (const op of rule.transformOps) {
+              y += `      - type: ${op.type}\n`;
+              if (['set'].includes(op.type)) {
+                if (op.label) y += `        label: "${this.escYaml(op.label)}"\n`;
+                if (op.value) y += `        value: "${this.escYaml(op.value)}"\n`;
+              } else if (op.type === 'remove') {
+                if (op.label) y += `        label: "${this.escYaml(op.label)}"\n`;
+              } else if (['rename', 'copy'].includes(op.type)) {
+                if (op.source) y += `        source: "${this.escYaml(op.source)}"\n`;
+                if (op.target) y += `        target: "${this.escYaml(op.target)}"\n`;
+              } else if (op.type === 'replace') {
+                if (op.label) y += `        label: "${this.escYaml(op.label)}"\n`;
+                if (op.pattern) y += `        pattern: "${this.escYaml(op.pattern)}"\n`;
+                if (op.replacement) y += `        replacement: "${this.escYaml(op.replacement)}"\n`;
+              } else if (op.type === 'extract') {
+                if (op.source) y += `        source: "${this.escYaml(op.source)}"\n`;
+                if (op.pattern) y += `        pattern: "${this.escYaml(op.pattern)}"\n`;
+                if (op.target) y += `        target: "${this.escYaml(op.target)}"\n`;
+                y += `        group: ${op.group || 1}\n`;
+              } else if (op.type === 'hash_mod') {
+                if (op.label) y += `        label: "${this.escYaml(op.label)}"\n`;
+                y += `        modulus: ${op.modulus || 16}\n`;
+                if (op.target) y += `        target: "${this.escYaml(op.target)}"\n`;
+              } else if (['lower', 'upper'].includes(op.type)) {
+                if (op.label) y += `        label: "${this.escYaml(op.label)}"\n`;
+              } else if (op.type === 'concat') {
+                if (op.sources) y += `        sources: [${op.sources.split(',').map(s => '"' + s.trim() + '"').join(', ')}]\n`;
+                y += `        separator: "${this.escYaml(op.separator || '.')}"\n`;
+                if (op.target) y += `        target: "${this.escYaml(op.target)}"\n`;
+              } else if (op.type === 'map') {
+                if (op.label) y += `        label: "${this.escYaml(op.label)}"\n`;
+                if (op.mapValues) {
+                  y += `        values:\n`;
+                  for (const pair of op.mapValues.split(',')) {
+                    const parts = pair.split('=');
+                    if (parts.length === 2) {
+                      y += `          "${parts[0].trim()}": "${parts[1].trim()}"\n`;
+                    }
+                  }
+                }
+                if (op.mapDefault) y += `        default: "${this.escYaml(op.mapDefault)}"\n`;
+              } else if (op.type === 'math') {
+                if (op.label) y += `        label: "${this.escYaml(op.label)}"\n`;
+                y += `        operation: ${op.operation || 'div'}\n`;
+                y += `        operand: ${op.operand || 1}\n`;
+              }
+            }
+          }
+        }
+        // Drop: no additional fields
+      }
+      return y;
+    },
+
+    // ---- Processing impact estimator ----
+    get procImpactEstimate() {
+      let inputDps = this.dps;
+      let outputDps = this.dps;
+      let memOverhead = 0;
+      const perRule = [];
+
+      for (const rule of this.procRules) {
+        let ruleOutput = inputDps;
+        let ruleReduction = 0;
+
+        if (rule.action === 'drop') {
+          ruleReduction = 0.3; // assume 30% of traffic matches
+        } else if (rule.action === 'sample') {
+          ruleReduction = 1 - rule.rate;
+        } else if (rule.action === 'downsample') {
+          ruleReduction = 0.5; // rough estimate
+          memOverhead += 150 * Math.max(100, Math.round(inputDps / 10)); // 150 bytes per downsample series
+        } else if (rule.action === 'aggregate') {
+          ruleReduction = 0.8; // significant reduction
+          memOverhead += 200 * (rule.aggGroupBy.length > 0 ? 1000 : 10000); // estimated groups
+        } else if (rule.action === 'transform') {
+          ruleReduction = 0; // transforms don't reduce volume
+        }
+
+        ruleOutput = Math.round(inputDps * (1 - ruleReduction));
+        perRule.push({ name: rule.name || 'unnamed', action: rule.action, inputDps, outputDps: ruleOutput, reduction: ruleReduction });
+        outputDps = ruleOutput;
+        inputDps = ruleOutput; // chain: output of one rule feeds the next
+      }
+
+      return {
+        inputDps: this.dps,
+        outputDps,
+        reductionPct: ((1 - outputDps / Math.max(1, this.dps)) * 100).toFixed(1),
+        memOverhead,
+        perRule,
+      };
+    },
+
+    // ---- Processing lint/validation ----
+    lintProcessing() {
+      const issues = this.validateYamlSyntax(this.procText);
+      for (const rule of this.procRules) {
+        const idx = this.procRules.indexOf(rule) + 1;
+        if (!rule.name.trim()) issues.push({ type: 'error', msg: `Rule #${idx}: name is required` });
+        if (!rule.input.trim()) issues.push({ type: 'error', msg: `Rule "${rule.name || '#' + idx}": input pattern is required` });
+        // Validate regex
+        try { new RegExp(rule.input); } catch(e) { issues.push({ type: 'error', msg: `Rule "${rule.name || '#' + idx}": invalid input regex` }); }
+        // Action-specific validation
+        if (rule.action === 'sample') {
+          if (rule.rate < 0 || rule.rate > 1) issues.push({ type: 'error', msg: `Rule "${rule.name || '#' + idx}": rate must be 0.0-1.0` });
+        }
+        if (rule.action === 'aggregate') {
+          if (rule.aggGroupBy.length > 0 && rule.aggDropLabels.length > 0) issues.push({ type: 'error', msg: `Rule "${rule.name || '#' + idx}": group_by and drop_labels are mutually exclusive` });
+          if (rule.aggFunctions.length === 0) issues.push({ type: 'error', msg: `Rule "${rule.name || '#' + idx}": at least one function is required` });
+        }
+        if (rule.action === 'downsample' && rule.dsMethod === 'sdt' && !rule.dsDeviation) {
+          issues.push({ type: 'error', msg: `Rule "${rule.name || '#' + idx}": SDT method requires deviation` });
+        }
+        if (rule.action === 'transform' && (!rule.transformOps || rule.transformOps.length === 0)) {
+          issues.push({ type: 'error', msg: `Rule "${rule.name || '#' + idx}": transform requires at least one operation` });
+        }
+      }
+      // Warnings
+      if (this.procRules.length > 20) issues.push({ type: 'warn', msg: 'Many rules (>20) may impact processing latency' });
+      const dropAll = this.procRules.some(r => r.action === 'drop' && r.input === '.*');
+      if (dropAll) issues.push({ type: 'warn', msg: 'A rule drops ALL metrics (input: ".*") - is this intentional?' });
+      const sampleZero = this.procRules.some(r => r.action === 'sample' && r.rate === 0);
+      if (sampleZero) issues.push({ type: 'warn', msg: 'A sample rule has rate=0, effectively dropping all matching metrics' });
+      if (issues.length === 0) issues.push({ type: 'ok', msg: 'Valid - no issues found' });
+      return issues;
+    },
+    get procLint() { return this.lintProcessing(); },
+    get procValid() { return !this.procLint.some(i => i.type === 'error'); },
+    get procHasWarns() { return this.procLint.some(i => i.type === 'warn'); },
+
     // ---- Bidirectional YAML parsing ----
     parseYamlToMap(text) {
       const map = {};
@@ -2106,6 +2856,7 @@ function configHelper() {
       if (tab === 'helm') this.helmText = this.helmYaml;
       else if (tab === 'app') this.appText = this.appYaml;
       else if (tab === 'limits') this.limitsText = this.limitsYaml;
+      else if (tab === 'processing') this.procText = this.processingYaml;
     },
 
     // ---- YAML validation & semantic linting ----

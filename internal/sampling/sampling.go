@@ -1,12 +1,14 @@
 package sampling
 
 import (
+	"context"
 	"fmt"
 	"math/rand/v2"
 	"os"
 	"regexp"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/yaml.v3"
@@ -66,6 +68,8 @@ type FileConfig struct {
 }
 
 // Sampler applies sampling rules to OTLP metrics.
+// When created via NewFromProcessing, it uses the unified processing engine
+// with multi-touch routing (transform=non-terminal, others=terminal).
 type Sampler struct {
 	mu          sync.RWMutex
 	defaultRate float64
@@ -73,6 +77,11 @@ type Sampler struct {
 	rules       []Rule
 	ops         atomic.Int64
 	dsEngine    *downsampleEngine // nil when no downsample rules exist
+
+	// Processing engine fields (set when using NewFromProcessing).
+	procConfig *ProcessingConfig
+	procRules  []ProcessingRule
+	aggEngine  *aggregateEngine
 }
 
 // New creates a Sampler from a config.
@@ -215,7 +224,16 @@ func (s *Sampler) Ops() int64 {
 
 // Sample applies sampling rules to OTLP ResourceMetrics.
 // Returns the modified slice (datapoints may be removed by sampling).
+// When processing config is active, delegates to the processing engine.
 func (s *Sampler) Sample(rms []*metricspb.ResourceMetrics) []*metricspb.ResourceMetrics {
+	// If processing config is active, use the processing engine.
+	s.mu.RLock()
+	hasProc := s.procConfig != nil
+	s.mu.RUnlock()
+	if hasProc {
+		return s.Process(rms)
+	}
+
 	s.mu.RLock()
 	rules := s.rules
 	defaultRate := s.defaultRate
@@ -506,4 +524,471 @@ func resolveRateFromRule(rule *Rule, defaultRate float64, defaultStrategy Strate
 		return rule.Rate, rs, name
 	}
 	return defaultRate, defaultStrategy, "default"
+}
+
+// ---------------------------------------------------------------------------
+// Processing Engine
+// ---------------------------------------------------------------------------
+
+// NewFromProcessing creates a Sampler from a ProcessingConfig.
+func NewFromProcessing(cfg ProcessingConfig) (*Sampler, error) {
+	if err := validateProcessingConfig(&cfg); err != nil {
+		return nil, err
+	}
+
+	// Build downsample engine if any downsample rules exist.
+	var dsEngine *downsampleEngine
+	for _, r := range cfg.Rules {
+		if r.Action == ActionDownsample {
+			dsEngine = newDownsampleEngine()
+			break
+		}
+	}
+
+	// Build aggregate engine.
+	aggEngine := newAggregateEngine(cfg.Rules, cfg.parsedStaleness)
+
+	s := &Sampler{
+		defaultRate: 1.0,
+		strategy:    StrategyHead,
+		procConfig:  &cfg,
+		procRules:   cfg.Rules,
+		dsEngine:    dsEngine,
+		aggEngine:   aggEngine,
+	}
+
+	updateProcessingRulesActive(cfg.Rules)
+
+	return s, nil
+}
+
+// Process applies processing rules to OTLP ResourceMetrics using multi-touch routing.
+// Transform rules are non-terminal (apply and continue). Other actions are terminal (first match wins).
+func (s *Sampler) Process(rms []*metricspb.ResourceMetrics) []*metricspb.ResourceMetrics {
+	if len(rms) == 0 {
+		return rms
+	}
+
+	start := time.Now()
+
+	s.mu.RLock()
+	procRules := s.procRules
+	s.mu.RUnlock()
+
+	result := make([]*metricspb.ResourceMetrics, 0, len(rms))
+	for _, rm := range rms {
+		rm = s.processResourceMetrics(rm, procRules)
+		if rm != nil {
+			result = append(result, rm)
+		}
+	}
+
+	processingDuration.Observe(time.Since(start).Seconds())
+	return result
+}
+
+func (s *Sampler) processResourceMetrics(rm *metricspb.ResourceMetrics, rules []ProcessingRule) *metricspb.ResourceMetrics {
+	if rm == nil {
+		return nil
+	}
+
+	filteredScopes := make([]*metricspb.ScopeMetrics, 0, len(rm.ScopeMetrics))
+	for _, sm := range rm.ScopeMetrics {
+		sm = s.processScopeMetrics(sm, rules)
+		if sm != nil && len(sm.Metrics) > 0 {
+			filteredScopes = append(filteredScopes, sm)
+		}
+	}
+
+	if len(filteredScopes) == 0 {
+		return nil
+	}
+	rm.ScopeMetrics = filteredScopes
+	return rm
+}
+
+func (s *Sampler) processScopeMetrics(sm *metricspb.ScopeMetrics, rules []ProcessingRule) *metricspb.ScopeMetrics {
+	if sm == nil {
+		return nil
+	}
+
+	filteredMetrics := make([]*metricspb.Metric, 0, len(sm.Metrics))
+	for _, m := range sm.Metrics {
+		m = s.processMetric(m, rules)
+		if m != nil {
+			filteredMetrics = append(filteredMetrics, m)
+		}
+	}
+
+	if len(filteredMetrics) == 0 {
+		return nil
+	}
+	sm.Metrics = filteredMetrics
+	return sm
+}
+
+func (s *Sampler) processMetric(m *metricspb.Metric, rules []ProcessingRule) *metricspb.Metric {
+	if m == nil {
+		return nil
+	}
+
+	switch data := m.Data.(type) {
+	case *metricspb.Metric_Gauge:
+		if data.Gauge != nil {
+			filtered := s.processNumberDataPoints(m.Name, data.Gauge.DataPoints, rules)
+			if filtered == nil {
+				return nil
+			}
+			data.Gauge.DataPoints = filtered
+		}
+	case *metricspb.Metric_Sum:
+		if data.Sum != nil {
+			filtered := s.processNumberDataPoints(m.Name, data.Sum.DataPoints, rules)
+			if filtered == nil {
+				return nil
+			}
+			data.Sum.DataPoints = filtered
+		}
+	case *metricspb.Metric_Histogram:
+		if data.Histogram != nil {
+			filtered := s.processHistogramDataPoints(m.Name, data.Histogram.DataPoints, rules)
+			if filtered == nil {
+				return nil
+			}
+			data.Histogram.DataPoints = filtered
+		}
+	case *metricspb.Metric_Summary:
+		if data.Summary != nil {
+			filtered := s.processSummaryDataPoints(m.Name, data.Summary.DataPoints, rules)
+			if filtered == nil {
+				return nil
+			}
+			data.Summary.DataPoints = filtered
+		}
+	case *metricspb.Metric_ExponentialHistogram:
+		if data.ExponentialHistogram != nil {
+			filtered := s.processExponentialHistogramDataPoints(m.Name, data.ExponentialHistogram.DataPoints, rules)
+			if filtered == nil {
+				return nil
+			}
+			data.ExponentialHistogram.DataPoints = filtered
+		}
+	}
+
+	return m
+}
+
+// matchProcessingRule checks if a metric name and attributes match a processing rule.
+func matchProcessingRule(rule *ProcessingRule, metricName string, attrs []*commonpb.KeyValue) bool {
+	if rule.compiledInput != nil && !rule.compiledInput.MatchString(metricName) {
+		return false
+	}
+	for key, re := range rule.compiledLabels {
+		found := false
+		for _, kv := range attrs {
+			if kv.Key == key {
+				if re.MatchString(kv.Value.GetStringValue()) {
+					found = true
+				}
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// processNumberDataPoints applies multi-touch processing rules to number data points.
+func (s *Sampler) processNumberDataPoints(metricName string, dps []*metricspb.NumberDataPoint, rules []ProcessingRule) []*metricspb.NumberDataPoint {
+	if len(dps) == 0 {
+		return dps
+	}
+
+	result := make([]*metricspb.NumberDataPoint, 0, len(dps))
+	for _, dp := range dps {
+		processingInputDatapointsTotal.Inc()
+		kept := s.applyProcessingRules(metricName, dp, rules)
+		if kept {
+			result = append(result, dp)
+			processingOutputDatapointsTotal.Inc()
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// applyProcessingRules walks rules in order with multi-touch semantics.
+// Returns true if the datapoint should be kept in the output.
+func (s *Sampler) applyProcessingRules(metricName string, dp *metricspb.NumberDataPoint, rules []ProcessingRule) bool {
+	for i := range rules {
+		rule := &rules[i]
+		if !matchProcessingRule(rule, metricName, dp.Attributes) {
+			continue
+		}
+
+		processingRuleEvaluationsTotal.WithLabelValues(rule.Name, string(rule.Action)).Inc()
+
+		switch rule.Action {
+		case ActionTransform:
+			// Non-terminal: apply transform and continue to next rule.
+			if len(rule.When) > 0 && !evaluateConditions(rule.When, dp.Attributes) {
+				continue
+			}
+			dp.Attributes = applyTransformOperations(dp.Attributes, rule.compiledOps, rule.Name)
+			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionTransform)).Inc()
+			processingRuleOutputTotal.WithLabelValues(rule.Name, string(ActionTransform), "").Inc()
+			continue // Non-terminal — check next rule.
+
+		case ActionDrop:
+			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionDrop)).Inc()
+			processingRuleDroppedTotal.WithLabelValues(rule.Name, string(ActionDrop)).Inc()
+			processingDroppedDatapointsTotal.Inc()
+			return false // Terminal — drop.
+
+		case ActionSample:
+			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionSample)).Inc()
+			strategy := StrategyHead
+			if rule.Method == "probabilistic" {
+				strategy = StrategyProbabilistic
+			}
+			if s.shouldKeep(rule.Rate, strategy) {
+				processingRuleOutputTotal.WithLabelValues(rule.Name, string(ActionSample), "").Inc()
+				return true // Terminal — kept.
+			}
+			processingRuleDroppedTotal.WithLabelValues(rule.Name, string(ActionSample)).Inc()
+			processingDroppedDatapointsTotal.Inc()
+			return false // Terminal — dropped.
+
+		case ActionDownsample:
+			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionDownsample)).Inc()
+			if rule.dsConfig != nil && s.dsEngine != nil {
+				seriesKey := buildDSSeriesKey(metricName, dp.Attributes)
+				emitted := s.dsEngine.ingestAndEmit(seriesKey, rule.dsConfig, dp.TimeUnixNano, getNumberValue(dp))
+
+				if len(emitted) > 0 {
+					// Replace dp value with first emitted; additional points are handled upstream.
+					dp.TimeUnixNano = emitted[0].timestamp
+					dp.Value = &metricspb.NumberDataPoint_AsDouble{AsDouble: emitted[0].value}
+					for range emitted {
+						processingRuleOutputTotal.WithLabelValues(rule.Name, string(ActionDownsample), rule.Method).Inc()
+					}
+					return true // Terminal — emitted.
+				}
+				// Accumulated but not ready to emit yet.
+				processingDroppedDatapointsTotal.Inc()
+				return false // Terminal — buffered.
+			}
+			return true // No engine — pass through.
+
+		case ActionAggregate:
+			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionAggregate)).Inc()
+			if s.aggEngine != nil {
+				s.aggEngine.Ingest(rule, metricName, dp)
+			}
+			if rule.KeepInput {
+				return true // Terminal — ingested + keep original.
+			}
+			processingDroppedDatapointsTotal.Inc()
+			return false // Terminal — ingested, original dropped.
+		}
+	}
+
+	// No terminal rule matched — pass through unchanged.
+	processingOutputDatapointsTotal.Inc()
+	return true
+}
+
+// processHistogramDataPoints applies processing rules to histogram datapoints.
+// Only sample, drop, and transform actions apply (downsample/aggregate are for NumberDataPoints only).
+func (s *Sampler) processHistogramDataPoints(metricName string, dps []*metricspb.HistogramDataPoint, rules []ProcessingRule) []*metricspb.HistogramDataPoint {
+	if len(dps) == 0 {
+		return dps
+	}
+
+	result := make([]*metricspb.HistogramDataPoint, 0, len(dps))
+	for _, dp := range dps {
+		processingInputDatapointsTotal.Inc()
+		kept := s.applyProcessingRulesGeneric(metricName, dp.Attributes, rules, func(attrs []*commonpb.KeyValue) {
+			dp.Attributes = attrs
+		})
+		if kept {
+			result = append(result, dp)
+			processingOutputDatapointsTotal.Inc()
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// processSummaryDataPoints applies processing rules to summary datapoints.
+func (s *Sampler) processSummaryDataPoints(metricName string, dps []*metricspb.SummaryDataPoint, rules []ProcessingRule) []*metricspb.SummaryDataPoint {
+	if len(dps) == 0 {
+		return dps
+	}
+
+	result := make([]*metricspb.SummaryDataPoint, 0, len(dps))
+	for _, dp := range dps {
+		processingInputDatapointsTotal.Inc()
+		kept := s.applyProcessingRulesGeneric(metricName, dp.Attributes, rules, func(attrs []*commonpb.KeyValue) {
+			dp.Attributes = attrs
+		})
+		if kept {
+			result = append(result, dp)
+			processingOutputDatapointsTotal.Inc()
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// processExponentialHistogramDataPoints applies processing rules to exponential histogram datapoints.
+func (s *Sampler) processExponentialHistogramDataPoints(metricName string, dps []*metricspb.ExponentialHistogramDataPoint, rules []ProcessingRule) []*metricspb.ExponentialHistogramDataPoint {
+	if len(dps) == 0 {
+		return dps
+	}
+
+	result := make([]*metricspb.ExponentialHistogramDataPoint, 0, len(dps))
+	for _, dp := range dps {
+		processingInputDatapointsTotal.Inc()
+		kept := s.applyProcessingRulesGeneric(metricName, dp.Attributes, rules, func(attrs []*commonpb.KeyValue) {
+			dp.Attributes = attrs
+		})
+		if kept {
+			result = append(result, dp)
+			processingOutputDatapointsTotal.Inc()
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// applyProcessingRulesGeneric handles multi-touch routing for non-NumberDataPoint types.
+// Only sample, drop, and transform actions apply. Downsample/aggregate are skipped (NumberDataPoint only).
+func (s *Sampler) applyProcessingRulesGeneric(metricName string, attrs []*commonpb.KeyValue, rules []ProcessingRule, setAttrs func([]*commonpb.KeyValue)) bool {
+	for i := range rules {
+		rule := &rules[i]
+		if !matchProcessingRule(rule, metricName, attrs) {
+			continue
+		}
+
+		processingRuleEvaluationsTotal.WithLabelValues(rule.Name, string(rule.Action)).Inc()
+
+		switch rule.Action {
+		case ActionTransform:
+			if len(rule.When) > 0 && !evaluateConditions(rule.When, attrs) {
+				continue
+			}
+			attrs = applyTransformOperations(attrs, rule.compiledOps, rule.Name)
+			setAttrs(attrs)
+			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionTransform)).Inc()
+			processingRuleOutputTotal.WithLabelValues(rule.Name, string(ActionTransform), "").Inc()
+			continue // Non-terminal.
+
+		case ActionDrop:
+			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionDrop)).Inc()
+			processingRuleDroppedTotal.WithLabelValues(rule.Name, string(ActionDrop)).Inc()
+			processingDroppedDatapointsTotal.Inc()
+			return false
+
+		case ActionSample:
+			processingRuleInputTotal.WithLabelValues(rule.Name, string(ActionSample)).Inc()
+			strategy := StrategyHead
+			if rule.Method == "probabilistic" {
+				strategy = StrategyProbabilistic
+			}
+			if s.shouldKeep(rule.Rate, strategy) {
+				processingRuleOutputTotal.WithLabelValues(rule.Name, string(ActionSample), "").Inc()
+				return true
+			}
+			processingRuleDroppedTotal.WithLabelValues(rule.Name, string(ActionSample)).Inc()
+			processingDroppedDatapointsTotal.Inc()
+			return false
+
+		case ActionDownsample, ActionAggregate:
+			// Skip — these only apply to NumberDataPoints.
+			continue
+		}
+	}
+
+	// No terminal rule matched — pass through.
+	return true
+}
+
+// ReloadProcessingConfig atomically replaces the processing rules.
+func (s *Sampler) ReloadProcessingConfig(cfg ProcessingConfig) error {
+	if err := validateProcessingConfig(&cfg); err != nil {
+		processingConfigReloadsTotal.WithLabelValues("error").Inc()
+		return err
+	}
+
+	// Rebuild downsample engine.
+	var dsEngine *downsampleEngine
+	for _, r := range cfg.Rules {
+		if r.Action == ActionDownsample {
+			dsEngine = newDownsampleEngine()
+			break
+		}
+	}
+
+	s.mu.Lock()
+	s.procConfig = &cfg
+	s.procRules = cfg.Rules
+	s.dsEngine = dsEngine
+	s.mu.Unlock()
+
+	// Reload aggregate engine (flushes existing state).
+	if s.aggEngine != nil {
+		s.aggEngine.Reload(cfg.Rules, cfg.parsedStaleness)
+	}
+
+	updateProcessingRulesActive(cfg.Rules)
+	processingConfigReloadsTotal.WithLabelValues("success").Inc()
+	return nil
+}
+
+// StartAggregation starts the aggregate engine's flush timers.
+func (s *Sampler) StartAggregation(ctx context.Context) {
+	if s.aggEngine != nil {
+		s.aggEngine.Start(ctx)
+	}
+}
+
+// StopAggregation stops the aggregate engine's flush timers.
+func (s *Sampler) StopAggregation() {
+	if s.aggEngine != nil {
+		s.aggEngine.Stop()
+	}
+}
+
+// SetAggregateOutput sets the callback for re-injecting aggregated metrics.
+func (s *Sampler) SetAggregateOutput(fn func([]*metricspb.ResourceMetrics)) {
+	if s.aggEngine != nil {
+		s.aggEngine.SetOutput(fn)
+	}
+}
+
+// HasAggregation returns true if there are any aggregate rules configured.
+func (s *Sampler) HasAggregation() bool {
+	return s.aggEngine != nil && s.aggEngine.HasRules()
+}
+
+// ProcessingRuleCount returns the number of active processing rules.
+func (s *Sampler) ProcessingRuleCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.procRules)
 }

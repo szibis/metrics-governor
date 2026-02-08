@@ -1,0 +1,95 @@
+# Processing Rules — Comprehensive Example
+# All 5 actions: sample, downsample, aggregate, transform, drop
+#
+# Usage:
+#   metrics-governor --processing-config=examples/processing.yaml
+
+staleness_interval: 10m
+
+rules:
+  # ──────────────────────────────────────────────────
+  # SAMPLE: stochastic reduction
+  # ──────────────────────────────────────────────────
+
+  # Keep all SLI metrics (rate=1.0)
+  - name: keep-sli
+    input: "sli_.*"
+    input_labels:
+      env: "production"
+    action: sample
+    rate: 1.0
+    method: head
+
+  # Reduce debug metrics to 1%
+  - name: reduce-debug
+    input: "debug_.*"
+    action: sample
+    rate: 0.01
+    method: probabilistic
+
+  # ──────────────────────────────────────────────────
+  # DOWNSAMPLE: per-series time-windowed compression
+  # ──────────────────────────────────────────────────
+
+  # CPU metrics: 1-minute average
+  - name: cpu-avg
+    input: "process_cpu_.*"
+    action: downsample
+    method: avg
+    interval: 1m
+
+  # Network metrics: adaptive rate
+  - name: network-adaptive
+    input: "node_network_.*"
+    action: downsample
+    method: adaptive
+    interval: 30s
+    min_rate: 0.1
+    max_rate: 1.0
+    variance_window: 30
+
+  # ──────────────────────────────────────────────────
+  # AGGREGATE: cross-series reduction
+  # ──────────────────────────────────────────────────
+
+  # Aggregate HTTP requests by service — eliminates pod labels
+  - name: http-by-service
+    input: "http_requests_total"
+    output: "http_requests_by_service"
+    action: aggregate
+    interval: 1m
+    group_by: [service, env, method]
+    functions: [sum, count]
+    keep_input: false
+
+  # Strip pod labels from kube metrics
+  - name: strip-pod-labels
+    input: "kube_pod_.*"
+    action: aggregate
+    interval: 30s
+    drop_labels: [pod, pod_ip, container_id, instance]
+    functions: [last]
+
+  # ──────────────────────────────────────────────────
+  # TRANSFORM: label manipulation
+  # ──────────────────────────────────────────────────
+
+  # Normalize service names: strip version suffix
+  - name: normalize-service
+    input: "http_.*"
+    action: transform
+    operations:
+      - extract:
+          source: service
+          target: service_base
+          pattern: "(.+)-v\\d+$"
+          group: 1
+
+  # ──────────────────────────────────────────────────
+  # DROP: 100% removal
+  # ──────────────────────────────────────────────────
+
+  # Drop all internal metrics
+  - name: drop-internal
+    input: "internal_.*"
+    action: drop

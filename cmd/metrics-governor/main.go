@@ -414,22 +414,27 @@ func main() {
 		))
 	}
 
-	// Create sampler (if configured)
+	// Create sampler/processor (if configured)
+	// Processing config takes precedence; --sampling-config is a deprecated alias.
 	var sampler *sampling.Sampler
-	if cfg.SamplingConfig != "" {
-		samplingCfg, err := sampling.LoadFile(cfg.SamplingConfig)
+	processingConfigPath := cfg.ProcessingConfig
+	if processingConfigPath == "" && cfg.SamplingConfig != "" {
+		processingConfigPath = cfg.SamplingConfig
+		logging.Warn("--sampling-config is deprecated, use --processing-config instead", logging.F("path", cfg.SamplingConfig))
+	}
+	if processingConfigPath != "" {
+		procCfg, err := sampling.LoadProcessingFile(processingConfigPath)
 		if err != nil {
-			logging.Fatal("failed to load sampling config", logging.F("error", err.Error(), "path", cfg.SamplingConfig))
+			logging.Fatal("failed to load processing config", logging.F("error", err.Error(), "path", processingConfigPath))
 		}
-		sampler, err = sampling.New(samplingCfg)
+		sampler, err = sampling.NewFromProcessing(procCfg)
 		if err != nil {
-			logging.Fatal("failed to create sampler", logging.F("error", err.Error()))
+			logging.Fatal("failed to create processor", logging.F("error", err.Error()))
 		}
-		logging.Info("sampler initialized", logging.F(
-			"config", cfg.SamplingConfig,
-			"default_rate", samplingCfg.DefaultRate,
-			"strategy", string(samplingCfg.Strategy),
-			"rules_count", len(samplingCfg.Rules),
+		logging.Info("processing engine initialized", logging.F(
+			"config", processingConfigPath,
+			"rules_count", sampler.ProcessingRuleCount(),
+			"has_aggregation", sampler.HasAggregation(),
 		))
 	}
 
@@ -540,9 +545,9 @@ func main() {
 		bufOpts = append(bufOpts, buffer.WithRelabeler(relabeler))
 	}
 
-	// Wire sampler into buffer pipeline (sampling before limits)
+	// Wire processor/sampler into buffer pipeline (processing before limits)
 	if sampler != nil {
-		bufOpts = append(bufOpts, buffer.WithSampler(sampler))
+		bufOpts = append(bufOpts, buffer.WithProcessor(sampler))
 	}
 
 	// Wire batch auto-tuner (AIMD) into buffer and queued exporter
@@ -565,6 +570,13 @@ func main() {
 
 	// Create buffer with stats collector, limits enforcer, and log aggregator
 	buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, finalExporter, statsCollector, limitsEnforcer, bufferLogAggregator, bufOpts...)
+
+	// Wire aggregate output into buffer (bypasses stats+processing to avoid loops)
+	if sampler != nil && sampler.HasAggregation() {
+		sampler.SetAggregateOutput(buf.AddAggregated)
+		sampler.StartAggregation(ctx)
+		logging.Info("aggregate engine started")
+	}
 
 	// Start buffer flush routine
 	go buf.Start(ctx)
@@ -724,7 +736,7 @@ func main() {
 		"receiver_auth", cfg.ReceiverAuthEnabled,
 		"limits_enabled", cfg.LimitsConfig != "",
 		"relabel_enabled", cfg.RelabelConfig != "",
-		"sampling_enabled", cfg.SamplingConfig != "",
+		"processing_enabled", processingConfigPath != "",
 		"queue_enabled", cfg.QueueEnabled,
 		"sharding_enabled", cfg.ShardingEnabled,
 		"prw_enabled", cfg.PRWListenAddr != "",
@@ -777,17 +789,21 @@ func main() {
 					}
 				}
 
-				// Reload sampling config
-				if cfg.SamplingConfig != "" && sampler != nil {
-					logging.Info("reloading sampling config", logging.F("path", cfg.SamplingConfig))
-					newSamplingCfg, err := sampling.LoadFile(cfg.SamplingConfig)
+				// Reload processing config
+				if processingConfigPath != "" && sampler != nil {
+					logging.Info("reloading processing config", logging.F("path", processingConfigPath))
+					newProcCfg, err := sampling.LoadProcessingFile(processingConfigPath)
 					if err != nil {
-						logging.Error("sampling config reload failed, keeping current config", logging.F("error", err.Error(), "path", cfg.SamplingConfig))
+						logging.Error("processing config reload failed, keeping current config", logging.F("error", err.Error(), "path", processingConfigPath))
 					} else {
-						if err := sampler.ReloadConfig(newSamplingCfg); err != nil {
-							logging.Error("sampling config apply failed, keeping current config", logging.F("error", err.Error()))
+						if err := sampler.ReloadProcessingConfig(newProcCfg); err != nil {
+							logging.Error("processing config apply failed, keeping current config", logging.F("error", err.Error()))
 						} else {
-							logging.Info("sampling config reloaded successfully", logging.F("rules_count", len(newSamplingCfg.Rules)))
+							logging.Info("processing config reloaded successfully", logging.F("rules_count", sampler.ProcessingRuleCount()))
+							// Restart aggregation if needed.
+							if sampler.HasAggregation() {
+								sampler.StartAggregation(ctx)
+							}
 						}
 					}
 				}
@@ -860,6 +876,11 @@ func main() {
 	if err := statsServer.Shutdown(shutdownCtx); err != nil {
 		logging.Warn("stats server shutdown error", logging.F("error", err.Error()))
 	}
+	// Stop aggregate engine (flushes final windows)
+	if sampler != nil {
+		sampler.StopAggregation()
+	}
+
 	cancel()
 
 	// Wait for buffers to drain (uses shutdown timeout)

@@ -1,0 +1,101 @@
+# Processing Rules — Tier 1: DaemonSet Edge Pre-Processing
+#
+# Deploy on every node as a DaemonSet. Performs aggressive local reduction
+# before forwarding to Tier 2 gateways. Focuses on high-volume infrastructure
+# metrics that benefit from edge processing.
+#
+# Architecture:
+#   Node exporters → Tier 1 (DaemonSet, this config) → Tier 2 (StatefulSet)
+#
+# Expected reduction: 10-50x depending on metric volatility.
+
+staleness_interval: 10m
+
+rules:
+  # ── Label Normalization (transform first, then reduce) ────────────
+
+  # Strip high-cardinality pod labels before any aggregation
+  - name: strip-pod-identifiers
+    input: "kube_pod_.*"
+    action: transform
+    operations:
+      - remove: [pod_ip, container_id, uid]
+
+  # Normalize instance labels to IP only (drop port)
+  - name: normalize-instance
+    input: ".*"
+    action: transform
+    when:
+      - label: instance
+        matches: "\\d+\\.\\d+\\.\\d+\\.\\d+:\\d+"
+    operations:
+      - replace:
+          label: instance
+          pattern: "^(\\d+\\.\\d+\\.\\d+\\.\\d+):\\d+$"
+          replacement: "$1"
+
+  # ── Adaptive Downsampling for Infrastructure Metrics ──────────────
+
+  # CPU metrics: compress stable idle periods, keep spikes
+  - name: cpu-adaptive
+    input: "node_cpu_seconds_total"
+    action: downsample
+    method: adaptive
+    interval: 30s
+    min_rate: 0.1
+    max_rate: 1.0
+    variance_window: 30
+
+  # Memory metrics: mostly stable, aggressive compression
+  - name: memory-adaptive
+    input: "node_memory_.*"
+    action: downsample
+    method: adaptive
+    interval: 1m
+    min_rate: 0.05
+    max_rate: 1.0
+    variance_window: 50
+
+  # Disk I/O: moderate compression
+  - name: disk-adaptive
+    input: "node_disk_.*"
+    action: downsample
+    method: adaptive
+    interval: 30s
+    min_rate: 0.2
+    max_rate: 1.0
+    variance_window: 20
+
+  # Network: keep more during bursts
+  - name: network-adaptive
+    input: "node_network_.*"
+    action: downsample
+    method: adaptive
+    interval: 30s
+    min_rate: 0.1
+    max_rate: 1.0
+    variance_window: 30
+
+  # Filesystem: very stable, aggressive compression
+  - name: filesystem-avg
+    input: "node_filesystem_.*"
+    action: downsample
+    method: avg
+    interval: 5m
+
+  # ── Drop Noisy/Internal Metrics ───────────────────────────────────
+
+  # Drop internal Go runtime metrics (not needed at gateway)
+  - name: drop-go-runtime
+    input: "go_.*"
+    action: drop
+
+  # Drop scrape metadata
+  - name: drop-scrape-meta
+    input: "scrape_.*"
+    action: drop
+
+  # Drop process metrics (covered by node-level metrics)
+  - name: drop-process
+    input: "process_.*"
+    action: drop

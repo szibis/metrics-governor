@@ -1,0 +1,12 @@
+{{- if and .Values.processing.enabled (not .Values.processing.existingConfigMap) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "metrics-governor.processingConfigMapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "metrics-governor.labels" . | nindent 4 }}
+data:
+  processing.yaml: |
+    {{- .Values.processing.config | nindent 4 }}
+{{- end }}

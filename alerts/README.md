@@ -23,6 +23,9 @@
   - [MetricsGovernorWorkersSaturated](#metricsgovernorworkerssaturated)
   - [MetricsGovernorCardinalityExplosion](#metricsgovernorcardinalityexplosion)
   - [MetricsGovernorConfigStale](#metricsgovernorconfigstale)
+  - [MetricsGovernorProcessingOverloaded](#metricsgovernorprocessingoverloaded)
+  - [MetricsGovernorAggregateGroupExplosion](#metricsgovernoraggregategroupexplosion)
+  - [MetricsGovernorProcessingHighDropRate](#metricsgovernorprocessinghighdroprate)
 
 ---
 
@@ -58,7 +61,7 @@ alerting:
 
 ### Principles
 
-1. **10 alerts, zero overlap** — each alert fires for a distinct failure mode. During a backend outage, you get `ExportDegraded` (error rate), then `CircuitOpen` (CB trips), then `QueueSaturated` (queue fills) — a clear escalation chain, never the same signal twice.
+1. **13 alerts, zero overlap** — each alert fires for a distinct failure mode. During a backend outage, you get `ExportDegraded` (error rate), then `CircuitOpen` (CB trips), then `QueueSaturated` (queue fills) — a clear escalation chain, never the same signal twice.
 
 2. **Signal chain, not symptom soup** — alerts are ordered by severity and timing:
 
@@ -89,6 +92,9 @@ CardinalityExplosion
 | 8 | `WorkersSaturated` | warning | CPU/export ceiling | Workers > 90% for 10m |
 | 9 | `CardinalityExplosion` | warning | Governance breach | Cardinality violations for 10m |
 | 10 | `ConfigStale` | info | Operational drift | No reload in 24h |
+| 11 | `ProcessingOverloaded` | warning | Processing latency | P99 duration > 100ms for 5m |
+| 12 | `AggregateGroupExplosion` | warning | Aggregate cardinality | > 100k groups for 10m |
+| 13 | `ProcessingHighDropRate` | info | Aggressive processing | > 95% drop rate for 5m |
 
 ---
 
@@ -102,6 +108,7 @@ Each alert maps to one reliability dimension. No dimension is covered by more th
 | **Reliability** | `DataLoss`, `ExportDegraded` | `ExportDegraded` is a leading indicator (recoverable), `DataLoss` is trailing (permanent). Different severity, different action. |
 | **Resilience** | `QueueSaturated`, `CircuitOpen` | Queue capacity vs circuit state — independent signals. CB can be open with queue empty (recent failure), queue can fill without CB (CB disabled or not yet tripped). |
 | **Performance** | `Backpressure`, `WorkersSaturated`, `CardinalityExplosion` | Buffer stage vs export stage vs governance — three independent bottleneck points. |
+| **Processing** | `ProcessingOverloaded`, `AggregateGroupExplosion`, `ProcessingHighDropRate` | Latency vs cardinality vs data reduction — three independent processing concerns. |
 | **Resource** | `OOMRisk` | Single signal — memory is the binding constraint (CPU issues surface as WorkersSaturated). |
 | **Operational** | `ConfigStale` | Single signal — config freshness. |
 
@@ -159,6 +166,9 @@ Each `alerting.thresholds.*` value in the Helm chart maps to exactly one alert. 
 | `alerting.thresholds.backpressureRate` | float (events/s) | `1` | **Backpressure** | Fire when `reject_rate + evict_rate > value` | [Backpressure](#metricsgovernorbackpressure) |
 | `alerting.thresholds.workerUtilization` | float (0-1) | `0.90` | **WorkersSaturated** | Fire when `active_workers/total_workers > value` | [WorkersSaturated](#metricsgovernorworkerssaturated) |
 | `alerting.thresholds.configStaleness` | int (seconds) | `86400` | **ConfigStale** | Fire when `time() - last_reload > value` | [ConfigStale](#metricsgovernorconfigstale) |
+| `alerting.thresholds.processingDurationP99` | float (seconds) | `0.1` | **ProcessingOverloaded** | Fire when P99 processing > value | [ProcessingOverloaded](#metricsgovernorprocessingoverloaded) |
+| `alerting.thresholds.aggregateGroupLimit` | int | `100000` | **AggregateGroupExplosion** | Fire when active groups > value | [AggregateGroupExplosion](#metricsgovernoraggregategroupexplosion) |
+| `alerting.thresholds.processingDropRate` | float (0-1) | `0.95` | **ProcessingHighDropRate** | Fire when drop rate > value | [ProcessingHighDropRate](#metricsgovernorprocessinghighdroprate) |
 
 **Alerts without configurable thresholds** (fixed expressions):
 
@@ -710,3 +720,136 @@ kubectl exec <pod> -- kill -HUP 1
 - Use directory mounts for ConfigMaps (not subPath)
 - Enable `configReload.enabled: true` in Helm values
 - This alert is informational — consider disabling in dev environments
+
+---
+
+### MetricsGovernorProcessingOverloaded
+
+**Severity:** Warning
+**Fires when:** P99 processing rule duration > 100ms for 5 minutes.
+
+**What it means:** Processing rules are taking too long to evaluate. This can happen when there are many rules, complex regex patterns, or a large number of aggregate groups to manage.
+
+**Impact:** Increased end-to-end latency. If processing can't keep up with incoming data rate, backpressure will build in the buffer.
+
+**Investigation:**
+
+```bash
+# 1. Check per-rule durations
+curl -s http://<governor>:9090/metrics | grep 'processing_rule_duration_seconds'
+
+# 2. Check rule count
+curl -s http://<governor>:9090/metrics | grep 'processing_rules_active'
+
+# 3. Check aggregate group count (groups are the main CPU consumer)
+curl -s http://<governor>:9090/metrics | grep 'aggregate_groups_active'
+
+# 4. Check overall processing throughput
+curl -s http://<governor>:9090/metrics | grep -E 'processing_input_datapoints|processing_output_datapoints'
+
+# 5. Check processing memory usage
+curl -s http://<governor>:9090/metrics | grep 'processing_memory_bytes'
+```
+
+**Resolution:**
+
+| Root Cause | Fix |
+|-----------|-----|
+| Too many rules | Consolidate rules. Use broader regex patterns. |
+| Complex regex | Simplify input patterns. Pre-filter with specific metric names. |
+| Too many aggregate groups | Reduce group_by cardinality. Use drop_labels instead to remove specific labels. |
+| High throughput | Scale horizontally. Consider Tier 1/Tier 2 architecture. |
+| Transform operations | Reduce number of chained transforms per datapoint. |
+
+**Prevention:**
+- Keep rule count under 50 for low-latency requirements
+- Use aggregate `drop_labels` (not `group_by`) when you only need to remove a few labels
+- Monitor `processing_rule_duration_seconds` per rule to identify slow rules
+- Consider two-tier architecture to distribute processing load
+
+---
+
+### MetricsGovernorAggregateGroupExplosion
+
+**Severity:** Warning
+**Fires when:** Total active aggregate groups > 100,000 for 10 minutes.
+
+**What it means:** The aggregation engine is tracking too many unique label combinations. This usually indicates a `group_by` that includes high-cardinality labels, creating a group for each unique combination.
+
+**Impact:** High memory usage (~200 bytes per group). Processing latency increases. Risk of OOM if growth continues.
+
+**Investigation:**
+
+```bash
+# 1. Check per-rule group counts
+curl -s http://<governor>:9090/metrics | grep 'aggregate_groups_active'
+
+# 2. Check stale group cleanup rate
+curl -s http://<governor>:9090/metrics | grep 'aggregate_stale_cleaned_total'
+
+# 3. Check processing memory estimate
+curl -s http://<governor>:9090/metrics | grep 'processing_memory_bytes'
+
+# 4. Check if groups are growing or stable
+# Plot aggregate_groups_active over 1h — steady growth indicates cardinality leak
+
+# 5. Check staleness_interval (are old groups being cleaned up?)
+# Review processing config for staleness_interval setting
+```
+
+**Resolution:**
+
+| Root Cause | Fix |
+|-----------|-----|
+| High-cardinality group_by | Remove high-cardinality labels from group_by (e.g., pod, instance, user_id) |
+| Missing staleness cleanup | Set or reduce `staleness_interval` (default: 10m) |
+| Too many unique series | Add a transform rule before aggregate to normalize or remove labels |
+| All groups are active | This is expected for high-cardinality workloads — increase threshold or scale out |
+
+**Prevention:**
+- Always review `group_by` labels for cardinality — avoid pod, instance, IP labels
+- Use `drop_labels` instead of `group_by` when removing only a few labels
+- Set `staleness_interval` to clean up groups for disappeared series
+- Monitor this metric as a capacity planning signal
+
+---
+
+### MetricsGovernorProcessingHighDropRate
+
+**Severity:** Info
+**Fires when:** Processing rules dropping > 95% of datapoints for 5 minutes.
+
+**What it means:** The processing rules are configured very aggressively, removing the vast majority of incoming data. This may be intentional (e.g., a Tier 1 DaemonSet doing aggressive edge reduction) or may indicate misconfigured rules.
+
+**Impact:** If intentional, no impact — this is the desired behavior. If accidental, significant data loss.
+
+**Investigation:**
+
+```bash
+# 1. Check per-rule drop counts
+curl -s http://<governor>:9090/metrics | grep 'processing_rule_dropped_total'
+
+# 2. Check which rules are doing the most dropping
+curl -s http://<governor>:9090/metrics | grep 'processing_rule_input_total'
+curl -s http://<governor>:9090/metrics | grep 'processing_rule_output_total'
+
+# 3. Compare input vs output rates
+curl -s http://<governor>:9090/metrics | grep -E 'processing_input_datapoints|processing_output_datapoints'
+
+# 4. Review processing config — is this intentional?
+# Check for overly broad drop rules or very low sample rates
+```
+
+**Resolution:**
+
+| Root Cause | Fix |
+|-----------|-----|
+| Intentional (edge processing) | Disable this alert: add `MetricsGovernorProcessingHighDropRate` to `disabledAlerts` |
+| Overly broad drop rule | Narrow the `input` regex pattern to match only intended metrics |
+| Sample rate too low | Increase `rate` value in sample rules |
+| Catch-all rule dropping everything | Check rule ordering — more specific rules should come before broad ones |
+
+**Prevention:**
+- Review processing rules before deployment — verify input patterns match only intended metrics
+- Use the playground to preview rule impact before applying
+- For intentional high-drop configurations (Tier 1), disable this alert

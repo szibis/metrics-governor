@@ -25,7 +25,7 @@ var (
 // knownComponents lists all components for pre-initialization.
 var knownComponents = []string{
 	"receive_decompress", "receive_unmarshal",
-	"stats", "sampling", "tenant", "limits",
+	"stats", "processing", "tenant", "limits",
 	"buffer_mgmt", "relabel", "batch_split",
 	"serialize", "compress", "export_http",
 	"queue_push", "queue_pop",
