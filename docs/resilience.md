@@ -4,7 +4,7 @@ metrics-governor includes resilience features to handle backend failures gracefu
 
 ## Overview
 
-The resilience system consists of three main components:
+The resilience system consists of multiple coordinated components:
 
 ```mermaid
 graph TB
@@ -14,13 +14,17 @@ graph TB
         SOE[Split-on-Error]
         ML[Memory Limits]
         BP[Buffer Backpressure]
+        BT[Batch Auto-tuner<br/>AIMD]
+        WS[Worker Scaler<br/>AIMD]
     end
 
     subgraph "Pipeline"
         RX[Receiver]
         BUF[Buffer<br/>capacity-bounded]
         Q[Queue<br/>always-queue]
-        WP[Worker Pool<br/>2×NumCPU]
+        PREP[Preparers<br/>NumCPU]
+        CH[Bounded Channel]
+        SEND[Senders<br/>NumCPU×2]
     end
 
     subgraph "Backend"
@@ -29,16 +33,18 @@ graph TB
 
     RX --> BUF
     BUF --> Q
-    Q --> WP
-    WP --> CB
+    Q --> PREP --> CH --> SEND
+    SEND --> CB
     CB -->|Closed| BE
     CB -->|Open| Q
-    WP -->|Failure| Q
+    SEND -->|Failure| Q
     BP -->|"429 / ResourceExhausted"| RX
     ML -->|Controls| BUF
     ML -->|Controls| Q
-    BO -->|Calculates| WP
-    SOE -->|"400/413"| WP
+    BO -->|Calculates| SEND
+    SOE -->|"400/413"| SEND
+    BT -->|"adjust max bytes"| BUF
+    WS -->|"scale senders"| SEND
 ```
 
 ## Circuit Breaker
@@ -317,8 +323,15 @@ flowchart TB
         Q[Persistent Queue]
     end
 
-    subgraph "Worker Pool"
-        WP[Pull Workers<br/>2×NumCPU]
+    subgraph "Pipeline"
+        PREP[Preparers<br/>NumCPU]
+        CH[Bounded Channel]
+        SEND[Senders<br/>NumCPU×2]
+    end
+
+    subgraph "Auto-tuning"
+        BT[Batch Auto-tuner<br/>AIMD]
+        WS[Worker Scaler<br/>AIMD]
     end
 
     subgraph "Error Handling"
@@ -343,23 +356,32 @@ flowchart TB
     CAP -->|"Under limit"| BUF
     CAP -->|"Over limit"| REJECT
     BUF --> SPLIT --> Q
-    Q -->|Pull| WP
+    Q -->|Pull| PREP --> CH --> SEND
 
-    WP -->|"Export"| CB
+    SEND -->|"Export"| CB
     CB -->|"Closed"| BE
     CB -->|"Open"| BO
     BO --> Q
 
-    WP -->|"Failure"| SOE
+    SEND -->|"Failure"| SOE
     SOE -->|"400/413"| HALF
     HALF --> Q
     SOE -->|"Other"| BO
+
+    BT -->|"adjust max bytes"| BUF
+    WS -->|"scale senders"| SEND
+    SOE -->|"feedback"| BT
+    Q -->|"queue depth"| WS
 
     style CB fill:#f96,stroke:#333
     style BO fill:#9cf,stroke:#333
     style Q fill:#9f9,stroke:#333
     style SOE fill:#ff9,stroke:#333
     style REJECT fill:#f66,stroke:#333
+    style BT fill:#c9f,stroke:#333
+    style WS fill:#6cf,stroke:#333
+    style PREP fill:#fcf,stroke:#333
+    style SEND fill:#cff,stroke:#333
 ```
 
 ### Timeline Example
@@ -459,6 +481,87 @@ Recursion stops when a batch has only a single element. Non-retryable errors (e.
 |--------|------|-------------|
 | `metrics_governor_export_retry_split_total` | Counter | Split-on-error retries |
 
+## Batch Auto-tuning
+
+The AIMD batch auto-tuner adjusts maximum batch bytes dynamically to find the optimal batch size for the current backend:
+
+### AIMD Algorithm
+
+- **Additive Increase**: After 10 consecutive successes, grow batch size by 25%
+- **Multiplicative Decrease**: On any failure, shrink batch size by 50%
+- **HTTP 413 Hard Ceiling**: When backend returns 413 Payload Too Large, set permanent ceiling at 80% of current max
+
+This prevents repeated 413 rejections and Split-on-Error cycles by learning the backend's actual limit.
+
+### Convergence Behavior
+
+The auto-tuner converges to the optimal batch size within ~2-3 failure/recovery cycles:
+
+1. Start at configured max (default: 16MB)
+2. If 413 → shrink to 8MB, set ceiling at 12.8MB
+3. Grow back slowly (25% per streak) up to ceiling
+4. Steady state: operates just below backend limit
+
+### Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_batch_tuning_adjustments_total` | Counter | Total batch size adjustments (labeled by direction: up/down) |
+| `metrics_governor_batch_current_max_bytes` | Gauge | Current effective max batch bytes after auto-tuning |
+| `metrics_governor_batch_hard_ceiling_bytes` | Gauge | Hard ceiling discovered from 413 responses (0 if none) |
+
+### Configuration
+
+```yaml
+exporter:
+  batch_tuning:
+    enabled: true              # Enable AIMD batch auto-tuning (default: true)
+    success_streak: 10         # Consecutive successes before growing (default: 10)
+    increase_factor: 1.25      # Multiplicative growth on success streak (default: 1.25)
+    decrease_factor: 0.5       # Multiplicative shrink on failure (default: 0.5)
+    ceiling_factor: 0.8        # Fraction of current max to set as ceiling on 413 (default: 0.8)
+```
+
+## Adaptive Worker Scaling
+
+The AIMD worker scaler adjusts the number of sender goroutines based on queue pressure and export latency:
+
+### Scaling Rules
+
+| Condition | Action | Rate |
+|-----------|--------|------|
+| Queue depth > HighWaterMark AND latency < MaxLatency | Scale up | +1 worker |
+| Queue depth < LowWaterMark for SustainedIdleSecs | Scale down | Halve workers |
+| Workers at MaxWorkers | No scale up | -- |
+| Workers at MinWorkers | No scale down | -- |
+
+### Latency Gate
+
+Scale-up is suppressed when export latency EWMA exceeds MaxLatency (default: 500ms). This prevents adding workers when the backend is already struggling, which would make the problem worse.
+
+### Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_worker_scaler_current_workers` | Gauge | Current number of active sender workers |
+| `metrics_governor_worker_scaler_scale_ups_total` | Counter | Total scale-up events |
+| `metrics_governor_worker_scaler_scale_downs_total` | Counter | Total scale-down events |
+| `metrics_governor_worker_scaler_latency_ewma_seconds` | Gauge | Current export latency EWMA |
+
+### Configuration
+
+```yaml
+exporter:
+  worker_scaling:
+    enabled: true              # Enable adaptive worker scaling (default: true)
+    min_workers: 2             # Minimum sender goroutines (default: 2)
+    max_workers: 64            # Maximum sender goroutines (default: NumCPU×4)
+    high_water_mark: 0.8       # Queue fullness ratio to trigger scale-up (default: 0.8)
+    low_water_mark: 0.2        # Queue fullness ratio to trigger scale-down (default: 0.2)
+    sustained_idle_secs: 30    # Seconds below low water mark before scaling down (default: 30)
+    max_latency: 500ms         # Latency EWMA threshold suppressing scale-up (default: 500ms)
+```
+
 ## Pipeline Parity
 
 Both the OTLP and PRW pipelines now have identical resilience features:
@@ -472,6 +575,11 @@ Both the OTLP and PRW pipelines now have identical resilience features:
 | Graceful drain on shutdown | Yes | Yes |
 | Worker pool | Yes | Yes |
 | Buffer backpressure | Yes | Yes |
+| Pipeline split | Yes | Yes |
+| Batch auto-tuning | Yes | Yes |
+| Adaptive worker scaling | Yes | Yes |
+| Async send | Yes | Yes |
+| Connection pre-warming | Yes | Yes |
 
 ## Monitoring and Alerting
 
@@ -594,3 +702,16 @@ exporter:
 1. Reduce `-memory-limit-ratio` to 0.8 or 0.85
 2. Increase container memory limit
 3. Profile application memory usage
+
+### Batch Size Oscillating (frequent grow/shrink)
+
+**Symptoms**: `metrics_governor_batch_tuning_adjustments_total` increasing rapidly for both up and down
+
+**Causes**:
+- SuccessStreak too low (growing too quickly)
+- Backend limit close to current max (barely fitting)
+
+**Solutions**:
+1. Increase `SuccessStreak` to 20 (more conservative growth)
+2. Set explicit `MaxBytes` just below known backend limit
+3. Check `metrics_governor_batch_hard_ceiling_bytes` -- if non-zero, ceiling was discovered

@@ -128,6 +128,8 @@ type PRWExporterConfig struct {
 	VMOptions VMRemoteWriteOptions
 	// HTTPClient configuration for connection pooling.
 	HTTPClient HTTPClientConfig
+	// PrewarmConnections sends HEAD requests at startup to establish HTTP connections.
+	PrewarmConnections bool
 }
 
 // VMRemoteWriteOptions holds VictoriaMetrics-specific remote write options.
@@ -289,14 +291,21 @@ func NewPRW(ctx context.Context, cfg PRWExporterConfig) (*PRWExporter, error) {
 		version = prw.VersionAuto
 	}
 
-	return &PRWExporter{
+	exp := &PRWExporter{
 		config:      cfg,
 		httpClient:  client,
 		endpoint:    endpoint,
 		version:     version,
 		compression: compressionType,
 		extraLabels: extraLabels,
-	}, nil
+	}
+
+	// Fire-and-forget connection warmup
+	if cfg.PrewarmConnections {
+		go WarmupConnections(context.Background(), []string{endpoint}, client, 5*time.Second)
+	}
+
+	return exp, nil
 }
 
 // Export sends a PRW WriteRequest to the configured endpoint.
@@ -549,6 +558,86 @@ func (e *PRWExporter) applyExtraLabels(req *prw.WriteRequest) *prw.WriteRequest 
 		clone.Timeseries[i].SortLabels()
 	}
 	return clone
+}
+
+// CompressData compresses raw proto bytes using the exporter's compression config.
+func (e *PRWExporter) CompressData(data []byte) ([]byte, string, error) {
+	if e.compression == compression.TypeNone || e.compression == "" {
+		return data, "", nil
+	}
+
+	compressStart := time.Now()
+	compressed, err := compression.Compress(data, compression.Config{Type: e.compression})
+	pipeline.Record("compress", pipeline.Since(compressStart))
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to compress: %w", err)
+	}
+	pipeline.RecordBytes("compress", len(compressed))
+	return compressed, e.compression.ContentEncoding(), nil
+}
+
+// SendCompressed sends pre-compressed data via HTTP with PRW headers.
+func (e *PRWExporter) SendCompressed(ctx context.Context, compressedData []byte, contentEncoding string, uncompressedSize int) error {
+	if len(e.extraLabels) > 0 {
+		return ErrExtraLabelsRequireDeserialize
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.endpoint, bytes.NewReader(compressedData))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	if contentEncoding != "" {
+		httpReq.Header.Set("Content-Encoding", contentEncoding)
+	}
+	switch e.version {
+	case prw.Version2:
+		httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "2.0.0")
+	default:
+		httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+	}
+
+	prwExportRequestsTotal.Inc()
+
+	sendStart := time.Now()
+	resp, err := e.httpClient.Do(httpReq)
+	pipeline.Record("send", pipeline.Since(sendStart))
+	if err != nil {
+		errType := classifyError(err)
+		prwExportErrorsTotal.WithLabelValues(string(errType)).Inc()
+		return fmt.Errorf("failed to send PRW request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	bodyStr := string(bodyBytes)
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		errType := classifyHTTPStatusCode(resp.StatusCode)
+		prwExportErrorsTotal.WithLabelValues(string(errType)).Inc()
+		msg := bodyStr
+		if msg == "" {
+			msg = fmt.Sprintf("PRW endpoint returned status %d", resp.StatusCode)
+		}
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			return &ExportError{
+				Err:        &PRWClientError{StatusCode: resp.StatusCode, Message: msg},
+				Type:       errType,
+				StatusCode: resp.StatusCode,
+				Message:    msg,
+			}
+		}
+		return &ExportError{
+			Err:        &PRWServerError{StatusCode: resp.StatusCode, Message: msg},
+			Type:       errType,
+			StatusCode: resp.StatusCode,
+			Message:    msg,
+		}
+	}
+
+	prwExportBytesTotal.WithLabelValues(string(e.compression)).Add(float64(len(compressedData)))
+	return nil
 }
 
 // Close closes the exporter and releases resources.

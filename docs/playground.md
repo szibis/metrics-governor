@@ -1,12 +1,12 @@
-# Configuration Helper
+# Playground
 
-The Configuration Helper is a browser-based tool that helps operators plan and configure metrics-governor deployments. It provides resource estimation, Kubernetes pod sizing, cloud storage recommendations, and live YAML generation.
+The Playground is a browser-based tool that helps operators plan and configure metrics-governor deployments. It provides resource estimation, Kubernetes pod sizing, cloud storage recommendations, and live YAML generation.
 
 ## Quick Start
 
 ```bash
 # Open directly in your browser — no build step required
-open tools/config-helper/index.html
+open tools/playground/index.html
 
 # Or from repo root:
 open index.html
@@ -61,7 +61,7 @@ Three YAML tabs (Helm values, app config, limits rules) support two-way editing:
 
 ### The Problem
 
-The config helper previously had hardcoded defaults that drifted from the Go app:
+The playground previously had hardcoded defaults that drifted from the Go app:
 
 | Field | Go Default | Old HTML Default |
 |-------|-----------|-----------------|
@@ -95,18 +95,18 @@ this.queueType = meta.defaults.queue_type;
 
 ### CI Validation
 
-A Go test (`tools/config-helper/validate_test.go`) extracts the JSON from `index.html` and asserts every default matches `config.DefaultConfig()`:
+A Go test (`tools/playground/validate_test.go`) extracts the JSON from `index.html` and asserts every default matches `config.DefaultConfig()`:
 
 ```bash
 # Run locally
-make validate-config-helper
+make validate-playground
 
 # Output on drift:
 # --- FAIL: TestConfigMetaMatchesGoDefaults
 #     buffer_size: HTML config-meta has 5000, Go DefaultConfig() has 10000
 ```
 
-This runs automatically in CI as the `validate-config-helper` job.
+This runs automatically in CI as the `validate-playground` job.
 
 ## Estimation Constants
 
@@ -167,7 +167,7 @@ Each entry in `storage.<provider>[]` defines a disk type:
 | `burst_tput_per_tib_mbs` | Volume-scaled burst throughput (AWS st1) |
 | `burst_model` | `provisioned`, `credit`, or `none` |
 
-## Maintaining the Config Helper
+## Maintaining the Playground
 
 All maintenance flows through `make generate-config-meta`, which reads Go defaults and
 `storage-specs.json`, then injects the assembled config-meta JSON into both HTML files.
@@ -176,22 +176,22 @@ All maintenance flows through `make generate-config-meta`, which reads Go defaul
 
 1. Edit `internal/config/config.go` (the `DefaultConfig()` function)
 2. Run `make generate-config-meta` — the HTML is updated automatically
-3. Run `make validate-config-helper` to double-check
+3. Run `make validate-playground` to double-check
 4. Commit the updated HTML files
 
-CI will fail if you forget step 2: the `validate-config-helper` job regenerates and checks
+CI will fail if you forget step 2: the `validate-playground` job regenerates and checks
 for uncommitted diffs.
 
 ### When updating cloud storage disk specs
 
-1. Edit `tools/config-helper/storage-specs.json` — this is a clean JSON file with one array per cloud provider
+1. Edit `tools/playground/storage-specs.json` — this is a clean JSON file with one array per cloud provider
 2. Run `make generate-config-meta`
 3. Commit the updated files
 
 Example — adding a new AWS disk type:
 
 ```json
-// tools/config-helper/storage-specs.json
+// tools/playground/storage-specs.json
 {
   "aws": [
     ... existing entries ...,
@@ -212,13 +212,13 @@ Example — adding a new AWS disk type:
 }
 ```
 
-Then: `make generate-config-meta && make validate-config-helper`
+Then: `make generate-config-meta && make validate-playground`
 
 The UI auto-populates — no JavaScript changes needed.
 
 ### When adding a new estimation constant
 
-1. Add the value to the `estimation` map in `tools/config-helper/cmd/generate/main.go`
+1. Add the value to the `estimation` map in `tools/playground/cmd/generate/main.go`
 2. Reference it as `this._est.your_constant` in the HTML JavaScript
 3. Run `make generate-config-meta`
 
@@ -226,9 +226,9 @@ The UI auto-populates — no JavaScript changes needed.
 
 | File | Description |
 |------|-------------|
-| `tools/config-helper/index.html` | Main source file (generated config-meta block) |
-| `tools/config-helper/storage-specs.json` | Cloud storage disk type definitions (edit this) |
-| `tools/config-helper/cmd/generate/main.go` | Generator: Go defaults + storage specs → HTML |
-| `tools/config-helper/validate_test.go` | Go test: JSON defaults == `DefaultConfig()` |
-| `tools/config-helper/README.md` | Quick-start README |
+| `tools/playground/index.html` | Main source file (generated config-meta block) |
+| `tools/playground/storage-specs.json` | Cloud storage disk type definitions (edit this) |
+| `tools/playground/cmd/generate/main.go` | Generator: Go defaults + storage specs → HTML |
+| `tools/playground/validate_test.go` | Go test: JSON defaults == `DefaultConfig()` |
+| `tools/playground/README.md` | Quick-start README |
 | `index.html` | Root copy (auto-updated by generator) |

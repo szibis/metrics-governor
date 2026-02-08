@@ -3,7 +3,7 @@
 //
 // Usage:
 //
-//	go run ./tools/config-helper/cmd/generate
+//	go run ./tools/playground/cmd/generate
 package main
 
 import (
@@ -70,7 +70,7 @@ func main() {
 	}
 
 	// Read storage specs from external JSON file
-	storageData, err := os.ReadFile("tools/config-helper/storage-specs.json")
+	storageData, err := os.ReadFile("tools/playground/storage-specs.json")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading storage-specs.json: %v\n", err)
 		os.Exit(1)
@@ -97,7 +97,7 @@ func main() {
 
 	// Inject into HTML files
 	htmlFiles := []string{
-		"tools/config-helper/index.html",
+		"tools/playground/index.html",
 		"index.html",
 	}
 

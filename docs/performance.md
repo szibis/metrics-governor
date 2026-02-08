@@ -18,6 +18,11 @@ metrics-governor includes several high-performance optimizations for production 
 | Persistent Disk Queue | Yes | Yes | Bounded by max_bytes | Disk I/O |
 | Memory Limit Auto-Detection | Yes | Yes | Prevents OOM kills | More predictable GC |
 | Stats Threshold Filtering | Yes | Yes | -49% scrape bytes | -44% scrape latency |
+| Pipeline Split | Yes | Yes | Bounded goroutines | +50-80% throughput |
+| Batch Auto-tuning | Yes | Yes | Minimal | AIMD batch sizing |
+| Adaptive Scaling | Yes | Yes | Dynamic goroutines | Queue-driven scaling |
+| Async Send | Yes | Yes | Minimal | +20-30% throughput |
+| Connection Pre-warming | Yes | Yes | Minimal | Eliminates cold-start |
 
 ### Architecture Overview
 
@@ -28,6 +33,11 @@ graph TB
         SI[String Interning]
         BS[Byte-Aware Splitting]
         WP[Worker Pool]
+        PS[Pipeline Split]
+        BAT[Batch Auto-tuning]
+        AS[Adaptive Scaling]
+        ASYNC[Async Send]
+        CW[Connection Pre-warming]
         MS[Memory Sizing]
         QIO[Queue I/O]
         ML[Memory Limits]
@@ -38,15 +48,25 @@ graph TB
         LIM --> BUF[Buffer\ncapacity-bounded]
         BUF --> SPLIT[Batch Split]
         SPLIT --> Q[Always Queue]
-        Q --> WRK[Workers]
-        WRK --> FQ[Failover Queue]
+        Q --> PREP[Preparers\nCPU-bound]
+        PREP --> CH[Prepared Channel]
+        CH --> SND[Senders\nI/O-bound]
+        SND --> BE[Backend]
+        SND -->|Failure| FQ[Failover Queue]
     end
 
     BF -.->|Cardinality| LIM
     SI -.->|Labels| RX
-    SI -.->|Labels| WRK
+    SI -.->|Labels| SND
     BS -.->|Size Control| SPLIT
-    WP -.->|Pull Model| WRK
+    WP -.->|Pull Model| Q
+    PS -.->|Split Phases| PREP
+    PS -.->|Split Phases| SND
+    BAT -.->|AIMD| SPLIT
+    AS -.->|Dynamic Count| PREP
+    AS -.->|Dynamic Count| SND
+    ASYNC -.->|Concurrency| SND
+    CW -.->|Warmup| BE
     MS -.->|Sizing| BUF
     QIO -.->|Persistence| FQ
     ML -.->|GC Control| ALL[All Components]
@@ -341,6 +361,435 @@ metrics-governor -queue-workers=0
 
 # Explicit worker count
 metrics-governor -queue-workers=16
+```
+
+---
+
+## Pipeline Split Architecture
+
+The pipeline split separates CPU-bound work (compression) from I/O-bound work (HTTP send) for higher throughput. Instead of a single pool of workers that both serialize and send, the pipeline is divided into two specialized stages connected by a bounded channel.
+
+- **Preparers** (default: NumCPU) -- Pop from queue, serialize and compress data using sync.Pool encoders
+- **Bounded Channel** -- PreparedEntry channel (default: 256 entries) connects preparers to senders
+- **Senders** (default: NumCPU x 2) -- Pop from channel, HTTP send to backend with connection reuse
+
+**Applies to:** OTLP pipeline, PRW pipeline (identical behavior)
+
+### How It Works
+
+```mermaid
+flowchart LR
+    subgraph "Queue"
+        Q[Persistent Queue]
+    end
+
+    subgraph "Preparers (NumCPU, CPU-bound)"
+        P1[Preparer 1]
+        P2[Preparer 2]
+        PN[Preparer N]
+    end
+
+    subgraph "Channel (256)"
+        CH[Prepared Entries]
+    end
+
+    subgraph "Senders (NumCPU x 2, I/O-bound)"
+        S1[Sender 1]
+        S2[Sender 2]
+        S3[Sender 3]
+        SM[Sender M]
+    end
+
+    subgraph "Destination"
+        BE[Backend]
+    end
+
+    Q -->|Pop| P1
+    Q -->|Pop| P2
+    Q -->|Pop| PN
+    P1 -->|Serialize + Compress| CH
+    P2 -->|Serialize + Compress| CH
+    PN -->|Serialize + Compress| CH
+    CH -->|Pop| S1
+    CH -->|Pop| S2
+    CH -->|Pop| S3
+    CH -->|Pop| SM
+    S1 -->|HTTP Send| BE
+    S2 -->|HTTP Send| BE
+    S3 -->|HTTP Send| BE
+    SM -->|HTTP Send| BE
+```
+
+### Why Pipeline Split?
+
+| Aspect | Unified Workers | Pipeline Split |
+|--------|---------------|----------------|
+| Throughput | Limited by slower phase (HTTP I/O) | Each phase runs at its own pace |
+| CPU utilization | Workers idle during HTTP wait | Preparers fully utilize CPU |
+| Scalability | Single pool size | Independent preparer/sender counts |
+| Typical throughput | ~250k dp/s | ~400-450k dp/s |
+
+With unified workers, every worker must wait for the HTTP round-trip before it can begin compressing the next batch. Pipeline split decouples these phases so that preparers can continuously saturate CPU while senders independently saturate network I/O. The bounded channel provides natural backpressure: if senders fall behind, the channel fills and preparers block, preventing unbounded memory growth.
+
+### Observability Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_queue_preparers_active` | Gauge | Active preparer goroutines |
+| `metrics_governor_queue_senders_active` | Gauge | Active sender goroutines |
+| `metrics_governor_queue_preparers_total` | Gauge | Configured preparer count |
+| `metrics_governor_queue_senders_total` | Gauge | Configured sender count |
+| `metrics_governor_queue_prepared_channel_length` | Gauge | Items in prepared channel |
+
+### Configuration
+
+```bash
+# Enable pipeline split (default: false for backward compatibility)
+metrics-governor -queue-pipeline-split-enabled=true
+
+# Customize preparer and sender counts (0 = auto-detect based on NumCPU)
+metrics-governor -queue-preparer-count=8 -queue-sender-count=16 -queue-pipeline-channel-size=256
+```
+
+### Recommended Settings
+
+| Deployment | Preparers | Senders | Channel Size |
+|------------|:---------:|:-------:|:------------:|
+| Small (<1M dps/min) | 0 (auto) | 0 (auto) | 256 |
+| Medium (1-10M dps/min) | 0 (auto) | 0 (auto) | 256 |
+| Large (10M+ dps/min) | 0 (auto) | 0 (auto) | 512 |
+| High-latency backend | 0 (auto) | NumCPU x 4 | 512 |
+
+### Monitoring Examples
+
+**1. Pipeline balance** -- Preparers and senders should both be active:
+
+```promql
+# If preparers_active >> senders_active, senders are the bottleneck
+metrics_governor_queue_preparers_active / metrics_governor_queue_senders_active
+
+# If channel is consistently full, add more senders
+metrics_governor_queue_prepared_channel_length / 256
+```
+
+**2. Throughput comparison** -- Before/after enabling pipeline split:
+
+```promql
+# Export rate (should increase 50-80% with pipeline split)
+rate(metrics_governor_export_total[5m])
+```
+
+---
+
+## Batch Size Auto-tuning (AIMD)
+
+Dynamic batch size adjustment using Additive Increase / Multiplicative Decrease (AIMD), the same algorithm that powers TCP congestion control. The batch size automatically converges to the optimal value for your backend without manual tuning.
+
+- **Additive Increase**: After SuccessStreak consecutive successful exports (default: 10), grow max batch bytes by GrowFactor (default: 1.25 = 25%)
+- **Multiplicative Decrease**: On any export failure, shrink max batch bytes by ShrinkFactor (default: 0.5 = 50%)
+- **Hard Ceiling Discovery**: If backend returns HTTP 413, set hard ceiling at 80% of current max -- future growth never exceeds this
+
+**Applies to:** OTLP pipeline, PRW pipeline (identical behavior)
+
+### How It Works
+
+```mermaid
+stateDiagram-v2
+    [*] --> Probing: Start at initial max_batch_bytes
+
+    Probing --> Growing: SuccessStreak >= 10
+    Growing --> Probing: max_batch_bytes *= GrowFactor (1.25)
+
+    Probing --> Shrinking: Export failure
+    Shrinking --> Probing: max_batch_bytes *= ShrinkFactor (0.5)
+
+    Probing --> Capped: HTTP 413 received
+    Capped --> Probing: Hard ceiling = current * 0.8
+
+    note right of Growing: Additive Increase\n+25% per streak
+    note right of Shrinking: Multiplicative Decrease\n-50% on failure
+    note right of Capped: Hard ceiling discovered\nNever grow beyond this
+```
+
+### AIMD Convergence
+
+```mermaid
+graph LR
+    subgraph "Convergence Behavior"
+        direction TB
+        START[Initial: 8MB] -->|10 successes| G1[10MB]
+        G1 -->|10 successes| G2[12.5MB]
+        G2 -->|Failure| S1[6.25MB]
+        S1 -->|10 successes| G3[7.8MB]
+        G3 -->|10 successes| G4[9.8MB]
+        G4 -->|HTTP 413| C1[Ceiling: 7.8MB]
+    end
+```
+
+The algorithm stabilizes around the maximum batch size that the backend can reliably accept. After discovering a hard ceiling via HTTP 413, the batch size oscillates within the safe zone below the ceiling.
+
+### Observability Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_batch_current_max_bytes` | Gauge | Current dynamically-adjusted max batch bytes |
+| `metrics_governor_batch_hard_ceiling_bytes` | Gauge | Discovered hard ceiling (0 = no ceiling found) |
+| `metrics_governor_batch_tuning_adjustments_total{direction}` | Counter | Tuning adjustments (direction: "increase" or "decrease") |
+| `metrics_governor_batch_success_streak` | Gauge | Current consecutive success count |
+
+### Configuration
+
+```bash
+# Enable batch auto-tuning (default: false for backward compatibility)
+metrics-governor -batch-auto-tune-enabled=true
+
+# Customize AIMD parameters
+metrics-governor \
+  -batch-auto-tune-enabled=true \
+  -batch-auto-tune-grow-factor=1.25 \
+  -batch-auto-tune-shrink-factor=0.5 \
+  -batch-auto-tune-success-streak=10
+```
+
+### Recommended Settings
+
+| Scenario | GrowFactor | ShrinkFactor | SuccessStreak |
+|----------|:----------:|:------------:|:-------------:|
+| Conservative (stable backends) | 1.1 | 0.5 | 20 |
+| Default (balanced) | 1.25 | 0.5 | 10 |
+| Aggressive (fast convergence) | 1.5 | 0.5 | 5 |
+
+### Monitoring Examples
+
+**1. Track batch size convergence:**
+
+```promql
+# Current batch size vs initial setting
+metrics_governor_batch_current_max_bytes
+
+# Rate of adjustments (should decrease as system converges)
+rate(metrics_governor_batch_tuning_adjustments_total[5m])
+```
+
+**2. Detect hard ceiling discovery:**
+
+```promql
+# Alert when hard ceiling is discovered (non-zero means backend limit found)
+metrics_governor_batch_hard_ceiling_bytes > 0
+```
+
+**3. Health check -- success streak should stay high after convergence:**
+
+```promql
+# Low streak = frequent failures, may need lower initial batch size
+metrics_governor_batch_success_streak < 3
+```
+
+---
+
+## Adaptive Worker Scaling (AIMD)
+
+Dynamic worker count adjustment based on queue depth and export latency, using the same AIMD principles as batch auto-tuning. Workers are added when the queue is backing up and removed when the queue is consistently idle.
+
+- **Scale Up**: Queue depth > HighWaterMark (default: 100) AND latency EWMA < MaxLatency (default: 500ms) -- add 1 worker
+- **Scale Down**: Queue depth < LowWaterMark (default: 10) for SustainedIdleSecs (default: 30) -- halve workers
+- **Bounds**: MinWorkers (default: 1) to MaxWorkers (default: NumCPU x 4)
+- **Latency tracking**: EWMA with alpha=0.3 for smooth latency estimation
+
+**Applies to:** OTLP pipeline, PRW pipeline (identical behavior)
+
+### Scaling Decision Flow
+
+```mermaid
+flowchart TB
+    START[Check Interval Tick] --> DEPTH{Queue Depth?}
+
+    DEPTH -->|"> HighWaterMark (100)"| LAT{Latency EWMA?}
+    LAT -->|"< MaxLatency (500ms)"| UP[Scale Up: +1 Worker]
+    LAT -->|">= MaxLatency"| HOLD1[Hold: Backend Overloaded]
+
+    DEPTH -->|"< LowWaterMark (10)"| IDLE{Idle Duration?}
+    IDLE -->|">= SustainedIdleSecs (30s)"| DOWN[Scale Down: Workers / 2]
+    IDLE -->|"< SustainedIdleSecs"| HOLD2[Hold: Wait for Sustained Idle]
+
+    DEPTH -->|"Between Watermarks"| HOLD3[Hold: Stable]
+
+    UP --> BOUNDS{Within Bounds?}
+    DOWN --> BOUNDS
+    BOUNDS -->|"MinWorkers <= n <= MaxWorkers"| APPLY[Apply New Count]
+    BOUNDS -->|"Out of Bounds"| CLAMP[Clamp to Bounds]
+```
+
+### EWMA Latency Tracking
+
+```mermaid
+graph LR
+    subgraph "Exponentially Weighted Moving Average"
+        direction TB
+        NEW[New Latency Sample] --> CALC["EWMA = alpha * sample + (1-alpha) * prev"]
+        CALC --> SMOOTH[Smoothed Latency]
+        SMOOTH --> DECISION{Scale Decision}
+    end
+
+    NOTE["alpha = 0.3\nResponsive to changes\nbut filters outliers"]
+```
+
+The latency guard prevents scaling up when the backend is already struggling. If export latency exceeds MaxLatency, adding more workers would only worsen the situation.
+
+### Observability Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_queue_workers_active` | Gauge | Current active worker count |
+| `metrics_governor_queue_workers_total` | Gauge | Configured (or current target) worker count |
+| `metrics_governor_queue_adaptive_scale_total{direction}` | Counter | Scale events (direction: "up" or "down") |
+| `metrics_governor_queue_adaptive_latency_ewma_seconds` | Gauge | Current EWMA latency estimate |
+
+### Configuration
+
+```bash
+# Enable adaptive worker scaling (default: false for backward compatibility)
+metrics-governor -queue-adaptive-workers-enabled=true
+
+# Customize scaling parameters
+metrics-governor \
+  -queue-adaptive-workers-enabled=true \
+  -queue-adaptive-high-watermark=100 \
+  -queue-adaptive-low-watermark=10 \
+  -queue-adaptive-max-latency=500ms \
+  -queue-adaptive-sustained-idle=30s \
+  -queue-adaptive-min-workers=1 \
+  -queue-adaptive-max-workers=0  # 0 = NumCPU x 4
+```
+
+### Recommended Settings
+
+| Scenario | HighWaterMark | LowWaterMark | MaxLatency | SustainedIdle |
+|----------|:------------:|:------------:|:----------:|:-------------:|
+| Low-latency backend | 50 | 5 | 200ms | 30s |
+| Default (balanced) | 100 | 10 | 500ms | 30s |
+| High-latency backend | 200 | 20 | 2s | 60s |
+| Cost-sensitive | 200 | 5 | 500ms | 15s |
+
+### Monitoring Examples
+
+**1. Track scaling behavior:**
+
+```promql
+# Worker count over time (should stabilize after initial scaling)
+metrics_governor_queue_workers_active
+
+# Scale event rate
+rate(metrics_governor_queue_adaptive_scale_total[5m])
+```
+
+**2. Verify latency guard is working:**
+
+```promql
+# If latency is high AND workers are not increasing, the guard is protecting the backend
+metrics_governor_queue_adaptive_latency_ewma_seconds > 0.5
+  and metrics_governor_queue_workers_active == metrics_governor_queue_workers_active offset 5m
+```
+
+**3. Capacity planning:**
+
+```promql
+# If workers frequently hit MaxWorkers, consider increasing -queue-adaptive-max-workers
+metrics_governor_queue_workers_active == metrics_governor_queue_workers_total
+```
+
+---
+
+## Async Send (Semaphore-Bounded Concurrency)
+
+Each sender (or worker, when pipeline split is disabled) can issue multiple concurrent HTTP sends using semaphore-bounded concurrency. This fills the network pipe more effectively, especially when export latency is high.
+
+- **MaxConcurrentSends** per sender (default: 4) -- Each sender can have up to 4 in-flight HTTP requests
+- **GlobalSendLimit** caps total in-flight sends across all senders (default: NumCPU x 8) -- Prevents overwhelming the backend
+- **Non-blocking acquire** -- If both limits are reached, the sender blocks until a slot opens
+
+**Applies to:** OTLP pipeline, PRW pipeline (identical behavior)
+
+### How It Works
+
+```mermaid
+flowchart LR
+    subgraph "Sender Goroutine"
+        RECV[Receive Prepared Entry] --> LOCAL{Local Semaphore\nMaxConcurrentSends=4}
+        LOCAL -->|Acquired| GLOBAL{Global Semaphore\nGlobalSendLimit}
+        GLOBAL -->|Acquired| SEND[HTTP Send]
+        SEND --> RELEASE[Release Both Semaphores]
+    end
+
+    subgraph "Concurrency Limits"
+        direction TB
+        PER["Per-Sender: 4 in-flight"]
+        TOTAL["Global: NumCPU x 8 total"]
+    end
+```
+
+### Observability Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_queue_sends_inflight` | Gauge | Current number of in-flight HTTP sends |
+| `metrics_governor_queue_sends_inflight_max` | Gauge | Configured maximum in-flight sends (GlobalSendLimit) |
+
+### Configuration
+
+```bash
+# Customize concurrent send limits
+metrics-governor \
+  -queue-max-concurrent-sends=4 \
+  -queue-global-send-limit=0  # 0 = NumCPU x 8
+```
+
+### Recommended Settings
+
+| Scenario | MaxConcurrentSends | GlobalSendLimit |
+|----------|:------------------:|:---------------:|
+| Default | 4 | 0 (auto) |
+| High-latency backend (>200ms) | 8 | NumCPU x 12 |
+| Low-resource environment | 2 | NumCPU x 4 |
+
+---
+
+## Connection Pre-warming
+
+At startup, metrics-governor fires a lightweight HEAD request to the configured backend endpoint to establish TCP connections and complete TLS handshakes before the first real export. This eliminates the cold-start latency penalty on the first batch.
+
+- **Fire-and-forget** -- The warmup request is non-blocking and does not delay startup
+- **Timeout-bounded** -- Warmup has a short timeout (default: 5s) to avoid hanging on unreachable backends
+- **Idempotent** -- HEAD requests have no side effects on the backend
+
+**Applies to:** OTLP pipeline, PRW pipeline (identical behavior)
+
+### How It Works
+
+```mermaid
+sequenceDiagram
+    participant MG as metrics-governor
+    participant BE as Backend
+
+    MG->>MG: Start up
+    MG->>BE: HEAD /api/v1/import (async, fire-and-forget)
+    MG->>MG: Continue initialization
+    BE-->>MG: 200 OK (TCP + TLS established)
+    Note over MG,BE: First real export reuses warm connection
+    MG->>BE: POST /api/v1/import (batch data)
+```
+
+### Observability Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_connection_warmup_total{status}` | Counter | Warmup attempts by status ("success", "error", "timeout") |
+
+### Configuration
+
+```bash
+# Enable connection pre-warming (default: false)
+metrics-governor -exporter-prewarm-connections=true
 ```
 
 ---
@@ -704,6 +1153,11 @@ This starts with memory-efficient Bloom filters and automatically switches to HL
 | `-buffer-size` | 100 | 500 | 1000 |
 | `-string-interning` | true | true | true |
 | `-intern-max-value-length` | 64 | 64 | 128 |
+| `-queue-pipeline-split-enabled` | false | true | true |
+| `-queue-preparer-count` | 0 (auto) | 0 (auto) | 0 (auto) |
+| `-queue-sender-count` | 0 (auto) | 0 (auto) | 0 (auto) |
+| `-queue-adaptive-workers-enabled` | false | true | true |
+| `-batch-auto-tune-enabled` | false | true | true |
 
 ### Memory Configuration
 
@@ -803,6 +1257,12 @@ metrics-governor \
   -queue-workers 0 \
   -buffer-size 500 \
   -string-interning=true \
+  \
+  # Pipeline optimizations
+  -queue-pipeline-split-enabled=true \
+  -batch-auto-tune-enabled=true \
+  -queue-adaptive-workers-enabled=true \
+  -exporter-prewarm-connections=true \
   \
   # Resilience
   -queue-enabled=true \

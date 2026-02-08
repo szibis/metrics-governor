@@ -275,6 +275,15 @@ func main() {
 				DrainEntryTimeout:          cfg.QueueDrainEntryTimeout,
 				AlwaysQueue:                cfg.QueueAlwaysQueue,
 				Workers:                    cfg.QueueWorkers,
+				PipelineSplitEnabled:       cfg.QueuePipelineSplitEnabled,
+				PreparerCount:              cfg.QueuePreparerCount,
+				SenderCount:                cfg.QueueSenderCount,
+				PipelineChannelSize:        cfg.QueuePipelineChannelSize,
+				MaxConcurrentSends:         cfg.QueueMaxConcurrentSends,
+				GlobalSendLimit:            cfg.QueueGlobalSendLimit,
+				AdaptiveWorkersEnabled:     cfg.QueueAdaptiveWorkersEnabled,
+				MinWorkers:                 cfg.QueueMinWorkers,
+				MaxWorkers:                 cfg.QueueMaxWorkers,
 			}
 
 			queuedExp, queueErr := exporter.NewQueued(exp, queueCfg)
@@ -482,6 +491,24 @@ func main() {
 	// Wire sampler into buffer pipeline (sampling before limits)
 	if sampler != nil {
 		bufOpts = append(bufOpts, buffer.WithSampler(sampler))
+	}
+
+	// Wire batch auto-tuner (AIMD) into buffer and queued exporter
+	if cfg.BufferBatchAutoTuneEnabled {
+		bt := exporter.NewBatchTuner(exporter.BatchTunerConfig{
+			Enabled:       true,
+			MinBytes:      cfg.BufferBatchMinBytes,
+			MaxBytes:      cfg.BufferBatchMaxBytes,
+			SuccessStreak: cfg.BufferBatchSuccessStreak,
+			GrowFactor:    cfg.BufferBatchGrowFactor,
+			ShrinkFactor:  cfg.BufferBatchShrinkFactor,
+		})
+		bufOpts = append(bufOpts, buffer.WithBatchTuner(bt))
+
+		// Wire tuner into queued exporter for success/failure feedback
+		if qe, ok := finalExporter.(*exporter.QueuedExporter); ok {
+			qe.SetBatchTuner(bt)
+		}
 	}
 
 	// Create buffer with stats collector, limits enforcer, and log aggregator

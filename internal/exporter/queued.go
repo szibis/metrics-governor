@@ -15,6 +15,7 @@ import (
 	"github.com/szibis/metrics-governor/internal/pipeline"
 	"github.com/szibis/metrics-governor/internal/queue"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	"golang.org/x/sync/semaphore"
 )
 
 // ErrExportQueued is a sentinel error indicating data was queued for retry
@@ -159,6 +160,16 @@ func (cb *CircuitBreaker) RecordFailure() {
 	}
 }
 
+// dataCompressor is an optional interface for exporters that can compress raw bytes.
+type dataCompressor interface {
+	CompressData(data []byte) (compressed []byte, contentEncoding string, err error)
+}
+
+// compressedSender is an optional interface for exporters that can send pre-compressed data.
+type compressedSender interface {
+	SendCompressed(ctx context.Context, compressedData []byte, contentEncoding string, uncompressedSize int) error
+}
+
 // QueuedExporter wraps an Exporter with a persistent queue for retry.
 // When AlwaysQueue is true (default), Export() always pushes to the queue
 // (returns instantly in µs) and N worker goroutines pull from the queue
@@ -191,6 +202,27 @@ type QueuedExporter struct {
 	closeTimeout       time.Duration // Close() wait for retry loop (default: 60s)
 	drainTimeout       time.Duration // drainQueue overall timeout (default: 30s)
 	drainEntryTimeout  time.Duration // Per-entry timeout during drain (default: 5s)
+
+	// Pipeline split: separate CPU-bound preparers from I/O-bound senders.
+	pipelineSplitEnabled bool
+	preparerCount        int
+	senderCount          int
+	preparedCh           chan *PreparedEntry // bounded channel between preparers and senders
+
+	// Async send: semaphore-bounded concurrent HTTP sends per sender.
+	maxConcurrentSends int
+	globalSendSem      *semaphore.Weighted // global limit on in-flight sends
+
+	// Adaptive worker scaling
+	scaler *WorkerScaler
+
+	// Batch tuner: AIMD batch size auto-tuning.
+	batchTuner *BatchTuner
+
+	// Worker management for dynamic scaling
+	workerWg     sync.WaitGroup
+	nextWorkerID atomic.Int32
+	workerStops  sync.Map // map[int]chan struct{} for per-worker stop signals
 
 	// Backoff state
 	currentDelay atomic.Int64 // Current backoff delay in nanoseconds
@@ -255,24 +287,54 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 		workers = runtime.NumCPU()
 	}
 
+	// Pipeline split configuration
+	pipelineSplitEnabled := queueCfg.PipelineSplitEnabled
+	preparerCount := queueCfg.PreparerCount
+	if preparerCount <= 0 {
+		preparerCount = runtime.NumCPU()
+	}
+	senderCount := queueCfg.SenderCount
+	if senderCount <= 0 {
+		senderCount = runtime.NumCPU() * 2
+	}
+	pipelineChannelSize := queueCfg.PipelineChannelSize
+	if pipelineChannelSize <= 0 {
+		pipelineChannelSize = 256
+	}
+
+	// Async send configuration
+	maxConcurrentSends := queueCfg.MaxConcurrentSends
+	if maxConcurrentSends <= 0 {
+		maxConcurrentSends = 4
+	}
+	globalSendLimit := queueCfg.GlobalSendLimit
+	if globalSendLimit <= 0 {
+		globalSendLimit = runtime.NumCPU() * 8
+	}
+
 	qe := &QueuedExporter{
-		exporter:            exporter,
-		queue:               q,
-		baseDelay:           queueCfg.RetryInterval,
-		maxDelay:            queueCfg.MaxRetryDelay,
-		directExportTimeout: directExportTimeout,
-		alwaysQueue:         queueCfg.AlwaysQueue,
-		workers:             workers,
-		backoffEnabled:      backoffEnabled,
-		backoffMultiplier:   backoffMultiplier,
-		batchDrainSize:      batchDrainSize,
-		burstDrainSize:      burstDrainSize,
-		retryExportTimeout:  retryExportTimeout,
-		closeTimeout:        closeTimeout,
-		drainTimeout:        drainTimeout,
-		drainEntryTimeout:   drainEntryTimeout,
-		retryStop:           make(chan struct{}),
-		retryDone:           make(chan struct{}),
+		exporter:             exporter,
+		queue:                q,
+		baseDelay:            queueCfg.RetryInterval,
+		maxDelay:             queueCfg.MaxRetryDelay,
+		directExportTimeout:  directExportTimeout,
+		alwaysQueue:          queueCfg.AlwaysQueue,
+		workers:              workers,
+		backoffEnabled:       backoffEnabled,
+		backoffMultiplier:    backoffMultiplier,
+		batchDrainSize:       batchDrainSize,
+		burstDrainSize:       burstDrainSize,
+		retryExportTimeout:   retryExportTimeout,
+		closeTimeout:         closeTimeout,
+		drainTimeout:         drainTimeout,
+		drainEntryTimeout:    drainEntryTimeout,
+		pipelineSplitEnabled: pipelineSplitEnabled,
+		preparerCount:        preparerCount,
+		senderCount:          senderCount,
+		maxConcurrentSends:   maxConcurrentSends,
+		globalSendSem:        semaphore.NewWeighted(int64(globalSendLimit)),
+		retryStop:            make(chan struct{}),
+		retryDone:            make(chan struct{}),
 	}
 
 	// Initialize current delay to base delay
@@ -296,13 +358,52 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 		))
 	}
 
+	// Initialize adaptive scaler if enabled
+	if queueCfg.AdaptiveWorkersEnabled {
+		minW := queueCfg.MinWorkers
+		if minW <= 0 {
+			minW = 1
+		}
+		maxW := queueCfg.MaxWorkers
+		if maxW <= 0 {
+			maxW = workers * 4
+		}
+		qe.scaler = NewWorkerScaler(ScalerConfig{
+			Enabled:    true,
+			MinWorkers: minW,
+			MaxWorkers: maxW,
+		})
+	}
+
 	if qe.alwaysQueue {
-		// Always-queue mode: start N worker goroutines that pull from queue
-		logging.Info("always-queue mode enabled with worker pool", logging.F(
-			"workers", workers,
-		))
 		qe.workersDone = make(chan struct{})
-		qe.startWorkers()
+
+		if pipelineSplitEnabled {
+			// Pipeline split mode: preparers (compress) + senders (HTTP)
+			qe.preparedCh = make(chan *PreparedEntry, pipelineChannelSize)
+			logging.Info("pipeline split mode enabled", logging.F(
+				"preparers", preparerCount,
+				"senders", senderCount,
+				"channel_size", pipelineChannelSize,
+				"max_concurrent_sends", maxConcurrentSends,
+			))
+			qe.startPipelineSplitWorkers()
+		} else {
+			// Unified worker mode: each worker does pop → compress → send
+			logging.Info("always-queue mode enabled with worker pool", logging.F(
+				"workers", workers,
+			))
+			qe.startWorkers()
+		}
+
+		// Start adaptive scaler if configured
+		if qe.scaler != nil {
+			initialWorkers := workers
+			if pipelineSplitEnabled {
+				initialWorkers = senderCount
+			}
+			qe.scaler.Start(context.Background(), initialWorkers, qe.queue.Len, qe.addSender, qe.removeSender)
+		}
 	} else {
 		// Legacy mode: single retry loop
 		if directExportTimeout > 0 {
@@ -419,6 +520,11 @@ func (e *QueuedExporter) Close() error {
 	e.closed = true
 	e.mu.Unlock()
 
+	// Stop adaptive scaler first (prevents new workers during shutdown)
+	if e.scaler != nil {
+		e.scaler.Stop()
+	}
+
 	// Signal workers/retry loop to stop
 	close(e.retryStop)
 
@@ -454,23 +560,105 @@ func (e *QueuedExporter) Close() error {
 	return e.exporter.Close()
 }
 
-// startWorkers launches N worker goroutines that pull from the queue and export.
+// startWorkers launches N unified worker goroutines that pull from the queue and export.
 func (e *QueuedExporter) startWorkers() {
-	var wg sync.WaitGroup
-	wg.Add(e.workers)
 	queue.SetWorkersTotal(float64(e.workers))
 
 	for i := 0; i < e.workers; i++ {
-		go func(id int) {
-			defer wg.Done()
+		e.workerWg.Add(1)
+		id := int(e.nextWorkerID.Add(1))
+		go func() {
+			defer e.workerWg.Done()
 			e.workerLoop(id)
-		}(i)
+		}()
 	}
 
 	go func() {
-		wg.Wait()
+		e.workerWg.Wait()
 		close(e.workersDone)
 	}()
+}
+
+// startPipelineSplitWorkers launches preparer and sender goroutines.
+// Preparers: pop from queue → compress → push to preparedCh.
+// Senders: pop from preparedCh → HTTP send → re-queue on failure.
+func (e *QueuedExporter) startPipelineSplitWorkers() {
+	queue.SetPreparersTotal(float64(e.preparerCount))
+	queue.SetSendersTotal(float64(e.senderCount))
+
+	// Launch preparers
+	var preparerWg sync.WaitGroup
+	preparerWg.Add(e.preparerCount)
+	for i := 0; i < e.preparerCount; i++ {
+		id := i
+		go func() {
+			defer preparerWg.Done()
+			e.preparerLoop(id)
+		}()
+	}
+
+	// Launch senders — tracked by workerWg for dynamic scaling
+	for i := 0; i < e.senderCount; i++ {
+		e.workerWg.Add(1)
+		id := int(e.nextWorkerID.Add(1))
+		stopCh := make(chan struct{})
+		e.workerStops.Store(id, stopCh)
+		go func() {
+			defer e.workerWg.Done()
+			e.senderLoop(id, stopCh)
+		}()
+	}
+
+	go func() {
+		// Wait for preparers to finish (they drain queue then close channel)
+		preparerWg.Wait()
+		close(e.preparedCh)
+
+		// Wait for senders to drain channel
+		e.workerWg.Wait()
+		close(e.workersDone)
+	}()
+}
+
+// addSender dynamically adds a sender goroutine (called by scaler).
+func (e *QueuedExporter) addSender() {
+	e.workerWg.Add(1)
+	id := int(e.nextWorkerID.Add(1))
+	stopCh := make(chan struct{})
+	e.workerStops.Store(id, stopCh)
+	go func() {
+		defer e.workerWg.Done()
+		e.senderLoop(id, stopCh)
+	}()
+	queue.SetSendersTotal(float64(e.activeSenderCount()))
+}
+
+// removeSender signals one sender to exit (called by scaler).
+func (e *QueuedExporter) removeSender() {
+	// Find and stop one sender by iterating the stop map
+	var found bool
+	e.workerStops.Range(func(key, value any) bool {
+		id := key.(int)
+		stopCh := value.(chan struct{})
+		// Close the stop channel to signal this sender to exit
+		close(stopCh)
+		e.workerStops.Delete(id)
+		found = true
+		return false // stop after first
+	})
+	if found {
+		queue.SetSendersTotal(float64(e.activeSenderCount()))
+	}
+}
+
+// activeSenderCount returns the number of active sender stop channels.
+func (e *QueuedExporter) activeSenderCount() int {
+	count := 0
+	e.workerStops.Range(func(_, _ any) bool {
+		count++
+		return true
+	})
+	return count
 }
 
 // dataExporter is an optional interface for exporters that can send pre-serialized
@@ -561,7 +749,8 @@ func (e *QueuedExporter) workerLoop(id int) {
 		}
 
 		cancel()
-		pipeline.Record("export_http", pipeline.Since(exportStart))
+		exportDuration := pipeline.Since(exportStart)
+		pipeline.Record("export_http", exportDuration)
 		queue.DecrementWorkersActive()
 
 		if err == nil {
@@ -569,6 +758,12 @@ func (e *QueuedExporter) workerLoop(id int) {
 			queue.IncrementRetrySuccessTotal()
 			if e.circuitBreaker != nil {
 				e.circuitBreaker.RecordSuccess()
+			}
+			if e.scaler != nil {
+				e.scaler.RecordLatency(time.Duration(exportDuration))
+			}
+			if e.batchTuner != nil {
+				e.batchTuner.RecordSuccess(time.Duration(exportDuration), len(entry.Data), len(entry.Data))
 			}
 			// Reset backoff on success
 			currentBackoff = e.baseDelay
@@ -581,6 +776,9 @@ func (e *QueuedExporter) workerLoop(id int) {
 		// Failure — record with circuit breaker
 		if e.circuitBreaker != nil {
 			e.circuitBreaker.RecordFailure()
+		}
+		if e.batchTuner != nil {
+			e.batchTuner.RecordFailure(err)
 		}
 
 		// Classify error for metrics
@@ -637,6 +835,244 @@ func (e *QueuedExporter) workerLoop(id int) {
 			e.workerSleep(currentBackoff)
 		}
 	}
+}
+
+// preparerLoop is the main loop for each preparer goroutine.
+// Preparers pop from queue → compress → push to preparedCh.
+//
+//nolint:dupl // Mirrors PRW preparerLoop — intentional pipeline parity
+func (e *QueuedExporter) preparerLoop(id int) {
+	dc, hasCompress := e.exporter.(dataCompressor)
+
+	for {
+		select {
+		case <-e.retryStop:
+			return
+		default:
+		}
+
+		popStart := time.Now()
+		entry, err := e.queue.Pop()
+		pipeline.Record("queue_pop", pipeline.Since(popStart))
+		if err != nil {
+			e.workerSleep(100 * time.Millisecond)
+			continue
+		}
+		if entry == nil {
+			e.workerSleep(100 * time.Millisecond)
+			continue
+		}
+
+		// Check circuit breaker — re-push raw bytes
+		if e.circuitBreaker != nil && !e.circuitBreaker.AllowRequest() {
+			queue.IncrementCircuitRejected()
+			_ = e.queue.PushData(entry.Data)
+			e.workerSleep(100 * time.Millisecond)
+			continue
+		}
+
+		queue.IncrementPreparersActive()
+		prepareStart := time.Now()
+
+		var prepared *PreparedEntry
+		if hasCompress {
+			compressed, encoding, compErr := dc.CompressData(entry.Data)
+			if compErr != nil {
+				queue.DecrementPreparersActive()
+				logging.Error("preparer: compression failed", logging.F(
+					"preparer_id", id,
+					"error", compErr.Error(),
+				))
+				// Re-push for retry
+				_ = e.queue.PushData(entry.Data)
+				continue
+			}
+			prepared = &PreparedEntry{
+				CompressedData:   compressed,
+				RawData:          entry.Data,
+				ContentEncoding:  encoding,
+				UncompressedSize: len(entry.Data),
+			}
+		} else {
+			// No compression — pass through raw
+			prepared = &PreparedEntry{
+				CompressedData:   entry.Data,
+				RawData:          entry.Data,
+				ContentEncoding:  "",
+				UncompressedSize: len(entry.Data),
+			}
+		}
+
+		pipeline.Record("prepare", pipeline.Since(prepareStart))
+		queue.DecrementPreparersActive()
+
+		// Push to senders via bounded channel (blocks if senders are slow — backpressure)
+		select {
+		case e.preparedCh <- prepared:
+			queue.SetPreparedChannelLength(float64(len(e.preparedCh)))
+		case <-e.retryStop:
+			// Shutdown — re-push raw data to queue for persistence
+			_ = e.queue.PushData(entry.Data)
+			return
+		}
+	}
+}
+
+// senderLoop is the main loop for each sender goroutine.
+// Senders pop from preparedCh → HTTP send → re-queue on failure.
+// Each sender can have multiple concurrent HTTP sends via semaphore.
+func (e *QueuedExporter) senderLoop(id int, stopCh chan struct{}) {
+	cs, hasCompressedSend := e.exporter.(compressedSender)
+	de, hasDataExport := e.exporter.(dataExporter)
+	currentBackoff := e.baseDelay
+	if currentBackoff <= 0 {
+		currentBackoff = 5 * time.Second
+	}
+
+	for {
+		select {
+		case <-e.retryStop:
+			return
+		case <-stopCh:
+			// Removed by scaler
+			return
+		default:
+		}
+
+		// Pop from prepared channel
+		var prepared *PreparedEntry
+		var ok bool
+		select {
+		case prepared, ok = <-e.preparedCh:
+			if !ok {
+				return // Channel closed, all preparers done
+			}
+		case <-e.retryStop:
+			return
+		case <-stopCh:
+			return
+		}
+
+		queue.SetPreparedChannelLength(float64(len(e.preparedCh)))
+
+		// Acquire send semaphore (bounded concurrency)
+		if err := e.globalSendSem.Acquire(context.Background(), 1); err != nil {
+			// Shouldn't happen unless context canceled
+			_ = e.queue.PushData(prepared.RawData)
+			continue
+		}
+
+		queue.IncrementSendersActive()
+		queue.IncrementRetryTotal()
+		exportStart := time.Now()
+		ctx, cancel := context.WithTimeout(context.Background(), e.retryExportTimeout)
+
+		var exportErr error
+		if hasCompressedSend {
+			// Fast path: send pre-compressed data directly
+			exportErr = cs.SendCompressed(ctx, prepared.CompressedData, prepared.ContentEncoding, prepared.UncompressedSize)
+		} else if hasDataExport {
+			// Medium path: raw bytes export (exporter handles compression)
+			exportErr = de.ExportData(ctx, prepared.RawData)
+		} else {
+			// Slow path: full unmarshal → export
+			var req *colmetricspb.ExportMetricsServiceRequest
+			entry := &queue.QueueEntry{Data: prepared.RawData}
+			req, exportErr = entry.GetRequest()
+			if exportErr == nil {
+				exportErr = e.exporter.Export(ctx, req)
+			}
+		}
+
+		cancel()
+		sendDuration := pipeline.Since(exportStart)
+		pipeline.Record("send", sendDuration)
+		queue.DecrementSendersActive()
+		e.globalSendSem.Release(1)
+
+		if exportErr == nil {
+			// Success
+			queue.IncrementRetrySuccessTotal()
+			if e.circuitBreaker != nil {
+				e.circuitBreaker.RecordSuccess()
+			}
+			if e.scaler != nil {
+				e.scaler.RecordLatency(time.Duration(sendDuration))
+			}
+			if e.batchTuner != nil {
+				e.batchTuner.RecordSuccess(time.Duration(sendDuration), prepared.UncompressedSize, len(prepared.CompressedData))
+			}
+			currentBackoff = e.baseDelay
+			if currentBackoff <= 0 {
+				currentBackoff = 5 * time.Second
+			}
+			continue
+		}
+
+		// Failure
+		if e.circuitBreaker != nil {
+			e.circuitBreaker.RecordFailure()
+		}
+		if e.batchTuner != nil {
+			e.batchTuner.RecordFailure(exportErr)
+		}
+
+		errType := classifyExportError(exportErr)
+		queue.IncrementRetryFailure(string(errType))
+
+		// Check if splittable (413) — requires deserialization (rare)
+		var expErr *ExportError
+		if errors.As(exportErr, &expErr) {
+			if expErr.IsSplittable() {
+				entry := &queue.QueueEntry{Data: prepared.RawData}
+				req, deserErr := entry.GetRequest()
+				if deserErr == nil && len(req.ResourceMetrics) > 1 {
+					mid := len(req.ResourceMetrics) / 2
+					req1 := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: req.ResourceMetrics[:mid]}
+					req2 := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: req.ResourceMetrics[mid:]}
+					_ = e.queue.Push(req1)
+					_ = e.queue.Push(req2)
+					continue
+				}
+			}
+			if !expErr.IsRetryable() {
+				logging.Warn("sender: dropping non-retryable entry", logging.F(
+					"sender_id", id,
+					"error", exportErr.Error(),
+					"error_type", string(expErr.Type),
+				))
+				queue.IncrementNonRetryableDropped(string(expErr.Type))
+				continue
+			}
+		}
+
+		// Re-push raw bytes for retry
+		if pushErr := e.queue.PushData(prepared.RawData); pushErr != nil {
+			queue.IncrementExportDataLoss()
+			logging.Error("sender: re-push failed, data lost", logging.F(
+				"sender_id", id,
+				"error", pushErr.Error(),
+				"bytes", len(prepared.RawData),
+			))
+		}
+
+		// Backoff
+		if e.backoffEnabled {
+			e.workerSleep(currentBackoff)
+			newBackoff := time.Duration(float64(currentBackoff) * e.backoffMultiplier)
+			if newBackoff > e.maxDelay && e.maxDelay > 0 {
+				newBackoff = e.maxDelay
+			}
+			currentBackoff = newBackoff
+		} else {
+			e.workerSleep(currentBackoff)
+		}
+	}
+}
+
+// SetBatchTuner sets the batch tuner for AIMD batch size optimization.
+func (e *QueuedExporter) SetBatchTuner(bt *BatchTuner) {
+	e.batchTuner = bt
 }
 
 // workerSleep sleeps for the given duration but wakes up early on shutdown.
