@@ -239,6 +239,157 @@ func TestNewAccumulator(t *testing.T) {
 	}
 }
 
+// --- Reset() tests for accumulators with 0% Reset coverage ---
+
+func TestAvgAccum_Reset(t *testing.T) {
+	a := &avgAccum{}
+	a.Add(10)
+	a.Add(20)
+	a.Reset()
+	if got := a.Result(); got != 0 {
+		t.Errorf("avg after reset = %f, want 0", got)
+	}
+	// Verify it can accumulate again after reset.
+	a.Add(6)
+	if got := a.Result(); got != 6 {
+		t.Errorf("avg after reset+add(6) = %f, want 6", got)
+	}
+}
+
+func TestMinAccum_Reset(t *testing.T) {
+	a := &minAccum{}
+	a.Add(3)
+	a.Add(7)
+	a.Reset()
+	if got := a.Result(); got != 0 {
+		t.Errorf("min after reset = %f, want 0", got)
+	}
+	a.Add(42)
+	if got := a.Result(); got != 42 {
+		t.Errorf("min after reset+add(42) = %f, want 42", got)
+	}
+}
+
+func TestMaxAccum_Reset(t *testing.T) {
+	a := &maxAccum{}
+	a.Add(3)
+	a.Add(7)
+	a.Reset()
+	if got := a.Result(); got != 0 {
+		t.Errorf("max after reset = %f, want 0", got)
+	}
+	a.Add(5)
+	if got := a.Result(); got != 5 {
+		t.Errorf("max after reset+add(5) = %f, want 5", got)
+	}
+}
+
+func TestCountAccum_Reset(t *testing.T) {
+	a := &countAccum{}
+	a.Add(1)
+	a.Add(2)
+	a.Add(3)
+	a.Reset()
+	if got := a.Result(); got != 0 {
+		t.Errorf("count after reset = %f, want 0", got)
+	}
+	a.Add(99)
+	if got := a.Result(); got != 1 {
+		t.Errorf("count after reset+add = %f, want 1", got)
+	}
+}
+
+func TestIncreaseAccum_Reset(t *testing.T) {
+	a := &increaseAccum{}
+	a.Add(10)
+	a.Add(30)
+	a.Reset()
+	if got := a.Result(); got != 0 {
+		t.Errorf("increase after reset = %f, want 0", got)
+	}
+	a.Add(5)
+	a.Add(15)
+	if got := a.Result(); got != 10 {
+		t.Errorf("increase after reset = %f, want 10", got)
+	}
+}
+
+func TestRateAccum_Reset(t *testing.T) {
+	a := &rateAccum{}
+	a.setWindow(60)
+	a.Add(100)
+	a.Add(160)
+	a.Reset()
+	if got := a.Result(); got != 0 {
+		t.Errorf("rate after reset = %f, want 0", got)
+	}
+	// Window is preserved after reset, new data should work.
+	a.Add(0)
+	a.Add(120)
+	if got := a.Result(); got != 2.0 {
+		t.Errorf("rate after reset+adds = %f, want 2.0", got)
+	}
+}
+
+func TestStddevAccum_Reset(t *testing.T) {
+	a := &stddevAccum{}
+	a.Add(2)
+	a.Add(4)
+	a.Add(4)
+	a.Add(4)
+	a.Reset()
+	if got := a.Result(); got != 0 {
+		t.Errorf("stddev after reset = %f, want 0", got)
+	}
+	// Single value after reset should still be 0 stddev.
+	a.Add(10)
+	if got := a.Result(); got != 0 {
+		t.Errorf("stddev after reset+single = %f, want 0", got)
+	}
+}
+
+func TestLastAccum_Reset(t *testing.T) {
+	a := &lastAccum{}
+	a.Add(42)
+	a.Reset()
+	if got := a.Result(); got != 0 {
+		t.Errorf("last after reset = %f, want 0", got)
+	}
+	a.Add(7)
+	if got := a.Result(); got != 7 {
+		t.Errorf("last after reset+add(7) = %f, want 7", got)
+	}
+}
+
+// --- quantilesAccum.Result() test (single value, returns without sort) ---
+
+func TestQuantilesAccum_Result_SingleValue(t *testing.T) {
+	a := newQuantilesAccum([]float64{0.5, 0.99})
+	a.Add(77)
+	// Result() returns the first quantile value.
+	got := a.Result()
+	if got != 77 {
+		t.Errorf("Result() = %f, want 77 (single value)", got)
+	}
+}
+
+func TestQuantilesAccum_Result_Empty(t *testing.T) {
+	a := newQuantilesAccum([]float64{0.5})
+	got := a.Result()
+	if got != 0 {
+		t.Errorf("Result() empty = %f, want 0", got)
+	}
+}
+
+func TestQuantilesAccum_Result_NoQuantiles(t *testing.T) {
+	a := newQuantilesAccum([]float64{})
+	a.Add(10)
+	got := a.Result()
+	if got != 0 {
+		t.Errorf("Result() no quantiles = %f, want 0", got)
+	}
+}
+
 func TestQuantileFromSorted(t *testing.T) {
 	sorted := []float64{1, 2, 3, 4, 5}
 	tests := []struct {

@@ -770,6 +770,9 @@ func (s *Sampler) applyProcessingRules(metricName string, dp *metricspb.NumberDa
 				seriesKey := buildDSSeriesKey(metricName, dp.Attributes)
 				emitted := s.dsEngine.ingestAndEmit(seriesKey, rule.dsConfig, dp.TimeUnixNano, getNumberValue(dp))
 
+				// Track active series per rule/method for dashboard visibility.
+				processingDownsampleActiveSeries.WithLabelValues(rule.Name, rule.Method).Set(float64(s.dsEngine.seriesCount()))
+
 				if len(emitted) > 0 {
 					// Replace dp value with first emitted; additional points are handled upstream.
 					dp.TimeUnixNano = emitted[0].timestamp

@@ -360,3 +360,234 @@ func TestSetLabel_NewKey(t *testing.T) {
 		t.Fatalf("expected 2 attrs, got %d", len(result))
 	}
 }
+
+// --- applyOperation dispatch tests ---
+
+func TestApplyOperation_DispatchConcat(t *testing.T) {
+	attrs := makeTransformAttrs("host", "web01", "dc", "us-east")
+	cop := compiledOperation{
+		op: Operation{
+			Concat: &ConcatOp{Sources: []string{"host", "dc"}, Target: "id", Separator: "."},
+		},
+	}
+	result := applyOperation(attrs, cop, "test-rule")
+	if v := getTransformAttr(result, "id"); v != "web01.us-east" {
+		t.Errorf("id = %q, want 'web01.us-east'", v)
+	}
+}
+
+func TestApplyOperation_DispatchMathAdd(t *testing.T) {
+	attrs := makeTransformAttrs("val", "7")
+	cop := compiledOperation{
+		op: Operation{
+			Math: &MathOp{Source: "val", Target: "out", Operation: "add", Operand: 3},
+		},
+	}
+	result := applyOperation(attrs, cop, "test-rule")
+	if v := getTransformAttr(result, "out"); v != "10" {
+		t.Errorf("out = %q, want '10'", v)
+	}
+}
+
+func TestApplyOperation_DispatchMathSub(t *testing.T) {
+	attrs := makeTransformAttrs("val", "10")
+	cop := compiledOperation{
+		op: Operation{
+			Math: &MathOp{Source: "val", Target: "out", Operation: "sub", Operand: 4},
+		},
+	}
+	result := applyOperation(attrs, cop, "test-rule")
+	if v := getTransformAttr(result, "out"); v != "6" {
+		t.Errorf("out = %q, want '6'", v)
+	}
+}
+
+func TestApplyOperation_DispatchMathMul(t *testing.T) {
+	attrs := makeTransformAttrs("val", "5")
+	cop := compiledOperation{
+		op: Operation{
+			Math: &MathOp{Source: "val", Target: "out", Operation: "mul", Operand: 6},
+		},
+	}
+	result := applyOperation(attrs, cop, "test-rule")
+	if v := getTransformAttr(result, "out"); v != "30" {
+		t.Errorf("out = %q, want '30'", v)
+	}
+}
+
+func TestApplyOperation_NilOperation(t *testing.T) {
+	attrs := makeTransformAttrs("service", "web")
+	cop := compiledOperation{
+		op: Operation{}, // no operation fields set
+	}
+	result := applyOperation(attrs, cop, "test-rule")
+	// Should return attrs unchanged (fallthrough).
+	if len(result) != len(attrs) {
+		t.Errorf("expected %d attrs unchanged, got %d", len(attrs), len(result))
+	}
+	if v := getTransformAttr(result, "service"); v != "web" {
+		t.Errorf("service = %q, want 'web'", v)
+	}
+}
+
+// --- validateTransformRule gap tests ---
+
+func TestValidateTransformRule_ConditionInvalidMatchesRegex(t *testing.T) {
+	r := &ProcessingRule{
+		Operations: []Operation{
+			{Remove: []string{"foo"}},
+		},
+		When: []Condition{
+			{Label: "env", Matches: "[invalid"},
+		},
+	}
+	err := validateTransformRule(r)
+	if err == nil {
+		t.Fatal("expected error for invalid matches regex")
+	}
+	if !strings.Contains(err.Error(), "invalid matches regex") {
+		t.Errorf("error = %q, want 'invalid matches regex'", err.Error())
+	}
+}
+
+func TestValidateTransformRule_ConditionInvalidNotMatchesRegex(t *testing.T) {
+	r := &ProcessingRule{
+		Operations: []Operation{
+			{Remove: []string{"foo"}},
+		},
+		When: []Condition{
+			{Label: "env", NotMatches: "[invalid"},
+		},
+	}
+	err := validateTransformRule(r)
+	if err == nil {
+		t.Fatal("expected error for invalid not_matches regex")
+	}
+	if !strings.Contains(err.Error(), "invalid not_matches regex") {
+		t.Errorf("error = %q, want 'invalid not_matches regex'", err.Error())
+	}
+}
+
+// --- compileOperation gap tests ---
+
+func TestCompileOperation_ConcatMissingTarget(t *testing.T) {
+	op := Operation{
+		Concat: &ConcatOp{Sources: []string{"a", "b"}, Target: ""},
+	}
+	_, err := compileOperation(op, 0)
+	if err == nil {
+		t.Fatal("expected error for concat missing target")
+	}
+	if !strings.Contains(err.Error(), "concat.target is required") {
+		t.Errorf("error = %q, want 'concat.target is required'", err.Error())
+	}
+}
+
+func TestCompileOperation_ConcatTooFewSources(t *testing.T) {
+	op := Operation{
+		Concat: &ConcatOp{Sources: []string{"a"}, Target: "out"},
+	}
+	_, err := compileOperation(op, 0)
+	if err == nil {
+		t.Fatal("expected error for concat with < 2 sources")
+	}
+	if !strings.Contains(err.Error(), "at least 2 sources") {
+		t.Errorf("error = %q, want 'at least 2 sources'", err.Error())
+	}
+}
+
+func TestCompileOperation_MathMissingOperation(t *testing.T) {
+	op := Operation{
+		Math: &MathOp{Source: "x", Target: "y", Operation: "", Operand: 1},
+	}
+	_, err := compileOperation(op, 0)
+	if err == nil {
+		t.Fatal("expected error for math with empty operation")
+	}
+	if !strings.Contains(err.Error(), "unknown math operation") {
+		t.Errorf("error = %q, want 'unknown math operation'", err.Error())
+	}
+}
+
+func TestCompileOperation_MathMissingSourceTarget(t *testing.T) {
+	op := Operation{
+		Math: &MathOp{Source: "", Target: "y", Operation: "add", Operand: 1},
+	}
+	_, err := compileOperation(op, 0)
+	if err == nil {
+		t.Fatal("expected error for math missing source")
+	}
+	if !strings.Contains(err.Error(), "math requires source and target") {
+		t.Errorf("error = %q, want 'math requires source and target'", err.Error())
+	}
+}
+
+func TestCompileOperation_MapEmptyValues(t *testing.T) {
+	op := Operation{
+		Map: &MapOp{Source: "env", Target: "tier", Values: map[string]string{}},
+	}
+	_, err := compileOperation(op, 0)
+	if err == nil {
+		t.Fatal("expected error for map with empty values")
+	}
+	if !strings.Contains(err.Error(), "map.values is required") {
+		t.Errorf("error = %q, want 'map.values is required'", err.Error())
+	}
+}
+
+func TestCompileOperation_InvalidReplacePattern(t *testing.T) {
+	op := Operation{
+		Replace: &ReplaceOp{Label: "x", Pattern: "[invalid", Replacement: "y"},
+	}
+	_, err := compileOperation(op, 0)
+	if err == nil {
+		t.Fatal("expected error for invalid replace pattern")
+	}
+	if !strings.Contains(err.Error(), "invalid replace pattern") {
+		t.Errorf("error = %q, want 'invalid replace pattern'", err.Error())
+	}
+}
+
+func TestCompileOperation_InvalidExtractPattern(t *testing.T) {
+	op := Operation{
+		Extract: &ExtractOp{Source: "svc", Target: "base", Pattern: "[invalid"},
+	}
+	_, err := compileOperation(op, 0)
+	if err == nil {
+		t.Fatal("expected error for invalid extract pattern")
+	}
+	if !strings.Contains(err.Error(), "invalid extract pattern") {
+		t.Errorf("error = %q, want 'invalid extract pattern'", err.Error())
+	}
+}
+
+func TestCompileOperation_HashModMissingSource(t *testing.T) {
+	op := Operation{
+		HashMod: &HashModOp{Source: "", Target: "shard", Modulus: 16},
+	}
+	_, err := compileOperation(op, 0)
+	if err == nil {
+		t.Fatal("expected error for hash_mod missing source")
+	}
+	if !strings.Contains(err.Error(), "hash_mod requires source and target") {
+		t.Errorf("error = %q, want 'hash_mod requires source and target'", err.Error())
+	}
+}
+
+func TestCompileOperation_MapInvalidKeyRegex(t *testing.T) {
+	op := Operation{
+		Map: &MapOp{
+			Source:  "env",
+			Target:  "tier",
+			Values:  map[string]string{"[invalid": "bad"},
+			Default: "unknown",
+		},
+	}
+	_, err := compileOperation(op, 0)
+	if err == nil {
+		t.Fatal("expected error for map with invalid key regex")
+	}
+	if !strings.Contains(err.Error(), "invalid map key regex") {
+		t.Errorf("error = %q, want 'invalid map key regex'", err.Error())
+	}
+}
