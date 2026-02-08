@@ -147,6 +147,65 @@ var (
 		Name: "metrics_governor_queue_non_retryable_dropped_total",
 		Help: "Total entries dropped because the error was non-retryable",
 	}, []string{"error_type"})
+
+	// Pipeline split metrics
+	queuePreparersActive = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_queue_preparers_active",
+		Help: "Number of preparer goroutines actively compressing data",
+	})
+
+	queueSendersActive = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_queue_senders_active",
+		Help: "Number of sender goroutines actively sending HTTP requests",
+	})
+
+	queuePreparersTotal = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_queue_preparers_total",
+		Help: "Configured number of preparer goroutines",
+	})
+
+	queueSendersTotal = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_queue_senders_total",
+		Help: "Configured number of sender goroutines",
+	})
+
+	queuePreparedChannelLength = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_queue_prepared_channel_length",
+		Help: "Current number of prepared entries in the channel between preparers and senders",
+	})
+
+	// Export data loss metric (for async re-push failures in pipeline split senders)
+	queueRequeueDataLossTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_queue_requeue_data_loss_total",
+		Help: "Total entries lost due to failed re-push after export failure",
+	})
+
+	// Async send metrics
+	queueSendsInflight = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_queue_sends_inflight",
+		Help: "Current number of in-flight HTTP send requests",
+	})
+
+	queueSendsInflightMax = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_queue_sends_inflight_max",
+		Help: "Maximum configured in-flight HTTP sends per sender",
+	})
+
+	// Adaptive scaler metrics
+	queueWorkersDesired = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_queue_workers_desired",
+		Help: "Desired number of worker goroutines (from adaptive scaler)",
+	})
+
+	queueScalerAdjustmentsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "metrics_governor_queue_scaler_adjustments_total",
+		Help: "Total scaler adjustments by direction",
+	}, []string{"direction"})
+
+	queueExportLatencyEWMA = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_queue_export_latency_ewma_seconds",
+		Help: "Exponentially weighted moving average of export latency",
+	})
 )
 
 func init() {
@@ -181,6 +240,20 @@ func init() {
 	prometheus.MustRegister(queueWorkersTotal)
 	// Non-retryable drop metric
 	prometheus.MustRegister(queueNonRetryableDroppedTotal)
+	// Pipeline split metrics
+	prometheus.MustRegister(queuePreparersActive)
+	prometheus.MustRegister(queueSendersActive)
+	prometheus.MustRegister(queuePreparersTotal)
+	prometheus.MustRegister(queueSendersTotal)
+	prometheus.MustRegister(queuePreparedChannelLength)
+	prometheus.MustRegister(queueRequeueDataLossTotal)
+	// Async send metrics
+	prometheus.MustRegister(queueSendsInflight)
+	prometheus.MustRegister(queueSendsInflightMax)
+	// Adaptive scaler metrics
+	prometheus.MustRegister(queueWorkersDesired)
+	prometheus.MustRegister(queueScalerAdjustmentsTotal)
+	prometheus.MustRegister(queueExportLatencyEWMA)
 
 	// Initialize gauges to 0 so they appear in Prometheus immediately
 	// (before queue is created or used)
@@ -197,6 +270,16 @@ func init() {
 	currentBackoffSeconds.Set(0)
 	queueWorkersActive.Set(0)
 	queueWorkersTotal.Set(0)
+	queuePreparersActive.Set(0)
+	queueSendersActive.Set(0)
+	queuePreparersTotal.Set(0)
+	queueSendersTotal.Set(0)
+	queuePreparedChannelLength.Set(0)
+	queueRequeueDataLossTotal.Add(0)
+	queueSendsInflight.Set(0)
+	queueSendsInflightMax.Set(0)
+	queueWorkersDesired.Set(0)
+	queueExportLatencyEWMA.Set(0)
 
 	// Initialize counters to 0
 	queuePushTotal.Add(0)
@@ -221,6 +304,10 @@ func init() {
 	queueRetryFailureTotal.WithLabelValues("auth").Add(0)
 	queueRetryFailureTotal.WithLabelValues("rate_limit").Add(0)
 	queueRetryFailureTotal.WithLabelValues("unknown").Add(0)
+
+	// Initialize scaler adjustment labels
+	queueScalerAdjustmentsTotal.WithLabelValues("up").Add(0)
+	queueScalerAdjustmentsTotal.WithLabelValues("down").Add(0)
 
 	// Initialize non-retryable drop labels
 	queueNonRetryableDroppedTotal.WithLabelValues("auth").Add(0)
@@ -352,4 +439,69 @@ func SetWorkersTotal(n float64) {
 // IncrementNonRetryableDropped increments the non-retryable drop counter by error type.
 func IncrementNonRetryableDropped(errorType string) {
 	queueNonRetryableDroppedTotal.WithLabelValues(errorType).Inc()
+}
+
+// IncrementPreparersActive increments the active preparers gauge.
+func IncrementPreparersActive() {
+	queuePreparersActive.Inc()
+}
+
+// DecrementPreparersActive decrements the active preparers gauge.
+func DecrementPreparersActive() {
+	queuePreparersActive.Dec()
+}
+
+// IncrementSendersActive increments the active senders gauge.
+func IncrementSendersActive() {
+	queueSendersActive.Inc()
+}
+
+// DecrementSendersActive decrements the active senders gauge.
+func DecrementSendersActive() {
+	queueSendersActive.Dec()
+}
+
+// SetPreparersTotal sets the configured preparer count gauge.
+func SetPreparersTotal(n float64) {
+	queuePreparersTotal.Set(n)
+}
+
+// SetSendersTotal sets the configured sender count gauge.
+func SetSendersTotal(n float64) {
+	queueSendersTotal.Set(n)
+}
+
+// SetPreparedChannelLength sets the current prepared channel length.
+func SetPreparedChannelLength(n float64) {
+	queuePreparedChannelLength.Set(n)
+}
+
+// IncrementExportDataLoss increments the re-queue data loss counter.
+func IncrementExportDataLoss() {
+	queueRequeueDataLossTotal.Inc()
+}
+
+// SetSendsInflight sets the current in-flight sends gauge.
+func SetSendsInflight(n float64) {
+	queueSendsInflight.Set(n)
+}
+
+// SetSendsInflightMax sets the max in-flight sends gauge.
+func SetSendsInflightMax(n float64) {
+	queueSendsInflightMax.Set(n)
+}
+
+// SetWorkersDesired sets the desired worker count gauge.
+func SetWorkersDesired(n float64) {
+	queueWorkersDesired.Set(n)
+}
+
+// IncrementScalerAdjustment increments the scaler adjustment counter by direction.
+func IncrementScalerAdjustment(direction string) {
+	queueScalerAdjustmentsTotal.WithLabelValues(direction).Inc()
+}
+
+// SetExportLatencyEWMA sets the export latency EWMA gauge.
+func SetExportLatencyEWMA(seconds float64) {
+	queueExportLatencyEWMA.Set(seconds)
 }

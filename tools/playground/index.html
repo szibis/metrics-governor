@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>metrics-governor Configuration Helper</title>
+  <title>metrics-governor Playground</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
   <style>
@@ -80,7 +80,7 @@
         <g clip-path="url(#sc)"><rect x="120" y="300" width="64" height="120" rx="8" ry="8" fill="url(#b1)" filter="url(#ds)"/><rect x="210" y="268" width="64" height="152" rx="8" ry="8" fill="url(#b2)" filter="url(#ds)"/><rect x="310" y="155" width="64" height="265" rx="8" ry="8" fill="url(#br)" filter="url(#ds)" opacity="0.85"/><line x1="306" y1="232" x2="378" y2="212" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity="0.7"/><line x1="306" y1="248" x2="378" y2="228" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity="0.5"/><line x1="324" y1="218" x2="350" y2="248" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity="0.4"/><line x1="80" y1="260" x2="440" y2="260" stroke="#dc2626" stroke-width="5" stroke-dasharray="16,8" opacity="0.75"/></g>
         <g transform="translate(130, 68) rotate(38, 110, 90)" filter="url(#ds)"><rect x="96" y="126" width="28" height="130" rx="7" ry="7" fill="url(#hw)" stroke="#713f12" stroke-width="3"/><rect x="14" y="52" width="192" height="80" rx="12" ry="12" fill="url(#hh)" stroke="#64748b" stroke-width="4"/><rect x="0" y="58" width="26" height="66" rx="7" ry="7" fill="#e2e8f0" stroke="#94a3b8" stroke-width="3"/><rect x="194" y="58" width="26" height="66" rx="7" ry="7" fill="#e2e8f0" stroke="#94a3b8" stroke-width="3"/><rect x="36" y="60" width="148" height="10" rx="5" ry="5" fill="#fff" opacity="0.3"/></g>
       </svg>
-      <h1 style="margin-bottom:0">metrics-governor Configuration Helper</h1>
+      <h1 style="margin-bottom:0">metrics-governor Playground</h1>
     </div>
     <button class="theme-toggle" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'" :title="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
       <!-- Sun icon (shown in dark mode → click to go light) -->
@@ -113,7 +113,8 @@
       <label>
         Datapoints/sec
         <input type="number" x-model.number="dps" min="1" step="1000">
-        <small class="help-tip">Total incoming metric datapoints per second. ~100k dps/core. <a href="docs/performance.md#throughput" target="_blank">Docs</a></small>
+        <small class="help-tip" x-text="'Total incoming metric datapoints per second. ~' + (effectiveDpsPerCore/1000) + 'k dps/core' + (pipelineOptimized ? ' (pipeline split)' : ' (legacy)') + '.'">
+        </small> <small class="help-tip"><a href="docs/performance.md#throughput" target="_blank">Docs</a></small>
       </label>
       <label>
         Unique metric names
@@ -149,6 +150,16 @@
           <span x-text="queueCompression ? 'snappy (recommended)' : 'disabled'" :style="queueCompression ? 'color:var(--status-green)' : 'color:var(--pico-muted-color)'" style="font-size:.9em"></span>
         </div>
         <small class="help-tip">Snappy reduces disk I/O ~70% and storage ~3x. <a href="docs/performance.md#queue" target="_blank">Docs</a></small>
+      </label>
+      <label>
+        Pipeline optimizations
+        <div style="display:flex;align-items:center;gap:.5rem;margin-top:.25rem">
+          <input type="checkbox" x-model="pipelineOptimized" role="switch">
+          <span x-text="pipelineOptimized ? 'Pipeline Split + Auto-tune (recommended)' : 'Legacy unified workers'"
+                :style="pipelineOptimized ? 'color:var(--status-green)' : 'color:var(--pico-muted-color)'"
+                style="font-size:.9em"></span>
+        </div>
+        <small class="help-tip">Enables pipeline split, batch auto-tuning, adaptive scaling. ~60% higher throughput. <a href="docs/exporting.md" target="_blank">Docs</a></small>
       </label>
     </div>
 
@@ -288,7 +299,14 @@
         <div class="est-val" :class="cpuStatusClass" x-text="estCores >= 1 ? estCores.toFixed(2) + ' cores' : Math.ceil(estCores * 1000) + 'm'"></div>
         <small x-text="(estCores >= 1 ? Math.ceil(estCores * 1000) + 'm' : estCores.toFixed(2) + ' cores') + ' \u2014 ' + availableCores + ' available (' + cpuUtilPct + '%)'"></small>
         <div><span :class="cpuBadgeClass" x-text="cpuStatusLabel"></span></div>
-        <small class="help-tip" x-text="'At ~' + (_est.dps_per_core/1000) + 'k dps/core, ' + (dps/1000) + 'k dps needs ' + estCores.toFixed(1) + ' of ' + availableCores + ' cores (' + cpuUtilPct + '% utilization). Target: <' + Math.round(_est.cpu_target_utilization*100) + '%.'"></small>
+        <small class="help-tip" x-text="'At ~' + (effectiveDpsPerCore/1000) + 'k dps/core' + (pipelineOptimized ? ' (pipeline split)' : ' (legacy)') + ', ' + (dps/1000) + 'k dps needs ' + estCores.toFixed(1) + ' of ' + availableCores + ' cores (' + cpuUtilPct + '% utilization). Target: <' + Math.round(_est.cpu_target_utilization*100) + '%.'"></small>
+      </div>
+
+      <!-- Pipeline Mode -->
+      <div class="est-card">
+        <h4>Pipeline Mode</h4>
+        <div class="est-val" x-text="pipelineOptimized ? 'Pipeline Split' : 'Legacy'"></div>
+        <small x-text="pipelineOptimized ? 'Preparers + Senders (60% higher throughput)' : 'Unified workers (2\u00d7NumCPU)'"></small>
       </div>
 
       <!-- Memory -->
@@ -794,7 +812,7 @@
 </main>
 
 <footer>
-  <small>metrics-governor Configuration Helper &mdash; open this file directly in your browser, no build step needed.</small>
+  <small>metrics-governor Playground &mdash; open this file directly in your browser, no build step needed.</small>
   <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid var(--pico-muted-border-color);text-align:center">
     <button style="background:var(--status-red);border-color:var(--status-red);color:#fff;font-size:.85em;padding:.4rem 1rem" @click="if(confirm('This will erase all saved settings and reload the page with defaults. Continue?')){localStorage.removeItem('mg-config-state');localStorage.removeItem('mg-theme');location.reload()}">Reset all settings to defaults</button>
     <br><small style="color:var(--pico-muted-color)">Clears saved inputs, rules, and theme from browser storage and reloads with factory defaults.</small>
@@ -1046,7 +1064,7 @@ function configHelper() {
         'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
         'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
-        'queueType','queueCompression','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
+        'queueType','queueCompression','pipelineOptimized','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
         'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
         'podOverride',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
@@ -1141,7 +1159,7 @@ function configHelper() {
         'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
         'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
-        'queueType','queueCompression','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
+        'queueType','queueCompression','pipelineOptimized','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
         'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
         'podOverride',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
@@ -1160,7 +1178,7 @@ function configHelper() {
           'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
           'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
           'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
-          'queueType','queueCompression','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
+          'queueType','queueCompression','pipelineOptimized','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
           'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
           'podOverride',
           'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
@@ -1208,6 +1226,7 @@ function configHelper() {
     queueMaxRetries: 3,
     queueType: 'memory',
     queueCompression: true,
+    pipelineOptimized: true,
     queueMaxSizeVal: 1,
     queueMaxSizeUnit: 'GB',
     targetRetentionVal: 10,
@@ -1297,7 +1316,8 @@ function configHelper() {
     },
 
     // ---- CPU estimation ----
-    get estCores() { return this.dps / this._est.dps_per_core; },
+    get effectiveDpsPerCore() { return this.pipelineOptimized ? this._est.dps_per_core : this._est.dps_per_core_legacy; },
+    get estCores() { return this.dps / this.effectiveDpsPerCore; },
     get cpuUtil() { return this.estCores / this.availableCores; },
     get cpuUtilPct() { return (this.cpuUtil * 100).toFixed(0); },
     get cpuStatusClass() {
@@ -1493,10 +1513,10 @@ function configHelper() {
     },
 
     // ---- K8s pod sizing ----
-    get maxThroughputPerPod() { return this.coresPerPod * this._est.dps_per_core * this._est.cpu_target_utilization; },
+    get maxThroughputPerPod() { return this.coresPerPod * this.effectiveDpsPerCore * this._est.cpu_target_utilization; },
     get recommendedPods() { return Math.max(1, Math.ceil(this.dps / this.maxThroughputPerPod)); },
     get actualPods() { return this.podOverride > 0 ? this.podOverride : this.recommendedPods; },
-    get perPodCpuReq() { return Math.ceil(this.dps / this.actualPods / this._est.dps_per_core * 1000); },
+    get perPodCpuReq() { return Math.ceil(this.dps / this.actualPods / this.effectiveDpsPerCore * 1000); },
     get perPodCpuLimit() { return Math.ceil(this.perPodCpuReq * this._est.cpu_limit_factor); },
     get perPodMemReq() { return Math.ceil(this.totalMemory / this.actualPods); },
     get perPodMemLimit() { return Math.ceil(this.perPodMemReq * this._est.mem_limit_factor); },
@@ -1555,6 +1575,14 @@ function configHelper() {
       y += `\nperformance:\n`;
       y += `  stringInterning: true\n`;
       y += `  internMaxValueLength: 64\n`;
+      if (this.pipelineOptimized) {
+        y += `\npipelineSplit:\n`;
+        y += `  enabled: true\n`;
+        y += `\nbatchAutoTune:\n`;
+        y += `  enabled: true\n`;
+        y += `\nadaptiveWorkers:\n`;
+        y += `  enabled: true\n`;
+      }
       if (this.queueType === 'disk') {
         y += `\npersistence:\n`;
         y += `  enabled: true\n`;
@@ -1609,6 +1637,14 @@ function configHelper() {
       y += `  bloom_fpr: ${this.bloomFPR}\n`;
       y += `  string_interning: true\n`;
       y += `  intern_max_value_length: 64\n`;
+      if (this.pipelineOptimized) {
+        y += `\npipeline_split:\n`;
+        y += `  enabled: true\n`;
+        y += `\nbatch_auto_tune:\n`;
+        y += `  enabled: true\n`;
+        y += `\nadaptive_workers:\n`;
+        y += `  enabled: true\n`;
+      }
       if (this.queueType === 'disk') {
         y += `\nqueue:\n`;
         y += `  enabled: true\n`;
@@ -1762,9 +1798,9 @@ function configHelper() {
         if (m['resources.requests.cpu'] !== undefined) {
           const mc = this.parseCpuToMillicores(m['resources.requests.cpu']);
           if (mc !== undefined && mc > 0) {
-            // reverse: perPodCpuReq = ceil(dps / pods / 100000 * 1000) → dps = mc * pods * 100
+            // reverse: perPodCpuReq = ceil(dps / pods / effectiveDpsPerCore * 1000) → dps = mc * pods * effectiveDpsPerCore / 1000
             const pods = this.actualPods;
-            const newDps = Math.round(mc * pods * 100);
+            const newDps = Math.round(mc * pods * this.effectiveDpsPerCore / 1000);
             if (newDps > 0) this.dps = newDps;
           }
         }

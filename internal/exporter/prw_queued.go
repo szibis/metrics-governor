@@ -8,12 +8,14 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/logging"
 	"github.com/szibis/metrics-governor/internal/pipeline"
 	"github.com/szibis/metrics-governor/internal/prw"
 	"github.com/szibis/metrics-governor/internal/queue"
+	"golang.org/x/sync/semaphore"
 )
 
 // PRWQueueConfig holds configuration for the PRW queued exporter.
@@ -50,6 +52,14 @@ type PRWQueueConfig struct {
 	AlwaysQueue bool
 	// Workers is the number of worker goroutines (default: 2 × NumCPU).
 	Workers int
+	// Pipeline split settings
+	PipelineSplitEnabled bool
+	PreparerCount        int
+	SenderCount          int
+	PipelineChannelSize  int
+	// Async send settings
+	MaxConcurrentSends int
+	GlobalSendLimit    int
 }
 
 // DefaultPRWQueueConfig returns default queue configuration.
@@ -72,6 +82,16 @@ func DefaultPRWQueueConfig() PRWQueueConfig {
 type prwExporterInterface interface {
 	Export(ctx context.Context, req *prw.WriteRequest) error
 	Close() error
+}
+
+// prwDataCompressor is an optional interface for PRW exporters that can compress raw bytes.
+type prwDataCompressor interface {
+	CompressData(data []byte) (compressed []byte, contentEncoding string, err error)
+}
+
+// prwCompressedSender is an optional interface for PRW exporters that can send pre-compressed data.
+type prwCompressedSender interface {
+	SendCompressed(ctx context.Context, compressedData []byte, contentEncoding string, uncompressedSize int) error
 }
 
 // PRWQueuedExporter wraps a PRWExporter with a persistent disk-backed retry queue.
@@ -100,6 +120,27 @@ type PRWQueuedExporter struct {
 	closeTimeout       time.Duration // Close() wait for retry loop (default: 60s)
 	drainTimeout       time.Duration // drainQueue overall timeout (default: 30s)
 	drainEntryTimeout  time.Duration // Per-entry timeout during drain (default: 5s)
+
+	// Pipeline split: separate CPU-bound preparers from I/O-bound senders.
+	pipelineSplitEnabled bool
+	preparerCount        int
+	senderCount          int
+	preparedCh           chan *PreparedEntry
+
+	// Async send: semaphore-bounded concurrent HTTP sends per sender.
+	maxConcurrentSends int
+	globalSendSem      *semaphore.Weighted
+
+	// Adaptive worker scaling
+	scaler *WorkerScaler
+
+	// Batch tuner: AIMD batch size auto-tuning.
+	batchTuner *BatchTuner
+
+	// Worker management for dynamic scaling
+	workerWg     sync.WaitGroup
+	nextWorkerID atomic.Int32
+	workerStops  sync.Map // map[int]chan struct{}
 
 	retryStop   chan struct{}
 	retryDone   chan struct{}
@@ -184,24 +225,54 @@ func NewPRWQueued(exporter prwExporterInterface, cfg PRWQueueConfig) (*PRWQueued
 		workers = runtime.NumCPU()
 	}
 
+	// Pipeline split configuration
+	pipelineSplitEnabled := cfg.PipelineSplitEnabled
+	preparerCount := cfg.PreparerCount
+	if preparerCount <= 0 {
+		preparerCount = runtime.NumCPU()
+	}
+	senderCount := cfg.SenderCount
+	if senderCount <= 0 {
+		senderCount = runtime.NumCPU() * 2
+	}
+	pipelineChannelSize := cfg.PipelineChannelSize
+	if pipelineChannelSize <= 0 {
+		pipelineChannelSize = 256
+	}
+
+	// Async send configuration
+	maxConcurrentSends := cfg.MaxConcurrentSends
+	if maxConcurrentSends <= 0 {
+		maxConcurrentSends = 4
+	}
+	globalSendLimit := cfg.GlobalSendLimit
+	if globalSendLimit <= 0 {
+		globalSendLimit = runtime.NumCPU() * 8
+	}
+
 	qe := &PRWQueuedExporter{
-		exporter:            exporter,
-		queue:               q,
-		baseDelay:           baseDelay,
-		maxDelay:            maxDelay,
-		directExportTimeout: cfg.DirectExportTimeout,
-		alwaysQueue:         cfg.AlwaysQueue,
-		workers:             workers,
-		backoffEnabled:      cfg.BackoffEnabled,
-		backoffMultiplier:   backoffMultiplier,
-		batchDrainSize:      batchDrainSize,
-		burstDrainSize:      burstDrainSize,
-		retryExportTimeout:  retryExportTimeout,
-		closeTimeout:        closeTimeout,
-		drainTimeout:        drainTimeout,
-		drainEntryTimeout:   drainEntryTimeout,
-		retryStop:           make(chan struct{}),
-		retryDone:           make(chan struct{}),
+		exporter:             exporter,
+		queue:                q,
+		baseDelay:            baseDelay,
+		maxDelay:             maxDelay,
+		directExportTimeout:  cfg.DirectExportTimeout,
+		alwaysQueue:          cfg.AlwaysQueue,
+		workers:              workers,
+		backoffEnabled:       cfg.BackoffEnabled,
+		backoffMultiplier:    backoffMultiplier,
+		batchDrainSize:       batchDrainSize,
+		burstDrainSize:       burstDrainSize,
+		retryExportTimeout:   retryExportTimeout,
+		closeTimeout:         closeTimeout,
+		drainTimeout:         drainTimeout,
+		drainEntryTimeout:    drainEntryTimeout,
+		pipelineSplitEnabled: pipelineSplitEnabled,
+		preparerCount:        preparerCount,
+		senderCount:          senderCount,
+		maxConcurrentSends:   maxConcurrentSends,
+		globalSendSem:        semaphore.NewWeighted(int64(globalSendLimit)),
+		retryStop:            make(chan struct{}),
+		retryDone:            make(chan struct{}),
 	}
 
 	if cfg.DirectExportTimeout > 0 {
@@ -228,11 +299,23 @@ func NewPRWQueued(exporter prwExporterInterface, cfg PRWQueueConfig) (*PRWQueued
 	}
 
 	if qe.alwaysQueue {
-		logging.Info("PRW always-queue mode enabled with worker pool", logging.F(
-			"workers", workers,
-		))
 		qe.workersDone = make(chan struct{})
-		qe.startWorkers()
+
+		if pipelineSplitEnabled {
+			qe.preparedCh = make(chan *PreparedEntry, pipelineChannelSize)
+			logging.Info("PRW pipeline split mode enabled", logging.F(
+				"preparers", preparerCount,
+				"senders", senderCount,
+				"channel_size", pipelineChannelSize,
+				"max_concurrent_sends", maxConcurrentSends,
+			))
+			qe.startPipelineSplitWorkers()
+		} else {
+			logging.Info("PRW always-queue mode enabled with worker pool", logging.F(
+				"workers", workers,
+			))
+			qe.startWorkers()
+		}
 	} else {
 		// Start legacy retry loop
 		go qe.retryLoop()
@@ -354,22 +437,299 @@ func (qe *PRWQueuedExporter) legacyExport(ctx context.Context, req *prw.WriteReq
 	return ErrExportQueued
 }
 
-// startWorkers launches N worker goroutines for PRW export.
+// startWorkers launches N unified worker goroutines for PRW export.
 func (qe *PRWQueuedExporter) startWorkers() {
-	var wg sync.WaitGroup
-	wg.Add(qe.workers)
-
 	for i := 0; i < qe.workers; i++ {
-		go func(id int) {
-			defer wg.Done()
+		qe.workerWg.Add(1)
+		id := int(qe.nextWorkerID.Add(1))
+		go func() {
+			defer qe.workerWg.Done()
 			qe.workerLoop(id)
-		}(i)
+		}()
 	}
 
 	go func() {
-		wg.Wait()
+		qe.workerWg.Wait()
 		close(qe.workersDone)
 	}()
+}
+
+// startPipelineSplitWorkers launches preparer and sender goroutines for PRW.
+func (qe *PRWQueuedExporter) startPipelineSplitWorkers() {
+	queue.SetPreparersTotal(float64(qe.preparerCount))
+	queue.SetSendersTotal(float64(qe.senderCount))
+
+	var preparerWg sync.WaitGroup
+	preparerWg.Add(qe.preparerCount)
+	for i := 0; i < qe.preparerCount; i++ {
+		id := i
+		go func() {
+			defer preparerWg.Done()
+			qe.prwPreparerLoop(id)
+		}()
+	}
+
+	for i := 0; i < qe.senderCount; i++ {
+		qe.workerWg.Add(1)
+		id := int(qe.nextWorkerID.Add(1))
+		stopCh := make(chan struct{})
+		qe.workerStops.Store(id, stopCh)
+		go func() {
+			defer qe.workerWg.Done()
+			qe.prwSenderLoop(id, stopCh)
+		}()
+	}
+
+	go func() {
+		preparerWg.Wait()
+		close(qe.preparedCh)
+		qe.workerWg.Wait()
+		close(qe.workersDone)
+	}()
+}
+
+// prwPreparerLoop pops from queue → compresses → pushes to preparedCh.
+//
+//nolint:dupl // Mirrors OTLP preparerLoop — intentional pipeline parity
+func (qe *PRWQueuedExporter) prwPreparerLoop(id int) {
+	dc, hasCompress := qe.exporter.(prwDataCompressor)
+
+	for {
+		select {
+		case <-qe.retryStop:
+			return
+		default:
+		}
+
+		popStart := time.Now()
+		entry, err := qe.queue.Pop()
+		pipeline.Record("queue_pop", pipeline.Since(popStart))
+		if err != nil {
+			qe.workerSleep(100 * time.Millisecond)
+			continue
+		}
+		if entry == nil {
+			qe.workerSleep(100 * time.Millisecond)
+			continue
+		}
+
+		if qe.circuitBreaker != nil && !qe.circuitBreaker.AllowRequest() {
+			queue.IncrementCircuitRejected()
+			_ = qe.queue.PushData(entry.Data)
+			qe.workerSleep(100 * time.Millisecond)
+			continue
+		}
+
+		queue.IncrementPreparersActive()
+		prepareStart := time.Now()
+
+		var prepared *PreparedEntry
+		if hasCompress {
+			compressed, encoding, compErr := dc.CompressData(entry.Data)
+			if compErr != nil {
+				queue.DecrementPreparersActive()
+				logging.Error("PRW preparer: compression failed", logging.F(
+					"preparer_id", id,
+					"error", compErr.Error(),
+				))
+				_ = qe.queue.PushData(entry.Data)
+				continue
+			}
+			prepared = &PreparedEntry{
+				CompressedData:   compressed,
+				RawData:          entry.Data,
+				ContentEncoding:  encoding,
+				UncompressedSize: len(entry.Data),
+			}
+		} else {
+			prepared = &PreparedEntry{
+				CompressedData:   entry.Data,
+				RawData:          entry.Data,
+				ContentEncoding:  "",
+				UncompressedSize: len(entry.Data),
+			}
+		}
+
+		pipeline.Record("prepare", pipeline.Since(prepareStart))
+		queue.DecrementPreparersActive()
+
+		select {
+		case qe.preparedCh <- prepared:
+			queue.SetPreparedChannelLength(float64(len(qe.preparedCh)))
+		case <-qe.retryStop:
+			_ = qe.queue.PushData(entry.Data)
+			return
+		}
+	}
+}
+
+// prwSenderLoop pops from preparedCh → HTTP send → re-queue on failure.
+func (qe *PRWQueuedExporter) prwSenderLoop(id int, stopCh chan struct{}) {
+	cs, hasCompressedSend := qe.exporter.(prwCompressedSender)
+	de, hasDataExport := qe.exporter.(prwDataExporter)
+	currentBackoff := qe.baseDelay
+	if currentBackoff <= 0 {
+		currentBackoff = 5 * time.Second
+	}
+
+	for {
+		select {
+		case <-qe.retryStop:
+			return
+		case <-stopCh:
+			return
+		default:
+		}
+
+		var prepared *PreparedEntry
+		var ok bool
+		select {
+		case prepared, ok = <-qe.preparedCh:
+			if !ok {
+				return
+			}
+		case <-qe.retryStop:
+			return
+		case <-stopCh:
+			return
+		}
+
+		queue.SetPreparedChannelLength(float64(len(qe.preparedCh)))
+
+		if err := qe.globalSendSem.Acquire(context.Background(), 1); err != nil {
+			_ = qe.queue.PushData(prepared.RawData)
+			continue
+		}
+
+		queue.IncrementSendersActive()
+		prwRetryTotal.Inc()
+		exportStart := time.Now()
+		ctx, cancel := context.WithTimeout(context.Background(), qe.retryExportTimeout)
+
+		var exportErr error
+		usedFastPath := false
+
+		if hasCompressedSend {
+			exportErr = cs.SendCompressed(ctx, prepared.CompressedData, prepared.ContentEncoding, prepared.UncompressedSize)
+			if errors.Is(exportErr, ErrExtraLabelsRequireDeserialize) {
+				// Extra labels configured — fall through to slow path
+				hasCompressedSend = false
+				cs = nil
+				exportErr = nil
+			} else {
+				usedFastPath = true
+			}
+		}
+
+		if !usedFastPath && hasDataExport {
+			exportErr = de.ExportData(ctx, prepared.RawData)
+			if errors.Is(exportErr, ErrExtraLabelsRequireDeserialize) {
+				hasDataExport = false
+				de = nil
+				exportErr = nil
+			} else {
+				usedFastPath = true
+			}
+		}
+
+		if !usedFastPath {
+			req, deserErr := prw.UnmarshalWriteRequest(prepared.RawData)
+			if deserErr != nil {
+				cancel()
+				queue.DecrementSendersActive()
+				qe.globalSendSem.Release(1)
+				logging.Error("PRW sender: failed to deserialize", logging.F("sender_id", id, "error", deserErr.Error()))
+				continue
+			}
+			exportErr = qe.exporter.Export(ctx, req)
+		}
+
+		cancel()
+		sendDuration := pipeline.Since(exportStart)
+		pipeline.Record("send", sendDuration)
+		queue.DecrementSendersActive()
+		qe.globalSendSem.Release(1)
+
+		if exportErr == nil {
+			if qe.circuitBreaker != nil {
+				qe.circuitBreaker.RecordSuccess()
+			}
+			prwRetrySuccessTotal.Inc()
+			if qe.scaler != nil {
+				qe.scaler.RecordLatency(time.Duration(sendDuration))
+			}
+			if qe.batchTuner != nil {
+				qe.batchTuner.RecordSuccess(time.Duration(sendDuration), prepared.UncompressedSize, len(prepared.CompressedData))
+			}
+			currentBackoff = qe.baseDelay
+			if currentBackoff <= 0 {
+				currentBackoff = 5 * time.Second
+			}
+			continue
+		}
+
+		// Failure
+		if qe.circuitBreaker != nil {
+			qe.circuitBreaker.RecordFailure()
+		}
+		if qe.batchTuner != nil {
+			qe.batchTuner.RecordFailure(exportErr)
+		}
+
+		errType := classifyPRWError(exportErr)
+		prwRetryFailureTotal.WithLabelValues(string(errType)).Inc()
+
+		var expErr *ExportError
+		if errors.As(exportErr, &expErr) {
+			if expErr.IsSplittable() {
+				req, deserErr := prw.UnmarshalWriteRequest(prepared.RawData)
+				if deserErr == nil && len(req.Timeseries) > 1 {
+					mid := len(req.Timeseries) / 2
+					req1 := &prw.WriteRequest{Timeseries: req.Timeseries[:mid], Metadata: req.Metadata}
+					req2 := &prw.WriteRequest{Timeseries: req.Timeseries[mid:], Metadata: req.Metadata}
+					data1, _ := req1.Marshal()
+					data2, _ := req2.Marshal()
+					_ = qe.queue.PushData(data1)
+					_ = qe.queue.PushData(data2)
+					continue
+				}
+			}
+			if !expErr.IsRetryable() {
+				logging.Warn("PRW sender: dropping non-retryable entry", logging.F(
+					"sender_id", id,
+					"error", exportErr.Error(),
+					"error_type", string(expErr.Type),
+				))
+				queue.IncrementNonRetryableDropped(string(expErr.Type))
+				continue
+			}
+		}
+
+		if pushErr := qe.queue.PushData(prepared.RawData); pushErr != nil {
+			queue.IncrementExportDataLoss()
+			logging.Error("PRW sender: re-push failed, data lost", logging.F(
+				"sender_id", id,
+				"error", pushErr.Error(),
+				"bytes", len(prepared.RawData),
+			))
+		}
+
+		if qe.backoffEnabled {
+			qe.workerSleep(currentBackoff)
+			newBackoff := time.Duration(float64(currentBackoff) * qe.backoffMultiplier)
+			if newBackoff > qe.maxDelay && qe.maxDelay > 0 {
+				newBackoff = qe.maxDelay
+			}
+			currentBackoff = newBackoff
+		} else {
+			qe.workerSleep(currentBackoff)
+		}
+	}
+}
+
+// SetBatchTuner sets the batch tuner for AIMD batch size optimization.
+func (qe *PRWQueuedExporter) SetBatchTuner(bt *BatchTuner) {
+	qe.batchTuner = bt
 }
 
 // prwDataExporter is an optional interface for exporters that can send
@@ -457,7 +817,8 @@ func (qe *PRWQueuedExporter) workerLoop(id int) {
 		}
 
 		cancel()
-		pipeline.Record("export_http", pipeline.Since(exportStart))
+		exportDuration := pipeline.Since(exportStart)
+		pipeline.Record("export_http", exportDuration)
 		queue.DecrementWorkersActive()
 
 		if exportErr == nil {
@@ -465,6 +826,12 @@ func (qe *PRWQueuedExporter) workerLoop(id int) {
 				qe.circuitBreaker.RecordSuccess()
 			}
 			prwRetrySuccessTotal.Inc()
+			if qe.scaler != nil {
+				qe.scaler.RecordLatency(time.Duration(exportDuration))
+			}
+			if qe.batchTuner != nil {
+				qe.batchTuner.RecordSuccess(time.Duration(exportDuration), len(entry.Data), len(entry.Data))
+			}
 			currentBackoff = qe.baseDelay
 			if currentBackoff <= 0 {
 				currentBackoff = 5 * time.Second
@@ -475,6 +842,9 @@ func (qe *PRWQueuedExporter) workerLoop(id int) {
 		// Failure
 		if qe.circuitBreaker != nil {
 			qe.circuitBreaker.RecordFailure()
+		}
+		if qe.batchTuner != nil {
+			qe.batchTuner.RecordFailure(exportErr)
 		}
 
 		errType := classifyPRWError(exportErr)
@@ -850,6 +1220,11 @@ func (qe *PRWQueuedExporter) Close() error {
 		qe.mu.Lock()
 		qe.closed = true
 		qe.mu.Unlock()
+
+		// Stop adaptive scaler first
+		if qe.scaler != nil {
+			qe.scaler.Stop()
+		}
 
 		// Signal workers/retry loop to stop
 		close(qe.retryStop)

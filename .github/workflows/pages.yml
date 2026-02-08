@@ -1,10 +1,10 @@
-name: Deploy Configuration Helper
+name: Deploy Playground
 
 on:
   push:
     branches: [main]
     paths:
-      - 'tools/config-helper/**'
+      - 'tools/playground/**'
       - 'docs/images/logo.svg'
   workflow_dispatch:
 
@@ -26,7 +26,7 @@ jobs:
       - name: Build site
         run: |
           mkdir -p _site/docs/images
-          cp tools/config-helper/index.html _site/index.html
+          cp tools/playground/index.html _site/index.html
           cp docs/images/logo.svg _site/docs/images/logo.svg 2>/dev/null || true
 
       - name: Upload artifact

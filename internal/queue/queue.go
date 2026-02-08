@@ -98,6 +98,30 @@ type Config struct {
 	// Default: 2 × runtime.NumCPU() (I/O-bound workers benefit from oversubscription).
 	Workers int
 
+	// Pipeline split settings
+	// PipelineSplitEnabled activates pipeline split (preparers + senders).
+	PipelineSplitEnabled bool
+	// PreparerCount is the number of preparer goroutines (CPU-bound, default: NumCPU).
+	PreparerCount int
+	// SenderCount is the number of sender goroutines (I/O-bound, default: NumCPU*2).
+	SenderCount int
+	// PipelineChannelSize is the bounded channel buffer size between preparers and senders.
+	PipelineChannelSize int
+
+	// Async send settings
+	// MaxConcurrentSends is the max concurrent HTTP sends per sender (default: 4).
+	MaxConcurrentSends int
+	// GlobalSendLimit is the global max in-flight sends across all senders (default: NumCPU*8).
+	GlobalSendLimit int
+
+	// Adaptive worker scaling settings
+	// AdaptiveWorkersEnabled activates adaptive worker scaling.
+	AdaptiveWorkersEnabled bool
+	// MinWorkers is the minimum worker count (default: 1).
+	MinWorkers int
+	// MaxWorkers is the maximum worker count (default: NumCPU*4).
+	MaxWorkers int
+
 	// FastQueue settings
 	// InmemoryBlocks is the in-memory channel size (default: 2048).
 	InmemoryBlocks int

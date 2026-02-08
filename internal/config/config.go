@@ -144,6 +144,32 @@ type Config struct {
 	QueueAlwaysQueue bool // Always route through queue (default: true)
 	QueueWorkers     int  // Worker goroutine count (0 = NumCPU)
 
+	// Pipeline split settings
+	QueuePipelineSplitEnabled bool // Enable pipeline split (preparers + senders)
+	QueuePreparerCount        int  // Number of preparer goroutines (0 = NumCPU)
+	QueueSenderCount          int  // Number of sender goroutines (0 = NumCPU*2)
+	QueuePipelineChannelSize  int  // Bounded channel size between preparers and senders (0 = 256)
+
+	// Async send settings
+	QueueMaxConcurrentSends int // Max concurrent HTTP sends per sender (default: 4)
+	QueueGlobalSendLimit    int // Global max in-flight sends across all senders (default: NumCPU*8)
+
+	// Adaptive worker scaling settings
+	QueueAdaptiveWorkersEnabled bool // Enable adaptive worker scaling
+	QueueMinWorkers             int  // Minimum worker count (default: 1)
+	QueueMaxWorkers             int  // Maximum worker count (default: NumCPU*4)
+
+	// Batch auto-tuning settings
+	BufferBatchAutoTuneEnabled bool    // Enable AIMD batch size auto-tuning
+	BufferBatchMinBytes        int     // Minimum batch size in bytes (default: 512)
+	BufferBatchMaxBytes        int     // Maximum batch size in bytes (default: 16MB)
+	BufferBatchSuccessStreak   int     // Consecutive successes before growth (default: 10)
+	BufferBatchGrowFactor      float64 // Growth factor (default: 1.25)
+	BufferBatchShrinkFactor    float64 // Shrink factor on failure (default: 0.5)
+
+	// Connection pre-warming
+	ExporterPrewarmConnections bool // Pre-warm HTTP connections at startup (default: true)
+
 	// Sharding settings
 	ShardingEnabled            bool
 	ShardingHeadlessService    string
@@ -1340,15 +1366,16 @@ func (c *Config) ExporterHTTPClientConfig() exporter.HTTPClientConfig {
 // ExporterConfig returns the full exporter configuration.
 func (c *Config) ExporterConfig() exporter.Config {
 	return exporter.Config{
-		Endpoint:    c.ExporterEndpoint,
-		Protocol:    exporter.Protocol(c.ExporterProtocol),
-		Insecure:    c.ExporterInsecure,
-		Timeout:     c.ExporterTimeout,
-		DefaultPath: c.ExporterDefaultPath,
-		TLS:         c.ExporterTLSConfig(),
-		Auth:        c.ExporterAuthConfig(),
-		Compression: c.ExporterCompressionConfig(),
-		HTTPClient:  c.ExporterHTTPClientConfig(),
+		Endpoint:           c.ExporterEndpoint,
+		Protocol:           exporter.Protocol(c.ExporterProtocol),
+		Insecure:           c.ExporterInsecure,
+		Timeout:            c.ExporterTimeout,
+		DefaultPath:        c.ExporterDefaultPath,
+		TLS:                c.ExporterTLSConfig(),
+		Auth:               c.ExporterAuthConfig(),
+		Compression:        c.ExporterCompressionConfig(),
+		HTTPClient:         c.ExporterHTTPClientConfig(),
+		PrewarmConnections: c.ExporterPrewarmConnections,
 	}
 }
 
@@ -1589,7 +1616,8 @@ func (c *Config) PRWExporterConfig() exporter.PRWExporterConfig {
 			Compression:      c.PRWExporterVMCompression,
 			UseShortEndpoint: c.PRWExporterVMShortEndpoint,
 		},
-		HTTPClient: c.ExporterHTTPClientConfig(),
+		HTTPClient:         c.ExporterHTTPClientConfig(),
+		PrewarmConnections: c.ExporterPrewarmConnections,
 	}
 }
 
@@ -1605,20 +1633,26 @@ func (c *Config) PRWBufferConfig() prw.BufferConfig {
 // PRWQueueConfig returns the PRW queue configuration.
 func (c *Config) PRWQueueConfig() exporter.PRWQueueConfig {
 	return exporter.PRWQueueConfig{
-		Path:                c.PRWQueuePath,
-		MaxSize:             c.PRWQueueMaxSize,
-		MaxBytes:            c.PRWQueueMaxBytes,
-		RetryInterval:       c.PRWQueueRetryInterval,
-		MaxRetryDelay:       c.PRWQueueMaxRetryDelay,
-		DirectExportTimeout: c.QueueDirectExportTimeout,
-		BatchDrainSize:      c.QueueBatchDrainSize,
-		BurstDrainSize:      c.QueueBurstDrainSize,
-		RetryExportTimeout:  c.QueueRetryTimeout,
-		CloseTimeout:        c.QueueCloseTimeout,
-		DrainTimeout:        c.QueueDrainTimeout,
-		DrainEntryTimeout:   c.QueueDrainEntryTimeout,
-		AlwaysQueue:         c.QueueAlwaysQueue,
-		Workers:             c.QueueWorkers,
+		Path:                 c.PRWQueuePath,
+		MaxSize:              c.PRWQueueMaxSize,
+		MaxBytes:             c.PRWQueueMaxBytes,
+		RetryInterval:        c.PRWQueueRetryInterval,
+		MaxRetryDelay:        c.PRWQueueMaxRetryDelay,
+		DirectExportTimeout:  c.QueueDirectExportTimeout,
+		BatchDrainSize:       c.QueueBatchDrainSize,
+		BurstDrainSize:       c.QueueBurstDrainSize,
+		RetryExportTimeout:   c.QueueRetryTimeout,
+		CloseTimeout:         c.QueueCloseTimeout,
+		DrainTimeout:         c.QueueDrainTimeout,
+		DrainEntryTimeout:    c.QueueDrainEntryTimeout,
+		AlwaysQueue:          c.QueueAlwaysQueue,
+		Workers:              c.QueueWorkers,
+		PipelineSplitEnabled: c.QueuePipelineSplitEnabled,
+		PreparerCount:        c.QueuePreparerCount,
+		SenderCount:          c.QueueSenderCount,
+		PipelineChannelSize:  c.QueuePipelineChannelSize,
+		MaxConcurrentSends:   c.QueueMaxConcurrentSends,
+		GlobalSendLimit:      c.QueueGlobalSendLimit,
 	}
 }
 
@@ -1962,6 +1996,7 @@ func DefaultConfig() *Config {
 		QueueMemoryPercent:              0.10,
 		QueueAlwaysQueue:                true,
 		QueueWorkers:                    0, // 0 = NumCPU
+		ExporterPrewarmConnections:      true,
 		ShardingEnabled:                 false,
 		ShardingDNSRefreshInterval:      30 * time.Second,
 		ShardingDNSTimeout:              5 * time.Second,

@@ -4,11 +4,30 @@
 
 <h1 align="center">metrics-governor</h1>
 
+<p align="center">
+
+[![Release](https://img.shields.io/github/v/release/szibis/metrics-governor?style=flat&logo=github&label=Release&color=2ea44f)](https://github.com/szibis/metrics-governor/releases/latest)
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev/)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat&logo=apache)](LICENSE)
 [![Build](https://github.com/szibis/metrics-governor/actions/workflows/build.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
-[![Tests](https://img.shields.io/badge/Tests-2500+-success?style=flat&logo=go)](docs/testing.md#test-coverage-by-component)
-[![Coverage](https://img.shields.io/badge/Coverage-88%25-brightgreen.svg)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
+[![Security Scan](https://github.com/szibis/metrics-governor/actions/workflows/security-scan.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/security-scan.yml)
+[![CodeQL](https://github.com/szibis/metrics-governor/actions/workflows/codeql.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/codeql.yml)
+
+[![Tests](https://img.shields.io/badge/Tests-2100+-success?style=flat&logo=testinglibrary&logoColor=white)](docs/testing.md#test-coverage-by-component)
+[![Coverage](https://img.shields.io/badge/Coverage-88%25-brightgreen?style=flat&logo=codecov&logoColor=white)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
+[![Race Detector](https://img.shields.io/badge/Race_Detector-passing-success?style=flat&logo=go&logoColor=white)](docs/testing.md)
+[![Go Lines](https://img.shields.io/badge/Go_Code-115k_lines-informational?style=flat&logo=go&logoColor=white)](.)
+[![Docs](https://img.shields.io/badge/Docs-26_guides-8A2BE2?style=flat&logo=readthedocs&logoColor=white)](docs/)
+[![Benchmarks](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml)
+
+[![OTLP](https://img.shields.io/badge/OTLP-gRPC_%7C_HTTP-4a90d9?style=flat&logo=opentelemetry&logoColor=white)](docs/receiving.md)
+[![PRW](https://img.shields.io/badge/PRW-1.0_%7C_2.0-e8833a?style=flat&logo=prometheus&logoColor=white)](docs/receiving.md#prometheus-remote-write-receiver)
+[![Alerts](https://img.shields.io/badge/Alerts-14_Rules-dc3545?style=flat&logo=prometheus&logoColor=white)](docs/alerting.md)
+[![Helm Chart](https://img.shields.io/badge/Helm-Chart_Included-0F1689?style=flat&logo=helm&logoColor=white)](helm/metrics-governor/)
+[![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F46800?style=flat&logo=grafana&logoColor=white)](dashboards/)
+[![Playground](https://img.shields.io/badge/Playground-Config_Tool-20c997?style=flat&logo=googlechrome&logoColor=white)](https://szibis.github.io/metrics-governor/)
+
+</p>
 
 ---
 
@@ -32,8 +51,8 @@
 - **Intelligent Limiting** - Unlike simple rate limiters that drop everything, metrics-governor identifies and drops only the top offenders while preserving data from well-behaved services
 - **Consistent Sharding** - Automatic endpoint discovery from Kubernetes headless services with consistent hashing ensures the same time-series always route to the same backend (works for both OTLP and PRW)
 - **Pipeline Parity** - OTLP and PRW pipelines have identical resilience: circuit breaker gate, persistent disk queue, batch and burst drain, split-on-error, exponential backoff, and graceful shutdown drain
-- **Production-Ready** - Always-queue architecture with worker pool exports, byte-aware batch splitting, circuit breaker with CAS half-open transitions, FastQueue durable persistence with configurable batch/burst drain, percentage-based memory sizing, TLS/mTLS, authentication, compression (gzip/zstd/snappy), and Helm chart included
-- **High-Performance Optimizations** - String interning reduces allocations by 76%, pull-based worker pool prevents goroutine explosion. Three cardinality modes: Bloom filters (98% less memory), HyperLogLog (constant memory), and Hybrid auto-switching (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
+- **Production-Ready** - Always-queue architecture with pipeline split exports (CPU-bound preparers + I/O-bound senders), AIMD batch auto-tuning, adaptive worker scaling, byte-aware batch splitting, circuit breaker with CAS half-open transitions, FastQueue durable persistence with configurable batch/burst drain, percentage-based memory sizing, TLS/mTLS, authentication, compression (gzip/zstd/snappy), and Helm chart included
+- **High-Performance Optimizations** - Pipeline split architecture separates compression from HTTP sends, string interning reduces allocations by 76%, AIMD-based batch sizing and worker scaling prevent goroutine explosion. Three cardinality modes: Bloom filters (98% less memory), HyperLogLog (constant memory), and Hybrid auto-switching (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
 - **Zero Configuration Start** - Works out of the box with sensible defaults; add limits and sharding when needed
 
 ## Architecture
@@ -61,12 +80,14 @@ flowchart LR
             O_PROC["Stats → Limits"]
             O_BUF["Buffer<br/>capacity-bounded"]
             O_Q["Queue<br/>always-queue"]
-            O_WP["Worker Pool<br/>2×NumCPU"]
+            O_PREP["Preparers<br/>NumCPU"]
+            O_CH["Channel<br/>bounded"]
+            O_SEND["Senders<br/>NumCPU×2"]
             O_CB{"Circuit<br/>Breaker"}
-            O_RX --> O_PROC --> O_BUF --> O_Q --> O_WP --> O_CB
+            O_RX --> O_PROC --> O_BUF --> O_Q --> O_PREP --> O_CH --> O_SEND --> O_CB
             O_CB -->|"closed"| O_EXP["Export"]
             O_CB -->|"open"| O_Q
-            O_WP -.->|"fail / split-on-error"| O_Q
+            O_SEND -.->|"fail / split-on-error"| O_Q
         end
 
         subgraph PRW["PRW Pipeline"]
@@ -74,12 +95,14 @@ flowchart LR
             P_RX["Receiver<br/>HTTP :9091"]
             P_PROC["Stats → Limits"]
             P_Q["Queue<br/>always-queue"]
-            P_WP["Worker Pool<br/>2×NumCPU"]
+            P_PREP["Preparers<br/>NumCPU"]
+            P_CH["Channel<br/>bounded"]
+            P_SEND["Senders<br/>NumCPU×2"]
             P_CB{"Circuit<br/>Breaker"}
-            P_RX --> P_PROC --> P_Q --> P_WP --> P_CB
+            P_RX --> P_PROC --> P_Q --> P_PREP --> P_CH --> P_SEND --> P_CB
             P_CB -->|"closed"| P_EXP["Export"]
             P_CB -->|"open"| P_Q
-            P_WP -.->|"fail / split-on-error"| P_Q
+            P_SEND -.->|"fail / split-on-error"| P_Q
         end
     end
 
@@ -101,7 +124,11 @@ flowchart LR
 - **Stats** - Real-time cardinality and datapoint tracking per metric/service
 - **Limits** - Adaptive limiting that drops only top offenders, preserving well-behaved services
 - **Always-Queue Architecture** - Data always flows through the queue (VMAgent/OTel-inspired), eliminating flush-time blocking and memory spikes
-- **Worker Pool** - Pull-based workers (2×NumCPU) drain the queue concurrently, self-regulating export rate with per-worker backoff
+- **Pipeline Split** - CPU-bound preparers (NumCPU) handle compression, I/O-bound senders (NumCPU×2) handle HTTP sends, connected by a bounded channel for optimal resource utilization
+- **Batch Auto-tuning** - AIMD-based dynamic batch sizing: grows 25% after 10 consecutive successes, shrinks 50% on failure, discovers hard ceiling via HTTP 413
+- **Adaptive Worker Scaling** - AIMD scaling from 1 to NumCPU×4 workers based on queue depth (EWMA) and export latency; scales up +1 on high water mark, halves on 30s sustained idle
+- **Async Send** - Semaphore-bounded concurrent HTTP sends per sender (default 4 per sender, global limit NumCPU×8), maximizing network throughput
+- **Connection Pre-warming** - HEAD requests at startup establish HTTP connection pools, eliminating cold-start latency spikes
 - **Buffer Backpressure** - Capacity-bounded buffer returns 429/ResourceExhausted when full, preventing unbounded memory growth
 - **Circuit Breaker Gate** - When the destination is down, workers pause exports and back off, preventing goroutine pile-up
 - **Persistent Queue** - Disk-backed queue with batch drain (10/tick) and burst drain (100 on recovery) catches failed exports instead of dropping data
@@ -140,11 +167,11 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
 
 ---
 
-## 🖥️ Configuration Helper
+## 🖥️ Playground
 
-Plan your deployment in seconds. The **interactive Configuration Helper** estimates CPU, memory, disk I/O, and K8s pod sizing from your throughput inputs, builds limits rules visually, and generates ready-to-use Helm, app config, and limits YAML files — all in a single zero-dependency HTML page.
+Plan your deployment in seconds. The **interactive Playground** estimates CPU, memory, disk I/O, and K8s pod sizing from your throughput inputs, builds limits rules visually, and generates ready-to-use Helm, app config, and limits YAML files — all in a single zero-dependency HTML page.
 
-**[Open Configuration Helper](https://szibis.github.io/metrics-governor/)** | [View source](tools/config-helper/)
+**[Open Playground](https://szibis.github.io/metrics-governor/)** | [View source](tools/playground/)
 
 <table>
 <tr>
@@ -190,13 +217,14 @@ Plan your deployment in seconds. The **interactive Configuration Helper** estima
 | 📝 | [**Logging**](docs/logging.md) | JSON structured logging, log aggregation |
 | 🧪 | [**Testing**](docs/testing.md) | Test environment, Docker Compose, verification |
 | 🛠️ | [**Development**](docs/development.md) | Building, project structure, contributing |
+| ⚡ | [**Export Pipeline**](docs/exporting.md) | Pipeline split, batch tuning, adaptive scaling, async send |
 | ⚡ | [**Performance**](docs/performance.md) | Bloom filters, string interning, queue I/O optimization |
 | 🛡️ | [**Resilience**](docs/resilience.md) | Circuit breaker, exponential backoff, memory limits |
 | 🔢 | [**Cardinality Tracking**](docs/cardinality-tracking.md) | Bloom, HyperLogLog, and Hybrid mode comparison and configuration |
 | 💾 | [**Bloom Persistence**](docs/bloom-persistence.md) | Save/restore bloom filter state across restarts |
 | 🏥 | [**Health Endpoints**](docs/health.md) | Kubernetes liveness and readiness probes (`/live`, `/ready`) |
 | 🔄 | [**Dynamic Reload**](docs/reload.md) | Hot-reload limits config via SIGHUP with ConfigMap sidecar support |
-| 🖥️ | [**Configuration Helper**](docs/config-helper.md) | Interactive browser tool for deployment planning |
+| 🖥️ | [**Playground**](docs/playground.md) | Interactive browser tool for deployment planning |
 
 ---
 
@@ -206,7 +234,7 @@ Plan your deployment in seconds. The **interactive Configuration Helper** estima
 |------------|-------------|
 | **OTLP Protocol** | Full gRPC and HTTP receiver/exporter with TLS, mTLS, and authentication (bearer token, basic auth) |
 | **[PRW Protocol](docs/prw.md)** | Prometheus Remote Write 1.0/2.0 with native histograms, VictoriaMetrics mode, custom endpoint paths |
-| **Intelligent Buffering** | Capacity-bounded buffer with byte-aware batch splitting, always-queue architecture, worker pool exports, and backpressure (429/ResourceExhausted) (both OTLP and PRW) |
+| **Intelligent Buffering** | Capacity-bounded buffer with byte-aware batch splitting, always-queue architecture, AIMD batch auto-tuning, pipeline split exports, and backpressure (429/ResourceExhausted) (both OTLP and PRW) |
 | **[Adaptive Limits](docs/limits.md)** | Per-group tracking with smart dropping of top offenders only, dry-run mode for safe rollouts |
 | **[Real-time Statistics](docs/statistics.md)** | Per-metric cardinality, datapoints, and limit violation tracking with Prometheus metrics |
 | **[Consistent Sharding](docs/sharding.md)** | Distribute metrics across multiple backends via K8s DNS discovery with virtual nodes (OTLP and PRW) |
@@ -216,12 +244,17 @@ Plan your deployment in seconds. The **interactive Configuration Helper** estima
 | **[Split-on-Error](docs/resilience.md)** | Oversized batches automatically split in half and retry on HTTP 413 and "too big" errors from backends like VictoriaMetrics, Thanos, Mimir, and Cortex |
 | **[Cardinality Tracking](docs/cardinality-tracking.md)** | Three modes: **Bloom filter** (98% less memory, 1.2MB vs 75MB per 1M series), **HyperLogLog** (constant ~12KB per tracker, ideal for high-cardinality metrics), and **Hybrid** (auto-switches Bloom→HLL at configurable threshold) |
 | **[Bloom Persistence](docs/bloom-persistence.md)** | Save and restore Bloom/HLL filter state across pod restarts — eliminates cold-start re-learning period with configurable save intervals and TTL |
-| **[Performance Optimized](docs/performance.md)** | String interning (76% fewer allocations), pull-based worker pool, percentage-based memory sizing, and configurable cardinality mode selection |
+| **[Performance Optimized](docs/performance.md)** | Pipeline split architecture (preparers + senders), string interning (76% fewer allocations), AIMD batch auto-tuning, adaptive worker scaling, async sends, connection pre-warming, percentage-based memory sizing, and configurable cardinality mode selection |
+| **[Pipeline Split](docs/exporting.md)** | CPU-bound preparers (NumCPU) handle serialization and compression, I/O-bound senders (NumCPU×2) handle HTTP sends, connected by a bounded channel — separates compute from I/O for optimal throughput |
+| **[Batch Auto-tuning](docs/exporting.md)** | AIMD dynamic batch sizing: additive increase (+25% after 10 successes), multiplicative decrease (-50% on failure), with HTTP 413 hard ceiling discovery |
+| **[Adaptive Worker Scaling](docs/exporting.md)** | AIMD-based scaling from 1 to NumCPU×4 workers, monitoring queue depth and export latency (EWMA); scales up on high water mark, halves on 30s sustained idle |
+| **[Connection Pre-warming](docs/exporting.md)** | HEAD requests at startup establish HTTP connection pools, eliminating cold-start latency spikes on first real export |
+| **[Async Send](docs/exporting.md)** | Semaphore-bounded concurrent HTTP sends per sender (default 4 per sender, global limit NumCPU×8), maximizing network utilization |
 | **[Human-Readable Config](docs/configuration.md)** | CLI flags and YAML config accept Mi/Gi/Ti notation for all byte-size values (e.g. `--queue-max-bytes 2Gi`) |
-| **[Configuration Helper](docs/config-helper.md)** | Interactive browser-based tool for deployment planning — estimates CPU, memory, disk I/O, K8s pod sizing, per-pod traffic splitting, and generates ready-to-use YAML |
+| **[Playground](docs/playground.md)** | Interactive browser-based tool for deployment planning — estimates CPU, memory, disk I/O, K8s pod sizing, per-pod traffic splitting, and generates ready-to-use YAML |
 | **Cloud Storage Guidance** | Auto-recommends AWS, Azure, and GCP block storage classes based on calculated per-pod IOPS and throughput requirements |
 | **Graceful Shutdown** | Configurable timeout drains in-flight exports and persists queue state before termination |
-| **Production Ready** | Helm chart, multi-arch Docker images, 2500+ tests including pipeline integrity, durability, and resilience test suites |
+| **Production Ready** | Helm chart, multi-arch Docker images, 2600+ tests including pipeline integrity, durability, and resilience test suites |
 
 ---
 

@@ -160,6 +160,8 @@ type Config struct {
 	Compression compression.Config
 	// HTTPClient configuration for HTTP connection pooling.
 	HTTPClient HTTPClientConfig
+	// PrewarmConnections sends HEAD requests at startup to establish HTTP connections.
+	PrewarmConnections bool
 }
 
 // Exporter defines the interface for metric exporters.
@@ -350,13 +352,20 @@ func newHTTPExporter(_ context.Context, cfg Config) (*OTLPExporter, error) {
 		endpoint = endpoint + defaultPath
 	}
 
-	return &OTLPExporter{
+	exp := &OTLPExporter{
 		protocol:     ProtocolHTTP,
 		timeout:      cfg.Timeout,
 		compression:  cfg.Compression,
 		httpClient:   client,
 		httpEndpoint: endpoint,
-	}, nil
+	}
+
+	// Fire-and-forget connection warmup
+	if cfg.PrewarmConnections {
+		go WarmupConnections(context.Background(), []string{endpoint}, client, 5*time.Second)
+	}
+
+	return exp, nil
 }
 
 // Export sends metrics to the configured endpoint.
@@ -600,6 +609,78 @@ func (e *OTLPExporter) exportHTTPData(ctx context.Context, data []byte) error {
 		otlpExportBytesTotal.WithLabelValues("uncompressed").Add(float64(uncompressedSize))
 	}
 	// Note: datapoint counting is handled at push time in always-queue mode
+
+	return nil
+}
+
+// CompressData compresses raw proto bytes using the exporter's compression config.
+// Returns the compressed data, content encoding string, and any error.
+func (e *OTLPExporter) CompressData(data []byte) ([]byte, string, error) {
+	if e.compression.Type == compression.TypeNone || e.compression.Type == "" {
+		return data, "", nil
+	}
+
+	compressStart := time.Now()
+	compressed, err := compression.Compress(data, e.compression)
+	pipeline.Record("compress", pipeline.Since(compressStart))
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to compress: %w", err)
+	}
+	pipeline.RecordBytes("compress", len(compressed))
+	return compressed, string(e.compression.Type), nil
+}
+
+// SendCompressed sends pre-compressed data via HTTP, skipping the marshal and compress steps.
+func (e *OTLPExporter) SendCompressed(ctx context.Context, compressedData []byte, contentEncoding string, uncompressedSize int) error {
+	if e.protocol == ProtocolGRPC {
+		return fmt.Errorf("SendCompressed not supported for gRPC protocol")
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.httpEndpoint, bytes.NewReader(compressedData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	if contentEncoding != "" {
+		httpReq.Header.Set("Content-Encoding", contentEncoding)
+	}
+
+	otlpExportRequestsTotal.Inc()
+
+	sendStart := time.Now()
+	resp, err := e.httpClient.Do(httpReq)
+	pipeline.Record("send", pipeline.Since(sendStart))
+	if err != nil {
+		errType := classifyError(err)
+		recordExportError(errType)
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		_, _ = io.Copy(io.Discard, resp.Body)
+		errType := classifyHTTPStatusCode(resp.StatusCode)
+		recordExportError(errType)
+		return &ExportError{
+			Err:        fmt.Errorf("unexpected status code: %d: %s", resp.StatusCode, string(bodyBytes)),
+			Type:       errType,
+			StatusCode: resp.StatusCode,
+			Message:    string(bodyBytes),
+		}
+	}
+
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	compressionLabel := "none"
+	if contentEncoding != "" {
+		compressionLabel = contentEncoding
+	}
+	otlpExportBytesTotal.WithLabelValues(compressionLabel).Add(float64(len(compressedData)))
+	if compressionLabel != "none" {
+		otlpExportBytesTotal.WithLabelValues("uncompressed").Add(float64(uncompressedSize))
+	}
 
 	return nil
 }

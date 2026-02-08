@@ -110,16 +110,18 @@ type AuthServerYAMLConfig struct {
 
 // ExporterYAMLConfig holds exporter configuration.
 type ExporterYAMLConfig struct {
-	Endpoint    string                `yaml:"endpoint"`
-	Protocol    string                `yaml:"protocol"`
-	Insecure    *bool                 `yaml:"insecure"`
-	Timeout     Duration              `yaml:"timeout"`
-	TLS         TLSClientYAMLConfig   `yaml:"tls"`
-	Auth        AuthClientYAMLConfig  `yaml:"auth"`
-	Compression CompressionYAMLConfig `yaml:"compression"`
-	HTTPClient  HTTPClientYAMLConfig  `yaml:"http_client"`
-	Queue       QueueYAMLConfig       `yaml:"queue"`
-	Sharding    ShardingYAMLConfig    `yaml:"sharding"`
+	Endpoint           string                `yaml:"endpoint"`
+	Protocol           string                `yaml:"protocol"`
+	Insecure           *bool                 `yaml:"insecure"`
+	Timeout            Duration              `yaml:"timeout"`
+	DefaultPath        string                `yaml:"default_path"`
+	PrewarmConnections *bool                 `yaml:"prewarm_connections"` // Pre-warm HTTP connections at startup
+	TLS                TLSClientYAMLConfig   `yaml:"tls"`
+	Auth               AuthClientYAMLConfig  `yaml:"auth"`
+	Compression        CompressionYAMLConfig `yaml:"compression"`
+	HTTPClient         HTTPClientYAMLConfig  `yaml:"http_client"`
+	Queue              QueueYAMLConfig       `yaml:"queue"`
+	Sharding           ShardingYAMLConfig    `yaml:"sharding"`
 }
 
 // ShardingYAMLConfig holds sharding configuration.
@@ -167,6 +169,28 @@ type QueueYAMLConfig struct {
 	// Worker pool settings
 	AlwaysQueue *bool `yaml:"always_queue"` // Always route through queue (default: true)
 	Workers     int   `yaml:"workers"`      // Worker goroutine count (0 = NumCPU)
+	// Pipeline split settings
+	PipelineSplit PipelineSplitYAMLConfig `yaml:"pipeline_split"`
+	// Async send settings
+	MaxConcurrentSends int `yaml:"max_concurrent_sends"` // Max concurrent HTTP sends per sender (default: 4)
+	GlobalSendLimit    int `yaml:"global_send_limit"`    // Global max in-flight sends (default: NumCPU*8)
+	// Adaptive worker scaling settings
+	AdaptiveWorkers AdaptiveWorkersYAMLConfig `yaml:"adaptive_workers"`
+}
+
+// PipelineSplitYAMLConfig holds pipeline split configuration.
+type PipelineSplitYAMLConfig struct {
+	Enabled       *bool `yaml:"enabled"`
+	PreparerCount int   `yaml:"preparer_count"` // CPU-bound compression goroutines (default: NumCPU)
+	SenderCount   int   `yaml:"sender_count"`   // I/O-bound HTTP send goroutines (default: NumCPU*2)
+	ChannelSize   int   `yaml:"channel_size"`   // Bounded channel between preparers and senders (default: 256)
+}
+
+// AdaptiveWorkersYAMLConfig holds adaptive worker scaling configuration.
+type AdaptiveWorkersYAMLConfig struct {
+	Enabled    *bool `yaml:"enabled"`
+	MinWorkers int   `yaml:"min_workers"` // Minimum worker count (default: 1)
+	MaxWorkers int   `yaml:"max_workers"` // Maximum worker count (default: NumCPU*4)
 }
 
 // BackoffYAMLConfig holds exponential backoff configuration.
@@ -228,6 +252,18 @@ type BufferYAMLConfig struct {
 	FlushInterval Duration `yaml:"flush_interval"`
 	FlushTimeout  Duration `yaml:"flush_timeout"`
 	FullPolicy    string   `yaml:"full_policy"` // reject, drop_oldest, block
+	// Batch auto-tuning (AIMD)
+	BatchAutoTune BatchAutoTuneYAMLConfig `yaml:"batch_auto_tune"`
+}
+
+// BatchAutoTuneYAMLConfig holds AIMD batch auto-tuning configuration.
+type BatchAutoTuneYAMLConfig struct {
+	Enabled       *bool   `yaml:"enabled"`
+	MinBytes      int     `yaml:"min_bytes"`      // Minimum batch size (default: 512)
+	MaxBytes      int     `yaml:"max_bytes"`      // Maximum batch size (default: 16MB)
+	SuccessStreak int     `yaml:"success_streak"` // Consecutive successes before growth (default: 10)
+	GrowFactor    float64 `yaml:"grow_factor"`    // Growth factor (default: 1.25)
+	ShrinkFactor  float64 `yaml:"shrink_factor"`  // Shrink factor on failure (default: 0.5)
 }
 
 // StatsYAMLConfig holds stats configuration.
@@ -568,6 +604,27 @@ func (y *YAMLConfig) ApplyDefaults() {
 		y.Exporter.Queue.DrainEntryTimeout = Duration(5 * time.Second)
 	}
 
+	// Pipeline split defaults
+	if y.Exporter.Queue.PipelineSplit.Enabled == nil {
+		disabled := false
+		y.Exporter.Queue.PipelineSplit.Enabled = &disabled
+	}
+	// Adaptive workers defaults
+	if y.Exporter.Queue.AdaptiveWorkers.Enabled == nil {
+		disabled := false
+		y.Exporter.Queue.AdaptiveWorkers.Enabled = &disabled
+	}
+	// Batch auto-tune defaults
+	if y.Buffer.BatchAutoTune.Enabled == nil {
+		disabled := false
+		y.Buffer.BatchAutoTune.Enabled = &disabled
+	}
+	// Connection pre-warming defaults
+	if y.Exporter.PrewarmConnections == nil {
+		prewarm := true
+		y.Exporter.PrewarmConnections = &prewarm
+	}
+
 	// Exporter HTTP client defaults
 	if y.Exporter.HTTPClient.DialTimeout == 0 {
 		y.Exporter.HTTPClient.DialTimeout = Duration(30 * time.Second)
@@ -758,6 +815,27 @@ func (y *YAMLConfig) ToConfig() *Config {
 		QueueDrainEntryTimeout: time.Duration(y.Exporter.Queue.DrainEntryTimeout),
 		QueueAlwaysQueue:       *y.Exporter.Queue.AlwaysQueue,
 		QueueWorkers:           y.Exporter.Queue.Workers,
+		// Pipeline split settings
+		QueuePipelineSplitEnabled: *y.Exporter.Queue.PipelineSplit.Enabled,
+		QueuePreparerCount:        y.Exporter.Queue.PipelineSplit.PreparerCount,
+		QueueSenderCount:          y.Exporter.Queue.PipelineSplit.SenderCount,
+		QueuePipelineChannelSize:  y.Exporter.Queue.PipelineSplit.ChannelSize,
+		// Async send settings
+		QueueMaxConcurrentSends: y.Exporter.Queue.MaxConcurrentSends,
+		QueueGlobalSendLimit:    y.Exporter.Queue.GlobalSendLimit,
+		// Adaptive worker scaling
+		QueueAdaptiveWorkersEnabled: *y.Exporter.Queue.AdaptiveWorkers.Enabled,
+		QueueMinWorkers:             y.Exporter.Queue.AdaptiveWorkers.MinWorkers,
+		QueueMaxWorkers:             y.Exporter.Queue.AdaptiveWorkers.MaxWorkers,
+		// Batch auto-tuning
+		BufferBatchAutoTuneEnabled: *y.Buffer.BatchAutoTune.Enabled,
+		BufferBatchMinBytes:        y.Buffer.BatchAutoTune.MinBytes,
+		BufferBatchMaxBytes:        y.Buffer.BatchAutoTune.MaxBytes,
+		BufferBatchSuccessStreak:   y.Buffer.BatchAutoTune.SuccessStreak,
+		BufferBatchGrowFactor:      y.Buffer.BatchAutoTune.GrowFactor,
+		BufferBatchShrinkFactor:    y.Buffer.BatchAutoTune.ShrinkFactor,
+		// Connection pre-warming
+		ExporterPrewarmConnections: *y.Exporter.PrewarmConnections,
 
 		// Sharding
 		ShardingEnabled:            *y.Exporter.Sharding.Enabled,

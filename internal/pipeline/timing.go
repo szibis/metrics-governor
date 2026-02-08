@@ -29,6 +29,7 @@ var knownComponents = []string{
 	"buffer_mgmt", "relabel", "batch_split",
 	"serialize", "compress", "export_http",
 	"queue_push", "queue_pop",
+	"prepare", "send",
 }
 
 func init() {

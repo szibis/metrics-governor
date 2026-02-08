@@ -189,6 +189,19 @@ func WithFailoverQueue(q FailoverQueue) BufferOption {
 	return func(b *MetricsBuffer) { b.failoverQueue = q }
 }
 
+// BatchSizer returns the current effective max batch bytes.
+// Used by BatchTuner for AIMD auto-tuning of batch sizes.
+type BatchSizer interface {
+	CurrentMaxBytes() int
+}
+
+// WithBatchTuner sets an AIMD batch tuner. When set, the flush cycle reads
+// the tuner's CurrentMaxBytes() at the start of each flush and uses that
+// value for batch splitting instead of the static maxBatchBytes.
+func WithBatchTuner(sizer BatchSizer) BufferOption {
+	return func(b *MetricsBuffer) { b.batchTuner = sizer }
+}
+
 // WithFlushTimeout sets the maximum time for a flush cycle. If exceeded,
 // the flush context is canceled — ongoing exports see ctx.Err() and fail.
 // Default 0 means no limit.
@@ -235,6 +248,7 @@ type MetricsBuffer struct {
 	currentBytes    atomic.Int64       // Current buffer size in bytes
 	fullPolicy      queue.FullBehavior // Default: reject (DropNewest)
 	spaceCond       *sync.Cond         // For block policy
+	batchTuner      BatchSizer         // AIMD batch auto-tuner (nil = static maxBatchBytes)
 }
 
 // New creates a new MetricsBuffer.
@@ -494,8 +508,17 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 		b.stats.SetOTLPBufferSize(0)
 	}
 
+	// Snapshot effective max batch bytes: tuner (dynamic AIMD) or static config.
+	// Read once at flush start — consistent for the entire flush cycle.
+	effectiveMaxBatchBytes := b.maxBatchBytes
+	if b.batchTuner != nil {
+		if tunerMax := b.batchTuner.CurrentMaxBytes(); tunerMax > 0 {
+			effectiveMaxBatchBytes = tunerMax
+		}
+	}
+
 	// Step 1: Split by count (maxBatchSize)
-	// Step 2: Split by bytes (maxBatchBytes) via recursive binary split
+	// Step 2: Split by bytes (effectiveMaxBatchBytes) via recursive binary split
 	var allBatches [][]*metricspb.ResourceMetrics
 	splitStart := time.Now()
 	for i := 0; i < len(toSend); i += b.maxBatchSize {
@@ -504,7 +527,7 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 			end = len(toSend)
 		}
 		countBatch := toSend[i:end]
-		allBatches = append(allBatches, splitByBytes(countBatch, b.maxBatchBytes)...)
+		allBatches = append(allBatches, splitByBytes(countBatch, effectiveMaxBatchBytes)...)
 	}
 	pipeline.Record("batch_split", pipeline.Since(splitStart))
 

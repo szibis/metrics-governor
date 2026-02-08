@@ -424,7 +424,7 @@ jobs:
       - name: Run Helm chart unit tests
         run: helm unittest helm/metrics-governor
 
-  validate-config-helper:
+  validate-playground:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -435,13 +435,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Validate config helper against Go defaults
-        run: go test -v ./tools/config-helper/...
+      - name: Validate playground against Go defaults
+        run: go test -v ./tools/playground/...
 
       - name: Check config-meta is up to date
         run: |
-          go run ./tools/config-helper/cmd/generate
-          if ! git diff --quiet tools/config-helper/index.html index.html; then
+          go run ./tools/playground/cmd/generate
+          if ! git diff --quiet tools/playground/index.html index.html; then
             echo "::error::config-meta JSON is out of date. Run 'make generate-config-meta' and commit."
             git diff --stat
             exit 1

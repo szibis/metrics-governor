@@ -1,13 +1,13 @@
-# metrics-governor Configuration Helper
+# metrics-governor Playground
 
-A single-page web app that helps operators plan their metrics-governor deployment.
+An interactive single-page web app that helps operators plan their metrics-governor deployment.
 
 ## Usage
 
 Open `index.html` directly in your browser - no build step, no server required:
 
 ```bash
-open tools/config-helper/index.html
+open tools/playground/index.html
 # or from repo root:
 open index.html
 ```
@@ -44,15 +44,15 @@ On page load, `init()` reads this JSON and uses it to:
 ### Drift Prevention
 
 A Go test (`validate_test.go`) extracts the config-meta JSON from `index.html` and validates
-every default against `config.DefaultConfig()`. This runs in CI via the `validate-config-helper`
+every default against `config.DefaultConfig()`. This runs in CI via the `validate-playground`
 job, catching any drift between the HTML and Go app.
 
 ```bash
 # Run locally
-make validate-config-helper
+make validate-playground
 
 # Or directly
-go test -v ./tools/config-helper/...
+go test -v ./tools/playground/...
 ```
 
 ### Data-Driven Storage Engine
@@ -69,7 +69,7 @@ All disk type definitions live in the config-meta JSON — no hardcoded cloud-sp
 ## Files
 
 ```
-tools/config-helper/
+tools/playground/
 ├── index.html           ← Single-file app with embedded config-meta JSON
 ├── storage-specs.json   ← Cloud storage disk type definitions (edit this!)
 ├── cmd/generate/main.go ← Generator: Go defaults + storage specs → HTML
@@ -91,7 +91,7 @@ All updates flow through the generator:
 
 ```bash
 make generate-config-meta   # Regenerate config-meta JSON in both HTML files
-make validate-config-helper  # Verify defaults match Go
+make validate-playground  # Verify defaults match Go
 ```
 
 **When changing Go defaults** — edit `internal/config/config.go`, then `make generate-config-meta`.
