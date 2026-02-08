@@ -511,14 +511,13 @@ func TestDownsampleEngine_Cleanup(t *testing.T) {
 	de.ingestAndEmit("active", cfg, 10, 1.0)
 	de.ingestAndEmit("stale", cfg, 10, 2.0)
 
-	// Make "stale" old.
-	de.mu.Lock()
-	de.lastSeen["stale"] = time.Now().Add(-20 * time.Minute)
-	de.mu.Unlock()
+	// Make "stale" old by finding its shard and updating lastSeen.
+	shard := &de.shards[fnvShard("stale")]
+	shard.mu.Lock()
+	shard.lastSeen["stale"] = time.Now().Add(-20 * time.Minute)
+	shard.mu.Unlock()
 
-	de.mu.Lock()
-	de.cleanupLocked(10 * time.Minute)
-	de.mu.Unlock()
+	de.cleanupAll(10 * time.Minute)
 
 	if de.seriesCount() != 1 {
 		t.Errorf("expected 1 series after cleanup, got %d", de.seriesCount())

@@ -111,7 +111,7 @@ func TestEvaluateConditions_MissingLabel(t *testing.T) {
 
 func TestApplyRemove(t *testing.T) {
 	attrs := makeTransformAttrs("service", "web", "pod", "web-1", "env", "prod")
-	result := applyRemove(attrs, []string{"pod"}, "test-rule")
+	result := applyRemove(attrs, []string{"pod"}, nil)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 attrs after remove, got %d", len(result))
 	}
@@ -123,7 +123,7 @@ func TestApplyRemove(t *testing.T) {
 func TestApplySet_Literal(t *testing.T) {
 	attrs := makeTransformAttrs("service", "web")
 	op := &SetOp{Label: "region", Value: "us-east-1"}
-	result := applySet(attrs, op, "test-rule")
+	result := applySet(attrs, op, nil)
 	if v := getTransformAttr(result, "region"); v != "us-east-1" {
 		t.Errorf("region = %q, want 'us-east-1'", v)
 	}
@@ -132,7 +132,7 @@ func TestApplySet_Literal(t *testing.T) {
 func TestApplySet_Interpolation(t *testing.T) {
 	attrs := makeTransformAttrs("service", "web", "namespace", "production")
 	op := &SetOp{Label: "fqdn", Value: "${service}.${namespace}.svc.cluster.local"}
-	result := applySet(attrs, op, "test-rule")
+	result := applySet(attrs, op, nil)
 	if v := getTransformAttr(result, "fqdn"); v != "web.production.svc.cluster.local" {
 		t.Errorf("fqdn = %q, want 'web.production.svc.cluster.local'", v)
 	}
@@ -141,7 +141,7 @@ func TestApplySet_Interpolation(t *testing.T) {
 func TestApplyRename(t *testing.T) {
 	attrs := makeTransformAttrs("old_name", "web")
 	op := &RenameOp{Source: "old_name", Target: "service"}
-	result := applyRename(attrs, op, "test-rule")
+	result := applyRename(attrs, op, nil)
 	if hasTransformAttr(result, "old_name") {
 		t.Error("old_name should have been renamed")
 	}
@@ -153,7 +153,7 @@ func TestApplyRename(t *testing.T) {
 func TestApplyCopy(t *testing.T) {
 	attrs := makeTransformAttrs("namespace", "production")
 	op := &CopyOp{Source: "namespace", Target: "ns_backup"}
-	result := applyCopy(attrs, op, "test-rule")
+	result := applyCopy(attrs, op, nil)
 	if v := getTransformAttr(result, "ns_backup"); v != "production" {
 		t.Errorf("ns_backup = %q, want 'production'", v)
 	}
@@ -166,7 +166,7 @@ func TestApplyReplace(t *testing.T) {
 	attrs := makeTransformAttrs("instance", "192.168.1.1:8080")
 	re := regexp.MustCompile(`^(\d+\.\d+\.\d+\.\d+):\d+$`)
 	op := &ReplaceOp{Label: "instance", Pattern: `^(\d+\.\d+\.\d+\.\d+):\d+$`, Replacement: "$1"}
-	result := applyReplace(attrs, op, re, "test-rule")
+	result := applyReplace(attrs, op, re, nil)
 	if v := getTransformAttr(result, "instance"); v != "192.168.1.1" {
 		t.Errorf("instance = %q, want '192.168.1.1'", v)
 	}
@@ -176,7 +176,7 @@ func TestApplyExtract(t *testing.T) {
 	attrs := makeTransformAttrs("service", "web-api-v2")
 	re := regexp.MustCompile(`(.+)-v\d+$`)
 	op := &ExtractOp{Source: "service", Target: "service_base", Pattern: `(.+)-v\d+$`, Group: 1}
-	result := applyExtract(attrs, op, re, "test-rule")
+	result := applyExtract(attrs, op, re, nil)
 	if v := getTransformAttr(result, "service_base"); v != "web-api" {
 		t.Errorf("service_base = %q, want 'web-api'", v)
 	}
@@ -186,7 +186,7 @@ func TestApplyExtract_NoMatch(t *testing.T) {
 	attrs := makeTransformAttrs("service", "web-api")
 	re := regexp.MustCompile(`(.+)-v\d+$`)
 	op := &ExtractOp{Source: "service", Target: "service_base", Pattern: `(.+)-v\d+$`, Group: 1}
-	result := applyExtract(attrs, op, re, "test-rule")
+	result := applyExtract(attrs, op, re, nil)
 	if hasTransformAttr(result, "service_base") {
 		t.Error("service_base should not be set (no match)")
 	}
@@ -195,7 +195,7 @@ func TestApplyExtract_NoMatch(t *testing.T) {
 func TestApplyHashMod(t *testing.T) {
 	attrs := makeTransformAttrs("service", "web-api")
 	op := &HashModOp{Source: "service", Target: "shard_id", Modulus: 16}
-	result := applyHashMod(attrs, op, "test-rule")
+	result := applyHashMod(attrs, op, nil)
 	v := getTransformAttr(result, "shard_id")
 	if v == "" {
 		t.Fatal("shard_id not set")
@@ -209,7 +209,7 @@ func TestApplyHashMod(t *testing.T) {
 func TestApplyLower(t *testing.T) {
 	attrs := makeTransformAttrs("fqdn", "WEB.Production.SVC")
 	op := &LabelRef{Label: "fqdn"}
-	result := applyLower(attrs, op, "test-rule")
+	result := applyLower(attrs, op, nil)
 	if v := getTransformAttr(result, "fqdn"); v != "web.production.svc" {
 		t.Errorf("fqdn = %q, want 'web.production.svc'", v)
 	}
@@ -218,7 +218,7 @@ func TestApplyLower(t *testing.T) {
 func TestApplyUpper(t *testing.T) {
 	attrs := makeTransformAttrs("env", "production")
 	op := &LabelRef{Label: "env"}
-	result := applyUpper(attrs, op, "test-rule")
+	result := applyUpper(attrs, op, nil)
 	if v := getTransformAttr(result, "env"); v != "PRODUCTION" {
 		t.Errorf("env = %q, want 'PRODUCTION'", v)
 	}
@@ -227,7 +227,7 @@ func TestApplyUpper(t *testing.T) {
 func TestApplyConcat(t *testing.T) {
 	attrs := makeTransformAttrs("service", "web", "namespace", "production")
 	op := &ConcatOp{Sources: []string{"service", "namespace"}, Target: "identifier", Separator: "-"}
-	result := applyConcat(attrs, op, "test-rule")
+	result := applyConcat(attrs, op, nil)
 	if v := getTransformAttr(result, "identifier"); v != "web-production" {
 		t.Errorf("identifier = %q, want 'web-production'", v)
 	}
@@ -254,7 +254,7 @@ func TestApplyMap(t *testing.T) {
 		t.Run(tt.ns, func(t *testing.T) {
 			attrs := makeTransformAttrs("namespace", tt.ns)
 			op := &MapOp{Source: "namespace", Target: "tier", Default: "tier-unknown"}
-			result := applyMap(attrs, op, compiled, "test-rule")
+			result := applyMap(attrs, op, compiled, nil)
 			if v := getTransformAttr(result, "tier"); v != tt.want {
 				t.Errorf("tier = %q, want %q", v, tt.want)
 			}
@@ -283,7 +283,7 @@ func TestApplyMath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			attrs := makeTransformAttrs("value", tt.source)
 			op := &MathOp{Source: "value", Target: "result", Operation: tt.op, Operand: tt.operand}
-			result := applyMath(attrs, op, "test-rule")
+			result := applyMath(attrs, op, nil)
 			v := getTransformAttr(result, "result")
 			if tt.name == "non-numeric" || tt.name == "div by zero" {
 				// Should not create target or should keep original.
@@ -329,7 +329,7 @@ func TestApplyTransformOperations_Chain(t *testing.T) {
 		{op: Operation{Set: &SetOp{Label: "fqdn", Value: "${service}.${namespace}.svc"}}},
 	}
 
-	result := applyTransformOperations(attrs, ops, "test-rule")
+	result := applyTransformOperations(attrs, ops, nil)
 
 	if hasTransformAttr(result, "old_service") {
 		t.Error("old_service should have been renamed")
@@ -370,7 +370,7 @@ func TestApplyOperation_DispatchConcat(t *testing.T) {
 			Concat: &ConcatOp{Sources: []string{"host", "dc"}, Target: "id", Separator: "."},
 		},
 	}
-	result := applyOperation(attrs, cop, "test-rule")
+	result := applyOperation(attrs, cop, nil)
 	if v := getTransformAttr(result, "id"); v != "web01.us-east" {
 		t.Errorf("id = %q, want 'web01.us-east'", v)
 	}
@@ -383,7 +383,7 @@ func TestApplyOperation_DispatchMathAdd(t *testing.T) {
 			Math: &MathOp{Source: "val", Target: "out", Operation: "add", Operand: 3},
 		},
 	}
-	result := applyOperation(attrs, cop, "test-rule")
+	result := applyOperation(attrs, cop, nil)
 	if v := getTransformAttr(result, "out"); v != "10" {
 		t.Errorf("out = %q, want '10'", v)
 	}
@@ -396,7 +396,7 @@ func TestApplyOperation_DispatchMathSub(t *testing.T) {
 			Math: &MathOp{Source: "val", Target: "out", Operation: "sub", Operand: 4},
 		},
 	}
-	result := applyOperation(attrs, cop, "test-rule")
+	result := applyOperation(attrs, cop, nil)
 	if v := getTransformAttr(result, "out"); v != "6" {
 		t.Errorf("out = %q, want '6'", v)
 	}
@@ -409,7 +409,7 @@ func TestApplyOperation_DispatchMathMul(t *testing.T) {
 			Math: &MathOp{Source: "val", Target: "out", Operation: "mul", Operand: 6},
 		},
 	}
-	result := applyOperation(attrs, cop, "test-rule")
+	result := applyOperation(attrs, cop, nil)
 	if v := getTransformAttr(result, "out"); v != "30" {
 		t.Errorf("out = %q, want '30'", v)
 	}
@@ -420,7 +420,7 @@ func TestApplyOperation_NilOperation(t *testing.T) {
 	cop := compiledOperation{
 		op: Operation{}, // no operation fields set
 	}
-	result := applyOperation(attrs, cop, "test-rule")
+	result := applyOperation(attrs, cop, nil)
 	// Should return attrs unchanged (fallthrough).
 	if len(result) != len(attrs) {
 		t.Errorf("expected %d attrs unchanged, got %d", len(attrs), len(result))

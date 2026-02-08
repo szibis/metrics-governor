@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -584,77 +585,111 @@ func (a *adaptiveProcessor) keepRateValue() float64 { return a.keepRate }
 // ---------------------------------------------------------------------------
 // Downsample Engine
 //
-// Manages per-series processors. Thread-safe: holds a single mutex during
-// ingest operations.  Periodically garbage-collects stale series.
+// Manages per-series processors with sharded locking for high concurrency.
+// Uses dsShardCount independent shards to reduce mutex contention — each
+// series is routed to a shard via FNV-1a hash of its key.
+// Periodically garbage-collects stale series.
 // ---------------------------------------------------------------------------
 
+const dsShardCount = 16
+
+type downsampleShard struct {
+	mu       sync.Mutex
+	series   map[string]seriesProcessor
+	lastSeen map[string]time.Time
+}
+
 type downsampleEngine struct {
-	mu         sync.Mutex
-	series     map[string]seriesProcessor
-	lastSeen   map[string]time.Time
-	cleanupCtr int64
+	shards     [dsShardCount]downsampleShard
+	cleanupCtr atomic.Int64
 }
 
 func newDownsampleEngine() *downsampleEngine {
-	return &downsampleEngine{
-		series:   make(map[string]seriesProcessor),
-		lastSeen: make(map[string]time.Time),
+	de := &downsampleEngine{}
+	for i := range de.shards {
+		de.shards[i].series = make(map[string]seriesProcessor)
+		de.shards[i].lastSeen = make(map[string]time.Time)
 	}
+	return de
+}
+
+// fnvShard computes an inline FNV-1a hash and returns the shard index.
+func fnvShard(key string) uint32 {
+	h := uint32(2166136261)
+	for i := 0; i < len(key); i++ {
+		h ^= uint32(key[i])
+		h *= 16777619
+	}
+	return h % dsShardCount
 }
 
 func (de *downsampleEngine) ingestAndEmit(seriesKey string, cfg *DownsampleConfig, ts uint64, value float64) []emittedPoint {
-	de.mu.Lock()
-	defer de.mu.Unlock()
+	shard := &de.shards[fnvShard(seriesKey)]
 
-	proc, ok := de.series[seriesKey]
+	shard.mu.Lock()
+	proc, ok := shard.series[seriesKey]
 	if !ok {
 		proc = createProcessor(cfg)
-		de.series[seriesKey] = proc
+		shard.series[seriesKey] = proc
 	}
-	de.lastSeen[seriesKey] = time.Now()
+	shard.lastSeen[seriesKey] = time.Now()
+	result := proc.ingest(ts, value)
+	shard.mu.Unlock()
 
-	// Periodic cleanup every 10 000 ingestions.
-	de.cleanupCtr++
-	if de.cleanupCtr%10000 == 0 {
-		de.cleanupLocked(10 * time.Minute)
+	// Periodic cleanup every 10 000 ingestions (atomic, lock-free check).
+	if de.cleanupCtr.Add(1)%10000 == 0 {
+		de.cleanupAll(10 * time.Minute)
 	}
 
-	return proc.ingest(ts, value)
+	return result
 }
 
 // flushAll emits remaining accumulated data from every series processor.
 func (de *downsampleEngine) flushAll() map[string][]emittedPoint {
-	de.mu.Lock()
-	defer de.mu.Unlock()
-
 	result := make(map[string][]emittedPoint)
-	for key, proc := range de.series {
-		if pts := proc.flush(); len(pts) > 0 {
-			result[key] = pts
+	for i := range de.shards {
+		shard := &de.shards[i]
+		shard.mu.Lock()
+		for key, proc := range shard.series {
+			if pts := proc.flush(); len(pts) > 0 {
+				result[key] = pts
+			}
 		}
+		shard.series = make(map[string]seriesProcessor)
+		shard.lastSeen = make(map[string]time.Time)
+		shard.mu.Unlock()
 	}
-	// Clear all state.
-	de.series = make(map[string]seriesProcessor)
-	de.lastSeen = make(map[string]time.Time)
 	return result
 }
 
 // seriesCount returns the current number of tracked series.
 func (de *downsampleEngine) seriesCount() int {
-	de.mu.Lock()
-	defer de.mu.Unlock()
-	return len(de.series)
+	total := 0
+	for i := range de.shards {
+		shard := &de.shards[i]
+		shard.mu.Lock()
+		total += len(shard.series)
+		shard.mu.Unlock()
+	}
+	return total
 }
 
-func (de *downsampleEngine) cleanupLocked(staleDuration time.Duration) {
+func (de *downsampleEngine) cleanupAll(staleDuration time.Duration) {
 	now := time.Now()
-	for key, lastSeen := range de.lastSeen {
-		if now.Sub(lastSeen) > staleDuration {
-			delete(de.series, key)
-			delete(de.lastSeen, key)
+	totalSeries := 0
+	for i := range de.shards {
+		shard := &de.shards[i]
+		shard.mu.Lock()
+		for key, lastSeen := range shard.lastSeen {
+			if now.Sub(lastSeen) > staleDuration {
+				delete(shard.series, key)
+				delete(shard.lastSeen, key)
+			}
 		}
+		totalSeries += len(shard.series)
+		shard.mu.Unlock()
 	}
-	downsamplingActiveSeries.Set(float64(len(de.series)))
+	downsamplingActiveSeries.Set(float64(totalSeries))
 }
 
 // ---------------------------------------------------------------------------
@@ -692,7 +727,14 @@ func buildDSSeriesKey(metricName string, attrs []*commonpb.KeyValue) string {
 		return sorted[i].Key < sorted[j].Key
 	})
 
+	// Pre-size: metricName + each label contributes "|" + key + "=" + value.
+	size := len(metricName)
+	for _, kv := range sorted {
+		size += 1 + len(kv.Key) + 1 + len(kv.Value.GetStringValue())
+	}
+
 	var b strings.Builder
+	b.Grow(size)
 	b.WriteString(metricName)
 	for _, kv := range sorted {
 		b.WriteByte('|')
