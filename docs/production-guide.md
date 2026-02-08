@@ -10,6 +10,10 @@
   - [Feature-by-Feature Cost Savings](#feature-by-feature-cost-savings)
   - [Cross-AZ / Network Traffic Savings](#cross-az--network-traffic-savings)
   - [Worked ROI Examples](#worked-roi-examples)
+- [Auto-Derivation Engine](#auto-derivation-engine)
+  - [Detected Resources](#detected-resources)
+  - [CPU-Based Derivations](#cpu-based-derivations)
+  - [Memory-Based Derivations](#memory-based-derivations)
 - [Memory & CPU Tuning](#memory--cpu-tuning)
   - [GOMEMLIMIT and Cgroups Auto-detection](#gomemlimit-and-cgroups-auto-detection)
   - [CPU Sizing Formula](#cpu-sizing-formula)
@@ -20,17 +24,34 @@
   - [Stats Threshold](#stats-threshold)
   - [Rule Cache Sizing](#rule-cache-sizing)
   - [Cardinality Tracker Mode](#cardinality-tracker-mode)
+  - [Hybrid Mode — Memory Savings & Auto-Switching](#hybrid-mode--memory-savings--auto-switching)
 - [Export Pipeline Tuning](#export-pipeline-tuning)
+  - [Batch Size Guidance](#batch-size-guidance)
+  - [Worker Pool](#worker-pool)
 - [Kubernetes Configuration](#kubernetes-configuration)
   - [Resources by Tier](#resources-by-tier)
   - [Health Probes](#health-probes)
-  - [HPA + VPA](#hpa--vpa)
+  - [HPA & VPA — Autoscaling Best Practices](#hpa--vpa--autoscaling-best-practices)
   - [PodDisruptionBudget](#poddisruptionbudget)
   - [ConfigMap Reload](#configmap-reload)
   - [Storage Classes](#storage-classes)
-  - [Traffic Distribution & DaemonSet Mode](#traffic-distribution--daemonset-mode)
+  - [Deployment vs StatefulSet](#deployment-vs-statefulset)
+  - [Traffic Distribution & Topology-Aware Routing](#traffic-distribution--topology-aware-routing)
+  - [DaemonSet Mode](#daemonset-mode)
   - [Complete Helm Values Example (Medium Tier)](#complete-helm-values-example-medium-tier)
-- [Resilience Tuning](#resilience-tuning)
+- [Bare Metal / VM Deployment](#bare-metal--vm-deployment)
+  - [systemd Service](#systemd-service)
+  - [Disk Sizing for Queue](#disk-sizing-for-queue)
+  - [Config Reload on Bare Metal](#config-reload-on-bare-metal)
+  - [Security Hardening](#security-hardening)
+  - [Differences from Kubernetes](#differences-from-kubernetes)
+- [Resilience Tuning & Auto-Sensing](#resilience-tuning--auto-sensing)
+  - [Adaptive Batch Tuning (AIMD)](#adaptive-batch-tuning-aimd)
+  - [Adaptive Worker Scaling (AIMD)](#adaptive-worker-scaling-aimd)
+  - [Circuit Breaker with Auto-Reset](#circuit-breaker-with-auto-reset)
+  - [Resilience Level Presets](#resilience-level-presets)
+  - [Failover Queue](#failover-queue)
+  - [How the Adaptive Systems Work Together](#how-the-adaptive-systems-work-together)
 - [Prometheus Scrape Optimization](#prometheus-scrape-optimization)
 - [Alerting Essentials](#alerting-essentials)
   - [1. Export Failures Sustained](#1-export-failures-sustained)
@@ -172,6 +193,47 @@ A hidden cost most teams overlook. Cloud providers charge for cross-AZ data tran
 
 ---
 
+## Auto-Derivation Engine
+
+When a config value is left at zero (or unset), the auto-derivation engine fills it from detected system resources. This runs after profile + YAML + CLI are merged, so **explicit user values are never overwritten**.
+
+### Detected Resources
+
+| Resource | Source | Fallback |
+|----------|--------|----------|
+| CPU cores | `runtime.NumCPU()` (respects cgroup CPU quota) | 1 |
+| Memory | cgroup v2 `memory.max` (K8s/Docker) | System total RAM |
+| Disk | `statfs()` on queue path | Profile default |
+
+### CPU-Based Derivations
+
+| Field | Formula | Example (8 CPU) |
+|-------|---------|-----------------|
+| QueueWorkers | NumCPU × 2 | 16 |
+| ExportConcurrency | NumCPU × 4 | 32 |
+| PreparerCount | NumCPU | 8 |
+| SenderCount | NumCPU × 2 | 16 |
+| GlobalSendLimit | NumCPU × 8 | 64 |
+
+### Memory-Based Derivations
+
+| Field | Formula | Example (2 GB) |
+|-------|---------|----------------|
+| QueueMaxBytes | Memory × QueueMemoryPercent | 200 MB (10%) |
+| MaxBatchBytes | min(QueueMaxBytes/4, 8 MB) | 8 MB |
+
+All derivations are logged at startup:
+
+```
+INFO auto-derived config value  field=queue-workers value=16 formula="NumCPU × 2"
+INFO auto-derived config value  field=export-concurrency value=32 formula="NumCPU × 4"
+INFO auto-derived config value  field=queue-max-bytes value=200Mi formula="MemoryLimit × 10%"
+```
+
+**Why this matters for HPA:** When Kubernetes scales pods via HPA, each new pod detects its cgroup CPU quota and derives worker counts automatically. No config changes needed — the auto-derivation engine adapts to whatever resources the scheduler provides.
+
+---
+
 ## Memory & CPU Tuning
 
 ### GOMEMLIMIT and Cgroups Auto-detection
@@ -292,6 +354,14 @@ Target: > 95% hit ratio.
 
 ### Cardinality Tracker Mode
 
+Each profile sets a default cardinality tracking mode calibrated to its resource envelope:
+
+| Profile | Mode | Why |
+|---------|------|-----|
+| `minimal` | `exact` | Accurate at small scale, low series count in dev |
+| `balanced` | `bloom` | 98% memory savings vs exact at 100k+ series |
+| `performance` | `hybrid` | Auto-switches Bloom to HLL for cardinality explosions |
+
 For production with unknown or variable cardinality, use **hybrid mode**:
 
 ```yaml
@@ -310,6 +380,46 @@ cardinality:
 | 100K series | 120 KB | 12 KB | 7.5 MB |
 | 1M series | 1.2 MB | 12 KB | 75 MB |
 | 10M series | 12 MB | 12 KB | 750 MB |
+
+### Hybrid Mode — Memory Savings & Auto-Switching
+
+Hybrid mode gives the best of both worlds: **accurate membership testing** (Bloom phase) at low-to-moderate cardinality, and **constant ~12 KB memory** (HLL phase) when cardinality explodes.
+
+**How it works:**
+
+1. **Bloom phase** — Both a Bloom filter and an HLL sketch receive all inserts in parallel. Membership testing works. Memory grows linearly with cardinality.
+2. **Threshold check** — When `count >= hll_threshold`, the mode switches.
+3. **HLL phase** — Bloom filter is released. Only the HLL sketch remains (~12 KB constant). Membership testing is no longer available.
+4. **One-way switch** — Once switched to HLL, stays there until the next `Reset()` cycle.
+
+**Threshold tuning:**
+
+```yaml
+# Conservative — keep Bloom for more accurate enforcement
+cardinality:
+  mode: hybrid
+  hll_threshold: 100000      # switch at 100k series (Bloom uses ~120 KB)
+
+# Aggressive — save memory early
+cardinality:
+  mode: hybrid
+  hll_threshold: 1000        # switch at 1k series (Bloom uses ~1.2 KB)
+
+# Default (performance profile)
+cardinality:
+  mode: hybrid
+  hll_threshold: 10000       # switch at 10k series (Bloom uses ~12 KB)
+```
+
+**What happens at the switch:**
+
+- Limits enforcement that relies on membership testing (`TestOnly`) falls back to count-based enforcement only.
+- Cardinality counts remain accurate (HLL estimates within 1-2%).
+- A metric `metrics_governor_cardinality_mode{mode="hll"}` is emitted so you can alert on unexpected mode switches.
+
+**Bloom persistence with hybrid mode:** When `bloom-persistence-enabled=true`, Bloom filter state is persisted during the Bloom phase. After a restart, the tracker restores from persisted state and may switch to HLL again if cardinality re-exceeds the threshold. This avoids the "re-learning" penalty on restart.
+
+See [Cardinality Tracking](./cardinality-tracking.md) for full configuration reference and PromQL monitoring queries.
 
 ---
 
@@ -382,9 +492,13 @@ readinessProbe:
 - `/live` returns 200 if the process is running, 503 during shutdown
 - `/ready` checks all pipeline components (receivers, exporters); returns 503 if any are down
 
-### HPA + VPA
+### HPA & VPA — Autoscaling Best Practices
 
-**HPA** for horizontal scaling based on CPU or custom metrics:
+metrics-governor supports three autoscaling patterns. Choose based on your traffic predictability and resource optimization goals.
+
+#### Pattern 1: HPA Only — CPU-Based Horizontal Scaling
+
+Best for: steady traffic with periodic spikes, most production deployments.
 
 ```yaml
 autoscaling:
@@ -393,27 +507,127 @@ autoscaling:
   maxReplicas: 10
   targetCPUUtilizationPercentage: 70
   behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
     scaleDown:
       stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 120
 ```
 
-**VPA** for vertical right-sizing (requires VPA CRD installed):
+**Why 70% CPU target?** metrics-governor's adaptive batch tuning and worker scaling use spare CPU headroom for self-optimization. Setting the target above 80% starves the adaptive systems.
+
+**Custom metrics** (requires Prometheus adapter or KEDA):
 
 ```yaml
 autoscaling:
-  vpa:
-    enabled: true
-    updatePolicy:
-      updateMode: Auto
-    minAllowed:
-      cpu: 250m
-      memory: 512Mi
-    maxAllowed:
-      cpu: 4
-      memory: 8Gi
+  customMetrics:
+    - type: Pods
+      pods:
+        metric:
+          name: metrics_governor_queue_depth
+        target:
+          type: AverageValue
+          averageValue: "1000"
 ```
 
-> Do not use HPA and VPA simultaneously on the same resource (CPU or memory). Use VPA for memory right-sizing and HPA for CPU-based scaling, or use VPA in `Off` mode for recommendations only.
+Queue depth is a better scaling signal than CPU for bursty workloads — it reacts faster to incoming spikes.
+
+#### Pattern 2: VPA Only — Vertical Right-Sizing
+
+Best for: single-replica deployments, stateful workloads, or initial capacity discovery.
+
+VPA is not included in the Helm chart — apply separately:
+
+```yaml
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: metrics-governor-vpa
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment       # or StatefulSet
+    name: metrics-governor
+  updatePolicy:
+    updateMode: Auto       # or "Off" for recommendations only
+  resourcePolicy:
+    containerPolicies:
+      - containerName: metrics-governor
+        minAllowed:
+          cpu: 250m
+          memory: 256Mi
+        maxAllowed:
+          cpu: 4
+          memory: 8Gi
+        controlledResources: ["cpu", "memory"]
+```
+
+> Use `updateMode: Off` in production initially — review VPA recommendations before enabling `Auto` mode, which restarts pods to apply new resource sizes.
+
+#### Pattern 3: Combined HPA + VPA
+
+Best for: large deployments that need both horizontal scaling and per-pod right-sizing.
+
+**Critical constraint:** HPA and VPA must NOT both control the same resource dimension.
+
+```yaml
+# HPA: scales on CPU only
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  # Do NOT set targetMemoryUtilizationPercentage when using VPA for memory
+```
+
+```yaml
+# VPA: controls memory only
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: metrics-governor-vpa
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: metrics-governor
+  updatePolicy:
+    updateMode: Auto
+  resourcePolicy:
+    containerPolicies:
+      - containerName: metrics-governor
+        controlledResources: ["memory"]  # memory only — CPU managed by HPA
+        minAllowed:
+          memory: 256Mi
+        maxAllowed:
+          memory: 8Gi
+```
+
+#### Autoscaling Conflict Matrix
+
+| Resource | HPA Controls | VPA Controls | Result |
+|----------|-------------|-------------|--------|
+| CPU | Yes | No | HPA scales pods by CPU |
+| Memory | No | Yes | VPA adjusts memory per pod |
+| CPU | Yes | Yes | **Conflict — thrashing** |
+| Memory | Yes | Yes | **Conflict — thrashing** |
+
+#### Profile-Specific HPA Guidance
+
+| Profile | Recommended HPA | Min Replicas | CPU Target | Notes |
+|---------|----------------|--------------|------------|-------|
+| `minimal` | Off | 1 | — | Single pod, no scaling |
+| `balanced` | On | 2 | 70% | Standard production scaling |
+| `performance` | On | 3 | 65% | Lower target — more headroom for adaptive systems |
+
+> **Adaptive systems interaction:** When HPA scales to more pods, each pod's adaptive worker scaler and batch tuner operate independently. They self-optimize to the pod's local throughput, so scaling in and out is seamless.
 
 ### PodDisruptionBudget
 
@@ -452,9 +666,95 @@ queue:
   path: /data/queue
 ```
 
-### Traffic Distribution & DaemonSet Mode
+### Deployment vs StatefulSet
 
-#### When to Use DaemonSet vs Deployment
+The Helm chart supports both via `kind: deployment` (default) or `kind: statefulset`.
+
+| Factor | Deployment | StatefulSet |
+|--------|-----------|-------------|
+| **Persistent queue** | Shared PVC (all pods write to same volume) | Per-pod PVCs (each pod owns its queue) |
+| **Pod identity** | Random names, interchangeable | Stable names (`-0`, `-1`, …), ordered startup |
+| **Scaling** | Fast scale-up/down, pods are fungible | Ordered scale — last pod removed first |
+| **HPA compatible** | Yes | Yes |
+| **Rolling updates** | `maxSurge` + `maxUnavailable` | One-at-a-time (ordered) or `Parallel` |
+| **Queue data on scale-down** | Shared — nothing lost | Per-pod PVC orphaned until pod returns |
+| **Recommended for** | Most deployments, memory queue | Disk queue, data durability requirements |
+
+**When to use StatefulSet:**
+- Persistent disk queue (`queue.type: disk`) where each pod must own its queue data
+- You need the queue to survive pod restarts without data loss
+- Typically paired with the `performance` profile
+
+**When to use Deployment:**
+- Memory queue (`queue.type: memory`) or no queue
+- You want fast, flexible scaling
+- Typically paired with `minimal` or `balanced` profiles
+
+```yaml
+# StatefulSet with per-pod persistent queue
+kind: statefulset
+
+statefulSet:
+  podManagementPolicy: OrderedReady  # or Parallel for faster rollouts
+  updateStrategy:
+    type: RollingUpdate
+
+persistence:
+  enabled: true
+  storageClassName: gp3       # AWS EBS gp3, or your StorageClass
+  size: 10Gi
+  accessModes: [ReadWriteOnce]
+```
+
+> **Migration path:** To migrate from Deployment to StatefulSet, set `kind: statefulset` and `persistence.enabled: true`. Helm will create the StatefulSet and per-pod PVCs. The old Deployment will be removed on the next `helm upgrade`. Queue data in the old shared PVC is not automatically migrated — drain the queue before switching.
+
+### Traffic Distribution & Topology-Aware Routing
+
+Cross-AZ network traffic is a significant cost driver in cloud environments. metrics-governor supports several routing strategies to minimize it.
+
+#### Deployment with Zone-Aware Routing (K8s 1.31+)
+
+Minimal cross-AZ traffic with standard Deployment:
+
+```yaml
+# values.yaml
+kind: deployment
+replicaCount: 3   # at least 1 per AZ
+
+service:
+  trafficDistribution: PreferClose
+```
+
+Kubernetes routes to the closest pod (same zone), with overflow to other zones only when needed. This is the simplest approach and works well for most deployments.
+
+> **Note:** `trafficDistribution: PreferClose` requires K8s 1.31+ with the `ServiceTrafficDistribution` feature gate enabled. On older clusters, use topology-aware hints or DaemonSet mode instead.
+
+#### Topology-Aware Hints (K8s 1.23+)
+
+For older clusters that don't support `trafficDistribution`:
+
+```yaml
+service:
+  annotations:
+    service.kubernetes.io/topology-mode: Auto
+```
+
+The EndpointSlice controller allocates endpoints proportionally across zones. Works best when replicas are evenly distributed across zones.
+
+#### Routing Strategy Decision
+
+| Cluster Size | Traffic Pattern | Recommended |
+|-------------|----------------|-------------|
+| < 10 nodes, 1-2 AZs | Low to moderate | Deployment + `PreferClose` |
+| 10-50 nodes, 2-3 AZs | Moderate, bursty | Deployment + `PreferClose` + HPA |
+| 50+ nodes, 3+ AZs | High volume, steady | **DaemonSet** (zero cross-AZ) |
+| Any size, latency-sensitive | APM / tracing | **DaemonSet** (guaranteed node-local) |
+
+### DaemonSet Mode
+
+DaemonSet places one metrics-governor pod on every node, guaranteeing node-local traffic with zero cross-AZ cost.
+
+#### When to Use DaemonSet
 
 | Factor | Deployment | DaemonSet |
 |--------|-----------|-----------|
@@ -464,34 +764,60 @@ queue:
 | **Resource budget tight** | 2-4 pods total | 1 pod per node (more total) |
 | **Latency-sensitive** | Zone-aware routing helps | Guaranteed node-local |
 
-#### DaemonSet with Node-Local Traffic
-
-Zero cross-AZ cost configuration — all traffic stays on-node:
+#### Configuration
 
 ```yaml
 # values.yaml
 kind: daemonset
 
 service:
-  externalTrafficPolicy: Local
+  externalTrafficPolicy: Local   # ensures node-local routing
+
+daemonSet:
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1          # one node at a time during upgrades
 ```
 
 Applications on each node send metrics to their local metrics-governor pod. No data crosses AZ boundaries.
 
-#### Deployment with Zone-Aware Routing
+#### DaemonSet Resource Sizing
 
-Minimal cross-AZ with standard Deployment (K8s 1.31+):
+Each DaemonSet pod handles only its node's traffic, so per-pod resources can be smaller:
+
+| Node Workload | Profile | CPU Request | Memory Request |
+|--------------|---------|-------------|----------------|
+| Light (< 50 pods) | `minimal` | 100m | 128Mi |
+| Medium (50-200 pods) | `balanced` | 250m | 512Mi |
+| Heavy (200+ pods, high cardinality) | `balanced` | 500m | 1Gi |
+
+#### DaemonSet with Persistent Queue
+
+DaemonSet pods can use host-path or local PVs for disk queue persistence:
 
 ```yaml
-# values.yaml
-kind: deployment
-replicaCount: 3
+kind: daemonset
 
-service:
-  trafficDistribution: PreferClose
+persistence:
+  enabled: true
+  storageClassName: local-path   # or hostpath provisioner
+  size: 5Gi
+
+config:
+  rawConfig: |
+    queue:
+      enabled: true
+      path: /data/queue
 ```
 
-Kubernetes routes to the closest pod (same zone), with overflow to other zones only when needed.
+> **Caveat:** DaemonSet with PVCs requires a storage provisioner that supports `ReadWriteOnce` with node affinity (e.g., `local-path-provisioner`, Rancher local-path, or OpenEBS). Standard cloud PVCs (EBS, PD) may not work well because they bind to a specific AZ, not a specific node.
+
+#### DaemonSet Limitations
+
+- **No HPA:** DaemonSet pod count is driven by node count, not load. Use VPA for vertical right-sizing instead.
+- **Uneven load:** Nodes with more application pods generate more metrics. Some DaemonSet pods may be idle while others are busy.
+- **Total resource usage:** With 100 nodes, you run 100 governor pods — more total resources than a 5-replica Deployment.
 
 ### Complete Helm Values Example (Medium Tier)
 
@@ -561,32 +887,259 @@ serviceMonitor:
 
 ---
 
-## Resilience Tuning
+## Bare Metal / VM Deployment
 
-For detailed resilience configuration, see [Resilience Guide](resilience.md).
+When running outside Kubernetes, metrics-governor works as a standard Linux service. The auto-derivation engine detects system resources via `/proc` and `statfs()` instead of cgroup limits.
 
-Key production settings:
+### systemd Service
 
-### Circuit Breaker
+```ini
+# /etc/systemd/system/metrics-governor.service
+[Unit]
+Description=Metrics Governor
+After=network-online.target
+Wants=network-online.target
 
-The exporter circuit breaker prevents cascading failures when the backend is down:
+[Service]
+Type=simple
+User=metrics-governor
+ExecStart=/usr/local/bin/metrics-governor \
+  --profile=balanced \
+  --exporter-endpoint=otel-collector:4317 \
+  --queue-path=/var/lib/metrics-governor/queue \
+  --config=/etc/metrics-governor/config.yaml
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+# Memory limit (cgroup v2 — metrics-governor auto-detects this)
+MemoryMax=1G
+MemoryHigh=768M
+
+# CPU limit
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Disk Sizing for Queue
+
+The auto-derivation engine detects available disk via `statfs()` and sizes the queue to 80% of available space. If the queue path doesn't exist at startup, it falls back to the profile default.
+
+**Recommended disk layout:**
+- Dedicated partition or mount for `/var/lib/metrics-governor/queue/`
+- Separate from OS disk to avoid queue I/O impacting system
+- SSD recommended for `performance` profile
+
+**Sizing formula:**
+
+```
+Required disk = throughput_bytes/sec × outage_seconds × compression_ratio × 1.25
+
+Example: 100k dps × 200 bytes/dp × 0.3 (snappy) × 3600s (1hr) × 1.25 = ~2.7 GB
+```
+
+The 1.25 safety factor accounts for compaction temporary space, metadata files, and filesystem overhead.
+
+### Config Reload on Bare Metal
+
+Without Kubernetes ConfigMap + sidecar, use file-based reload with SIGHUP:
+
+```bash
+# Edit config
+vim /etc/metrics-governor/config.yaml
+
+# Trigger reload (limits, relabeling, sampling rules only)
+kill -HUP $(pidof metrics-governor)
+```
+
+Or automate with a cron job or systemd path unit:
+
+```ini
+# /etc/systemd/system/metrics-governor-reload.path
+[Path]
+PathModified=/etc/metrics-governor/config.yaml
+
+[Install]
+WantedBy=multi-user.target
+
+# /etc/systemd/system/metrics-governor-reload.service
+[Service]
+Type=oneshot
+ExecStart=/bin/kill -HUP $MAINPID
+```
+
+### Security Hardening
+
+```bash
+# Create dedicated user
+useradd --system --no-create-home --shell /usr/sbin/nologin metrics-governor
+
+# Create directories with proper permissions
+mkdir -p /var/lib/metrics-governor/queue
+chown metrics-governor:metrics-governor /var/lib/metrics-governor/queue
+chmod 750 /var/lib/metrics-governor/queue
+```
+
+Add systemd hardening directives to the `[Service]` section:
+
+```ini
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/metrics-governor
+NoNewPrivileges=true
+PrivateTmp=true
+```
+
+### Differences from Kubernetes
+
+| Aspect | Kubernetes | VM / Bare Metal |
+|--------|-----------|----------------|
+| Memory detection | cgroup v2 `memory.max` | System total RAM (or systemd `MemoryMax`) |
+| CPU detection | cgroup v2 CPU quota | `runtime.NumCPU()` (all cores visible) |
+| Disk detection | PVC mount at queue path | `statfs()` on queue directory |
+| Disk provisioning | PVC via StorageClass | Manual partition/mount |
+| Memory enforcement | OOM kill by kubelet | OOM kill by systemd `MemoryMax` |
+| Scaling | HPA horizontal | Manual or external autoscaler |
+| Config reload | ConfigMap + sidecar SIGHUP | File edit + `kill -HUP` |
+| Service discovery | K8s Service + DNS | Load balancer or DNS round-robin |
+
+> **Important:** On bare metal without cgroup limits, `GOMEMLIMIT` should be set explicitly via environment variable or `memory.limit_ratio` in config. Without it, the Go runtime cannot detect memory pressure and the adaptive memory sizing will use system total RAM, which may be shared with other processes.
+
+---
+
+## Resilience Tuning & Auto-Sensing
+
+metrics-governor includes three adaptive mechanisms that self-tune based on real-time conditions. When enabled (default in `balanced` and `performance` profiles), these systems work together to optimize throughput while protecting against downstream failures.
+
+For detailed resilience configuration and failure mode analysis, see [Resilience Guide](resilience.md).
+
+### Adaptive Batch Tuning (AIMD)
+
+The batch tuner uses an **Additive Increase / Multiplicative Decrease** algorithm to find the optimal batch size for your backend. It starts at a conservative size and grows on success, shrinking aggressively on failure.
+
+**How it works:**
+1. After `success_streak` consecutive successful exports, batch size grows by `grow_factor` (25%)
+2. On any failure, batch size immediately shrinks by `shrink_factor` (50%)
+3. On HTTP 413 (Request Too Large), a hard ceiling is set at 80% of the current size
+
+```yaml
+buffer:
+  batch_auto_tune:
+    enabled: true          # default: true (balanced/performance profiles)
+    min_bytes: 512         # floor — never go below this
+    max_bytes: 16777216    # ceiling — 16 MB
+    success_streak: 10     # consecutive successes before growing
+    grow_factor: 1.25      # 25% growth per step
+    shrink_factor: 0.5     # 50% shrink on failure
+```
+
+**Monitoring:**
+
+| Metric | Description |
+|--------|-------------|
+| `metrics_governor_batch_current_max_bytes` | Current tuned batch size |
+| `metrics_governor_batch_hard_ceiling_bytes` | HTTP 413 hard ceiling (0 = none) |
+| `metrics_governor_batch_tuning_adjustments_total{direction}` | Adjustments count (up/down) |
+| `metrics_governor_batch_success_streak` | Current consecutive success count |
+
+**Production tuning:**
+- If batch size oscillates rapidly, increase `success_streak` (e.g., 20) to require more stability before growing
+- If your backend has a known max request size, set `max_bytes` to 80% of that limit
+- The 413-detection feature automatically discovers backend limits — no manual ceiling needed for most OTLP backends
+
+### Adaptive Worker Scaling (AIMD)
+
+The worker scaler dynamically adjusts the number of queue export workers based on queue depth and export latency.
+
+**How it works:**
+1. Every `scale_interval`, check queue depth and latency EWMA
+2. If queue depth > `high_water_mark` AND latency < `max_latency` → add 1 worker (additive increase)
+3. If queue depth < `low_water_mark` for `sustained_idle_secs` → halve worker count (multiplicative decrease)
+4. Latency check prevents scaling up when the backend is already overloaded
 
 ```yaml
 exporter:
-  circuit_breaker:
-    failure_threshold: 5
-    reset_timeout: 30s
+  queue:
+    adaptive_workers:
+      enabled: true          # default: true (balanced/performance profiles)
+      min_workers: 1         # floor
+      max_workers: 0         # 0 = NumCPU × 4 (auto-derived)
+      scale_interval: 5s     # decision interval
+      high_water_mark: 100   # queue depth for scale-up trigger
+      low_water_mark: 10     # queue depth for idle detection
+      max_latency: 500ms     # suppress scale-up when latency exceeds this
+      sustained_idle_secs: 30 # idle duration before scale-down
 ```
 
-### Exponential Backoff
+**Monitoring:**
 
-Failed exports use exponential backoff with jitter:
+| Metric | Description |
+|--------|-------------|
+| `queue_workers_desired` | Current target worker count |
+| `queue_export_latency_ewma_seconds` | EWMA latency (alpha=0.3) |
+| `queue_scaler_adjustments_total{direction}` | Scale events (up/down) |
+
+**Production tuning:**
+- Lower `high_water_mark` for faster reaction to spikes (but more scaling noise)
+- Increase `sustained_idle_secs` to prevent premature scale-down during intermittent traffic
+- Set `max_latency` based on your SLO — if exports take > 500ms, adding more workers won't help (the bottleneck is downstream)
+
+### Circuit Breaker with Auto-Reset
+
+The circuit breaker protects the downstream backend from being overwhelmed during failures. It follows the standard Closed → Open → Half-Open state machine.
+
+**States:**
+1. **Closed** — normal operation, all exports proceed
+2. **Open** — after `threshold` consecutive failures, all exports are blocked (queued for retry)
+3. **Half-Open** — after `reset_timeout`, one probe request is allowed through
+   - If the probe succeeds → Closed (resume normal operation)
+   - If the probe fails → Open (reset timer)
 
 ```yaml
-queue:
-  retry_interval: 5s
-  max_retry_delay: 5m
+exporter:
+  queue:
+    circuit_breaker:
+      enabled: true        # default: true (balanced/performance profiles)
+      threshold: 5         # failures before opening
+      reset_timeout: 30s   # wait before half-open probe
 ```
+
+**Monitoring:**
+
+| Metric | Description |
+|--------|-------------|
+| `queue_circuit_state{state}` | Current state (closed/open/half_open) |
+| `queue_circuit_open_total` | Total times circuit opened |
+
+**Production tuning:**
+- Lower `threshold` (e.g., 3) for aggressive protection — the `performance` profile uses this
+- Shorter `reset_timeout` (e.g., 15s) for faster recovery — but only if your backend recovers quickly
+- The circuit breaker works with backoff — when open, data accumulates in the queue and is drained on recovery
+
+### Resilience Level Presets
+
+Instead of tuning individual resilience parameters, use the `resilience_level` consolidated parameter:
+
+```yaml
+resilience_level: medium   # low, medium, or high
+```
+
+| Setting | `low` | `medium` (balanced) | `high` (performance) |
+|---------|-------|---------------------|---------------------|
+| Backoff multiplier | 1.5 | 2.0 | 3.0 |
+| Circuit breaker | off | on (5 failures) | on (3 failures) |
+| CB reset timeout | 60s | 30s | 15s |
+| Batch drain size | 5 | 10 | 25 |
+| Burst drain size | 50 | 100 | 250 |
+
+**Choosing a level:**
+- **`low`** — backend is reliable, you want minimal overhead. No circuit breaker, gentle backoff.
+- **`medium`** — standard production. Circuit breaker catches cascading failures, moderate backoff.
+- **`high`** — backend is unreliable or shared. Aggressive circuit breaker, fast backoff, large drain batches for quick recovery.
+
+> Individual parameters can still override the preset. For example, `resilience_level: high` with an explicit `circuit_breaker.threshold: 10` uses all `high` defaults except the threshold.
 
 ### Failover Queue
 
@@ -602,10 +1155,25 @@ queue:
 
 **Queue sizing formula:**
 ```
-Required disk = (datapoints/min * avg_bytes_per_dp * desired_minutes) / compression_ratio
+Required disk = (datapoints/min × avg_bytes_per_dp × desired_minutes) / compression_ratio
 
-Example: 10M dps/min * 50 bytes * 30 min / 3 = 5 GB
+Example: 10M dps/min × 50 bytes × 30 min / 3 = 5 GB
 ```
+
+### How the Adaptive Systems Work Together
+
+In a typical failure scenario:
+
+1. Backend starts returning errors
+2. **Circuit breaker** opens after `threshold` failures — stops hammering the backend
+3. **Batch tuner** shrinks batch size by 50% — prepares for smaller recovery batches
+4. **Worker scaler** detects queue backing up but suppresses scale-up (latency too high)
+5. Data accumulates in the **failover queue** (memory or disk)
+6. After `reset_timeout`, circuit breaker enters half-open — sends one probe
+7. If probe succeeds: circuit closes, workers scale up, batch tuner begins growing again
+8. Queue drains at the rate the backend can handle, automatically paced by the adaptive systems
+
+This feedback loop means metrics-governor self-recovers from outages without operator intervention. The queue acts as a buffer, the circuit breaker prevents cascading failures, and the adaptive tuners optimize the recovery rate.
 
 ---
 

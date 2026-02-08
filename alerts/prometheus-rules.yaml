@@ -1,0 +1,181 @@
+# metrics-governor Alert Rules — Prometheus / VictoriaMetrics / Thanos
+#
+# Minimal non-overlapping set: 10 alerts covering reliability, resilience,
+# availability, and performance. No two alerts fire for the same root cause.
+#
+# Import:
+#   cp alerts/prometheus-rules.yaml /etc/prometheus/rules/
+#   # or mount as ConfigMap in Kubernetes
+#
+# Profile-specific thresholds are marked with comments.
+# Use the playground (tools/playground/index.html) to generate rules
+# with thresholds tuned to your profile and throughput.
+#
+# Runbooks: alerts/README.md
+
+groups:
+  - name: metrics-governor
+    interval: 30s
+    rules:
+
+      # ─── AVAILABILITY ────────────────────────────────────────────
+
+      # 1. Process is down or not responding to scrapes.
+      #    Root cause: crash, OOM kill, failed deployment, node issue.
+      - alert: MetricsGovernorDown
+        expr: up{job=~".*metrics-governor.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "metrics-governor is down"
+          description: "{{ $labels.instance }} has been unreachable for 2 minutes."
+          runbook: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernordown"
+
+      # ─── RELIABILITY ─────────────────────────────────────────────
+
+      # 2. Actual data loss — batches failed export AND failed to queue.
+      #    This is the worst-case: data is permanently lost.
+      #    Does NOT overlap with ExportDegraded (which catches recoverable errors).
+      - alert: MetricsGovernorDataLoss
+        expr: rate(metrics_governor_export_data_loss_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "metrics-governor is losing data"
+          description: "{{ $labels.instance }} is dropping batches that failed both export and queue push. Data is permanently lost."
+          runbook: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernordataloss"
+
+      # 3. Sustained export errors — exports are failing but queue is absorbing.
+      #    Leading indicator before DataLoss. Fires independently because
+      #    queue may absorb errors for hours before filling up.
+      - alert: MetricsGovernorExportDegraded
+        expr: |
+          (
+            rate(metrics_governor_otlp_export_errors_total[5m])
+            / clamp_min(rate(metrics_governor_otlp_export_requests_total[5m]), 0.001)
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "metrics-governor export error rate > 10%"
+          description: "{{ $labels.instance }} has >10% export failure rate for 5 minutes. Queue is buffering, but data loss will occur if the backend doesn't recover before the queue fills."
+          runbook: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorexportdegraded"
+
+      # ─── RESILIENCE ──────────────────────────────────────────────
+
+      # 4. Queue approaching capacity — data loss imminent.
+      #    Does NOT overlap with ExportDegraded (error rate vs capacity).
+      #    Threshold: 85% for balanced/performance, N/A for minimal (no queue).
+      - alert: MetricsGovernorQueueSaturated
+        expr: |
+          (
+            metrics_governor_queue_bytes
+            / clamp_min(metrics_governor_queue_max_bytes, 1)
+          ) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "metrics-governor queue > 85% full"
+          description: "{{ $labels.instance }} queue is at {{ $value | humanizePercentage }} capacity. If the backend doesn't recover soon, data will be dropped."
+          runbook: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorqueuesaturated"
+
+      # 5. Circuit breaker is open — all exports blocked.
+      #    Fires only when CB is enabled (balanced/performance profiles).
+      #    Does NOT overlap with ExportDegraded — CB open means 0 exports
+      #    attempted, so error rate is N/A. This is a distinct state.
+      - alert: MetricsGovernorCircuitOpen
+        expr: metrics_governor_circuit_breaker_state{state="open"} == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "metrics-governor circuit breaker is open"
+          description: "{{ $labels.instance }} circuit breaker has been open for 2 minutes. All exports are blocked. The queue is absorbing data."
+          runbook: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorcircuitopen"
+
+      # ─── RESOURCE PRESSURE ───────────────────────────────────────
+
+      # 6. Memory approaching limit — OOM kill risk.
+      #    Threshold: 90% of GOMEMLIMIT or cgroup limit.
+      - alert: MetricsGovernorOOMRisk
+        expr: |
+          (
+            go_memstats_heap_alloc_bytes{job=~".*metrics-governor.*"}
+            / clamp_min(metrics_governor_memory_limit_bytes, 1)
+          ) > 0.90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "metrics-governor memory > 90% of limit"
+          description: "{{ $labels.instance }} heap is at {{ $value | humanizePercentage }} of memory limit. OOM kill is imminent."
+          runbook: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernoroomrisk"
+
+      # ─── PERFORMANCE ─────────────────────────────────────────────
+
+      # 7. Buffer is rejecting or evicting data — pipeline can't keep up.
+      #    Different from QueueSaturated (buffer vs queue are separate stages).
+      #    Fires when receiver throughput exceeds processing capacity.
+      - alert: MetricsGovernorBackpressure
+        expr: |
+          (
+            rate(metrics_governor_buffer_rejected_total[5m])
+            + rate(metrics_governor_buffer_evictions_total[5m])
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "metrics-governor buffer is rejecting or dropping data"
+          description: "{{ $labels.instance }} buffer is under pressure: {{ $value | humanize }}/s rejected or evicted. Incoming throughput exceeds processing capacity."
+          runbook: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorbackpressure"
+
+      # 8. Worker pool is fully saturated — no idle workers.
+      #    If adaptive workers can't scale further, this is a capacity ceiling.
+      - alert: MetricsGovernorWorkersSaturated
+        expr: |
+          (
+            metrics_governor_queue_workers_active
+            / clamp_min(metrics_governor_queue_workers_total, 1)
+          ) > 0.90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "metrics-governor workers > 90% utilized for 10 minutes"
+          description: "{{ $labels.instance }} has {{ $value | humanizePercentage }} worker utilization. The adaptive scaler may have hit its ceiling."
+          runbook: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorworkerssaturated"
+
+      # 9. Cardinality approaching configured limit — governance issue.
+      #    Fires before limits enforcer starts dropping data.
+      - alert: MetricsGovernorCardinalityExplosion
+        expr: |
+          (
+            rate(metrics_governor_limit_cardinality_exceeded_total[10m]) > 0
+          )
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "metrics-governor cardinality limits being exceeded"
+          description: "{{ $labels.instance }} has sustained cardinality limit violations for 10 minutes. Upstream services may be generating unbounded label values."
+          runbook: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorcardinalityexplosion"
+
+      # ─── OPERATIONAL ─────────────────────────────────────────────
+
+      # 10. Config has not been reloaded recently — may be stale.
+      #     Catches cases where ConfigMap changes aren't being picked up.
+      - alert: MetricsGovernorConfigStale
+        expr: |
+          (time() - metrics_governor_limits_config_reload_last_success_timestamp_seconds) > 86400
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "metrics-governor config not reloaded in 24 hours"
+          description: "{{ $labels.instance }} has not successfully reloaded its config in over 24 hours. If you use hot-reload, check the sidecar or file watcher."
+          runbook: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorconfigstale"

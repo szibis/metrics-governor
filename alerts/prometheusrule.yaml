@@ -1,0 +1,140 @@
+# metrics-governor PrometheusRule — Kubernetes Prometheus Operator
+#
+# Import:
+#   kubectl apply -f alerts/prometheusrule.yaml
+#
+# Or use the Helm chart with alerting.enabled: true (recommended).
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: metrics-governor-alerts
+  labels:
+    app.kubernetes.io/name: metrics-governor
+    app.kubernetes.io/component: alerting
+    prometheus: kube-prometheus   # match your Prometheus Operator selector
+spec:
+  groups:
+    - name: metrics-governor
+      interval: 30s
+      rules:
+
+        - alert: MetricsGovernorDown
+          expr: up{job=~".*metrics-governor.*"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "metrics-governor is down"
+            description: "{{ $labels.instance }} has been unreachable for 2 minutes."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernordown"
+
+        - alert: MetricsGovernorDataLoss
+          expr: rate(metrics_governor_export_data_loss_total[5m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "metrics-governor is losing data"
+            description: "{{ $labels.instance }} is dropping batches permanently."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernordataloss"
+
+        - alert: MetricsGovernorExportDegraded
+          expr: |
+            (
+              rate(metrics_governor_otlp_export_errors_total[5m])
+              / clamp_min(rate(metrics_governor_otlp_export_requests_total[5m]), 0.001)
+            ) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "metrics-governor export error rate > 10%"
+            description: "{{ $labels.instance }} has >10% export failure rate."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorexportdegraded"
+
+        - alert: MetricsGovernorQueueSaturated
+          expr: |
+            (
+              metrics_governor_queue_bytes
+              / clamp_min(metrics_governor_queue_max_bytes, 1)
+            ) > 0.85
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "metrics-governor queue > 85% full"
+            description: "{{ $labels.instance }} queue at {{ $value | humanizePercentage }}."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorqueuesaturated"
+
+        - alert: MetricsGovernorCircuitOpen
+          expr: metrics_governor_circuit_breaker_state{state="open"} == 1
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "metrics-governor circuit breaker is open"
+            description: "{{ $labels.instance }} circuit breaker open for 2 minutes."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorcircuitopen"
+
+        - alert: MetricsGovernorOOMRisk
+          expr: |
+            (
+              go_memstats_heap_alloc_bytes{job=~".*metrics-governor.*"}
+              / clamp_min(metrics_governor_memory_limit_bytes, 1)
+            ) > 0.90
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "metrics-governor memory > 90% of limit"
+            description: "{{ $labels.instance }} heap at {{ $value | humanizePercentage }}."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernoroomrisk"
+
+        - alert: MetricsGovernorBackpressure
+          expr: |
+            (
+              rate(metrics_governor_buffer_rejected_total[5m])
+              + rate(metrics_governor_buffer_evictions_total[5m])
+            ) > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "metrics-governor buffer rejecting or dropping data"
+            description: "{{ $labels.instance }} buffer under pressure."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorbackpressure"
+
+        - alert: MetricsGovernorWorkersSaturated
+          expr: |
+            (
+              metrics_governor_queue_workers_active
+              / clamp_min(metrics_governor_queue_workers_total, 1)
+            ) > 0.90
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "metrics-governor workers > 90% utilized"
+            description: "{{ $labels.instance }} at {{ $value | humanizePercentage }} worker utilization."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorworkerssaturated"
+
+        - alert: MetricsGovernorCardinalityExplosion
+          expr: rate(metrics_governor_limit_cardinality_exceeded_total[10m]) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "metrics-governor cardinality limits exceeded"
+            description: "{{ $labels.instance }} sustained cardinality violations."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorcardinalityexplosion"
+
+        - alert: MetricsGovernorConfigStale
+          expr: (time() - metrics_governor_limits_config_reload_last_success_timestamp_seconds) > 86400
+          for: 1h
+          labels:
+            severity: info
+          annotations:
+            summary: "metrics-governor config not reloaded in 24h"
+            description: "{{ $labels.instance }} config may be stale."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorconfigstale"

@@ -734,6 +734,9 @@
       <button class="tab-btn" :class="activeTab === 'limits' ? 'active' : ''" @click="activeTab = 'limits'">
         <span class="dot" :class="!limitsValid ? 'dot-red' : limitsHasWarns ? 'dot-yellow' : 'dot-green'"></span> Limits rules YAML
       </button>
+      <button class="tab-btn" :class="activeTab === 'alerts' ? 'active' : ''" @click="activeTab = 'alerts'">
+        <span class="dot dot-green"></span> Alert rules
+      </button>
     </div>
 
     <!-- Helm values.yaml -->
@@ -804,6 +807,85 @@
           <button @click="copyToClipboard(limitsText, 'limits')">Copy to Clipboard</button>
           <button class="outline" @click="downloadFile(limitsText, 'limits.yaml')">Download limits.yaml</button>
           <span class="copy-ok" x-show="copyOk === 'limits'" x-transition>Copied!</span>
+        </div>
+      </div>
+    </template>
+
+    <!-- Alert rules -->
+    <template x-if="activeTab === 'alerts'">
+      <div>
+        <p style="font-size:.9em;color:var(--pico-muted-color);margin-bottom:.75rem">
+          10 non-overlapping alerts covering availability, reliability, resilience, performance.
+          Thresholds auto-adjusted based on your throughput and configuration.
+          <a href="https://github.com/your-org/metrics-governor/blob/main/alerts/README.md" target="_blank">Runbooks</a>
+        </p>
+
+        <details open style="margin-bottom:1rem">
+          <summary>Threshold Tuning</summary>
+          <div class="grid-3" style="margin-top:.5rem">
+            <label>Export error rate %
+              <input type="number" x-model.number="alertExportErrorPct" min="1" max="50" step="1">
+              <small class="help-tip">Fire when error rate exceeds this %</small>
+            </label>
+            <label>Queue utilization %
+              <input type="number" x-model.number="alertQueuePct" min="50" max="99" step="1">
+              <small class="help-tip">Fire when queue exceeds this %</small>
+            </label>
+            <label>Memory usage %
+              <input type="number" x-model.number="alertMemoryPct" min="50" max="99" step="1">
+              <small class="help-tip">Fire when heap exceeds this % of limit</small>
+            </label>
+            <label>Backpressure rate/s
+              <input type="number" x-model.number="alertBackpressureRate" min="0.1" max="100" step="0.1">
+              <small class="help-tip">Buffer reject/evict events per second</small>
+            </label>
+            <label>Worker utilization %
+              <input type="number" x-model.number="alertWorkerPct" min="50" max="99" step="1">
+              <small class="help-tip">Fire when workers exceed this %</small>
+            </label>
+            <label>Config stale (hours)
+              <input type="number" x-model.number="alertConfigStaleHours" min="1" max="168" step="1">
+              <small class="help-tip">Hours without config reload</small>
+            </label>
+          </div>
+          <div style="margin-top:.5rem">
+            <label style="display:inline-flex;align-items:center;gap:.5rem">
+              <input type="checkbox" x-model="alertK8sFormat" role="switch" style="margin:0">
+              <span>Kubernetes PrometheusRule CRD format</span>
+            </label>
+          </div>
+        </details>
+
+        <details style="margin-bottom:1rem">
+          <summary>Alert Coverage Map</summary>
+          <table style="font-size:.85em;margin-top:.5rem">
+            <thead><tr><th>#</th><th>Alert</th><th>Severity</th><th>Detects</th><th>Threshold</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td><code>Down</code></td><td><span class="badge-red">critical</span></td><td>Process unavailable</td><td>up == 0 for 2m</td></tr>
+              <tr><td>2</td><td><code>DataLoss</code></td><td><span class="badge-red">critical</span></td><td>Permanent data loss</td><td>data_loss &gt; 0</td></tr>
+              <tr><td>3</td><td><code>ExportDegraded</code></td><td><span class="badge-yellow">warning</span></td><td>Backend errors</td><td><span x-text="alertExportErrorPct + '%'"></span> for 5m</td></tr>
+              <tr><td>4</td><td><code>QueueSaturated</code></td><td><span class="badge-yellow">warning</span></td><td>Queue filling</td><td><span x-text="alertQueuePct + '%'"></span> for 5m</td></tr>
+              <tr><td>5</td><td><code>CircuitOpen</code></td><td><span class="badge-yellow">warning</span></td><td>CB tripped</td><td>open for 2m</td></tr>
+              <tr><td>6</td><td><code>OOMRisk</code></td><td><span class="badge-red">critical</span></td><td>Memory pressure</td><td><span x-text="alertMemoryPct + '%'"></span> for 5m</td></tr>
+              <tr><td>7</td><td><code>Backpressure</code></td><td><span class="badge-yellow">warning</span></td><td>Pipeline bottleneck</td><td><span x-text="alertBackpressureRate + '/s'"></span> for 5m</td></tr>
+              <tr><td>8</td><td><code>WorkersSaturated</code></td><td><span class="badge-yellow">warning</span></td><td>Export ceiling</td><td><span x-text="alertWorkerPct + '%'"></span> for 10m</td></tr>
+              <tr><td>9</td><td><code>CardinalityExplosion</code></td><td><span class="badge-yellow">warning</span></td><td>Governance breach</td><td>violations for 10m</td></tr>
+              <tr><td>10</td><td><code>ConfigStale</code></td><td style="color:var(--pico-muted-color)">info</td><td>Operational drift</td><td><span x-text="alertConfigStaleHours + 'h'"></span></td></tr>
+            </tbody>
+          </table>
+        </details>
+
+        <div class="yaml-toolbar">
+          <small x-text="alertK8sFormat ? 'PrometheusRule CRD — kubectl apply -f' : 'Prometheus rules — copy to /etc/prometheus/rules/'"></small>
+          <button class="outline secondary" style="font-size:.8em;padding:2px 10px;margin:0" @click="alertsText = alertsYaml">Reset to generated</button>
+        </div>
+        <textarea class="yaml-edit" x-model.debounce.500ms="alertsText" spellcheck="false" style="min-height:400px"></textarea>
+        <div class="btn-row">
+          <button @click="copyToClipboard(alertsText, 'alerts')">Copy to Clipboard</button>
+          <button class="outline" @click="downloadFile(alertsText, alertK8sFormat ? 'prometheusrule.yaml' : 'prometheus-rules.yaml')">
+            <span x-text="alertK8sFormat ? 'Download prometheusrule.yaml' : 'Download prometheus-rules.yaml'"></span>
+          </button>
+          <span class="copy-ok" x-show="copyOk === 'alerts'" x-transition>Copied!</span>
         </div>
       </div>
     </template>
@@ -1069,6 +1151,7 @@ function configHelper() {
         'podOverride',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
         'rules','middleTab','activeTab',
+        'alertExportErrorPct','alertQueuePct','alertMemoryPct','alertBackpressureRate','alertWorkerPct','alertConfigStaleHours','alertK8sFormat',
       ];
       for (const f of fields) {
         this.$watch(f, () => {
@@ -1098,6 +1181,12 @@ function configHelper() {
       this.helmText = this.helmYaml;
       this.appText = this.appYaml;
       this.limitsText = this.limitsYaml;
+      this.alertsText = this.alertsYaml;
+
+      // Auto-sync alerts YAML when thresholds or format change
+      for (const f of ['alertExportErrorPct','alertQueuePct','alertMemoryPct','alertBackpressureRate','alertWorkerPct','alertConfigStaleHours','alertK8sFormat']) {
+        this.$watch(f, () => { this.alertsText = this.alertsYaml; });
+      }
 
       // Inputs → Textarea: sync generated YAML to textarea when textarea is not focused
       this.$watch('helmYaml', (val) => {
@@ -1164,6 +1253,7 @@ function configHelper() {
         'podOverride',
         'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
         'rules','middleTab','activeTab','ruleIdCounter',
+        'alertExportErrorPct','alertQueuePct','alertMemoryPct','alertBackpressureRate','alertWorkerPct','alertConfigStaleHours','alertK8sFormat',
       ];
       for (const f of fields) state[f] = this[f];
       try { localStorage.setItem('mg-config-state', JSON.stringify(state)); } catch(e) {}
@@ -1183,6 +1273,7 @@ function configHelper() {
           'podOverride',
           'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
           'rules','middleTab','activeTab','ruleIdCounter',
+          'alertExportErrorPct','alertQueuePct','alertMemoryPct','alertBackpressureRate','alertWorkerPct','alertConfigStaleHours','alertK8sFormat',
         ];
         for (const k of loadable) {
           if (state[k] !== undefined && state[k] !== null) this[k] = state[k];
@@ -1255,6 +1346,16 @@ function configHelper() {
     middleTab: 'estimation',
     activeTab: 'helm',
     copyOk: null,
+
+    // ---- Alert thresholds ----
+    alertExportErrorPct: 10,
+    alertQueuePct: 85,
+    alertMemoryPct: 90,
+    alertBackpressureRate: 1,
+    alertWorkerPct: 90,
+    alertConfigStaleHours: 24,
+    alertK8sFormat: false,
+    alertsText: '',
 
     // ---- Bidirectional YAML editing state ----
     helmText: '',
@@ -1701,6 +1802,93 @@ function configHelper() {
         }
       } else {
         y += `\nrules: []\n`;
+      }
+      return y;
+    },
+
+    get alertsYaml() {
+      const errRate = (this.alertExportErrorPct / 100).toFixed(2);
+      const queuePct = (this.alertQueuePct / 100).toFixed(2);
+      const memPct = (this.alertMemoryPct / 100).toFixed(2);
+      const bpRate = this.alertBackpressureRate;
+      const workerPct = (this.alertWorkerPct / 100).toFixed(2);
+      const staleSecs = this.alertConfigStaleHours * 3600;
+
+      const rules = [
+        {name:'MetricsGovernorDown', sev:'critical', expr:'up{job=~".*metrics-governor.*"} == 0', forD:'2m',
+         sum:'metrics-governor is down', desc:'{{ $labels.instance }} has been unreachable for 2 minutes.'},
+        {name:'MetricsGovernorDataLoss', sev:'critical', expr:'rate(metrics_governor_export_data_loss_total[5m]) > 0', forD:'1m',
+         sum:'metrics-governor is losing data', desc:'{{ $labels.instance }} is dropping batches permanently.'},
+        {name:'MetricsGovernorExportDegraded', sev:'warning',
+         expr:`(\n              rate(metrics_governor_otlp_export_errors_total[5m])\n              / clamp_min(rate(metrics_governor_otlp_export_requests_total[5m]), 0.001)\n            ) > ${errRate}`,
+         forD:'5m', sum:`metrics-governor export error rate > ${this.alertExportErrorPct}%`, desc:'{{ $labels.instance }} has elevated export failure rate.'},
+        {name:'MetricsGovernorQueueSaturated', sev:'warning',
+         expr:`(\n              metrics_governor_queue_bytes\n              / clamp_min(metrics_governor_queue_max_bytes, 1)\n            ) > ${queuePct}`,
+         forD:'5m', sum:`metrics-governor queue > ${this.alertQueuePct}% full`, desc:'{{ $labels.instance }} queue approaching capacity.'},
+        {name:'MetricsGovernorCircuitOpen', sev:'warning', expr:'metrics_governor_circuit_breaker_state{state="open"} == 1', forD:'2m',
+         sum:'metrics-governor circuit breaker is open', desc:'{{ $labels.instance }} circuit breaker open.'},
+        {name:'MetricsGovernorOOMRisk', sev:'critical',
+         expr:`(\n              go_memstats_heap_alloc_bytes{job=~".*metrics-governor.*"}\n              / clamp_min(metrics_governor_memory_limit_bytes, 1)\n            ) > ${memPct}`,
+         forD:'5m', sum:`metrics-governor memory > ${this.alertMemoryPct}% of limit`, desc:'{{ $labels.instance }} heap approaching limit.'},
+        {name:'MetricsGovernorBackpressure', sev:'warning',
+         expr:`(\n              rate(metrics_governor_buffer_rejected_total[5m])\n              + rate(metrics_governor_buffer_evictions_total[5m])\n            ) > ${bpRate}`,
+         forD:'5m', sum:'metrics-governor buffer under pressure', desc:'{{ $labels.instance }} buffer rejecting or evicting data.'},
+        {name:'MetricsGovernorWorkersSaturated', sev:'warning',
+         expr:`(\n              metrics_governor_queue_workers_active\n              / clamp_min(metrics_governor_queue_workers_total, 1)\n            ) > ${workerPct}`,
+         forD:'10m', sum:`metrics-governor workers > ${this.alertWorkerPct}% utilized`, desc:'{{ $labels.instance }} worker pool saturated.'},
+        {name:'MetricsGovernorCardinalityExplosion', sev:'warning', expr:'rate(metrics_governor_limit_cardinality_exceeded_total[10m]) > 0', forD:'10m',
+         sum:'metrics-governor cardinality limits exceeded', desc:'{{ $labels.instance }} sustained cardinality violations.'},
+        {name:'MetricsGovernorConfigStale', sev:'info',
+         expr:`(time() - metrics_governor_limits_config_reload_last_success_timestamp_seconds) > ${staleSecs}`,
+         forD:'1h', sum:'metrics-governor config not reloaded recently', desc:'{{ $labels.instance }} config may be stale.'},
+      ];
+
+      let y = '';
+      if (this.alertK8sFormat) {
+        y += `# metrics-governor PrometheusRule\n`;
+        y += `# Generated by playground — thresholds tuned to your configuration\n`;
+        y += `apiVersion: monitoring.coreos.com/v1\n`;
+        y += `kind: PrometheusRule\n`;
+        y += `metadata:\n`;
+        y += `  name: metrics-governor-alerts\n`;
+        y += `  labels:\n`;
+        y += `    prometheus: kube-prometheus\n`;
+        y += `spec:\n`;
+        y += `  groups:\n`;
+        y += `    - name: metrics-governor\n`;
+        y += `      interval: "30s"\n`;
+        y += `      rules:\n`;
+        for (const r of rules) {
+          y += `        - alert: ${r.name}\n`;
+          y += `          expr: |\n`;
+          y += `            ${r.expr}\n`;
+          y += `          for: ${r.forD}\n`;
+          y += `          labels:\n`;
+          y += `            severity: ${r.sev}\n`;
+          y += `          annotations:\n`;
+          y += `            summary: "${r.sum}"\n`;
+          y += `            description: "${r.desc}"\n`;
+          y += `            runbook_url: "alerts/README.md#${r.name.toLowerCase()}"\n`;
+        }
+      } else {
+        y += `# metrics-governor Prometheus Alert Rules\n`;
+        y += `# Generated by playground — thresholds tuned to your configuration\n\n`;
+        y += `groups:\n`;
+        y += `  - name: metrics-governor\n`;
+        y += `    interval: 30s\n`;
+        y += `    rules:\n`;
+        for (const r of rules) {
+          y += `\n      - alert: ${r.name}\n`;
+          y += `        expr: |\n`;
+          y += `          ${r.expr}\n`;
+          y += `        for: ${r.forD}\n`;
+          y += `        labels:\n`;
+          y += `          severity: ${r.sev}\n`;
+          y += `        annotations:\n`;
+          y += `          summary: "${r.sum}"\n`;
+          y += `          description: "${r.desc}"\n`;
+          y += `          runbook: "alerts/README.md#${r.name.toLowerCase()}"\n`;
+        }
       }
       return y;
     },
