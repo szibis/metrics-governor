@@ -3,7 +3,7 @@ name: metrics-governor
 description: OTLP metrics proxy with buffering, statistics tracking, and adaptive limits enforcement
 type: application
 version: 0.9.10
-appVersion: "0.30.0"
+appVersion: "0.31.0"
 keywords:
   - otlp
   - metrics
