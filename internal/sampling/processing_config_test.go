@@ -370,6 +370,94 @@ func TestConvertLegacyConfig_DefaultRatePassthrough(t *testing.T) {
 	}
 }
 
+func TestParseProcessing_InvalidYAML(t *testing.T) {
+	data := []byte(`
+rules:
+  - name: "broken
+    input: [[[
+`)
+	_, err := ParseProcessing(data)
+	if err == nil {
+		t.Fatal("expected error for invalid YAML")
+	}
+	if !strings.Contains(err.Error(), "parse") {
+		t.Errorf("error = %q, want parse-related error", err.Error())
+	}
+}
+
+func TestParseProcessing_UnknownActionType(t *testing.T) {
+	data := []byte(`
+rules:
+  - name: bad-action
+    input: ".*"
+    action: explode
+`)
+	_, err := ParseProcessing(data)
+	if err == nil {
+		t.Fatal("expected error for unknown action type")
+	}
+	if !strings.Contains(err.Error(), "unknown action") {
+		t.Errorf("error = %q, want 'unknown action'", err.Error())
+	}
+}
+
+func TestParseProcessing_AggregateGroupByAndDropLabels(t *testing.T) {
+	data := []byte(`
+rules:
+  - name: bad-agg
+    input: "cpu_.*"
+    action: aggregate
+    interval: 1m
+    group_by:
+      - service
+    drop_labels:
+      - pod
+    functions:
+      - sum
+`)
+	_, err := ParseProcessing(data)
+	if err == nil {
+		t.Fatal("expected error for group_by + drop_labels")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("error = %q, want 'mutually exclusive'", err.Error())
+	}
+}
+
+func TestParseProcessing_DownsampleMissingMethod(t *testing.T) {
+	data := []byte(`
+rules:
+  - name: bad-ds
+    input: "cpu_.*"
+    action: downsample
+    interval: 1m
+`)
+	_, err := ParseProcessing(data)
+	if err == nil {
+		t.Fatal("expected error for downsample missing method")
+	}
+	if !strings.Contains(err.Error(), "method") {
+		t.Errorf("error = %q, want method-related error", err.Error())
+	}
+}
+
+func TestParseProcessing_TransformNoOperations(t *testing.T) {
+	data := []byte(`
+rules:
+  - name: bad-transform
+    input: ".*"
+    action: transform
+    operations: []
+`)
+	_, err := ParseProcessing(data)
+	if err == nil {
+		t.Fatal("expected error for transform with no operations")
+	}
+	if !strings.Contains(err.Error(), "at least one operation") {
+		t.Errorf("error = %q, want 'at least one operation'", err.Error())
+	}
+}
+
 func TestConvertLegacyConfig_DefaultRateZero(t *testing.T) {
 	old := FileConfig{
 		DefaultRate: 0,
