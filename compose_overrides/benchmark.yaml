@@ -4,19 +4,22 @@
 #   100 metrics × 100 series/metric = 10,000 unique series
 #   10,000 series × 10 exports/sec (100ms interval) = 100,000 dps
 #
-# Usage (governor benchmark):
-#   docker compose -f docker-compose.yaml -f compose_overrides/benchmark.yaml up -d --build
+# Generator OTLP target is overridable per-test via shell env vars:
+#   BENCH_OTLP_ENDPOINT   — proxy host:port (default: metrics-governor:4318)
+#   BENCH_OTLP_PROTOCOL   — grpc or http  (default: http)
+#   BENCH_OTLP_HTTP_PATH  — URL path override (default: empty = /v1/metrics)
 #
-# Usage (passthrough, no processing):
-#   docker compose -f docker-compose.yaml -f compose_overrides/benchmark.yaml up -d --build
-#
-# Full benchmark (governor vs collector vs vmagent):
-#   ./test/benchmark-proxy.sh
+# Usage:
+#   ./test/benchmark-proxy.sh              # Full 5-test benchmark
+#   ./test/benchmark-proxy.sh --test=A     # Single test
 
 services:
   metrics-generator:
     environment:
-      - OTLP_ENDPOINT=otel-collector:4317
+      # ── OTLP target (overridable per test) ──
+      - OTLP_ENDPOINT=${BENCH_OTLP_ENDPOINT:-metrics-governor:4318}
+      - OTLP_PROTOCOL=${BENCH_OTLP_PROTOCOL:-http}
+      - OTLP_HTTP_URL_PATH=${BENCH_OTLP_HTTP_PATH:-}
       - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=lowmemory
       - METRICS_INTERVAL=100ms
       # ── Stable mode: perfectly flat 100k dps ──
@@ -43,7 +46,7 @@ services:
     command:
       # Performance profile: pipeline split + adaptive workers + batch auto-tune
       - "--profile=performance"
-      # Export target — passthrough to VictoriaMetrics
+      # Export target — passthrough to VictoriaMetrics (OTLP HTTP)
       - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
       - "-exporter-protocol=http"
       - "-exporter-insecure=true"
@@ -52,12 +55,11 @@ services:
       - "-flush-interval=75ms"
       - "-batch-size=500"
       - "-max-batch-bytes=4194304"
+      - "-buffer-size=10000"
+      # Memory-only queue (fair comparison with collector/vmagent)
+      - "-queue-enabled=false"
       # Stats
       - "-stats-labels=service,env"
-      # Disk queue
-      - "-queue-path=/data/queue"
-    volumes:
-      - mg-queue-benchmark-data:/data/queue
     deploy:
       resources:
         limits:
@@ -68,8 +70,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
-          cpus: "2"
+          memory: 4G
+          cpus: "4"
 
   victoriametrics:
     deploy:
@@ -90,6 +92,3 @@ services:
       - "--search.maxUniqueTimeseries=5000000"
       - "--search.maxConcurrentRequests=64"
 
-volumes:
-  mg-queue-benchmark-data:
-    driver: local
