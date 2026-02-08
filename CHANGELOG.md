@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.34.1] - 2026-02-08
+
+### Performance
+
+- perf: processing pipeline performance optimizations (#138)
+
+### Other
+
+- test: boost processing rules coverage from 80.9% to 89.5% (#137)
+
+
 ## [0.34.0] - 2026-02-08
 
 ### Added
