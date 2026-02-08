@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -202,6 +203,8 @@ func main() {
 	initStringPools()
 
 	endpoint := getEnv("OTLP_ENDPOINT", "localhost:4317")
+	otlpProtocol := getEnv("OTLP_PROTOCOL", "grpc")       // "grpc" or "http"
+	otlpHTTPURLPath := getEnv("OTLP_HTTP_URL_PATH", "")    // Override HTTP URL path (default: /v1/metrics)
 	intervalStr := getEnv("METRICS_INTERVAL", "100ms")
 	servicesStr := getEnv("SERVICES", "payment-api,order-api,inventory-api,user-api,auth-api,legacy-app")
 	environmentsStr := getEnv("ENVIRONMENTS", "prod,staging,dev,qa")
@@ -248,6 +251,10 @@ func main() {
 	log.Printf("========================================")
 	log.Printf("Configuration:")
 	log.Printf("  Endpoint: %s", endpoint)
+	log.Printf("  Protocol: %s", otlpProtocol)
+	if otlpProtocol == "http" && otlpHTTPURLPath != "" {
+		log.Printf("  HTTP URL path: %s", otlpHTTPURLPath)
+	}
 	log.Printf("  Interval: %s", interval)
 	log.Printf("  Services: %v", services)
 	log.Printf("  Environments: %v", environments)
@@ -287,26 +294,46 @@ func main() {
 	ctx := context.Background()
 	stats.StartTime = time.Now()
 
-	// Wait for metrics-governor to be ready
+	// Wait for OTLP endpoint to be ready
 	log.Println("Waiting for OTLP endpoint to be ready...")
 	time.Sleep(5 * time.Second)
 
-	// Setup OTLP exporter with larger message size
-	conn, err := grpc.NewClient(endpoint,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(
-			grpc.MaxCallSendMsgSize(64*1024*1024), // 64MB
-			grpc.MaxCallRecvMsgSize(64*1024*1024), // 64MB
-		),
-	)
-	if err != nil {
-		log.Fatalf("Failed to create gRPC connection: %v", err)
-	}
-	defer conn.Close()
+	// Setup OTLP exporter based on protocol
+	var exporter sdkmetric.Exporter
+	var conn *grpc.ClientConn
 
-	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithGRPCConn(conn))
-	if err != nil {
-		log.Fatalf("Failed to create exporter: %v", err)
+	switch otlpProtocol {
+	case "http":
+		opts := []otlpmetrichttp.Option{
+			otlpmetrichttp.WithEndpoint(endpoint),
+			otlpmetrichttp.WithInsecure(),
+		}
+		if otlpHTTPURLPath != "" {
+			opts = append(opts, otlpmetrichttp.WithURLPath(otlpHTTPURLPath))
+		}
+		exporter, err = otlpmetrichttp.New(ctx, opts...)
+		if err != nil {
+			log.Fatalf("Failed to create HTTP exporter: %v", err)
+		}
+		log.Printf("Using OTLP HTTP exporter -> %s", endpoint)
+	default: // grpc
+		conn, err = grpc.NewClient(endpoint,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithDefaultCallOptions(
+				grpc.MaxCallSendMsgSize(64*1024*1024), // 64MB
+				grpc.MaxCallRecvMsgSize(64*1024*1024), // 64MB
+			),
+		)
+		if err != nil {
+			log.Fatalf("Failed to create gRPC connection: %v", err)
+		}
+		defer conn.Close()
+
+		exporter, err = otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithGRPCConn(conn))
+		if err != nil {
+			log.Fatalf("Failed to create exporter: %v", err)
+		}
+		log.Printf("Using OTLP gRPC exporter -> %s", endpoint)
 	}
 
 	res, err := resource.New(ctx,
@@ -562,7 +589,11 @@ func main() {
 	metricsPort := getEnv("METRICS_PORT", "9091")
 	go startMetricsServer(metricsPort)
 
-	// Launch spike scenarios if enabled
+	// Launch spike scenarios if enabled (requires gRPC connection)
+	if enableSpikeScenarios && conn == nil {
+		log.Printf("WARNING: Spike scenarios require gRPC protocol, disabling (current: %s)", otlpProtocol)
+		enableSpikeScenarios = false
+	}
 	if enableSpikeScenarios {
 		log.Println("[SPIKE] Starting spike scenario goroutines...")
 		switch spikeMode {
