@@ -5082,6 +5082,42 @@
           "expr": "metrics_governor_fastqueue_disk_bytes",
           "legendFormat": "FastQueue disk",
           "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(metrics_governor_intern_pool_estimated_bytes)",
+          "legendFormat": "Intern pools",
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_rule_cache_estimated_bytes",
+          "legendFormat": "Rule cache",
+          "refId": "G"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_compression_pool_estimated_bytes",
+          "legendFormat": "Compression pools",
+          "refId": "H"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_limits_cardinality_memory_bytes",
+          "legendFormat": "Limits cardinality",
+          "refId": "I"
         }
       ],
       "title": "Memory Distribution by Component",
@@ -5146,7 +5182,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "go_memstats_heap_alloc_bytes - (metrics_governor_buffer_bytes + metrics_governor_queue_bytes + metrics_governor_memqueue_bytes + metrics_governor_cardinality_memory_bytes)",
+          "expr": "go_memstats_heap_alloc_bytes - (metrics_governor_buffer_bytes + metrics_governor_queue_bytes + metrics_governor_memqueue_bytes + metrics_governor_cardinality_memory_bytes + metrics_governor_limits_cardinality_memory_bytes + sum(metrics_governor_intern_pool_estimated_bytes) + metrics_governor_rule_cache_estimated_bytes + metrics_governor_compression_pool_estimated_bytes)",
           "legendFormat": "Untracked Heap",
           "refId": "A"
         }

@@ -39,5 +39,17 @@ func init() {
 			Help:        "Number of interned strings in pool",
 			ConstLabels: prometheus.Labels{"pool": "metric_names"},
 		}, func() float64 { return float64(MetricNames.Size()) }),
+
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        "metrics_governor_intern_pool_estimated_bytes",
+			Help:        "Estimated memory usage of interned strings in bytes",
+			ConstLabels: prometheus.Labels{"pool": "label_names"},
+		}, func() float64 { return float64(LabelNames.EstimatedMemoryBytes()) }),
+
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        "metrics_governor_intern_pool_estimated_bytes",
+			Help:        "Estimated memory usage of interned strings in bytes",
+			ConstLabels: prometheus.Labels{"pool": "metric_names"},
+		}, func() float64 { return float64(MetricNames.EstimatedMemoryBytes()) }),
 	)
 }

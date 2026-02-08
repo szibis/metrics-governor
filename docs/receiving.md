@@ -367,11 +367,6 @@ sequenceDiagram
         B-->>R: nil (success)
         R-->>C: 200 OK / gRPC OK / 204 No Content
     end
-
-    style C fill:#3498db,stroke:#2070a0,color:#fff
-    style R fill:#50b878,stroke:#2d7a4a,color:#fff
-    style B fill:#9b59b6,stroke:#6c3483,color:#fff
-    style Q fill:#f5a623,stroke:#c47d12,color:#fff
 ```
 
 ### Response Codes by Protocol
@@ -437,11 +432,6 @@ sequenceDiagram
     FL->>RL: Relabel(batch)
     FL->>EX: Export(request)
     Note over EX: Queue push (always-queue)<br/>or direct export
-
-    style C fill:#3498db,stroke:#2070a0,color:#fff
-    style R fill:#50b878,stroke:#2d7a4a,color:#fff
-    style B fill:#9b59b6,stroke:#6c3483,color:#fff
-    style EX fill:#e8833a,stroke:#a85a20,color:#fff
 ```
 
 ### Pipeline Stage Timing

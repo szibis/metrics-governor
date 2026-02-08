@@ -14930,6 +14930,42 @@
           "expr": "metrics_governor_fastqueue_disk_bytes",
           "legendFormat": "FastQueue disk",
           "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(metrics_governor_intern_pool_estimated_bytes)",
+          "legendFormat": "Intern pools",
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_rule_cache_estimated_bytes",
+          "legendFormat": "Rule cache",
+          "refId": "G"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_compression_pool_estimated_bytes",
+          "legendFormat": "Compression pools",
+          "refId": "H"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_limits_cardinality_memory_bytes",
+          "legendFormat": "Limits cardinality",
+          "refId": "I"
         }
       ],
       "title": "Memory Distribution by Component",
@@ -14994,7 +15030,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "go_memstats_heap_alloc_bytes - (metrics_governor_buffer_bytes + metrics_governor_queue_bytes + metrics_governor_memqueue_bytes + metrics_governor_cardinality_memory_bytes)",
+          "expr": "go_memstats_heap_alloc_bytes - (metrics_governor_buffer_bytes + metrics_governor_queue_bytes + metrics_governor_memqueue_bytes + metrics_governor_cardinality_memory_bytes + metrics_governor_limits_cardinality_memory_bytes + sum(metrics_governor_intern_pool_estimated_bytes) + metrics_governor_rule_cache_estimated_bytes + metrics_governor_compression_pool_estimated_bytes)",
           "legendFormat": "Untracked Heap",
           "refId": "A"
         }
@@ -15070,6 +15106,194 @@
       ],
       "title": "Workers Utilization %",
       "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 2,
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 418
+      },
+      "id": 10210,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_rule_cache_hit_ratio",
+          "legendFormat": "Rule cache",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(metrics_governor_intern_hits_total) / (sum(metrics_governor_intern_hits_total) + sum(metrics_governor_intern_misses_total))",
+          "legendFormat": "Intern pool",
+          "refId": "B"
+        }
+      ],
+      "title": "Cache Hit Ratios",
+      "description": "Hit ratios for caches. Higher is better — low ratios indicate cache thrashing or insufficient capacity.\n\n- **Rule cache**: LRU cache mapping metric names to limit rules. Low ratio means rule scanning on every lookup.\n- **Intern pool**: String deduplication pool for label/metric names. Low ratio means high cardinality or frequent new strings.",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 2,
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 418
+      },
+      "id": 10211,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_rule_cache_size",
+          "legendFormat": "Rule cache entries",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_rule_cache_max_size",
+          "legendFormat": "Rule cache max",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(metrics_governor_intern_pool_size)",
+          "legendFormat": "Intern pool entries",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "metrics_governor_rule_cache_negative_entries",
+          "legendFormat": "Rule cache negative",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(metrics_governor_limits_cardinality_trackers_total)",
+          "legendFormat": "Cardinality trackers",
+          "refId": "E"
+        }
+      ],
+      "title": "Pool & Cache Sizes",
+      "description": "Entry counts for caches and pools. Watch for:\n\n- **Rule cache at max**: High eviction rate, consider increasing -rule-cache-max-size\n- **Intern pool growing**: High cardinality metric/label names consuming memory\n- **Rule cache negative entries**: Metrics with no matching rule (cached as no-match)",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",

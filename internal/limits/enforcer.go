@@ -1079,6 +1079,10 @@ func (e *Enforcer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "# HELP metrics_governor_rule_cache_negative_entries Cached no-match entries\n")
 		fmt.Fprintf(w, "# TYPE metrics_governor_rule_cache_negative_entries gauge\n")
 		fmt.Fprintf(w, "metrics_governor_rule_cache_negative_entries %d\n", e.ruleMatchCache.NegativeEntries())
+
+		fmt.Fprintf(w, "# HELP metrics_governor_rule_cache_estimated_bytes Estimated memory usage of rule cache in bytes\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_rule_cache_estimated_bytes gauge\n")
+		fmt.Fprintf(w, "metrics_governor_rule_cache_estimated_bytes %d\n", e.ruleMatchCache.EstimatedMemoryBytes())
 	}
 
 	// Hybrid tracker mode metrics

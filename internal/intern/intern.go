@@ -77,6 +77,20 @@ func (p *Pool) Size() int {
 	return count
 }
 
+// EstimatedMemoryBytes returns an estimate of the memory used by interned strings.
+// Each entry has: ~80 bytes sync.Map overhead + string header (16 bytes) + string data.
+// The key and value point to the same string, so data is counted once.
+func (p *Pool) EstimatedMemoryBytes() int64 {
+	var totalBytes int64
+	p.strings.Range(func(key, _ any) bool {
+		s := key.(string)
+		// 80 bytes map overhead + 16 bytes string header + string data
+		totalBytes += 96 + int64(len(s))
+		return true
+	})
+	return totalBytes
+}
+
 // Reset clears all interned strings and resets statistics.
 func (p *Pool) Reset() {
 	p.strings = sync.Map{}
