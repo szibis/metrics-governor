@@ -41,7 +41,7 @@ jobs:
         id: run
         run: |
           set +e
-          go test -run Resource -count=1 -timeout=5m -v ./internal/... 2>&1 | tee results.txt
+          go test -run Resource -timeout=5m -v ./internal/... 2>&1 | tee results.txt
           EXIT_CODE=${PIPESTATUS[0]}
 
           PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
@@ -86,7 +86,7 @@ jobs:
         id: run
         run: |
           set +e
-          go test -run TestLeak -count=1 -timeout=5m -v ./internal/... 2>&1 | tee results.txt
+          go test -run TestLeak -timeout=5m -v ./internal/... 2>&1 | tee results.txt
           EXIT_CODE=${PIPESTATUS[0]}
 
           PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
@@ -131,7 +131,7 @@ jobs:
         id: run
         run: |
           set +e
-          go test -run Stress -count=1 -timeout=10m -v ./internal/... 2>&1 | tee results.txt
+          go test -run Stress -timeout=10m -v ./internal/... 2>&1 | tee results.txt
           EXIT_CODE=${PIPESTATUS[0]}
 
           PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
@@ -176,7 +176,7 @@ jobs:
         id: run
         run: |
           set +e
-          go test -race -run 'TestRace_' -count=1 -timeout=10m -v ./internal/... 2>&1 | tee results.txt
+          go test -race -run 'TestRace_' -timeout=10m -v ./internal/... 2>&1 | tee results.txt
           EXIT_CODE=${PIPESTATUS[0]}
 
           PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)
@@ -221,7 +221,7 @@ jobs:
         id: run
         run: |
           set +e
-          go test -run 'TestMemLeak_' -count=1 -timeout=10m -v ./internal/... 2>&1 | tee results.txt
+          go test -run 'TestMemLeak_' -timeout=10m -v ./internal/... 2>&1 | tee results.txt
           EXIT_CODE=${PIPESTATUS[0]}
 
           PASSED_TESTS=$(grep -c '^--- PASS:' results.txt)

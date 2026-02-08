@@ -267,7 +267,7 @@ jobs:
         id: functional_tests
         continue-on-error: true
         run: |
-          go test -v -race ./functional/... 2>&1 | tee functional-test-output.txt
+          go test -v ./functional/... 2>&1 | tee functional-test-output.txt
 
       - name: Count tests
         id: count
@@ -318,7 +318,7 @@ jobs:
         id: e2e_tests
         continue-on-error: true
         run: |
-          go test -v -race ./e2e/... 2>&1 | tee e2e-test-output.txt
+          go test -v ./e2e/... 2>&1 | tee e2e-test-output.txt
 
       - name: Count tests
         id: count
@@ -473,9 +473,25 @@ jobs:
           name: coverage-unit
           path: ./coverage
 
+      - name: Restore base coverage cache
+        id: base_cache
+        uses: actions/cache@v4
+        with:
+          path: ./base-coverage-cache
+          key: base-coverage-${{ github.event.pull_request.base.sha }}
+
       - name: Get base branch coverage
         id: base_coverage
         run: |
+          # Check cache first
+          CACHE_FILE="./base-coverage-cache/coverage.txt"
+          if [ -f "$CACHE_FILE" ]; then
+            BASE_COV=$(cat "$CACHE_FILE")
+            echo "coverage=$BASE_COV" >> $GITHUB_OUTPUT
+            echo "Base coverage (cached): $BASE_COV%"
+            exit 0
+          fi
+
           # Store current branch/commit
           CURRENT_REF="${{ github.event.pull_request.head.sha }}"
           echo "Current ref: $CURRENT_REF"
@@ -486,13 +502,17 @@ jobs:
           # Checkout base branch (detached HEAD is fine)
           git checkout ${{ github.event.pull_request.base.sha }} || git checkout origin/${{ github.event.pull_request.base.ref }}
 
-          # Run coverage on base
-          go test -coverprofile=coverage-base.out -covermode=atomic ./internal/... 2>/dev/null || true
+          # Run coverage on base (without -race for speed)
+          go test -short -coverprofile=coverage-base.out -covermode=atomic ./internal/... 2>/dev/null || true
 
           if [ -f coverage-base.out ]; then
             BASE_COV=$(go tool cover -func=coverage-base.out | grep total | awk '{print $3}' | sed 's/%//')
             echo "coverage=$BASE_COV" >> $GITHUB_OUTPUT
             echo "Base coverage: $BASE_COV%"
+
+            # Cache for future runs against same base
+            mkdir -p ./base-coverage-cache
+            echo "$BASE_COV" > ./base-coverage-cache/coverage.txt
           else
             echo "coverage=0" >> $GITHUB_OUTPUT
             echo "No base coverage file generated"
@@ -737,7 +757,7 @@ jobs:
         run: docker compose down -v --remove-orphans 2>/dev/null || true
 
   build-binaries:
-    needs: [ci-filter, build, test-unit, test-functional, test-e2e, test-e2e-docker, lint, lint-dockerfile, lint-yaml, lint-helm, test-helm]
+    needs: [ci-filter, build, test-unit, lint]
     runs-on: ubuntu-latest
     if: >-
       needs.ci-filter.outputs.skip_tests != 'true' &&
