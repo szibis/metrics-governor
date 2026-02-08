@@ -1,0 +1,49 @@
+# Minimal profile stress test - push to resource limits
+# Usage: docker compose -f docker-compose.yaml -f compose_overrides/profile-minimal.yaml up -d
+#
+# Tests the minimal profile at its resource ceiling:
+# - 0.5 CPU, 256 MB memory, NO disk queue
+# - Generator sends ~10k dps (profile's max throughput)
+# - Should run stable without OOM or CPU throttling
+# - Verifier threshold 90% (some loss expected under pressure)
+
+services:
+  metrics-generator:
+    environment:
+      - OTLP_ENDPOINT=otel-collector:4317
+      - METRICS_INTERVAL=500ms
+      - SERVICES=test-svc
+      - ENVIRONMENTS=prod
+      - ENABLE_EDGE_CASES=false
+      - ENABLE_HIGH_CARDINALITY=false
+      - ENABLE_BURST_TRAFFIC=false
+      - ENABLE_DIVERSE_METRICS=true
+      - DIVERSE_METRIC_COUNT=20
+      - HIGH_CARDINALITY_COUNT=10
+      - TARGET_METRICS_PER_SEC=5000
+      - TARGET_DATAPOINTS_PER_SEC=10000
+      - STATS_INTERVAL_SEC=15
+      - ENABLE_SPIKE_SCENARIOS=false
+
+  metrics-governor:
+    command:
+      - "--profile=minimal"
+      - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
+      - "-exporter-protocol=http"
+      - "-exporter-insecure=true"
+      - "-stats-labels=service,env"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
+  victoriametrics:
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  verifier:
+    environment:
+      - PASS_THRESHOLD=90.0

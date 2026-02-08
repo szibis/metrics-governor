@@ -1,5 +1,39 @@
 # Receiving Metrics
 
+## Table of Contents
+
+- [Architecture Overview](#architecture-overview)
+- [OTLP gRPC Receiver](#otlp-grpc-receiver)
+  - [Protocol Support](#protocol-support)
+  - [Configuration](#configuration)
+  - [gRPC Compression](#grpc-compression)
+  - [Metrics](#metrics)
+- [OTLP HTTP Receiver](#otlp-http-receiver)
+  - [Protocol Support](#protocol-support-1)
+  - [Configuration](#configuration-1)
+  - [Content-Type Negotiation](#content-type-negotiation)
+  - [Content-Encoding Decompression](#content-encoding-decompression)
+- [Prometheus Remote Write Receiver](#prometheus-remote-write-receiver)
+  - [Protocol Support](#protocol-support-2)
+  - [Configuration](#configuration-2)
+  - [PRW Version Handling](#prw-version-handling)
+  - [Endpoint Registration](#endpoint-registration)
+- [Backpressure](#backpressure)
+  - [How Backpressure Works](#how-backpressure-works)
+  - [Response Codes by Protocol](#response-codes-by-protocol)
+  - [Buffer Full Policies](#buffer-full-policies)
+- [Data Flow](#data-flow)
+  - [Pipeline Stage Timing](#pipeline-stage-timing)
+- [Receiver Metrics](#receiver-metrics)
+- [Health Checks](#health-checks)
+- [Troubleshooting](#troubleshooting)
+  - [Receiver not accepting connections](#receiver-not-accepting-connections)
+  - [429 Too Many Requests / ResourceExhausted](#429-too-many-requests--resourceexhausted)
+  - [415 Unsupported Media Type](#415-unsupported-media-type)
+  - [High decode error rate](#high-decode-error-rate)
+  - [gRPC message too large](#grpc-message-too-large)
+  - [TLS handshake failures](#tls-handshake-failures)
+
 metrics-governor receives metrics via three protocols, each running its own receiver goroutine. All receivers validate, decompress, and decode incoming data before pushing it into a shared buffer for processing and export.
 
 ## Architecture Overview

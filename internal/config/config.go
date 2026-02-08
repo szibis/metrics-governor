@@ -304,9 +304,20 @@ type Config struct {
 	TelemetryRetryMaxElapsed  time.Duration // Max total retry time (default: 1m)
 	TelemetryHeaders          string        // Custom headers (key1=val1,key2=val2)
 
+	// Profile & Simplified Config
+	Profile           string        // "minimal", "balanced", "performance" (empty = balanced)
+	Parallelism       int           // 0 = auto from CPU, derives all worker counts
+	MemoryBudgetPct   float64       // 0.0-0.5, replaces individual buffer/queue percents
+	ExportTimeoutBase time.Duration // base for timeout cascade (0 = no cascade)
+	ResilienceLevel   string        // "low", "medium", "high" (empty = no override)
+
 	// Flags
-	ShowHelp    bool
-	ShowVersion bool
+	ShowHelp            bool
+	ShowVersion         bool
+	ShowProfile         string // --show-profile <name>: print profile and exit
+	ShowEffectiveConfig bool   // --show-effective-config: print merged config and exit
+	ShowDeprecations    bool   // --show-deprecations: print deprecation table and exit
+	StrictDeprecations  bool   // --strict-deprecations: fail on removed params
 
 	// ConfigFile is the path to the YAML config file (if specified).
 	// Used for hot-reloading on SIGHUP.
@@ -371,6 +382,19 @@ func ParseFlags() *Config {
 	// Config file flag
 	var configFile string
 	flag.StringVar(&configFile, "config", "", "Path to YAML configuration file")
+
+	// Profile & simplified config flags
+	flag.StringVar(&cfg.Profile, "profile", "balanced", "Configuration profile: minimal (dev), balanced (production default), performance (high throughput)")
+	flag.IntVar(&cfg.Parallelism, "parallelism", 0, "Parallelism level (0 = auto from CPU). Derives all worker counts: queue-workers, export-concurrency, preparer/sender counts")
+	flag.Float64Var(&cfg.MemoryBudgetPct, "memory-budget-percent", 0, "Memory budget as fraction (0.0-0.5). Splits equally between buffer and queue memory percentages")
+	flag.DurationVar(&cfg.ExportTimeoutBase, "export-timeout", 0, "Base export timeout. Derives cascade: direct=base/6, retry=base/3, drain=base, close=base*2")
+	flag.StringVar(&cfg.ResilienceLevel, "resilience-level", "", "Resilience preset: low, medium, high. Sets backoff, circuit breaker, drain sizes")
+
+	// Introspection flags
+	flag.StringVar(&cfg.ShowProfile, "show-profile", "", "Show profile settings and exit (minimal, balanced, performance)")
+	flag.BoolVar(&cfg.ShowEffectiveConfig, "show-effective-config", false, "Show final merged config (profile + overrides + auto-derivation) and exit")
+	flag.BoolVar(&cfg.ShowDeprecations, "show-deprecations", false, "Show deprecation tracker and exit")
+	flag.BoolVar(&cfg.StrictDeprecations, "strict-deprecations", false, "Fail startup if removed deprecated params are used")
 
 	// Receiver flags
 	flag.StringVar(&cfg.GRPCListenAddr, "grpc-listen", ":4317", "gRPC receiver listen address")
@@ -653,6 +677,12 @@ func ParseFlags() *Config {
 	}
 
 	return cfg
+}
+
+// ReapplyFlagOverrides re-applies CLI flag values that were explicitly set.
+// Called after profile application to ensure CLI flags always win.
+func ReapplyFlagOverrides(cfg *Config) {
+	applyFlagOverrides(cfg)
 }
 
 // applyFlagOverrides applies CLI flag values that were explicitly set.
@@ -1249,6 +1279,34 @@ func applyFlagOverrides(cfg *Config) {
 			}
 		case "telemetry-headers":
 			cfg.TelemetryHeaders = f.Value.String()
+		case "profile":
+			cfg.Profile = f.Value.String()
+		case "parallelism":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.Parallelism = i
+				}
+			}
+		case "memory-budget-percent":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if fv, ok := v.Get().(float64); ok {
+					cfg.MemoryBudgetPct = fv
+				}
+			}
+		case "export-timeout":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.ExportTimeoutBase = d
+			}
+		case "resilience-level":
+			cfg.ResilienceLevel = f.Value.String()
+		case "show-profile":
+			cfg.ShowProfile = f.Value.String()
+		case "show-effective-config":
+			cfg.ShowEffectiveConfig = f.Value.String() == "true"
+		case "show-deprecations":
+			cfg.ShowDeprecations = f.Value.String() == "true"
+		case "strict-deprecations":
+			cfg.StrictDeprecations = f.Value.String() == "true"
 		case "help", "h":
 			cfg.ShowHelp = f.Value.String() == "true"
 		case "version", "v":
@@ -1926,6 +1984,7 @@ func PrintVersion() {
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
+		Profile:                         "balanced",
 		GRPCListenAddr:                  ":4317",
 		HTTPListenAddr:                  ":4318",
 		HTTPReceiverPath:                "/v1/metrics",
@@ -2076,6 +2135,21 @@ func DefaultConfig() *Config {
 // misconfiguration at once rather than fixing them one at a time.
 func (c *Config) Validate() error {
 	var errs []string
+
+	// Profile validation
+	if !IsValidProfile(c.Profile) {
+		errs = append(errs, fmt.Sprintf("profile must be one of: minimal, balanced, performance (or empty); got %q", c.Profile))
+	}
+
+	// Resilience level validation
+	if !IsValidResilienceLevel(c.ResilienceLevel) {
+		errs = append(errs, fmt.Sprintf("resilience-level must be one of: low, medium, high (or empty); got %q", c.ResilienceLevel))
+	}
+
+	// Memory budget validation
+	if c.MemoryBudgetPct < 0 || c.MemoryBudgetPct > 0.5 {
+		errs = append(errs, fmt.Sprintf("memory-budget-percent must be between 0.0 and 0.5, got %f", c.MemoryBudgetPct))
+	}
 
 	// Range checks for float64 fields that represent ratios (0.0-1.0)
 	if c.MemoryLimitRatio < 0 || c.MemoryLimitRatio > 1.0 {

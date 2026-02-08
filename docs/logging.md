@@ -1,5 +1,34 @@
 # Logging
 
+## Table of Contents
+
+- [Log Pipeline](#log-pipeline)
+- [Log Levels](#log-levels)
+- [Log Format (OTEL-Compatible)](#log-format-otel-compatible)
+  - [Field Mapping](#field-mapping)
+- [Log Levels](#log-levels-1)
+- [Common Log Messages](#common-log-messages)
+  - [Startup Messages](#startup-messages)
+  - [Stats Messages](#stats-messages)
+  - [Limit Violation Messages](#limit-violation-messages)
+  - [Adaptive Limiting Messages](#adaptive-limiting-messages)
+  - [Export Error Messages](#export-error-messages)
+  - [Config Reload Messages](#config-reload-messages)
+  - [Buffer Backpressure Messages](#buffer-backpressure-messages)
+  - [Worker Pool Messages](#worker-pool-messages)
+  - [Shutdown Messages](#shutdown-messages)
+- [Log Aggregation](#log-aggregation)
+  - [Fluentd/Fluent Bit](#fluentdfluent-bit)
+  - [Loki/Promtail](#lokipromtail)
+  - [Elasticsearch/Logstash](#elasticsearchlogstash)
+  - [Vector](#vector)
+  - [OpenTelemetry Collector (Log Delivery)](#opentelemetry-collector-log-delivery)
+- [Useful Log Queries](#useful-log-queries)
+  - [Find Limit Violations](#find-limit-violations)
+  - [Find Errors](#find-errors)
+  - [Analyze Stats](#analyze-stats)
+- [OTLP Telemetry Export](#otlp-telemetry-export)
+
 All logs are output in **OTEL-compatible** JSON format for easy parsing, integration with log aggregation systems, and native support for OpenTelemetry log pipelines.
 
 ## Log Pipeline

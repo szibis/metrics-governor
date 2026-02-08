@@ -1,5 +1,45 @@
 # Queue System
 
+## Table of Contents
+
+- [Architecture Overview](#architecture-overview)
+- [Always-Queue Model](#always-queue-model)
+  - [Why Always-Queue?](#why-always-queue)
+  - [Data Flow](#data-flow)
+- [FastQueue (Persistent Disk Queue)](#fastqueue-persistent-disk-queue)
+  - [Two-Layer Architecture](#two-layer-architecture)
+  - [Write Path](#write-path)
+  - [Block Format](#block-format)
+  - [Read Path](#read-path)
+  - [Metadata Persistence](#metadata-persistence)
+  - [Disk I/O Optimizations](#disk-io-optimizations)
+- [Memory Queue (Failover)](#memory-queue-failover)
+- [Queue Policies](#queue-policies)
+- [Worker Pool and Pipeline Split](#worker-pool-and-pipeline-split)
+  - [Workers](#workers)
+  - [Pipeline Split (High Throughput)](#pipeline-split-high-throughput)
+  - [Adaptive Worker Scaling](#adaptive-worker-scaling)
+- [Circuit Breaker](#circuit-breaker)
+- [Backoff](#backoff)
+- [Queue Sizing](#queue-sizing)
+  - [Percentage-Based (Recommended)](#percentage-based-recommended)
+  - [Manual Sizing](#manual-sizing)
+  - [Sizing Formula](#sizing-formula)
+- [Metrics](#metrics)
+  - [Queue State](#queue-state)
+  - [Queue Operations](#queue-operations)
+  - [FastQueue](#fastqueue)
+  - [Workers and Pipeline](#workers-and-pipeline)
+  - [Circuit Breaker](#circuit-breaker-1)
+- [Configuration Reference](#configuration-reference)
+  - [CLI Flags](#cli-flags)
+  - [YAML Configuration](#yaml-configuration)
+- [Troubleshooting](#troubleshooting)
+  - [Queue growing unboundedly](#queue-growing-unboundedly)
+  - [Data loss occurring](#data-loss-occurring)
+  - [Slow recovery after outage](#slow-recovery-after-outage)
+  - [Crash recovery is slow](#crash-recovery-is-slow)
+
 metrics-governor uses an always-queue architecture where all data flows through the queue before export. The queue provides persistence, retry semantics, backpressure, and circuit breaker protection against downstream failures.
 
 ## Architecture Overview

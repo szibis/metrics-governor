@@ -202,6 +202,23 @@ func isLocalhost(endpoint string) bool {
 // mergeYAMLIntoConfig overlays non-zero YAML-derived values onto a defaults-based config.
 // This ensures fields not present in the YAML keep their defaults rather than zero values.
 func mergeYAMLIntoConfig(dst, src *Config) {
+	// Profile & simplified config
+	if src.Profile != "" {
+		dst.Profile = src.Profile
+	}
+	if src.Parallelism != 0 {
+		dst.Parallelism = src.Parallelism
+	}
+	if src.MemoryBudgetPct != 0 {
+		dst.MemoryBudgetPct = src.MemoryBudgetPct
+	}
+	if src.ExportTimeoutBase != 0 {
+		dst.ExportTimeoutBase = src.ExportTimeoutBase
+	}
+	if src.ResilienceLevel != "" {
+		dst.ResilienceLevel = src.ResilienceLevel
+	}
+
 	// Receiver
 	if src.GRPCListenAddr != "" {
 		dst.GRPCListenAddr = src.GRPCListenAddr

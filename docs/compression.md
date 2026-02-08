@@ -1,5 +1,29 @@
 # Compression
 
+## Table of Contents
+
+- [Compression Pipeline](#compression-pipeline)
+- [Compression Ratio Comparison](#compression-ratio-comparison)
+- [Supported Algorithms](#supported-algorithms)
+- [Compression Levels](#compression-levels)
+- [Exporter Compression](#exporter-compression)
+  - [Enable gzip Compression (Default Level)](#enable-gzip-compression-default-level)
+  - [Enable gzip with Best Compression](#enable-gzip-with-best-compression)
+  - [Enable zstd with Default Level](#enable-zstd-with-default-level)
+  - [Enable zstd with Best Compression](#enable-zstd-with-best-compression)
+  - [Enable snappy for Fast Compression](#enable-snappy-for-fast-compression)
+  - [YAML Configuration](#yaml-configuration)
+- [Receiver Decompression](#receiver-decompression)
+- [Compression Options Reference](#compression-options-reference)
+  - [OTLP Compression Flags](#otlp-compression-flags)
+  - [PRW Compression Flags](#prw-compression-flags)
+- [Performance Considerations](#performance-considerations)
+- [Encoder Pooling](#encoder-pooling)
+  - [How It Works](#how-it-works)
+  - [Reset() Safety and Cross-Contamination Prevention](#reset-safety-and-cross-contamination-prevention)
+  - [Pool Metrics](#pool-metrics)
+  - [Configuration](#configuration)
+
 metrics-governor supports compression for HTTP exporters and automatic decompression for HTTP receivers. Compression can significantly reduce network bandwidth, especially for high-volume metrics.
 
 > **Dual Pipeline Support**: Compression works for both OTLP and PRW pipelines. OTLP supports multiple algorithms (gzip, zstd, snappy, etc.), while PRW uses snappy (required) or zstd (PRW 2.0 optional).

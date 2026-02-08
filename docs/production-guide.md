@@ -1,26 +1,52 @@
 # Production Guide
 
+## Table of Contents
+
+- [Production Readiness Checklist](#production-readiness-checklist)
+- [Deployment Sizing](#deployment-sizing)
+- [Cost Analysis](#cost-analysis)
+  - [Infrastructure Cost per Tier](#infrastructure-cost-per-tier)
+  - [Multi-Provider Ingestion Cost Comparison](#multi-provider-ingestion-cost-comparison)
+  - [Feature-by-Feature Cost Savings](#feature-by-feature-cost-savings)
+  - [Cross-AZ / Network Traffic Savings](#cross-az--network-traffic-savings)
+  - [Worked ROI Examples](#worked-roi-examples)
+- [Memory & CPU Tuning](#memory--cpu-tuning)
+  - [GOMEMLIMIT and Cgroups Auto-detection](#gomemlimit-and-cgroups-auto-detection)
+  - [CPU Sizing Formula](#cpu-sizing-formula)
+- [I/O Optimization](#io-optimization)
+  - [Disk I/O (Persistent Queue)](#disk-io-persistent-queue)
+  - [Network I/O (Compression)](#network-io-compression)
+- [Limits Enforcer Tuning](#limits-enforcer-tuning)
+  - [Stats Threshold](#stats-threshold)
+  - [Rule Cache Sizing](#rule-cache-sizing)
+  - [Cardinality Tracker Mode](#cardinality-tracker-mode)
+- [Export Pipeline Tuning](#export-pipeline-tuning)
+- [Kubernetes Configuration](#kubernetes-configuration)
+  - [Resources by Tier](#resources-by-tier)
+  - [Health Probes](#health-probes)
+  - [HPA + VPA](#hpa--vpa)
+  - [PodDisruptionBudget](#poddisruptionbudget)
+  - [ConfigMap Reload](#configmap-reload)
+  - [Storage Classes](#storage-classes)
+  - [Traffic Distribution & DaemonSet Mode](#traffic-distribution--daemonset-mode)
+  - [Complete Helm Values Example (Medium Tier)](#complete-helm-values-example-medium-tier)
+- [Resilience Tuning](#resilience-tuning)
+- [Prometheus Scrape Optimization](#prometheus-scrape-optimization)
+- [Alerting Essentials](#alerting-essentials)
+  - [1. Export Failures Sustained](#1-export-failures-sustained)
+  - [2. Queue Near Full](#2-queue-near-full)
+  - [3. High Memory Usage](#3-high-memory-usage)
+  - [4. Readiness Probe Failing](#4-readiness-probe-failing)
+  - [5. Cardinality Limit Breached](#5-cardinality-limit-breached)
+- [Real-World Configuration Examples](#real-world-configuration-examples)
+  - [Example 1: Small SaaS](#example-1-small-saas)
+  - [Example 2: Mid-Size Platform](#example-2-mid-size-platform)
+  - [Example 3: Large Enterprise](#example-3-large-enterprise)
+- [Complete CLI Reference](#complete-cli-reference)
+
 This guide consolidates all production tuning, sizing, cost analysis, and operational best practices for metrics-governor into a single reference. It covers everything from initial sizing to advanced pipeline tuning.
 
 > **Other references**: [Resilience](resilience.md) (circuit breaker, backoff, failover queue), [Performance](performance.md) (internals, benchmarks), [Limits](limits.md) (rule syntax, adaptive limiting), [Configuration](configuration.md) (full YAML and CLI reference).
-
----
-
-## Table of Contents
-
-1. [Production Readiness Checklist](#production-readiness-checklist)
-2. [Deployment Sizing](#deployment-sizing)
-3. [Cost Analysis](#cost-analysis)
-4. [Memory & CPU Tuning](#memory--cpu-tuning)
-5. [I/O Optimization](#io-optimization)
-6. [Limits Enforcer Tuning](#limits-enforcer-tuning)
-7. [Export Pipeline Tuning](#export-pipeline-tuning)
-8. [Kubernetes Configuration](#kubernetes-configuration)
-9. [Resilience Tuning](#resilience-tuning)
-10. [Prometheus Scrape Optimization](#prometheus-scrape-optimization)
-11. [Alerting Essentials](#alerting-essentials)
-12. [Real-World Configuration Examples](#real-world-configuration-examples)
-13. [Complete CLI Reference](#complete-cli-reference)
 
 ---
 
