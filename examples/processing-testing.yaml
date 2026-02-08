@@ -1,0 +1,111 @@
+# Processing Rules — Testing Configuration
+#
+# Matched to the test generator's actual metric names (test/generator.go).
+# Exercises all rule types: transform, downsample, aggregate, sample.
+#
+# TUNING GOAL: Light processing — exercise all rule types but pass through
+# ~80-90% of data so the export pipeline sees real load (~300-350k dps at 400k input).
+#
+# Usage with compose override:
+#   docker compose -f docker-compose.yaml -f compose_overrides/processing.yaml up -d --build
+
+staleness_interval: 10m
+
+rules:
+  # ── TRANSFORM (non-terminal, runs first) ────────────────────────
+
+  # Lowercase service label for consistent grouping in downstream rules.
+  - name: normalize-service
+    input: ".*"
+    action: transform
+    when:
+      - label: service
+        matches: ".*"
+    operations:
+      - lower:
+          label: service
+
+  # ── DOWNSAMPLE (per-series time-windowed compression) ───────────
+
+  # CPU metrics: node_cpu_user_percent, node_cpu_system_percent, etc. (9 metrics)
+  - name: cpu-downsample
+    input: "node_cpu_.*"
+    action: downsample
+    method: avg
+    interval: 10s
+
+  # Memory metrics: node_memory_total_bytes, node_memory_free_bytes, etc. (15 metrics)
+  - name: memory-downsample
+    input: "node_memory_.*"
+    action: downsample
+    method: last
+    interval: 10s
+
+  # Network metrics: adaptive rate based on signal variance (12 metrics)
+  - name: network-adaptive
+    input: "node_network_.*"
+    action: downsample
+    method: adaptive
+    interval: 10s
+    min_rate: 0.3
+    max_rate: 1.0
+    variance_window: 20
+
+  # Process metrics (7 metrics)
+  - name: process-downsample
+    input: "process_.*"
+    action: downsample
+    method: avg
+    interval: 15s
+
+  # ── AGGREGATE (cross-series reduction) ──────────────────────────
+
+  # HTTP requests: aggregate into service-level AND keep original for export load
+  - name: http-by-service
+    input: "http_requests_total"
+    output: "http_requests_by_service"
+    action: aggregate
+    interval: 10s
+    group_by: [service, env, method, status]
+    functions: [sum, count]
+    keep_input: true
+
+  # Application metrics: aggregate but keep input for export throughput
+  - name: app-metrics-aggregate
+    input: "app_.*"
+    output: "app_aggregated"
+    action: aggregate
+    interval: 10s
+    group_by: [service, env]
+    functions: [avg, max]
+    keep_input: true
+
+  # ── SAMPLE (light reduction — exercises engine without killing throughput) ─
+
+  # High-cardinality metrics: keep 80%
+  - name: reduce-high-card
+    input: "high_card_.*"
+    action: sample
+    rate: 0.8
+    method: probabilistic
+
+  # Custom diverse metrics: keep 90%
+  - name: reduce-custom
+    input: "custom_.*"
+    action: sample
+    rate: 0.9
+    method: head
+
+  # Edge case metrics: keep 90% — these are the volume driver
+  - name: sample-edge-cases
+    input: "edge_case_.*"
+    action: sample
+    rate: 0.9
+    method: probabilistic
+
+  # Burst traffic: keep 80%
+  - name: sample-burst
+    input: "burst_traffic_.*"
+    action: sample
+    rate: 0.8
+    method: probabilistic

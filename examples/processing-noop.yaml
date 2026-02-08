@@ -1,0 +1,4 @@
+# No-op processing config — all metrics pass through unmodified.
+# Use for A/B performance comparison vs processing-testing.yaml.
+staleness_interval: 10m
+rules: []

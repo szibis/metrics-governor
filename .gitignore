@@ -3,3 +3,4 @@
 /metrics-governor
 test/verifier/verifier
 coverage.out
+test/benchmark-results/*.txt
