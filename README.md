@@ -6,26 +6,27 @@
 
 <p align="center">
 
-[![Release](https://img.shields.io/github/v/release/szibis/metrics-governor?style=flat&logo=github&label=Release&color=2ea44f)](https://github.com/szibis/metrics-governor/releases/latest)
-[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev/)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat&logo=apache)](LICENSE)
-[![Build](https://github.com/szibis/metrics-governor/actions/workflows/build.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
-[![Security Scan](https://github.com/szibis/metrics-governor/actions/workflows/security-scan.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/security-scan.yml)
-[![CodeQL](https://github.com/szibis/metrics-governor/actions/workflows/codeql.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/codeql.yml)
+[![Release](https://img.shields.io/github/v/release/szibis/metrics-governor?style=for-the-badge&logo=github&label=Release&color=2ea44f)](https://github.com/szibis/metrics-governor/releases/latest)
+[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge&logo=apache)](LICENSE)
 
-[![Tests](https://img.shields.io/badge/Tests-2700+-success?style=flat&logo=testinglibrary&logoColor=white)](docs/testing.md#test-coverage-by-component)
-[![Coverage](https://img.shields.io/badge/Coverage-90%25-brightgreen?style=flat&logo=codecov&logoColor=white)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
-[![Race Detector](https://img.shields.io/badge/Race_Detector-passing-success?style=flat&logo=go&logoColor=white)](docs/testing.md)
-[![Go Lines](https://img.shields.io/badge/Go_Code-139k_lines-informational?style=flat&logo=go&logoColor=white)](.)
-[![Docs](https://img.shields.io/badge/Docs-29_guides-8A2BE2?style=flat&logo=readthedocs&logoColor=white)](docs/)
-[![Benchmarks](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml)
+[![Build](https://img.shields.io/github/actions/workflow/status/szibis/metrics-governor/build.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=Build)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
+[![Security](https://img.shields.io/github/actions/workflow/status/szibis/metrics-governor/security-scan.yml?style=for-the-badge&logo=shieldsdotio&logoColor=white&label=Security)](https://github.com/szibis/metrics-governor/actions/workflows/security-scan.yml)
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/szibis/metrics-governor/codeql.yml?style=for-the-badge&logo=github&logoColor=white&label=CodeQL)](https://github.com/szibis/metrics-governor/actions/workflows/codeql.yml)
 
-[![OTLP](https://img.shields.io/badge/OTLP-gRPC_%7C_HTTP-4a90d9?style=flat&logo=opentelemetry&logoColor=white)](docs/receiving.md)
-[![PRW](https://img.shields.io/badge/PRW-1.0_%7C_2.0-e8833a?style=flat&logo=prometheus&logoColor=white)](docs/receiving.md#prometheus-remote-write-receiver)
-[![Alerts](https://img.shields.io/badge/Alerts-13_Rules_%2B_Runbooks-dc3545?style=flat&logo=prometheus&logoColor=white)](docs/alerting.md)
-[![Helm Chart](https://img.shields.io/badge/Helm-Chart_Included-0F1689?style=flat&logo=helm&logoColor=white)](helm/metrics-governor/)
-[![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F46800?style=flat&logo=grafana&logoColor=white)](dashboards/)
-[![Playground](https://img.shields.io/badge/Playground-Config_Tool-20c997?style=flat&logo=googlechrome&logoColor=white)](https://szibis.github.io/metrics-governor/)
+[![Tests](https://img.shields.io/badge/Tests-2700+-success?style=for-the-badge&logo=testinglibrary&logoColor=white)](docs/testing.md#test-coverage-by-component)
+[![Coverage](https://img.shields.io/badge/Coverage-90%25-brightgreen?style=for-the-badge&logo=codecov&logoColor=white)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
+[![Race Detector](https://img.shields.io/badge/Race_Detector-passing-success?style=for-the-badge&logo=go&logoColor=white)](docs/testing.md)
+[![Go Lines](https://img.shields.io/badge/Go_Code-139k_lines-informational?style=for-the-badge&logo=go&logoColor=white)](.)
+[![Docs](https://img.shields.io/badge/Docs-29_guides-8A2BE2?style=for-the-badge&logo=readthedocs&logoColor=white)](docs/)
+[![Benchmarks](https://img.shields.io/badge/Benchmarks-5_Matrix_Tests-success?style=for-the-badge&logo=speedtest&logoColor=white)](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml)
+
+[![OTLP](https://img.shields.io/badge/OTLP-gRPC_%7C_HTTP-4a90d9?style=for-the-badge&logo=opentelemetry&logoColor=white)](docs/receiving.md)
+[![PRW](https://img.shields.io/badge/PRW-1.0_%7C_2.0-e8833a?style=for-the-badge&logo=prometheus&logoColor=white)](docs/receiving.md#prometheus-remote-write-receiver)
+[![Alerts](https://img.shields.io/badge/Alerts-13_Rules_%2B_Runbooks-dc3545?style=for-the-badge&logo=prometheus&logoColor=white)](docs/alerting.md)
+[![Helm Chart](https://img.shields.io/badge/Helm-Chart_Included-0F1689?style=for-the-badge&logo=helm&logoColor=white)](helm/metrics-governor/)
+[![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F46800?style=for-the-badge&logo=grafana&logoColor=white)](dashboards/)
+[![Playground](https://img.shields.io/badge/Playground-Config_Tool-20c997?style=for-the-badge&logo=googlechrome&logoColor=white)](https://szibis.github.io/metrics-governor/)
 
 </p>
 
