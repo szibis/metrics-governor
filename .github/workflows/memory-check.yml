@@ -29,7 +29,7 @@ jobs:
       passed: ${{ steps.run.outputs.passed }}
       failed: ${{ steps.run.outputs.failed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -74,7 +74,7 @@ jobs:
       passed: ${{ steps.run.outputs.passed }}
       failed: ${{ steps.run.outputs.failed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -119,7 +119,7 @@ jobs:
       passed: ${{ steps.run.outputs.passed }}
       failed: ${{ steps.run.outputs.failed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -164,7 +164,7 @@ jobs:
       passed: ${{ steps.run.outputs.passed }}
       failed: ${{ steps.run.outputs.failed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -209,7 +209,7 @@ jobs:
       passed: ${{ steps.run.outputs.passed }}
       failed: ${{ steps.run.outputs.failed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -248,7 +248,7 @@ jobs:
       github.event_name == 'pull_request' &&
       !contains(github.event.pull_request.labels.*.name, 'release:skip')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
