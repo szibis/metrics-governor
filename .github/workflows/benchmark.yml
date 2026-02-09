@@ -212,7 +212,7 @@ jobs:
           cp ./benchmark-cache/benchmark-${{ matrix.package }}.txt .
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: benchmark-${{ matrix.package }}
           path: benchmark-${{ matrix.package }}.txt
@@ -303,7 +303,7 @@ jobs:
           echo "Benchmark history updated with $(jq '.entries | length' ./cache/benchmark-history.json) entries"
 
       - name: Upload benchmark artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: benchmark-results-full
           path: |
