@@ -1,0 +1,79 @@
+# metrics-governor Dead Rule Detection -- OPTIONAL
+#
+# These alerts detect processing and limits rules that are no longer matching.
+# They depend on ownership labels (team, slack_channel, etc.) set on your rules.
+#
+# Prerequisites:
+#   - Processing rules with labels: configured (see docs/processing-rules.md)
+#   - Limits rules with labels: configured (see docs/configuration.md)
+#
+# Customize thresholds to match your environment:
+#   - dead_threshold: how long before a rule is considered dead (default: 1800s = 30min)
+#   - grace_period: how long after load before flagging never-matched (default: 3600s = 1h)
+#
+# Import:
+#   cp alerts/dead-rules.yaml /etc/prometheus/rules/
+#   # or mount alongside prometheus-rules.yaml in Kubernetes
+
+groups:
+  - name: metrics-governor-dead-rules
+    interval: 60s
+    rules:
+      # Works WITHOUT scanner (uses always-on last_match_seconds)
+      - alert: MetricsGovernorDeadProcessingRule
+        expr: |
+          metrics_governor_processing_rule_last_match_seconds > 1800
+          and metrics_governor_processing_rule_never_matched == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Processing rule {{ $labels.rule }} stopped matching"
+          description: |
+            Team: {{ $labels.team }}. Rule "{{ $labels.rule }}" (action={{ $labels.action }})
+            has not matched any metrics in over 30 minutes. This may indicate the monitored
+            product was decommissioned or label values changed.
+          runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#dead-rule-alerts"
+
+      # Works WITHOUT scanner (uses always-on never_matched gauge)
+      - alert: MetricsGovernorNeverMatchedRule
+        expr: |
+          metrics_governor_processing_rule_never_matched == 1
+          and metrics_governor_processing_rule_loaded_seconds > 3600
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Rule {{ $labels.rule }} has NEVER matched -- possible config error"
+          description: |
+            Team: {{ $labels.team }}. Rule "{{ $labels.rule }}" was loaded over 1 hour ago
+            but has never matched any incoming metrics. Check the input regex and
+            input_labels for typos or stale patterns.
+
+      # Works WITHOUT scanner
+      - alert: MetricsGovernorDeadLimitsRule
+        expr: |
+          metrics_governor_limits_rule_last_match_seconds > 1800
+          and metrics_governor_limits_rule_never_matched == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Limits rule {{ $labels.rule }} stopped matching"
+          description: |
+            Limits rule "{{ $labels.rule }}" has not matched any metrics in over 30 minutes.
+            The limit may be targeting decommissioned metrics or outdated label patterns.
+
+      # Uses existing counter rates (no scanner needed)
+      - alert: MetricsGovernorDecliningRuleRate
+        expr: |
+          rate(metrics_governor_processing_rule_input_total[6h]) < 0.01
+          and rate(metrics_governor_processing_rule_input_total[6h] offset 7d) > 1
+        for: 6h
+        labels:
+          severity: info
+        annotations:
+          summary: "Rule {{ $labels.rule }} match rate declining toward zero"
+          description: |
+            Rule "{{ $labels.rule }}" matched >1 dp/s last week but now matches <0.01 dp/s.
+            This gradual decline suggests the metric may be getting phased out.

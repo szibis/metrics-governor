@@ -1,0 +1,67 @@
+# metrics-governor Dead Rule Detection -- Kubernetes PrometheusRule CRD
+#
+# Same rules as dead-rules.yaml, packaged for prometheus-operator.
+#
+# Apply:
+#   kubectl apply -f alerts/dead-rules-prometheusrule.yaml
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: metrics-governor-dead-rules
+  labels:
+    app: metrics-governor
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: metrics-governor-dead-rules
+      interval: 60s
+      rules:
+        - alert: MetricsGovernorDeadProcessingRule
+          expr: |
+            metrics_governor_processing_rule_last_match_seconds > 1800
+            and metrics_governor_processing_rule_never_matched == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Processing rule {{ $labels.rule }} stopped matching"
+            description: |
+              Team: {{ $labels.team }}. Rule "{{ $labels.rule }}" (action={{ $labels.action }})
+              has not matched any metrics in over 30 minutes.
+
+        - alert: MetricsGovernorNeverMatchedRule
+          expr: |
+            metrics_governor_processing_rule_never_matched == 1
+            and metrics_governor_processing_rule_loaded_seconds > 3600
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Rule {{ $labels.rule }} has NEVER matched -- possible config error"
+            description: |
+              Team: {{ $labels.team }}. Rule "{{ $labels.rule }}" was loaded over 1 hour ago
+              but has never matched any incoming metrics.
+
+        - alert: MetricsGovernorDeadLimitsRule
+          expr: |
+            metrics_governor_limits_rule_last_match_seconds > 1800
+            and metrics_governor_limits_rule_never_matched == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Limits rule {{ $labels.rule }} stopped matching"
+            description: |
+              Limits rule "{{ $labels.rule }}" has not matched any metrics in over 30 minutes.
+
+        - alert: MetricsGovernorDecliningRuleRate
+          expr: |
+            rate(metrics_governor_processing_rule_input_total[6h]) < 0.01
+            and rate(metrics_governor_processing_rule_input_total[6h] offset 7d) > 1
+          for: 6h
+          labels:
+            severity: info
+          annotations:
+            summary: "Rule {{ $labels.rule }} match rate declining toward zero"

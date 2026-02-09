@@ -48,14 +48,14 @@ func newAggregateEngine(rules []ProcessingRule, staleness time.Duration) *aggreg
 	}
 
 	var aggRules []*aggregateRuleState
-	for _, r := range rules {
-		if r.Action != ActionAggregate {
+	for i := range rules {
+		if rules[i].Action != ActionAggregate {
 			continue
 		}
 		state := &aggregateRuleState{
-			rule:     r,
+			rule:     rules[i],
 			groups:   make(map[string]*aggregateGroup),
-			interval: r.parsedInterval,
+			interval: rules[i].parsedInterval,
 		}
 		aggRules = append(aggRules, state)
 	}
@@ -344,14 +344,14 @@ func (e *aggregateEngine) Reload(rules []ProcessingRule, staleness time.Duration
 	}
 
 	var aggRules []*aggregateRuleState
-	for _, r := range rules {
-		if r.Action != ActionAggregate {
+	for i := range rules {
+		if rules[i].Action != ActionAggregate {
 			continue
 		}
 		state := &aggregateRuleState{
-			rule:     r,
+			rule:     rules[i],
 			groups:   make(map[string]*aggregateGroup),
-			interval: r.parsedInterval,
+			interval: rules[i].parsedInterval,
 		}
 		aggRules = append(aggRules, state)
 	}

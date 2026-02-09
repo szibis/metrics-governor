@@ -72,6 +72,10 @@ type Enforcer struct {
 	// Stats reporting threshold: only report per-group stats for groups
 	// with >= this many datapoints (0 = report all). Enforcement is not affected.
 	statsThreshold atomic.Int64
+
+	// Dead rule detection
+	ruleActivityMap map[string]*ruleActivity // ruleName -> activity
+	deadScanner     *limitsDeadRuleScanner   // nil when dead_rule_interval not set
 }
 
 // ViolationMetrics tracks limit violation counts.
@@ -89,6 +93,13 @@ type ViolationMetrics struct {
 // NewEnforcer creates a new limits enforcer.
 // ruleCacheMaxSize controls the bounded LRU rule matching cache size (0 disables caching).
 func NewEnforcer(config *Config, dryRun bool, ruleCacheMaxSize int) *Enforcer {
+	var activityMap map[string]*ruleActivity
+	if config != nil {
+		activityMap = initRuleActivity(config.Rules)
+	} else {
+		activityMap = make(map[string]*ruleActivity)
+	}
+
 	e := &Enforcer{
 		config:        config,
 		ruleStats:     make(map[string]*ruleStats),
@@ -100,14 +111,21 @@ func NewEnforcer(config *Config, dryRun bool, ruleCacheMaxSize int) *Enforcer {
 			datapointsPassed:    make(map[string]*atomic.Int64),
 			groupsDropped:       make(map[string]*atomic.Int64),
 		},
-		dryRun:         dryRun,
-		logAggregator:  NewLogAggregator(10 * time.Second), // Aggregate logs every 10s
-		ruleMatchCache: newRuleCache(ruleCacheMaxSize),
-		trackerModes:   make(map[string]map[string]*trackerModeInfo),
+		dryRun:          dryRun,
+		logAggregator:   NewLogAggregator(10 * time.Second), // Aggregate logs every 10s
+		ruleMatchCache:  newRuleCache(ruleCacheMaxSize),
+		trackerModes:    make(map[string]map[string]*trackerModeInfo),
+		ruleActivityMap: activityMap,
 	}
 	// Initialize reload timestamp to now so "time since reload" metrics
 	// don't report ~56 years (Unix epoch default of 0).
 	e.lastReloadUTC.Store(time.Now().UTC().Unix())
+
+	// Start dead rule scanner if configured.
+	if config != nil && config.parsedDeadRuleIntvl > 0 {
+		e.deadScanner = newLimitsDeadRuleScanner(config.parsedDeadRuleIntvl, e)
+	}
+
 	return e
 }
 
@@ -148,6 +166,19 @@ func (e *Enforcer) ReloadConfig(newConfig *Config) {
 		e.ruleMatchCache = newRuleCache(e.ruleMatchCache.maxSize)
 	}
 
+	// Rebuild rule activity map: preserve activity for rules that still exist,
+	// add new entries for new rules, remove entries for deleted rules.
+	newActivityMap := initRuleActivity(newConfig.Rules)
+	for name, newAct := range newActivityMap {
+		if oldAct, ok := e.ruleActivityMap[name]; ok {
+			// Preserve existing activity timestamps.
+			newAct.lastMatchTime.Store(oldAct.lastMatchTime.Load())
+			newAct.loadedTime = oldAct.loadedTime
+			newAct.wasDead.Store(oldAct.wasDead.Load())
+		}
+	}
+	e.ruleActivityMap = newActivityMap
+
 	// Track reload event
 	e.reloadCount.Add(1)
 	e.lastReloadUTC.Store(time.Now().Unix())
@@ -180,6 +211,9 @@ func (e *Enforcer) Stop() {
 	if e.logAggregator != nil {
 		e.logAggregator.Stop()
 	}
+	if e.deadScanner != nil {
+		e.deadScanner.stop()
+	}
 }
 
 // Process processes metrics and enforces limits.
@@ -198,6 +232,9 @@ func (e *Enforcer) Process(resourceMetrics []*metricspb.ResourceMetrics) []*metr
 			result = append(result, filteredRM)
 		}
 	}
+
+	// Update always-on dead rule gauges (cheap: reads atomic timestamps).
+	e.updateLimitsDeadRuleMetrics()
 
 	return result
 }
@@ -244,6 +281,9 @@ func (e *Enforcer) processMetric(m *metricspb.Metric, resourceAttrs map[string]s
 		e.recordPass("no_rule", countDatapoints(m))
 		return m
 	}
+
+	// Record rule activity for dead rule detection (always, unconditionally).
+	e.recordRuleMatch(rule.Name)
 
 	// Build group key based on rule's GroupBy labels
 	groupKey := e.buildGroupKey(rule, resourceAttrs, m)

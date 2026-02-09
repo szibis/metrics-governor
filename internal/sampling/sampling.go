@@ -70,7 +70,7 @@ type FileConfig struct {
 
 // Sampler applies sampling rules to OTLP metrics.
 // When created via NewFromProcessing, it uses the unified processing engine
-// with multi-touch routing (transform=non-terminal, others=terminal).
+// with multi-touch routing (transform/classify=non-terminal, others=terminal).
 type Sampler struct {
 	mu          sync.RWMutex
 	defaultRate float64
@@ -80,9 +80,10 @@ type Sampler struct {
 	dsEngine    *downsampleEngine // nil when no downsample rules exist
 
 	// Processing engine fields (set when using NewFromProcessing).
-	procConfig *ProcessingConfig
-	procRules  []ProcessingRule
-	aggEngine  *aggregateEngine
+	procConfig  *ProcessingConfig
+	procRules   []ProcessingRule
+	aggEngine   *aggregateEngine
+	deadScanner *deadRuleScanner // nil when dead_rule_interval not set
 }
 
 // New creates a Sampler from a config.
@@ -549,6 +550,12 @@ func NewFromProcessing(cfg ProcessingConfig) (*Sampler, error) {
 	// Build aggregate engine.
 	aggEngine := newAggregateEngine(cfg.Rules, cfg.parsedStaleness)
 
+	// Start dead rule scanner if interval is configured.
+	var scanner *deadRuleScanner
+	if cfg.parsedDeadRuleIntvl > 0 {
+		scanner = newDeadRuleScanner(cfg.parsedDeadRuleIntvl, cfg.Rules)
+	}
+
 	s := &Sampler{
 		defaultRate: 1.0,
 		strategy:    StrategyHead,
@@ -556,6 +563,7 @@ func NewFromProcessing(cfg ProcessingConfig) (*Sampler, error) {
 		procRules:   cfg.Rules,
 		dsEngine:    dsEngine,
 		aggEngine:   aggEngine,
+		deadScanner: scanner,
 	}
 
 	updateProcessingRulesActive(cfg.Rules)
@@ -585,6 +593,10 @@ func (s *Sampler) Process(rms []*metricspb.ResourceMetrics) []*metricspb.Resourc
 	}
 
 	processingDuration.Observe(time.Since(start).Seconds())
+
+	// Update always-on dead rule gauges (cheap: just reads atomic timestamps).
+	updateDeadRuleMetrics(procRules)
+
 	return result
 }
 
@@ -739,6 +751,9 @@ func (s *Sampler) applyProcessingRules(metricName string, dp *metricspb.NumberDa
 
 		rule.metrics.evalCounter.Inc()
 
+		// Record last-match timestamp for dead rule detection (always, unconditionally).
+		rule.metrics.dead.lastMatchTime.Store(time.Now().UnixNano())
+
 		switch rule.Action {
 		case ActionTransform:
 			// Non-terminal: apply transform and continue to next rule.
@@ -746,6 +761,13 @@ func (s *Sampler) applyProcessingRules(metricName string, dp *metricspb.NumberDa
 				continue
 			}
 			dp.Attributes = applyTransformOperations(dp.Attributes, rule.compiledOps, &rule.metrics)
+			rule.metrics.inputCounter.Inc()
+			rule.metrics.outputCounter.Inc()
+			continue // Non-terminal — check next rule.
+
+		case ActionClassify:
+			// Non-terminal: apply classification and continue to next rule.
+			dp.Attributes = applyClassify(dp.Attributes, rule.compiledClassify, &rule.metrics)
 			rule.metrics.inputCounter.Inc()
 			rule.metrics.outputCounter.Inc()
 			continue // Non-terminal — check next rule.
@@ -886,7 +908,7 @@ func (s *Sampler) processExponentialHistogramDataPoints(metricName string, dps [
 }
 
 // applyProcessingRulesGeneric handles multi-touch routing for non-NumberDataPoint types.
-// Only sample, drop, and transform actions apply. Downsample/aggregate are skipped (NumberDataPoint only).
+// Only sample, drop, transform, and classify actions apply. Downsample/aggregate are skipped (NumberDataPoint only).
 func (s *Sampler) applyProcessingRulesGeneric(metricName string, attrs []*commonpb.KeyValue, rules []ProcessingRule, setAttrs func([]*commonpb.KeyValue)) bool {
 	for i := range rules {
 		rule := &rules[i]
@@ -896,12 +918,22 @@ func (s *Sampler) applyProcessingRulesGeneric(metricName string, attrs []*common
 
 		rule.metrics.evalCounter.Inc()
 
+		// Record last-match timestamp for dead rule detection.
+		rule.metrics.dead.lastMatchTime.Store(time.Now().UnixNano())
+
 		switch rule.Action {
 		case ActionTransform:
 			if len(rule.When) > 0 && !evaluateConditions(rule.When, attrs) {
 				continue
 			}
 			attrs = applyTransformOperations(attrs, rule.compiledOps, &rule.metrics)
+			setAttrs(attrs)
+			rule.metrics.inputCounter.Inc()
+			rule.metrics.outputCounter.Inc()
+			continue // Non-terminal.
+
+		case ActionClassify:
+			attrs = applyClassify(attrs, rule.compiledClassify, &rule.metrics)
 			setAttrs(attrs)
 			rule.metrics.inputCounter.Inc()
 			rule.metrics.outputCounter.Inc()
@@ -964,6 +996,11 @@ func (s *Sampler) ReloadProcessingConfig(cfg ProcessingConfig) error {
 		s.aggEngine.Reload(cfg.Rules, cfg.parsedStaleness)
 	}
 
+	// Update dead rule scanner with new rules.
+	if s.deadScanner != nil {
+		s.deadScanner.updateRules(cfg.Rules)
+	}
+
 	updateProcessingRulesActive(cfg.Rules)
 	processingConfigReloadsTotal.WithLabelValues("success").Inc()
 	return nil
@@ -980,6 +1017,24 @@ func (s *Sampler) StartAggregation(ctx context.Context) {
 func (s *Sampler) StopAggregation() {
 	if s.aggEngine != nil {
 		s.aggEngine.Stop()
+	}
+}
+
+// StopDeadRuleScanner stops the dead rule scanner goroutine.
+func (s *Sampler) StopDeadRuleScanner() {
+	if s.deadScanner != nil {
+		s.deadScanner.stop()
+	}
+}
+
+// UpdateDeadRuleMetrics computes the always-on dead rule gauges from current state.
+// Should be called periodically (e.g. on Prometheus scrape or in Process loop).
+func (s *Sampler) UpdateDeadRuleMetrics() {
+	s.mu.RLock()
+	rules := s.procRules
+	s.mu.RUnlock()
+	if len(rules) > 0 {
+		updateDeadRuleMetrics(rules)
 	}
 }
 

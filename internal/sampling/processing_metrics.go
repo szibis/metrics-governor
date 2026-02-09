@@ -132,6 +132,55 @@ var (
 	}, []string{"rule", "operation"})
 )
 
+// Classify-specific metrics.
+var (
+	processingClassifyChainMatchesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "metrics_governor_processing_classify_chain_matches_total",
+		Help: "Chain matches in classify rules",
+	}, []string{"rule"})
+
+	processingClassifyChainNoMatchTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "metrics_governor_processing_classify_chain_no_match_total",
+		Help: "Datapoints where no chain matched in classify rules",
+	}, []string{"rule"})
+
+	processingClassifyLabelsSetTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "metrics_governor_processing_classify_labels_set_total",
+		Help: "Labels set by classify rules",
+	}, []string{"rule"})
+)
+
+// Dead rule detection metrics (always-on, regardless of scanner config).
+var (
+	processingRuleLastMatchSeconds = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "metrics_governor_processing_rule_last_match_seconds",
+		Help: "Seconds since a processing rule last matched (Inf if never)",
+	}, []string{"rule", "action"})
+
+	processingRuleNeverMatched = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "metrics_governor_processing_rule_never_matched",
+		Help: "1 if a processing rule has never matched since load, 0 otherwise",
+	}, []string{"rule", "action"})
+
+	processingRuleLoadedSeconds = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "metrics_governor_processing_rule_loaded_seconds",
+		Help: "Seconds since a processing rule was loaded",
+	}, []string{"rule", "action"})
+)
+
+// Dead rule scanner metrics (only set when scanner is enabled).
+var (
+	processingRuleDead = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "metrics_governor_processing_rule_dead",
+		Help: "1 if the processing rule is considered dead, 0 if alive (scanner only)",
+	}, []string{"rule", "action"})
+
+	processingRulesDeadTotal = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_processing_rules_dead_total",
+		Help: "Total count of dead processing rules (scanner only)",
+	})
+)
+
 func init() {
 	// Per-rule metrics
 	prometheus.MustRegister(processingRuleEvaluationsTotal)
@@ -165,20 +214,35 @@ func init() {
 	prometheus.MustRegister(processingTransformLabelsModifiedTotal)
 	prometheus.MustRegister(processingTransformOperationsTotal)
 
+	// Classify metrics
+	prometheus.MustRegister(processingClassifyChainMatchesTotal)
+	prometheus.MustRegister(processingClassifyChainNoMatchTotal)
+	prometheus.MustRegister(processingClassifyLabelsSetTotal)
+
+	// Dead rule detection metrics (always-on)
+	prometheus.MustRegister(processingRuleLastMatchSeconds)
+	prometheus.MustRegister(processingRuleNeverMatched)
+	prometheus.MustRegister(processingRuleLoadedSeconds)
+
+	// Dead rule scanner metrics
+	prometheus.MustRegister(processingRuleDead)
+	prometheus.MustRegister(processingRulesDeadTotal)
+
 	// Initialize zero values for overall metrics
 	processingInputDatapointsTotal.Add(0)
 	processingOutputDatapointsTotal.Add(0)
 	processingDroppedDatapointsTotal.Add(0)
 	processingMemoryBytes.Set(0)
+	processingRulesDeadTotal.Set(0)
 }
 
 // updateProcessingRulesActive updates the active rules gauge from a config.
 func updateProcessingRulesActive(rules []ProcessingRule) {
 	counts := make(map[Action]int)
-	for _, r := range rules {
-		counts[r.Action]++
+	for i := range rules {
+		counts[rules[i].Action]++
 	}
-	for _, action := range []Action{ActionSample, ActionDownsample, ActionAggregate, ActionTransform, ActionDrop} {
+	for _, action := range []Action{ActionSample, ActionDownsample, ActionAggregate, ActionTransform, ActionClassify, ActionDrop} {
 		processingRulesActive.WithLabelValues(string(action)).Set(float64(counts[action]))
 	}
 }
