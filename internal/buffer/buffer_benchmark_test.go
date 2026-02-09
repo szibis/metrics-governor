@@ -55,7 +55,7 @@ func BenchmarkBuffer_Add(b *testing.B) {
 // BenchmarkBuffer_AddWithStats benchmarks adding metrics with stats collection
 func BenchmarkBuffer_AddWithStats(b *testing.B) {
 	exp := &noopExporter{}
-	statsCollector := stats.NewCollector([]string{"service", "env"})
+	statsCollector := stats.NewCollector([]string{"service", "env"}, stats.StatsLevelFull)
 	buf := New(100000, 1000, time.Hour, exp, statsCollector, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -171,7 +171,7 @@ func BenchmarkFlush(b *testing.B) {
 	for _, batchSize := range batchSizes {
 		b.Run(fmt.Sprintf("batch_%d", batchSize), func(b *testing.B) {
 			exp := &noopExporter{}
-			statsCollector := stats.NewCollector([]string{"service", "env"})
+			statsCollector := stats.NewCollector([]string{"service", "env"}, stats.StatsLevelFull)
 			// Use maxBatchSize equal to batchSize so each flush sends one batch
 			buf := New(batchSize*2, batchSize, time.Hour, exp, statsCollector, nil, nil)
 
@@ -198,7 +198,7 @@ func BenchmarkFlush_WithStats(b *testing.B) {
 	for _, batchSize := range batchSizes {
 		b.Run(fmt.Sprintf("batch_%d", batchSize), func(b *testing.B) {
 			exp := &noopExporter{}
-			statsCollector := stats.NewCollector([]string{"service", "env"})
+			statsCollector := stats.NewCollector([]string{"service", "env"}, stats.StatsLevelFull)
 			buf := New(batchSize*2, batchSize, time.Hour, exp, statsCollector, nil, nil)
 
 			metrics := createBenchmarkResourceMetrics(batchSize, 10)

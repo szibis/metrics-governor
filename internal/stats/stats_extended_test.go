@@ -13,7 +13,7 @@ import (
 // Test OTLP record methods
 
 func TestRecordReceived(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	c.RecordReceived(100)
 	c.RecordReceived(50)
@@ -27,7 +27,7 @@ func TestRecordReceived(t *testing.T) {
 }
 
 func TestRecordExport(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	c.RecordExport(100)
 	c.RecordExport(200)
@@ -44,7 +44,7 @@ func TestRecordExport(t *testing.T) {
 }
 
 func TestRecordExportError(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	c.RecordExportError()
 	c.RecordExportError()
@@ -61,7 +61,7 @@ func TestRecordExportError(t *testing.T) {
 // Test PRW record methods
 
 func TestRecordPRWReceived(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	c.RecordPRWReceived(100, 10)
 	c.RecordPRWReceived(200, 20)
@@ -78,7 +78,7 @@ func TestRecordPRWReceived(t *testing.T) {
 }
 
 func TestRecordPRWExport(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	c.RecordPRWExport(100, 10)
 	c.RecordPRWExport(200, 20)
@@ -98,7 +98,7 @@ func TestRecordPRWExport(t *testing.T) {
 }
 
 func TestRecordPRWExportError(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	c.RecordPRWExportError()
 	c.RecordPRWExportError()
@@ -114,7 +114,7 @@ func TestRecordPRWExportError(t *testing.T) {
 // Test ResetCardinality
 
 func TestResetCardinality(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	// Add some data
 	rm := createTestResourceMetrics(
@@ -146,7 +146,7 @@ func TestResetCardinality(t *testing.T) {
 }
 
 func TestResetCardinalityLargeMap(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	// Create many metrics to trigger map recreation
 	for i := 0; i < 10001; i++ {
@@ -184,7 +184,7 @@ func TestResetCardinalityLargeMap(t *testing.T) {
 // Test ServeHTTP with full stats
 
 func TestServeHTTPWithExportStats(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	// Record some export stats
 	c.RecordReceived(100)
@@ -213,7 +213,7 @@ func TestServeHTTPWithExportStats(t *testing.T) {
 }
 
 func TestServeHTTPWithPRWStats(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	// Record some PRW stats
 	c.RecordPRWReceived(500, 50)
@@ -244,7 +244,7 @@ func TestServeHTTPWithPRWStats(t *testing.T) {
 }
 
 func TestServeHTTPWithoutLabelStats(t *testing.T) {
-	c := NewCollector(nil) // No track labels
+	c := NewCollector(nil, StatsLevelFull) // No track labels
 
 	rm := createTestResourceMetrics(
 		map[string]string{"service": "api"},
@@ -270,7 +270,7 @@ func TestServeHTTPWithoutLabelStats(t *testing.T) {
 // Test ExponentialHistogram processing
 
 func TestProcessExponentialHistogramMetric(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	metric := &metricspb.Metric{
 		Name: "exp_histogram_metric",
@@ -306,7 +306,7 @@ func TestProcessExponentialHistogramMetric(t *testing.T) {
 // Test label tracking with ExponentialHistogram
 
 func TestProcessExponentialHistogramWithLabelTracking(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	metric := &metricspb.Metric{
 		Name: "exp_histogram_metric",
@@ -343,7 +343,7 @@ func TestProcessExponentialHistogramWithLabelTracking(t *testing.T) {
 // Test label tracking with Histogram
 
 func TestProcessHistogramWithLabelTracking(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	metric := &metricspb.Metric{
 		Name: "histogram_metric",
@@ -380,7 +380,7 @@ func TestProcessHistogramWithLabelTracking(t *testing.T) {
 // Test label tracking with Summary
 
 func TestProcessSummaryWithLabelTracking(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	metric := &metricspb.Metric{
 		Name: "summary_metric",
@@ -417,7 +417,7 @@ func TestProcessSummaryWithLabelTracking(t *testing.T) {
 // Test label tracking with Gauge
 
 func TestProcessGaugeWithLabelTracking(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	metric := &metricspb.Metric{
 		Name: "gauge_metric",
@@ -454,7 +454,7 @@ func TestProcessGaugeWithLabelTracking(t *testing.T) {
 // Test concurrent access
 
 func TestConcurrentAccess(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	done := make(chan bool)
 
@@ -499,7 +499,7 @@ func TestConcurrentAccess(t *testing.T) {
 // Test empty resource metrics
 
 func TestProcessEmptyResourceMetrics(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	c.Process([]*metricspb.ResourceMetrics{})
 
@@ -513,7 +513,7 @@ func TestProcessEmptyResourceMetrics(t *testing.T) {
 // Test nil resource
 
 func TestProcessNilResource(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	rm := &metricspb.ResourceMetrics{
 		Resource: nil,
@@ -538,7 +538,7 @@ func TestProcessNilResource(t *testing.T) {
 // Test multiple scope metrics
 
 func TestProcessMultipleScopeMetrics(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	rm := &metricspb.ResourceMetrics{
 		Resource: &resourcepb.Resource{},

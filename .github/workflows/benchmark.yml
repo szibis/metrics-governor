@@ -1,6 +1,7 @@
 name: Benchmarks
 
 on:
+  workflow_dispatch: # Allow manual trigger
   pull_request:
     branches: [main]
     paths:
@@ -11,12 +12,8 @@ on:
       - 'Makefile'
   push:
     branches: [main]
-    paths:
-      - 'internal/**'
-      - 'cmd/**'
-      - 'go.mod'
-      - 'go.sum'
-      - 'Makefile'
+    # No path filter for push to main — always run benchmarks on merge
+    # This prevents stale badge status when non-code PRs (docs, releases) merge
     tags:
       - 'v*'
 
@@ -100,10 +97,25 @@ jobs:
           if echo "$CHANGED_FILES" | grep -q "^internal/dashboard/"; then
             PACKAGES="$PACKAGES dashboard"
           fi
+          if echo "$CHANGED_FILES" | grep -q "^internal/pipeline/"; then
+            PACKAGES="$PACKAGES pipeline"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "^internal/sampling/"; then
+            PACKAGES="$PACKAGES sampling"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "^internal/tenant/"; then
+            PACKAGES="$PACKAGES tenant"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "^internal/relabel/"; then
+            PACKAGES="$PACKAGES relabel"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "^internal/health/"; then
+            PACKAGES="$PACKAGES health"
+          fi
 
           # Check for common dependencies that affect all packages
           if echo "$CHANGED_FILES" | grep -qE "^(go\.mod|go\.sum|Makefile)$"; then
-            PACKAGES="auth buffer cardinality compression config dashboard exporter limits logging prw queue receiver sharding stats tls"
+            PACKAGES="auth buffer cardinality compression config dashboard exporter health limits logging pipeline prw queue receiver relabel sampling sharding stats tenant tls"
           fi
 
           # Trim whitespace and convert to JSON array

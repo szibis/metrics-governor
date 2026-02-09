@@ -3,6 +3,13 @@
 ## Table of Contents
 
 - [Architecture Overview](#architecture-overview)
+- [Queue Modes](#queue-modes)
+  - [Mode Comparison](#mode-comparison)
+  - [Configuration Examples](#configuration-examples)
+  - [Memory Sizing Guidance](#memory-sizing-guidance)
+  - [When to Use Each Mode](#when-to-use-each-mode)
+  - [Profile Defaults](#profile-defaults)
+  - [Queue Mode Metrics](#queue-mode-metrics)
 - [Always-Queue Model](#always-queue-model)
   - [Why Always-Queue?](#why-always-queue)
   - [Data Flow](#data-flow)
@@ -83,6 +90,146 @@ graph LR
     style D fill:#1abc9c,stroke:#148f77,color:#fff
     style FO fill:#e74c3c,stroke:#a93226,color:#fff
 ```
+
+## Queue Modes
+
+The `--queue-mode` flag selects how batches are buffered between the receiver and export workers. Three modes are available, each with different trade-offs between throughput, durability, and resource usage.
+
+### memory (default)
+
+Zero-serialization mode. Typed `ExportBatch` structs pass directly through a buffered Go channel with no `proto.Marshal`/`Unmarshal` and no disk I/O. Backpressure is enforced via `--queue-max-size` (batch count) and `--queue-max-bytes` (memory limit, default 256 MB). This is the fastest mode but provides no crash recovery -- all in-flight batches are lost on process restart.
+
+### disk
+
+Full serialization mode. Every batch is serialized with `proto.Marshal`, compressed with Snappy, and written to disk via FastQueue. The two-layer architecture uses a buffered channel (2048 blocks) in front of disk segment files. This mode provides full crash recovery at the cost of serialization and I/O overhead. This is the original always-queue behavior.
+
+### hybrid
+
+Dual-layer mode that combines the speed of memory with the safety net of disk. The primary path is the memory channel (zero serialization). When the memory queue exceeds `--queue-hybrid-spillover-pct` (default 80%) of capacity, new batches spill over to the disk queue. Workers drain L1 (memory) first, then L2 (disk). This delivers near-memory throughput under normal load with disk persistence for overflow and traffic spikes.
+
+### Mode Comparison
+
+| Property | memory | disk | hybrid |
+|----------|--------|------|--------|
+| Serialization cost | None | `proto.Marshal` + Snappy per batch | None (L1), `proto.Marshal` + Snappy (L2 spillover) |
+| Persistence | None -- lost on crash | Full -- survives crash and restart | Partial -- L1 lost on crash, L2 survives |
+| Throughput | Highest | Lower (I/O bound) | Near-memory under normal load |
+| Memory usage | Bounded by `--queue-max-bytes` | Low (channel buffer only) | Bounded by `--queue-max-bytes` + disk spillover |
+| Backpressure | `--queue-max-size` + `--queue-max-bytes` | `--queue-max-size` + `--queue-max-bytes` + disk capacity | Memory limits + spillover threshold + disk capacity |
+| CPU overhead | Minimal | Serialization + compression per batch | Minimal (L1), serialization on spillover (L2) |
+| Crash recovery | None | Full (FastQueue metadata) | L2 only (disk portion recovered) |
+| Default in profile | `minimal`, `balanced` | -- | `performance` |
+
+### Configuration Examples
+
+**Memory mode (CLI):**
+
+```bash
+metrics-governor \
+  --queue-mode memory \
+  --queue-max-size 10000 \
+  --queue-max-bytes 256Mi
+```
+
+**Memory mode (YAML):**
+
+```yaml
+exporter:
+  queue:
+    mode: memory
+    max_size: 10000
+    max_bytes: 256Mi
+```
+
+**Disk mode (CLI):**
+
+```bash
+metrics-governor \
+  --queue-mode disk \
+  --queue-path ./queue \
+  --queue-max-size 50000 \
+  --queue-max-bytes 1Gi \
+  --queue-inmemory-blocks 2048 \
+  --queue-chunk-size 512Mi
+```
+
+**Disk mode (YAML):**
+
+```yaml
+exporter:
+  queue:
+    mode: disk
+    path: ./queue
+    max_size: 50000
+    max_bytes: 1Gi
+    inmemory_blocks: 2048
+    chunk_size: 512Mi
+```
+
+**Hybrid mode (CLI):**
+
+```bash
+metrics-governor \
+  --queue-mode hybrid \
+  --queue-max-size 10000 \
+  --queue-max-bytes 512Mi \
+  --queue-hybrid-spillover-pct 80 \
+  --queue-path ./queue
+```
+
+**Hybrid mode (YAML):**
+
+```yaml
+exporter:
+  queue:
+    mode: hybrid
+    max_size: 10000
+    max_bytes: 512Mi
+    hybrid_spillover_pct: 80
+    path: ./queue
+```
+
+### Memory Sizing Guidance
+
+The table below provides recommended `--queue-max-bytes` values for `memory` and `hybrid` modes based on expected ingestion rate. These assume an average batch size of ~50 KB (typical OTLP export batch after aggregation) and a 60-second drain buffer.
+
+| Ingestion Rate (datapoints/sec) | Approx. Batch Rate | Recommended `--queue-max-bytes` | Notes |
+|---------------------------------|--------------------|---------------------------------|-------|
+| 10,000 | ~10 batches/sec | 64Mi | Light workload, minimal buffering needed |
+| 50,000 | ~50 batches/sec | 128Mi | Moderate workload |
+| 100,000 | ~100 batches/sec | 256Mi (default) | Standard production workload |
+| 500,000 | ~500 batches/sec | 1Gi | High-throughput pipeline |
+| 1,000,000+ | ~1000+ batches/sec | 2Gi+ | Consider `hybrid` mode for spillover safety |
+
+For `hybrid` mode, the memory portion is sized by `--queue-max-bytes` and the disk spillover is bounded by the FastQueue `--queue-max-bytes` disk limit. Size the memory portion for normal-case throughput and let disk absorb spikes.
+
+### When to Use Each Mode
+
+**memory** -- Development, benchmarking, and low-latency pipelines where crash recovery is not required. Best when downstream is reliable and restarts are fast (container orchestrators with quick reschedule).
+
+**disk** -- Regulated environments, audit pipelines, or any deployment where no data loss is acceptable, even across process crashes. Suitable when the serialization overhead is acceptable relative to export latency.
+
+**hybrid** -- General production deployments. Provides the throughput of memory mode under normal conditions with automatic disk spillover during traffic spikes or downstream slowdowns. Recommended when you want both speed and a safety net.
+
+### Profile Defaults
+
+| Profile | Queue Mode | Rationale |
+|---------|-----------|-----------|
+| `minimal` | `memory` | Lowest resource footprint, no disk dependency |
+| `balanced` | `memory` | Good throughput with simple configuration |
+| `performance` | `hybrid` | Maximum throughput with spillover protection |
+
+### Queue Mode Metrics
+
+The following metrics are specific to the memory and hybrid queue modes:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `metrics_governor_queue_memory_bytes` | Gauge | Current memory usage of the in-memory queue (bytes) |
+| `metrics_governor_queue_memory_utilization` | Gauge | Memory queue utilization ratio (0.0-1.0), computed as current bytes / `--queue-max-bytes` |
+| `metrics_governor_queue_spillover_total` | Counter | Total number of batches spilled from memory (L1) to disk (L2) in `hybrid` mode |
+
+These complement the existing queue metrics. In `hybrid` mode, monitor `metrics_governor_queue_memory_utilization` against the `--queue-hybrid-spillover-pct` threshold to understand how often spillover is triggered. A sustained spillover rate indicates the memory tier should be sized larger or downstream export capacity should be increased.
 
 ## Always-Queue Model
 

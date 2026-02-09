@@ -143,6 +143,7 @@ metrics-governor --show-deprecations
 | Batch size | 200 | 500 | 1,000 |
 | Flush interval | 10s | 5s | 2s |
 | Queue type | memory | memory | **disk** |
+| Queue mode | memory | memory | **hybrid** |
 | Queue enabled | false | true | true |
 | Queue max size | 1,000 | 5,000 | 50,000 |
 | Queue max bytes | 64 MB | 256 MB | 2 GB |
@@ -156,6 +157,7 @@ metrics-governor --show-deprecations
 | Limits dry-run | true | false | false |
 | Request body limit | 4 MB | 16 MB | 64 MB |
 | Bloom persistence | off | off | on |
+| Stats level | none | basic | basic |
 | Warmup | off | on | on |
 
 ## Consolidated Parameters

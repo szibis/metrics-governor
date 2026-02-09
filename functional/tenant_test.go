@@ -56,7 +56,7 @@ func TestFunctional_Tenant_LabelInjection(t *testing.T) {
 	tp := tenant.NewPipeline(d, nil) // No quotas
 
 	exp := &bufferMockExporter{}
-	statsC := stats.NewCollector(nil)
+	statsC := stats.NewCollector(nil, stats.StatsLevelFull)
 	buf := buffer.New(1000, 100, 50*time.Millisecond, exp, statsC, nil, nil, buffer.WithTenantProcessor(tp))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -125,7 +125,7 @@ default:
 	tp := tenant.NewPipeline(d, qe)
 
 	exp := &bufferMockExporter{}
-	statsC := stats.NewCollector(nil)
+	statsC := stats.NewCollector(nil, stats.StatsLevelFull)
 	buf := buffer.New(1000, 100, 50*time.Millisecond, exp, statsC, nil, nil, buffer.WithTenantProcessor(tp))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -177,7 +177,7 @@ default:
 	tp := tenant.NewPipeline(d, qe)
 
 	exp := &bufferMockExporter{}
-	statsC := stats.NewCollector(nil)
+	statsC := stats.NewCollector(nil, stats.StatsLevelFull)
 	buf := buffer.New(10000, 500, 50*time.Millisecond, exp, statsC, nil, nil, buffer.WithTenantProcessor(tp))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

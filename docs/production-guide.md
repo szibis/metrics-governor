@@ -28,6 +28,7 @@
 - [Export Pipeline Tuning](#export-pipeline-tuning)
   - [Batch Size Guidance](#batch-size-guidance)
   - [Worker Pool](#worker-pool)
+- [Recommended Production Configurations](#recommended-production-configurations)
 - [Kubernetes Configuration](#kubernetes-configuration)
   - [Resources by Tier](#resources-by-tier)
   - [Health Probes](#health-probes)
@@ -449,6 +450,90 @@ Controls the number of pull-based worker goroutines that drain the queue. Worker
 queue:
   workers: 0   # 0 = 2×NumCPU (auto)
 ```
+
+---
+
+## Recommended Production Configurations
+
+The `--queue-mode`, `--stats-level`, and `--profile` flags control the fundamental trade-offs between throughput, durability, and observability. Below are five recommended configurations for common production scenarios. All flags are runtime flags (not compile-time), so they can change freely between deployments.
+
+> **Pipeline fusion** is always enabled: tenant identification and limits enforcement run as a single timed step, eliminating redundant iteration over the metric batch. This is not configurable -- it is the default and only processing mode.
+
+### 1. High-Throughput Stateless Proxy
+
+Best for edge proxies that can replay from upstream if data is lost (e.g., a fan-out proxy in front of a durable collector tier).
+
+```
+--queue-mode=memory --stats-level=basic --queue-max-bytes=268435456
+```
+
+- **queue-mode=memory**: No serialization to disk, no fsync overhead. Fastest possible path.
+- **stats-level=basic**: Per-metric visibility (datapoint counts, byte rates) without the cost of cardinality tracking.
+- **queue-max-bytes=268435456** (256 MB): Generous in-memory buffer to absorb short backend blips, but bounded to prevent OOM.
+- Data is lost on pod restart or OOM -- acceptable when upstream can replay.
+
+### 2. Standard Production Deployment
+
+The default configuration. Suitable for most teams starting with metrics-governor.
+
+```
+--queue-mode=memory --stats-level=basic
+```
+
+- Uses auto-derived defaults for queue size (based on detected memory).
+- Good balance of performance and observability.
+- Combine with `--profile=balanced` for standard production tuning of all other parameters (batch sizes, worker counts, resilience settings).
+
+### 3. Regulated / Financial Metrics (Durability Required)
+
+For environments where metric data loss is unacceptable -- financial reporting, SLA tracking, compliance-grade telemetry.
+
+```
+--queue-mode=disk --stats-level=full
+```
+
+- **queue-mode=disk**: All data is written to disk before acknowledgment. Full crash recovery -- data survives pod restarts, OOM kills, and node failures (with persistent volumes).
+- **stats-level=full**: Full cardinality tracking via Bloom filters for audit visibility. Every unique series is counted and reported.
+- Pair with `kind: statefulset` and persistent volumes in Kubernetes (see [Deployment vs StatefulSet](#deployment-vs-statefulset)).
+- Throughput is lower than memory mode due to disk I/O, but the auto-derivation engine sizes write buffers to match available disk performance.
+
+### 4. High-Throughput with Safety Net (Hybrid Mode)
+
+For high-throughput pipelines that need memory speed but cannot afford unbounded data loss during traffic spikes.
+
+```
+--queue-mode=hybrid --queue-hybrid-spillover-pct=80 --stats-level=basic
+```
+
+- **queue-mode=hybrid**: Data flows through memory by default. When memory queue usage exceeds the spillover percentage, new data automatically spills to disk.
+- **queue-hybrid-spillover-pct=80**: Spillover triggers at 80% memory queue capacity, giving the disk queue time to absorb the burst before memory is exhausted.
+- Normal operation runs at memory speed. Disk is only used during spikes or partial backend outages.
+- Monitor `metrics_governor_queue_spillover_total` to detect how often spillover occurs -- if it is constant, consider increasing memory queue size or switching to full disk mode.
+
+### 5. Cardinality Analysis / Debugging
+
+For initial deployment tuning, cardinality investigations, or debugging unexpected series growth.
+
+```
+--queue-mode=memory --stats-level=full
+```
+
+- **stats-level=full**: Enables Bloom-based cardinality tracking, exposing per-rule and per-group unique series counts on `/metrics`.
+- **queue-mode=memory**: Keeps throughput fast so cardinality analysis does not become the bottleneck.
+- Use this configuration temporarily during onboarding to understand your metric landscape, then switch to `--stats-level=basic` once cardinality limits are tuned.
+- Combine with `--limits-dry-run=true` to observe what would be enforced without actually dropping data.
+
+### Profile Selection
+
+The `--profile` flag sets sensible defaults for dozens of internal parameters (batch sizes, worker counts, buffer capacities, resilience settings). Use it as a starting point, then override individual flags as needed.
+
+| Profile | Use Case | Key Characteristics |
+|---------|----------|---------------------|
+| `--profile=minimal` | Dev, test, CI | Single-threaded, small buffers, no queue, exact cardinality |
+| `--profile=balanced` | **Production** (recommended) | Auto-derived workers, Bloom cardinality, circuit breaker on |
+| `--profile=performance` | High-throughput production | Aggressive batching, hybrid cardinality, higher concurrency |
+
+> Use `--profile=minimal` for local development and testing. Use `--profile=balanced` for production deployments. The `performance` profile is for teams that have already tuned their configuration and need maximum throughput.
 
 ---
 

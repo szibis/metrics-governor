@@ -211,6 +211,17 @@ func WithBatchTuner(sizer BatchSizer) BufferOption {
 	return func(b *MetricsBuffer) { b.batchTuner = sizer }
 }
 
+// FusedTenantLimitsProcessor combines tenant and limits into a single pipeline step.
+type FusedTenantLimitsProcessor interface {
+	Process(resourceMetrics []*metricspb.ResourceMetrics, headerTenant string) []*metricspb.ResourceMetrics
+}
+
+// WithFusedProcessor sets a fused tenant+limits processor. When set, the
+// separate tenant and limits steps are skipped in favor of this single call.
+func WithFusedProcessor(fp FusedTenantLimitsProcessor) BufferOption {
+	return func(b *MetricsBuffer) { b.fusedProcessor = fp }
+}
+
 // WithFlushTimeout sets the maximum time for a flush cycle. If exceeded,
 // the flush context is canceled — ongoing exports see ctx.Err() and fail.
 // Default 0 means no limit.
@@ -253,6 +264,7 @@ type MetricsBuffer struct {
 	sampler         MetricSampler
 	failoverQueue   FailoverQueue
 	tenantProcessor TenantProcessor
+	fusedProcessor  FusedTenantLimitsProcessor
 	maxBufferBytes  int64              // 0 = no limit
 	currentBytes    atomic.Int64       // Current buffer size in bytes
 	fullPolicy      queue.FullBehavior // Default: reject (DropNewest)
@@ -301,18 +313,20 @@ func (b *MetricsBuffer) AddAggregated(resourceMetrics []*metricspb.ResourceMetri
 		return
 	}
 
-	// Apply tenant detection and quota enforcement.
-	if b.tenantProcessor != nil {
-		start := time.Now()
-		resourceMetrics = b.tenantProcessor.ProcessBatch(resourceMetrics, "")
-		pipeline.Record("tenant", pipeline.Since(start))
-	}
-
-	// Apply limits enforcement.
-	if b.limits != nil {
-		start := time.Now()
-		resourceMetrics = b.limits.Process(resourceMetrics)
-		pipeline.Record("limits", pipeline.Since(start))
+	// Apply tenant detection + limits enforcement (fused or separate).
+	if b.fusedProcessor != nil {
+		resourceMetrics = b.fusedProcessor.Process(resourceMetrics, "")
+	} else {
+		if b.tenantProcessor != nil {
+			start := time.Now()
+			resourceMetrics = b.tenantProcessor.ProcessBatch(resourceMetrics, "")
+			pipeline.Record("tenant", pipeline.Since(start))
+		}
+		if b.limits != nil {
+			start := time.Now()
+			resourceMetrics = b.limits.Process(resourceMetrics)
+			pipeline.Record("limits", pipeline.Since(start))
+		}
 	}
 
 	if len(resourceMetrics) == 0 {
@@ -376,18 +390,20 @@ func (b *MetricsBuffer) addInternal(resourceMetrics []*metricspb.ResourceMetrics
 		}
 	}
 
-	// Apply tenant detection and quota enforcement (before limits)
-	if b.tenantProcessor != nil {
-		start := time.Now()
-		resourceMetrics = b.tenantProcessor.ProcessBatch(resourceMetrics, headerTenant)
-		pipeline.Record("tenant", pipeline.Since(start))
-	}
-
-	// Apply limits enforcement (may filter/sample metrics)
-	if b.limits != nil {
-		start := time.Now()
-		resourceMetrics = b.limits.Process(resourceMetrics)
-		pipeline.Record("limits", pipeline.Since(start))
+	// Apply tenant detection + limits enforcement (fused or separate)
+	if b.fusedProcessor != nil {
+		resourceMetrics = b.fusedProcessor.Process(resourceMetrics, headerTenant)
+	} else {
+		if b.tenantProcessor != nil {
+			start := time.Now()
+			resourceMetrics = b.tenantProcessor.ProcessBatch(resourceMetrics, headerTenant)
+			pipeline.Record("tenant", pipeline.Since(start))
+		}
+		if b.limits != nil {
+			start := time.Now()
+			resourceMetrics = b.limits.Process(resourceMetrics)
+			pipeline.Record("limits", pipeline.Since(start))
+		}
 	}
 
 	if len(resourceMetrics) == 0 {

@@ -67,7 +67,7 @@ func createStatsTestMetrics(metricName string, labels map[string]string, datapoi
 
 // TestFunctional_Stats_BasicTracking tests basic stats collection
 func TestFunctional_Stats_BasicTracking(t *testing.T) {
-	collector := stats.NewCollector(nil)
+	collector := stats.NewCollector(nil, stats.StatsLevelFull)
 
 	// Process some metrics
 	metrics := createStatsTestMetrics("http_requests_total", nil, 10)
@@ -87,7 +87,7 @@ func TestFunctional_Stats_BasicTracking(t *testing.T) {
 
 // TestFunctional_Stats_MultipleMetrics tests tracking multiple metric names
 func TestFunctional_Stats_MultipleMetrics(t *testing.T) {
-	collector := stats.NewCollector(nil)
+	collector := stats.NewCollector(nil, stats.StatsLevelFull)
 
 	metricNames := []string{
 		"http_requests_total",
@@ -116,7 +116,7 @@ func TestFunctional_Stats_MultipleMetrics(t *testing.T) {
 // TestFunctional_Stats_LabelTracking tests per-label stats
 func TestFunctional_Stats_LabelTracking(t *testing.T) {
 	// Track by service and env labels
-	collector := stats.NewCollector([]string{"service", "env"})
+	collector := stats.NewCollector([]string{"service", "env"}, stats.StatsLevelFull)
 
 	// Process metrics from different services
 	services := []struct {
@@ -159,7 +159,7 @@ func TestFunctional_Stats_LabelTracking(t *testing.T) {
 
 // TestFunctional_Stats_CardinalityTracking tests cardinality calculation
 func TestFunctional_Stats_CardinalityTracking(t *testing.T) {
-	collector := stats.NewCollector(nil)
+	collector := stats.NewCollector(nil, stats.StatsLevelFull)
 
 	// Create metrics with varying cardinality
 	// Each datapoint has unique instance attribute
@@ -178,7 +178,7 @@ func TestFunctional_Stats_CardinalityTracking(t *testing.T) {
 
 // TestFunctional_Stats_PrometheusOutput tests Prometheus metrics format
 func TestFunctional_Stats_PrometheusOutput(t *testing.T) {
-	collector := stats.NewCollector([]string{"service"})
+	collector := stats.NewCollector([]string{"service"}, stats.StatsLevelFull)
 
 	// Process some metrics
 	metrics := createStatsTestMetrics("test_metric", map[string]string{"service": "api"}, 10)
@@ -223,7 +223,7 @@ func TestFunctional_Stats_PrometheusOutput(t *testing.T) {
 
 // TestFunctional_Stats_ConcurrentAccess tests thread safety
 func TestFunctional_Stats_ConcurrentAccess(t *testing.T) {
-	collector := stats.NewCollector([]string{"service"})
+	collector := stats.NewCollector([]string{"service"}, stats.StatsLevelFull)
 
 	var wg sync.WaitGroup
 	goroutines := 10
@@ -266,7 +266,7 @@ func TestFunctional_Stats_ConcurrentAccess(t *testing.T) {
 
 // TestFunctional_Stats_HighVolume tests stats under high volume
 func TestFunctional_Stats_HighVolume(t *testing.T) {
-	collector := stats.NewCollector([]string{"service", "env"})
+	collector := stats.NewCollector([]string{"service", "env"}, stats.StatsLevelFull)
 
 	start := time.Now()
 	metricsCount := 10000
@@ -293,7 +293,7 @@ func TestFunctional_Stats_HighVolume(t *testing.T) {
 
 // TestFunctional_Stats_MetricNameStats tests per-metric-name statistics
 func TestFunctional_Stats_MetricNameStats(t *testing.T) {
-	collector := stats.NewCollector(nil)
+	collector := stats.NewCollector(nil, stats.StatsLevelFull)
 
 	// Process different metric types
 	metricsData := []struct {
@@ -326,7 +326,7 @@ func TestFunctional_Stats_MetricNameStats(t *testing.T) {
 
 // TestFunctional_Stats_ServeHTTPConcurrent tests concurrent HTTP requests
 func TestFunctional_Stats_ServeHTTPConcurrent(t *testing.T) {
-	collector := stats.NewCollector([]string{"service"})
+	collector := stats.NewCollector([]string{"service"}, stats.StatsLevelFull)
 
 	// Add some initial data
 	for i := 0; i < 100; i++ {
@@ -368,7 +368,7 @@ func TestFunctional_Stats_ServeHTTPConcurrent(t *testing.T) {
 
 // TestFunctional_Stats_EmptyLabels tests behavior with no tracked labels
 func TestFunctional_Stats_EmptyLabels(t *testing.T) {
-	collector := stats.NewCollector(nil) // No label tracking
+	collector := stats.NewCollector(nil, stats.StatsLevelFull) // No label tracking
 
 	metrics := createStatsTestMetrics("test_metric",
 		map[string]string{"service": "api", "env": "prod"}, 10)
@@ -391,7 +391,7 @@ func TestFunctional_Stats_EmptyLabels(t *testing.T) {
 
 // TestFunctional_Stats_Reset tests that stats accumulate correctly
 func TestFunctional_Stats_Reset(t *testing.T) {
-	collector := stats.NewCollector(nil)
+	collector := stats.NewCollector(nil, stats.StatsLevelFull)
 
 	// First batch
 	metrics1 := createStatsTestMetrics("metric1", nil, 10)
@@ -418,7 +418,7 @@ func TestFunctional_Stats_Reset(t *testing.T) {
 
 // TestFunctional_Stats_OutputFormat verifies exact output format
 func TestFunctional_Stats_OutputFormat(t *testing.T) {
-	collector := stats.NewCollector([]string{"service"})
+	collector := stats.NewCollector([]string{"service"}, stats.StatsLevelFull)
 
 	metrics := createStatsTestMetrics("format_test",
 		map[string]string{"service": "api"}, 5)

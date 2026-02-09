@@ -96,6 +96,7 @@ type Config struct {
 	// Stats settings
 	StatsAddr   string
 	StatsLabels string
+	StatsLevel  string // "none", "basic", or "full" — controls stats collection overhead
 
 	// Limits settings
 	LimitsConfig     string
@@ -110,7 +111,8 @@ type Config struct {
 	SamplingConfig   string // Deprecated: use ProcessingConfig. Kept for backward compat.
 
 	// Queue settings
-	QueueType              string // "memory" or "disk"
+	QueueMode              string // "memory", "disk", or "hybrid" — controls serialization behavior
+	QueueType              string // "memory" or "disk" — FastQueue backend type (used when QueueMode=disk)
 	QueueEnabled           bool
 	QueuePath              string
 	QueueMaxSize           int
@@ -135,6 +137,9 @@ type Config struct {
 	QueueCircuitBreakerEnabled      bool          // Enable circuit breaker (default: true)
 	QueueCircuitBreakerThreshold    int           // Failures before opening (default: 10)
 	QueueCircuitBreakerResetTimeout time.Duration // Time to wait before half-open (default: 30s)
+
+	// Hybrid queue settings
+	QueueHybridSpilloverPct int // Percentage of max before spilling to disk in hybrid mode (default: 80)
 
 	// Memory limit settings
 	MemoryLimitRatio    float64 // Ratio of container memory to use for GOMEMLIMIT (default: 0.85)
@@ -470,6 +475,7 @@ func ParseFlags() *Config {
 	// Stats flags
 	flag.StringVar(&cfg.StatsAddr, "stats-addr", ":9090", "Stats/metrics HTTP endpoint address")
 	flag.StringVar(&cfg.StatsLabels, "stats-labels", "", "Comma-separated labels to track for grouping (e.g., service,env,cluster)")
+	flag.StringVar(&cfg.StatsLevel, "stats-level", "basic", "Stats collection level: none (disabled), basic (per-metric counts), or full (cardinality tracking)")
 
 	// Limits flags
 	flag.StringVar(&cfg.LimitsConfig, "limits-config", "", "Path to limits configuration YAML file")
@@ -484,8 +490,10 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.SamplingConfig, "sampling-config", "", "Deprecated: use --processing-config. Path to sampling configuration YAML file")
 
 	// Queue flags
+	flag.StringVar(&cfg.QueueMode, "queue-mode", "memory", "Queue mode: memory (zero-serialization), disk (persistent), or hybrid (memory L1 + disk L2)")
 	flag.BoolVar(&cfg.QueueEnabled, "queue-enabled", true, "Enable queue for export retries (default: true)")
 	flag.StringVar(&cfg.QueueType, "queue-type", "memory", "Queue type: memory (bounded in-memory, fast) or disk (FastQueue, persistent)")
+	flag.IntVar(&cfg.QueueHybridSpilloverPct, "queue-hybrid-spillover-pct", 80, "Hybrid mode: percentage of queue capacity before spilling to disk (default: 80)")
 	flag.StringVar(&cfg.QueuePath, "queue-path", "./queue", "Queue storage directory")
 	flag.IntVar(&cfg.QueueMaxSize, "queue-max-size", 10000, "Maximum number of batches in queue")
 	flag.CommandLine.Var(&byteSizeFlag{target: &cfg.QueueMaxBytes}, "queue-max-bytes", "Maximum total queue size (default 1Gi). Accepts: 1Gi, 512Mi, or plain bytes")
@@ -843,6 +851,8 @@ func applyFlagOverrides(cfg *Config) {
 			cfg.StatsAddr = f.Value.String()
 		case "stats-labels":
 			cfg.StatsLabels = f.Value.String()
+		case "stats-level":
+			cfg.StatsLevel = f.Value.String()
 		case "limits-config":
 			cfg.LimitsConfig = f.Value.String()
 		case "limits-dry-run":
@@ -859,10 +869,18 @@ func applyFlagOverrides(cfg *Config) {
 			cfg.ProcessingConfig = f.Value.String()
 		case "sampling-config":
 			cfg.SamplingConfig = f.Value.String()
+		case "queue-mode":
+			cfg.QueueMode = f.Value.String()
 		case "queue-enabled":
 			cfg.QueueEnabled = f.Value.String() == "true"
 		case "queue-type":
 			cfg.QueueType = f.Value.String()
+		case "queue-hybrid-spillover-pct":
+			if v, ok := f.Value.(flag.Getter); ok {
+				if i, ok := v.Get().(int); ok {
+					cfg.QueueHybridSpilloverPct = i
+				}
+			}
 		case "queue-path":
 			cfg.QueuePath = f.Value.String()
 		case "queue-max-size":
@@ -2020,12 +2038,14 @@ func DefaultConfig() *Config {
 		BufferFullPolicy:                "reject",
 		StatsAddr:                       ":9090",
 		StatsLabels:                     "",
+		StatsLevel:                      "basic",
 		LimitsConfig:                    "",
 		LimitsDryRun:                    true,
 		RuleCacheMaxSize:                10000,
 		RelabelConfig:                   "",
 		ProcessingConfig:                "",
 		SamplingConfig:                  "",
+		QueueMode:                       "memory",
 		QueueType:                       "memory",
 		QueueEnabled:                    true,
 		QueuePath:                       "./queue",
@@ -2037,6 +2057,7 @@ func DefaultConfig() *Config {
 		QueueTargetUtilization:          0.85,
 		QueueAdaptiveEnabled:            true,
 		QueueCompactThreshold:           0.5,
+		QueueHybridSpilloverPct:         80,
 		QueueInmemoryBlocks:             2048,
 		QueueChunkSize:                  536870912, // 512MB
 		QueueMetaSyncInterval:           1 * time.Second,
@@ -2189,6 +2210,21 @@ func (c *Config) Validate() error {
 	validProtocols := map[string]bool{"grpc": true, "http": true}
 	if !validProtocols[c.ExporterProtocol] {
 		errs = append(errs, fmt.Sprintf("exporter-protocol must be 'grpc' or 'http', got %q", c.ExporterProtocol))
+	}
+
+	// Queue mode validation
+	validQueueModes := map[string]bool{"memory": true, "disk": true, "hybrid": true}
+	if !validQueueModes[c.QueueMode] {
+		errs = append(errs, fmt.Sprintf("queue-mode must be 'memory', 'disk', or 'hybrid', got %q", c.QueueMode))
+	}
+	if c.QueueHybridSpilloverPct < 1 || c.QueueHybridSpilloverPct > 100 {
+		errs = append(errs, fmt.Sprintf("queue-hybrid-spillover-pct must be 1-100, got %d", c.QueueHybridSpilloverPct))
+	}
+
+	// Stats level validation
+	validStatsLevels := map[string]bool{"none": true, "basic": true, "full": true}
+	if !validStatsLevels[c.StatsLevel] {
+		errs = append(errs, fmt.Sprintf("stats-level must be 'none', 'basic', or 'full', got %q", c.StatsLevel))
 	}
 
 	// Queue validation

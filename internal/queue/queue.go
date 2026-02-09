@@ -135,6 +135,12 @@ type Config struct {
 	WriteBufferSize int
 	// Compression is the block compression type (default: "snappy").
 	Compression string
+
+	// Queue mode settings (used by QueuedExporter to select push/pop path)
+	// Mode is the queue operating mode: "memory", "disk", or "hybrid".
+	Mode QueueMode
+	// HybridSpilloverPct is the percentage of capacity before hybrid mode spills to disk.
+	HybridSpilloverPct int
 }
 
 // DefaultConfig returns a default queue configuration.

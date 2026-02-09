@@ -51,7 +51,7 @@ func TestE2E_FullPipeline_GRPC(t *testing.T) {
 	defer exp.Close()
 
 	// Create components
-	statsCollector := stats.NewCollector(nil)
+	statsCollector := stats.NewCollector(nil, stats.StatsLevelFull)
 	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0) // dry run mode
 
 	// Create buffer
@@ -136,7 +136,7 @@ func TestE2E_FullPipeline_HTTP(t *testing.T) {
 	defer exp.Close()
 
 	// Create components
-	statsCollector := stats.NewCollector(nil)
+	statsCollector := stats.NewCollector(nil, stats.StatsLevelFull)
 	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer
@@ -211,7 +211,7 @@ func TestE2E_BufferFlushOnClose(t *testing.T) {
 	defer exp.Close()
 
 	// Create components
-	statsCollector := stats.NewCollector(nil)
+	statsCollector := stats.NewCollector(nil, stats.StatsLevelFull)
 	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer with a separate context so we can cancel it
@@ -286,7 +286,7 @@ func TestE2E_ConcurrentClients(t *testing.T) {
 	defer exp.Close()
 
 	// Create components
-	statsCollector := stats.NewCollector(nil)
+	statsCollector := stats.NewCollector(nil, stats.StatsLevelFull)
 	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer
@@ -463,7 +463,7 @@ func TestE2E_HighCardinality(t *testing.T) {
 	defer exp.Close()
 
 	// Create components with label tracking
-	statsCollector := stats.NewCollector([]string{"service", "user_id", "request_id"})
+	statsCollector := stats.NewCollector([]string{"service", "user_id", "request_id"}, stats.StatsLevelFull)
 	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer
@@ -563,7 +563,7 @@ func TestE2E_ManyDatapoints(t *testing.T) {
 	defer exp.Close()
 
 	// Create components
-	statsCollector := stats.NewCollector([]string{"service"})
+	statsCollector := stats.NewCollector([]string{"service"}, stats.StatsLevelFull)
 	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer
@@ -929,7 +929,7 @@ func TestE2E_QueuedExporter_BackendFailure(t *testing.T) {
 	defer queuedExp.Close()
 
 	// Create components
-	statsCollector := stats.NewCollector(nil)
+	statsCollector := stats.NewCollector(nil, stats.StatsLevelFull)
 	buf := buffer.New(1000, 10, 100*time.Millisecond, queuedExp, statsCollector, nil, nil)
 	go buf.Start(ctx)
 
@@ -1295,7 +1295,7 @@ func TestE2E_HTTPReceiver_CustomPath(t *testing.T) {
 	defer exp.Close()
 
 	// Create components
-	statsCollector := stats.NewCollector(nil)
+	statsCollector := stats.NewCollector(nil, stats.StatsLevelFull)
 	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer
@@ -1410,7 +1410,7 @@ func TestE2E_HTTPExporter_CustomDefaultPath(t *testing.T) {
 	defer exp.Close()
 
 	// Create components
-	statsCollector := stats.NewCollector(nil)
+	statsCollector := stats.NewCollector(nil, stats.StatsLevelFull)
 	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer
@@ -1502,7 +1502,7 @@ func TestE2E_BloomPersistence_RestartRecovery(t *testing.T) {
 	}
 
 	// Create stats collector with bloom persistence enabled
-	statsCollector := stats.NewCollector([]string{"service", "method"})
+	statsCollector := stats.NewCollector([]string{"service", "method"}, stats.StatsLevelFull)
 	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer
@@ -1576,7 +1576,7 @@ func TestE2E_BloomPersistence_RestartRecovery(t *testing.T) {
 	defer exp2.Close()
 
 	// Create new stats collector
-	statsCollector2 := stats.NewCollector([]string{"service", "method"})
+	statsCollector2 := stats.NewCollector([]string{"service", "method"}, stats.StatsLevelFull)
 	limitsEnforcer2 := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create new buffer
@@ -1652,7 +1652,7 @@ func TestE2E_BloomPersistence_HighCardinalityTracking(t *testing.T) {
 	defer exp.Close()
 
 	// Create stats collector with label tracking (uses bloom filters internally)
-	statsCollector := stats.NewCollector([]string{"service", "user_id", "session_id"})
+	statsCollector := stats.NewCollector([]string{"service", "user_id", "session_id"}, stats.StatsLevelFull)
 	limitsEnforcer := limits.NewEnforcer(&limits.Config{}, true, 0)
 
 	// Create buffer

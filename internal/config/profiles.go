@@ -66,10 +66,14 @@ type ProfileConfig struct {
 	BufferFullPolicy *string
 
 	// Queue
+	QueueMode     *string // "memory", "disk", "hybrid"
 	QueueType     *string
 	QueueEnabled  *bool
 	QueueMaxSize  *int
 	QueueMaxBytes *int64
+
+	// Stats
+	StatsLevel *string // "none", "basic", "full"
 
 	// Compression & interning
 	ExporterCompression *string
@@ -163,10 +167,14 @@ func minimalProfile() *ProfileConfig {
 		BufferFullPolicy: strPtr("reject"),
 
 		// No queue — direct export
+		QueueMode:     strPtr("memory"),
 		QueueType:     strPtr("memory"),
 		QueueEnabled:  boolPtr(false),
 		QueueMaxSize:  intPtr(1000),
 		QueueMaxBytes: int64Ptr(67108864), // 64 MB
+
+		// Stats: disabled for minimal overhead
+		StatsLevel: strPtr("none"),
 
 		// No compression — saves CPU
 		ExporterCompression: strPtr("none"),
@@ -241,10 +249,14 @@ func balancedProfile() *ProfileConfig {
 		BufferFullPolicy: strPtr("reject"),
 
 		// Memory queue enabled
+		QueueMode:     strPtr("memory"),
 		QueueType:     strPtr("memory"),
 		QueueEnabled:  boolPtr(true),
 		QueueMaxSize:  intPtr(5000),
 		QueueMaxBytes: int64Ptr(268435456), // 256 MB
+
+		// Stats: basic per-metric counts
+		StatsLevel: strPtr("basic"),
 
 		// Snappy compression
 		ExporterCompression: strPtr("snappy"),
@@ -319,11 +331,15 @@ func performanceProfile() *ProfileConfig {
 		FlushInterval:    durPtr(2 * time.Second),
 		BufferFullPolicy: strPtr("drop_oldest"),
 
-		// Disk queue
+		// Hybrid queue — memory L1 with disk spillover
+		QueueMode:     strPtr("hybrid"),
 		QueueType:     strPtr("disk"),
 		QueueEnabled:  boolPtr(true),
 		QueueMaxSize:  intPtr(50000),
 		QueueMaxBytes: int64Ptr(2147483648), // 2 GB fallback
+
+		// Stats: basic per-metric counts (full cardinality too expensive at scale)
+		StatsLevel: strPtr("basic"),
 
 		// Zstd compression
 		ExporterCompression: strPtr("zstd"),
@@ -451,6 +467,9 @@ func ApplyProfile(cfg *Config, profile ProfileName, explicitFields map[string]bo
 	}
 
 	// Queue
+	if p.QueueMode != nil {
+		set("queue-mode", func() { cfg.QueueMode = *p.QueueMode })
+	}
 	if p.QueueType != nil {
 		set("queue-type", func() { cfg.QueueType = *p.QueueType })
 	}
@@ -462,6 +481,11 @@ func ApplyProfile(cfg *Config, profile ProfileName, explicitFields map[string]bo
 	}
 	if p.QueueMaxBytes != nil {
 		set("queue-max-bytes", func() { cfg.QueueMaxBytes = *p.QueueMaxBytes })
+	}
+
+	// Stats
+	if p.StatsLevel != nil {
+		set("stats-level", func() { cfg.StatsLevel = *p.StatsLevel })
 	}
 
 	// Compression & interning
@@ -658,12 +682,18 @@ func collectProfileParams(p *ProfileConfig) []profileParam {
 	if p.FlushInterval != nil {
 		params = append(params, profileParam{"buffer.flush_interval", p.FlushInterval.String(), "Flush timer"})
 	}
+	if p.QueueMode != nil {
+		params = append(params, profileParam{"queue.mode", *p.QueueMode, "Queue serialization mode"})
+	}
 	if p.QueueEnabled != nil {
 		v := fmt.Sprintf("%t", *p.QueueEnabled)
 		params = append(params, profileParam{"queue.enabled", v, "Persistent queue"})
 	}
 	if p.QueueType != nil {
 		params = append(params, profileParam{"queue.type", *p.QueueType, "Queue backend"})
+	}
+	if p.StatsLevel != nil {
+		params = append(params, profileParam{"stats.level", *p.StatsLevel, "Stats collection level"})
 	}
 	if p.QueueMaxSize != nil {
 		v := fmt.Sprintf("%d", *p.QueueMaxSize)

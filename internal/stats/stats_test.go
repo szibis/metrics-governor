@@ -62,7 +62,7 @@ func createTestResourceMetrics(resourceAttrs map[string]string, metrics []*metri
 
 func TestNewCollector(t *testing.T) {
 	trackLabels := []string{"service", "env"}
-	c := NewCollector(trackLabels)
+	c := NewCollector(trackLabels, StatsLevelFull)
 
 	if c == nil {
 		t.Fatal("expected non-nil collector")
@@ -79,7 +79,7 @@ func TestNewCollector(t *testing.T) {
 }
 
 func TestProcess(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	rm := createTestResourceMetrics(
 		map[string]string{"service": "api"},
@@ -107,7 +107,7 @@ func TestProcess(t *testing.T) {
 }
 
 func TestProcessMultipleMetrics(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	rm := createTestResourceMetrics(
 		map[string]string{"service": "api"},
@@ -131,7 +131,7 @@ func TestProcessMultipleMetrics(t *testing.T) {
 }
 
 func TestProcessWithLabelTracking(t *testing.T) {
-	c := NewCollector([]string{"service", "env"})
+	c := NewCollector([]string{"service", "env"}, StatsLevelFull)
 
 	rm := createTestResourceMetrics(
 		map[string]string{"service": "api", "env": "prod"},
@@ -167,7 +167,7 @@ func TestProcessWithLabelTracking(t *testing.T) {
 }
 
 func TestProcessCardinality(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	// Same metric with same attributes should have cardinality of 1
 	rm1 := createTestResourceMetrics(
@@ -195,7 +195,7 @@ func TestProcessCardinality(t *testing.T) {
 }
 
 func TestProcessGaugeMetric(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	metric := &metricspb.Metric{
 		Name: "gauge_metric",
@@ -224,7 +224,7 @@ func TestProcessGaugeMetric(t *testing.T) {
 }
 
 func TestProcessHistogramMetric(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	metric := &metricspb.Metric{
 		Name: "histogram_metric",
@@ -254,7 +254,7 @@ func TestProcessHistogramMetric(t *testing.T) {
 }
 
 func TestProcessSummaryMetric(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	metric := &metricspb.Metric{
 		Name: "summary_metric",
@@ -283,7 +283,7 @@ func TestProcessSummaryMetric(t *testing.T) {
 }
 
 func TestServeHTTP(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	rm := createTestResourceMetrics(
 		map[string]string{"service": "api"},
@@ -323,7 +323,7 @@ func TestServeHTTP(t *testing.T) {
 }
 
 func TestServeHTTPContentType(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	req := httptest.NewRequest("GET", "/metrics", nil)
 	w := httptest.NewRecorder()
@@ -338,7 +338,7 @@ func TestServeHTTPContentType(t *testing.T) {
 }
 
 func TestStartPeriodicLogging(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	// Add some data
 	rm := createTestResourceMetrics(
@@ -363,7 +363,7 @@ func TestStartPeriodicLogging(t *testing.T) {
 }
 
 func TestBuildLabelKey(t *testing.T) {
-	c := NewCollector([]string{"service", "env", "cluster"})
+	c := NewCollector([]string{"service", "env", "cluster"}, StatsLevelFull)
 
 	tests := []struct {
 		name     string
@@ -547,7 +547,7 @@ func TestBuildSeriesKey(t *testing.T) {
 }
 
 func TestGetGlobalStatsEmpty(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	datapoints, uniqueMetrics, totalCardinality := c.GetGlobalStats()
 
@@ -563,7 +563,7 @@ func TestGetGlobalStatsEmpty(t *testing.T) {
 }
 
 func TestCountDatapoints(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	tests := []struct {
 		name     string
@@ -633,7 +633,7 @@ func TestCountDatapoints(t *testing.T) {
 }
 
 func TestRecordPRWBytes(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	// Test PRW bytes received (uncompressed)
 	c.RecordPRWBytesReceived(1000)
@@ -680,7 +680,7 @@ func TestRecordPRWBytes(t *testing.T) {
 }
 
 func TestRecordOTLPBytes(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	// Test OTLP bytes received
 	c.RecordOTLPBytesReceived(2000)
@@ -721,7 +721,7 @@ func TestRecordOTLPBytes(t *testing.T) {
 }
 
 func TestSetBufferSize(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	// Set PRW buffer size
 	c.SetPRWBufferSize(100)
@@ -762,7 +762,7 @@ func TestSetBufferSize(t *testing.T) {
 }
 
 func TestByteMetricsConcurrent(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	const goroutines = 10
 	const iterations = 100

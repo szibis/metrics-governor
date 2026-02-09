@@ -13,11 +13,11 @@
 [![Security Scan](https://github.com/szibis/metrics-governor/actions/workflows/security-scan.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/security-scan.yml)
 [![CodeQL](https://github.com/szibis/metrics-governor/actions/workflows/codeql.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/codeql.yml)
 
-[![Tests](https://img.shields.io/badge/Tests-2100+-success?style=flat&logo=testinglibrary&logoColor=white)](docs/testing.md#test-coverage-by-component)
-[![Coverage](https://img.shields.io/badge/Coverage-88%25-brightgreen?style=flat&logo=codecov&logoColor=white)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
+[![Tests](https://img.shields.io/badge/Tests-2700+-success?style=flat&logo=testinglibrary&logoColor=white)](docs/testing.md#test-coverage-by-component)
+[![Coverage](https://img.shields.io/badge/Coverage-90%25-brightgreen?style=flat&logo=codecov&logoColor=white)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
 [![Race Detector](https://img.shields.io/badge/Race_Detector-passing-success?style=flat&logo=go&logoColor=white)](docs/testing.md)
-[![Go Lines](https://img.shields.io/badge/Go_Code-115k_lines-informational?style=flat&logo=go&logoColor=white)](.)
-[![Docs](https://img.shields.io/badge/Docs-28_guides-8A2BE2?style=flat&logo=readthedocs&logoColor=white)](docs/)
+[![Go Lines](https://img.shields.io/badge/Go_Code-139k_lines-informational?style=flat&logo=go&logoColor=white)](.)
+[![Docs](https://img.shields.io/badge/Docs-29_guides-8A2BE2?style=flat&logo=readthedocs&logoColor=white)](docs/)
 [![Benchmarks](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml/badge.svg)](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml)
 
 [![OTLP](https://img.shields.io/badge/OTLP-gRPC_%7C_HTTP-4a90d9?style=flat&logo=opentelemetry&logoColor=white)](docs/receiving.md)
@@ -53,7 +53,7 @@
 - **Intelligent Limiting** - Unlike simple rate limiters that drop everything, metrics-governor identifies and drops only the top offenders while preserving data from well-behaved services
 - **Consistent Sharding** - Automatic endpoint discovery from Kubernetes headless services with consistent hashing ensures the same time-series always route to the same backend (works for both OTLP and PRW)
 - **Pipeline Parity** - OTLP and PRW pipelines have identical resilience: circuit breaker gate, persistent disk queue, batch and burst drain, split-on-error, exponential backoff, and graceful shutdown drain
-- **Production-Ready** - Always-queue architecture with pipeline split exports (CPU-bound preparers + I/O-bound senders), AIMD batch auto-tuning, adaptive worker scaling, byte-aware batch splitting, circuit breaker with CAS half-open transitions, FastQueue durable persistence with configurable batch/burst drain, percentage-based memory sizing, TLS/mTLS, authentication, compression (gzip/zstd/snappy), and Helm chart included
+- **Production-Ready** - Always-queue architecture with three queue modes (memory/disk/hybrid), pipeline split exports (CPU-bound preparers + I/O-bound senders), AIMD batch auto-tuning, adaptive worker scaling, byte-aware batch splitting, circuit breaker with CAS half-open transitions, FastQueue durable persistence with configurable batch/burst drain, percentage-based memory sizing, TLS/mTLS, authentication, compression (gzip/zstd/snappy), and Helm chart included
 - **High-Performance Optimizations** - Pipeline split architecture separates compression from HTTP sends, string interning reduces allocations by 76%, AIMD-based batch sizing and worker scaling prevent goroutine explosion. Three cardinality modes: Bloom filters (98% less memory), HyperLogLog (constant memory), and Hybrid auto-switching (techniques inspired by [VictoriaMetrics articles](https://valyala.medium.com/))
 - **Zero Configuration Start** - Works out of the box with sensible defaults; add limits and sharding when needed
 
@@ -138,6 +138,19 @@ flowchart LR
 - **Split-on-Error** - Oversized batches automatically split and retry on HTTP 400/413 responses (depth-limited to prevent unbounded recursion)
 - **Percentage-Based Memory Sizing** - Buffer and queue sizes scale automatically with container resources (15% each by default)
 - **Configurable Resilience** - 20+ tunable parameters for retry timeouts, drain rates, circuit breaker thresholds, and backoff delays
+
+### Flexible Operating Modes
+
+metrics-governor adapts to your priorities with configurable performance trade-offs:
+
+| Priority | Queue Mode | Stats Level | Trade-off |
+|----------|-----------|-------------|-----------|
+| **Safety First** | `disk` | `full` | Full crash recovery + cardinality tracking |
+| **Balanced** (default) | `memory` | `basic` | Best performance with essential metrics |
+| **Performance** | `memory` | `none` | Minimal overhead, pure proxy mode |
+
+One binary, three operating modes — choose durability, observability, or raw throughput.
+See [Performance Tuning](docs/performance.md#performance-tuning-knobs) for details.
 
 ## Quick Start
 

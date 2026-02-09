@@ -17,9 +17,27 @@ import (
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
 
+// StatsLevel defines the granularity of stats collection.
+type StatsLevel string
+
+const (
+	// StatsLevelNone disables all stats collection. The collector will be nil.
+	StatsLevelNone StatsLevel = "none"
+	// StatsLevelBasic enables per-metric datapoint counts and pipeline timings.
+	// Skips Bloom filters, series key extraction, and per-label cardinality.
+	// CPU overhead: ~3-5% at 100k dps.
+	StatsLevelBasic StatsLevel = "basic"
+	// StatsLevelFull enables everything including Bloom-based cardinality tracking.
+	// CPU overhead: ~30-40% at 100k dps.
+	StatsLevelFull StatsLevel = "full"
+)
+
 // Collector tracks cardinality and datapoints per metric and label combinations.
 type Collector struct {
 	mu sync.RWMutex
+
+	// Level controls what stats are collected.
+	level StatsLevel
 
 	// Labels to track for grouping (e.g., service, env, cluster)
 	trackLabels []string
@@ -81,22 +99,67 @@ type LabelStats struct {
 	cardinality cardinality.Tracker
 }
 
-// NewCollector creates a new stats collector.
-func NewCollector(trackLabels []string) *Collector {
+// NewCollector creates a new stats collector with the given level.
+// For StatsLevelNone, callers should pass nil instead of creating a collector.
+func NewCollector(trackLabels []string, level StatsLevel) *Collector {
+	if level == "" {
+		level = StatsLevelFull // backward-compatible default
+	}
 	return &Collector{
+		level:       level,
 		trackLabels: trackLabels,
 		metricStats: make(map[string]*MetricStats),
 		labelStats:  make(map[string]*LabelStats),
 	}
 }
 
+// Level returns the stats collection level.
+func (c *Collector) Level() StatsLevel {
+	return c.level
+}
+
 // Process processes incoming metrics and updates stats.
+// At basic level, only per-metric datapoint counts are tracked (no Bloom filters).
+// At full level, Bloom-based cardinality and per-label stats are also tracked.
 func (c *Collector) Process(resourceMetrics []*metricspb.ResourceMetrics) {
+	if c.level == StatsLevelBasic {
+		c.processBasic(resourceMetrics)
+		return
+	}
+	c.processFull(resourceMetrics)
+}
+
+// processBasic counts datapoints per metric name without Bloom filters or attribute extraction.
+// CPU overhead: ~3-5% at 100k dps.
+func (c *Collector) processBasic(resourceMetrics []*metricspb.ResourceMetrics) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	for _, rm := range resourceMetrics {
-		// Extract resource attributes
+		for _, sm := range rm.ScopeMetrics {
+			for _, m := range sm.Metrics {
+				datapoints := c.countDatapoints(m)
+				c.totalDatapoints += uint64(datapoints)
+
+				ms, ok := c.metricStats[m.Name]
+				if !ok {
+					ms = &MetricStats{Name: m.Name}
+					c.metricStats[m.Name] = ms
+					c.totalMetrics++
+				}
+				ms.Datapoints += uint64(datapoints)
+			}
+		}
+	}
+}
+
+// processFull runs the full cardinality tracking with Bloom filters and per-label stats.
+// CPU overhead: ~30-40% at 100k dps.
+func (c *Collector) processFull(resourceMetrics []*metricspb.ResourceMetrics) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for _, rm := range resourceMetrics {
 		resourceAttrs := extractAttributes(rm.Resource.GetAttributes())
 
 		for _, sm := range rm.ScopeMetrics {
@@ -106,7 +169,6 @@ func (c *Collector) Process(resourceMetrics []*metricspb.ResourceMetrics) {
 
 				c.totalDatapoints += uint64(datapoints)
 
-				// Update per-metric stats
 				ms, ok := c.metricStats[metricName]
 				if !ok {
 					ms = &MetricStats{
@@ -118,7 +180,7 @@ func (c *Collector) Process(resourceMetrics []*metricspb.ResourceMetrics) {
 				}
 				ms.Datapoints += uint64(datapoints)
 
-				// Process each datapoint for cardinality
+				// Process each datapoint for cardinality (Bloom filter)
 				c.processDatapointsForCardinality(m, resourceAttrs, ms)
 
 				// Update per-label-combination stats
@@ -247,6 +309,7 @@ func (c *Collector) updateLabelStats(metricName string, m *metricspb.Metric, res
 }
 
 // GetGlobalStats returns global statistics.
+// At basic level, totalCardinality is always 0 (no Bloom filters allocated).
 func (c *Collector) GetGlobalStats() (datapoints uint64, uniqueMetrics uint64, totalCardinality int64) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -254,8 +317,12 @@ func (c *Collector) GetGlobalStats() (datapoints uint64, uniqueMetrics uint64, t
 	datapoints = c.totalDatapoints
 	uniqueMetrics = c.totalMetrics
 
-	for _, ms := range c.metricStats {
-		totalCardinality += ms.cardinality.Count()
+	if c.level == StatsLevelFull {
+		for _, ms := range c.metricStats {
+			if ms.cardinality != nil {
+				totalCardinality += ms.cardinality.Count()
+			}
+		}
 	}
 	return
 }
@@ -407,6 +474,7 @@ func (c *Collector) StartPeriodicLogging(ctx context.Context, interval time.Dura
 
 // ResetCardinality resets the cardinality tracking to prevent unbounded memory growth.
 // Maps are always replaced to prevent slow accumulation of stale entries.
+// At basic level, only resets the metric counts map (no Bloom filters or label stats exist).
 func (c *Collector) ResetCardinality() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -416,7 +484,10 @@ func (c *Collector) ResetCardinality() {
 
 	c.metricStats = make(map[string]*MetricStats)
 	c.totalMetrics = 0
-	c.labelStats = make(map[string]*LabelStats)
+
+	if c.level == StatsLevelFull {
+		c.labelStats = make(map[string]*LabelStats)
+	}
 
 	if prevMetrics > 0 || prevLabels > 0 {
 		logging.Info("stats maps reset", logging.F(
@@ -425,10 +496,12 @@ func (c *Collector) ResetCardinality() {
 		))
 	}
 
-	// Reset intern pools if they've grown too large
-	const maxInternEntries = 100000
-	intern.LabelNames.ResetIfLarge(maxInternEntries)
-	intern.MetricNames.ResetIfLarge(maxInternEntries)
+	// Reset intern pools if they've grown too large (only relevant at full level)
+	if c.level == StatsLevelFull {
+		const maxInternEntries = 100000
+		intern.LabelNames.ResetIfLarge(maxInternEntries)
+		intern.MetricNames.ResetIfLarge(maxInternEntries)
+	}
 }
 
 // buildLabelKey builds a key from tracked labels.
@@ -542,87 +615,99 @@ func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "metrics_governor_buffer_size{protocol=\"prw\"} %d\n", c.prwBufferSize)
 	fmt.Fprintf(w, "metrics_governor_buffer_size{protocol=\"otlp\"} %d\n", c.otlpBufferSize)
 
-	// Per-metric stats
+	// Per-metric stats (available at basic and full levels)
 	fmt.Fprintf(w, "# HELP metrics_governor_metric_datapoints_total Datapoints per metric name\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_metric_datapoints_total counter\n")
 	for name, ms := range c.metricStats {
 		fmt.Fprintf(w, "metrics_governor_metric_datapoints_total{metric_name=%q} %d\n", name, ms.Datapoints)
 	}
 
-	fmt.Fprintf(w, "# HELP metrics_governor_metric_cardinality Cardinality (unique series) per metric name\n")
-	fmt.Fprintf(w, "# TYPE metrics_governor_metric_cardinality gauge\n")
-	for name, ms := range c.metricStats {
-		fmt.Fprintf(w, "metrics_governor_metric_cardinality{metric_name=%q} %d\n", name, ms.cardinality.Count())
-	}
-
-	// Per-label-combination stats
-	if len(c.labelStats) > 0 {
-		fmt.Fprintf(w, "# HELP metrics_governor_label_datapoints_total Datapoints per label combination\n")
-		fmt.Fprintf(w, "# TYPE metrics_governor_label_datapoints_total counter\n")
-		for _, ls := range c.labelStats {
-			labels := parseLabelKey(ls.Labels)
-			labelStr := formatLabels(labels)
-			fmt.Fprintf(w, "metrics_governor_label_datapoints_total{%s} %d\n", labelStr, ls.Datapoints)
+	// Cardinality and label stats (full level only — requires Bloom filters)
+	if c.level == StatsLevelFull {
+		fmt.Fprintf(w, "# HELP metrics_governor_metric_cardinality Cardinality (unique series) per metric name\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_metric_cardinality gauge\n")
+		for name, ms := range c.metricStats {
+			if ms.cardinality != nil {
+				fmt.Fprintf(w, "metrics_governor_metric_cardinality{metric_name=%q} %d\n", name, ms.cardinality.Count())
+			}
 		}
 
-		fmt.Fprintf(w, "# HELP metrics_governor_label_cardinality Cardinality per label combination\n")
-		fmt.Fprintf(w, "# TYPE metrics_governor_label_cardinality gauge\n")
-		for _, ls := range c.labelStats {
-			labels := parseLabelKey(ls.Labels)
-			labelStr := formatLabels(labels)
-			fmt.Fprintf(w, "metrics_governor_label_cardinality{%s} %d\n", labelStr, ls.cardinality.Count())
+		// Per-label-combination stats
+		if len(c.labelStats) > 0 {
+			fmt.Fprintf(w, "# HELP metrics_governor_label_datapoints_total Datapoints per label combination\n")
+			fmt.Fprintf(w, "# TYPE metrics_governor_label_datapoints_total counter\n")
+			for _, ls := range c.labelStats {
+				labels := parseLabelKey(ls.Labels)
+				labelStr := formatLabels(labels)
+				fmt.Fprintf(w, "metrics_governor_label_datapoints_total{%s} %d\n", labelStr, ls.Datapoints)
+			}
+
+			fmt.Fprintf(w, "# HELP metrics_governor_label_cardinality Cardinality per label combination\n")
+			fmt.Fprintf(w, "# TYPE metrics_governor_label_cardinality gauge\n")
+			for _, ls := range c.labelStats {
+				labels := parseLabelKey(ls.Labels)
+				labelStr := formatLabels(labels)
+				fmt.Fprintf(w, "metrics_governor_label_cardinality{%s} %d\n", labelStr, ls.cardinality.Count())
+			}
 		}
+
+		// Cardinality tracking metrics (Bloom filter observability)
+		var totalMemoryBytes uint64
+		trackerCount := len(c.metricStats) + len(c.labelStats)
+		for _, ms := range c.metricStats {
+			if ms.cardinality != nil {
+				totalMemoryBytes += ms.cardinality.MemoryUsage()
+			}
+		}
+		for _, ls := range c.labelStats {
+			totalMemoryBytes += ls.cardinality.MemoryUsage()
+		}
+
+		fmt.Fprintf(w, "# HELP metrics_governor_cardinality_trackers_total Number of active cardinality trackers\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_trackers_total gauge\n")
+		fmt.Fprintf(w, "metrics_governor_cardinality_trackers_total %d\n", trackerCount)
+
+		fmt.Fprintf(w, "# HELP metrics_governor_cardinality_memory_bytes Total memory used by cardinality trackers\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_memory_bytes gauge\n")
+		fmt.Fprintf(w, "metrics_governor_cardinality_memory_bytes %d\n", totalMemoryBytes)
+
+		fmt.Fprintf(w, "# HELP metrics_governor_cardinality_mode Cardinality tracking mode (1=active)\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_mode gauge\n")
+		switch cardinality.GlobalConfig.Mode {
+		case cardinality.ModeBloom:
+			fmt.Fprintf(w, "metrics_governor_cardinality_mode{mode=\"bloom\"} 1\n")
+		case cardinality.ModeExact:
+			fmt.Fprintf(w, "metrics_governor_cardinality_mode{mode=\"exact\"} 1\n")
+		case cardinality.ModeHybrid:
+			fmt.Fprintf(w, "metrics_governor_cardinality_mode{mode=\"hybrid\"} 1\n")
+		}
+
+		fmt.Fprintf(w, "# HELP metrics_governor_cardinality_config_expected_items Configured expected items per tracker\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_config_expected_items gauge\n")
+		fmt.Fprintf(w, "metrics_governor_cardinality_config_expected_items %d\n", cardinality.GlobalConfig.ExpectedItems)
+
+		fmt.Fprintf(w, "# HELP metrics_governor_cardinality_config_fp_rate Configured false positive rate for Bloom filter\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_config_fp_rate gauge\n")
+		fmt.Fprintf(w, "metrics_governor_cardinality_config_fp_rate %f\n", cardinality.GlobalConfig.FalsePositiveRate)
+
+		// Series key pool metrics
+		fmt.Fprintf(w, "# HELP metrics_governor_serieskey_pool_gets_total Pool.Get() calls for series key slices\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_serieskey_pool_gets_total counter\n")
+		fmt.Fprintf(w, "metrics_governor_serieskey_pool_gets_total %d\n", seriesKeyPoolGets.Load())
+
+		fmt.Fprintf(w, "# HELP metrics_governor_serieskey_pool_puts_total Pool.Put() calls for series key slices\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_serieskey_pool_puts_total counter\n")
+		fmt.Fprintf(w, "metrics_governor_serieskey_pool_puts_total %d\n", seriesKeyPoolPuts.Load())
+
+		fmt.Fprintf(w, "# HELP metrics_governor_serieskey_pool_discards_total Series key slices discarded (too large for pool)\n")
+		fmt.Fprintf(w, "# TYPE metrics_governor_serieskey_pool_discards_total counter\n")
+		fmt.Fprintf(w, "metrics_governor_serieskey_pool_discards_total %d\n", seriesKeyPoolDiscards.Load())
 	}
 
-	// Cardinality tracking metrics (Bloom filter observability)
-	var totalMemoryBytes uint64
-	trackerCount := len(c.metricStats) + len(c.labelStats)
-	for _, ms := range c.metricStats {
-		totalMemoryBytes += ms.cardinality.MemoryUsage()
-	}
-	for _, ls := range c.labelStats {
-		totalMemoryBytes += ls.cardinality.MemoryUsage()
-	}
-
-	fmt.Fprintf(w, "# HELP metrics_governor_cardinality_trackers_total Number of active cardinality trackers\n")
-	fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_trackers_total gauge\n")
-	fmt.Fprintf(w, "metrics_governor_cardinality_trackers_total %d\n", trackerCount)
-
-	fmt.Fprintf(w, "# HELP metrics_governor_cardinality_memory_bytes Total memory used by cardinality trackers\n")
-	fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_memory_bytes gauge\n")
-	fmt.Fprintf(w, "metrics_governor_cardinality_memory_bytes %d\n", totalMemoryBytes)
-
-	fmt.Fprintf(w, "# HELP metrics_governor_cardinality_mode Cardinality tracking mode (1=active)\n")
-	fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_mode gauge\n")
-	switch cardinality.GlobalConfig.Mode {
-	case cardinality.ModeBloom:
-		fmt.Fprintf(w, "metrics_governor_cardinality_mode{mode=\"bloom\"} 1\n")
-	case cardinality.ModeExact:
-		fmt.Fprintf(w, "metrics_governor_cardinality_mode{mode=\"exact\"} 1\n")
-	case cardinality.ModeHybrid:
-		fmt.Fprintf(w, "metrics_governor_cardinality_mode{mode=\"hybrid\"} 1\n")
-	}
-
-	fmt.Fprintf(w, "# HELP metrics_governor_cardinality_config_expected_items Configured expected items per tracker\n")
-	fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_config_expected_items gauge\n")
-	fmt.Fprintf(w, "metrics_governor_cardinality_config_expected_items %d\n", cardinality.GlobalConfig.ExpectedItems)
-
-	fmt.Fprintf(w, "# HELP metrics_governor_cardinality_config_fp_rate Configured false positive rate for Bloom filter\n")
-	fmt.Fprintf(w, "# TYPE metrics_governor_cardinality_config_fp_rate gauge\n")
-	fmt.Fprintf(w, "metrics_governor_cardinality_config_fp_rate %f\n", cardinality.GlobalConfig.FalsePositiveRate)
-
-	// Series key pool metrics
-	fmt.Fprintf(w, "# HELP metrics_governor_serieskey_pool_gets_total Pool.Get() calls for series key slices\n")
-	fmt.Fprintf(w, "# TYPE metrics_governor_serieskey_pool_gets_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_serieskey_pool_gets_total %d\n", seriesKeyPoolGets.Load())
-
-	fmt.Fprintf(w, "# HELP metrics_governor_serieskey_pool_puts_total Pool.Put() calls for series key slices\n")
-	fmt.Fprintf(w, "# TYPE metrics_governor_serieskey_pool_puts_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_serieskey_pool_puts_total %d\n", seriesKeyPoolPuts.Load())
-
-	fmt.Fprintf(w, "# HELP metrics_governor_serieskey_pool_discards_total Series key slices discarded (too large for pool)\n")
-	fmt.Fprintf(w, "# TYPE metrics_governor_serieskey_pool_discards_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_serieskey_pool_discards_total %d\n", seriesKeyPoolDiscards.Load())
+	// Emit stats level gauge so dashboards/alerts can detect the mode
+	fmt.Fprintf(w, "# HELP metrics_governor_stats_level Current stats collection level (1=active)\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_stats_level gauge\n")
+	fmt.Fprintf(w, "metrics_governor_stats_level{level=%q} 1\n", string(c.level))
 }
 
 // formatLabels formats a label map as Prometheus label string.
