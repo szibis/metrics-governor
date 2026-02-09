@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"reflect"
 	"time"
 
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
@@ -34,9 +35,29 @@ type FusedProcessor struct {
 	limits LimitsEnforcer  // optional
 }
 
+// isNilInterface returns true if i is nil or a typed nil (interface holding
+// a nil pointer). This defends against Go's typed nil pitfall where a nil
+// concrete pointer wrapped in an interface passes standard nil checks.
+func isNilInterface(i interface{}) bool {
+	if i == nil {
+		return true
+	}
+	v := reflect.ValueOf(i)
+	return v.Kind() == reflect.Ptr && v.IsNil()
+}
+
 // NewFusedProcessor creates a fused tenant+limits processor.
-// Either or both processors may be nil.
+// Either or both processors may be nil. Typed nils (a nil concrete pointer
+// wrapped in an interface) are sanitized to true nils to prevent panics.
 func NewFusedProcessor(tenant TenantProcessor, limits LimitsEnforcer) *FusedProcessor {
+	// Sanitize typed nils: a nil *tenant.Pipeline wrapped in TenantProcessor
+	// interface is NOT == nil, but calling methods on it will panic.
+	if isNilInterface(tenant) {
+		tenant = nil
+	}
+	if isNilInterface(limits) {
+		limits = nil
+	}
 	if tenant == nil && limits == nil {
 		return nil
 	}
