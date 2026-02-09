@@ -48,45 +48,46 @@ The two-tier architecture splits metrics-governor into two cooperating layers:
 
 ## Architecture Diagram
 
-```
-                          Node A                              Node B
-                    ┌─────────────────┐                ┌─────────────────┐
-                    │  node-exporter   │                │  node-exporter   │
-                    │  kube-state-m.   │                │  kube-state-m.   │
-                    │  app exporters   │                │  app exporters   │
-                    └────────┬────────┘                └────────┬────────┘
-                             │                                  │
-                             v                                  v
-                    ┌─────────────────┐                ┌─────────────────┐
-                    │   Tier 1 (DS)   │                │   Tier 1 (DS)   │
-                    │                 │                │                 │
-                    │ - adaptive down │                │ - adaptive down │
-                    │ - label strip   │                │ - label strip   │
-                    │ - drop noisy    │                │ - drop noisy    │
-                    │                 │                │                 │
-                    │ processing-     │                │ processing-     │
-                    │ tier1.yaml      │                │ tier1.yaml      │
-                    └────────┬────────┘                └────────┬────────┘
-                             │  10-50x reduction                │
-                             │  OTLP gRPC                       │
-                             └──────────┬───────────────────────┘
-                                        │
-                                        v
-                    ┌───────────────────────────────────────────┐
-                    │         Tier 2 (StatefulSet, 2-3 replicas)│
-                    │                                           │
-                    │  - cross-node aggregate (group_by)        │
-                    │  - drop pod-level labels                  │
-                    │  - final cardinality reduction             │
-                    │                                           │
-                    │  processing-tier2.yaml                    │
-                    └─────────────────────┬─────────────────────┘
-                                          │  5-20x additional reduction
-                                          │  OTLP gRPC / HTTP
-                                          v
-                    ┌───────────────────────────────────────────┐
-                    │    VictoriaMetrics / Thanos / Cortex      │
-                    └───────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph NodeA["&nbsp; Node A &nbsp;"]
+        A1["node-exporter\nkube-state-metrics\napp exporters"]:::source
+    end
+
+    subgraph NodeB["&nbsp; Node B &nbsp;"]
+        B1["node-exporter\nkube-state-metrics\napp exporters"]:::source
+    end
+
+    subgraph Tier1A["&nbsp; Tier 1 — DaemonSet &nbsp;"]
+        T1A(["Adaptive Downsample\nLabel Strip\nDrop Noisy\n\nprocessing-tier1.yaml"]):::tier1
+    end
+
+    subgraph Tier1B["&nbsp; Tier 1 — DaemonSet &nbsp;"]
+        T1B(["Adaptive Downsample\nLabel Strip\nDrop Noisy\n\nprocessing-tier1.yaml"]):::tier1
+    end
+
+    subgraph Tier2["&nbsp; Tier 2 — StatefulSet (2-3 replicas) &nbsp;"]
+        T2(["Cross-Node Aggregate (group_by)\nDrop Pod-Level Labels\nFinal Cardinality Reduction\n\nprocessing-tier2.yaml"]):::tier2
+    end
+
+    BE["VictoriaMetrics · Thanos · Cortex"]:::backend
+
+    A1 --> T1A
+    B1 --> T1B
+    T1A -->|"10-50x reduction\nOTLP gRPC"| T2
+    T1B -->|"10-50x reduction\nOTLP gRPC"| T2
+    T2 -->|"5-20x additional\nOTLP gRPC / HTTP"| BE
+
+    classDef source fill:#3498db,stroke:#1a5276,color:#fff,stroke-width:2px
+    classDef tier1 fill:#1abc9c,stroke:#0e6655,color:#fff,stroke-width:2px
+    classDef tier2 fill:#9b59b6,stroke:#6c3483,color:#fff,stroke-width:2px
+    classDef backend fill:#2ecc71,stroke:#1a8c4e,color:#fff,stroke-width:2px
+
+    style NodeA fill:#eaf2f8,stroke:#2980b9,stroke-width:1px,color:#1a5276
+    style NodeB fill:#eaf2f8,stroke:#2980b9,stroke-width:1px,color:#1a5276
+    style Tier1A fill:#e8f8f5,stroke:#1abc9c,stroke-width:2px,color:#0e6655
+    style Tier1B fill:#e8f8f5,stroke:#1abc9c,stroke-width:2px,color:#0e6655
+    style Tier2 fill:#f5eef8,stroke:#9b59b6,stroke-width:2px,color:#6c3483
 ```
 
 ---

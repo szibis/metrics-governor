@@ -78,13 +78,32 @@ kubectl apply -f alerts/prometheusrule.yaml
 
 Alerts are not independent — they form escalation chains. During a backend outage, you'll see them fire in sequence:
 
-```
-Leading indicators (warn early)      Trailing indicators (act now)
-────────────────────────────────     ────────────────────────────
-ExportDegraded ──> CircuitOpen ──> QueueSaturated ──> DataLoss
-Backpressure ──> WorkersSaturated
-CardinalityExplosion
-                                     OOMRisk ──> Down
+```mermaid
+flowchart LR
+    subgraph Leading["&nbsp; Leading Indicators (warn early) &nbsp;"]
+        ED(["ExportDegraded"]):::warn
+        BP(["Backpressure"]):::warn
+        CE(["CardinalityExplosion"]):::warn
+    end
+
+    subgraph Trailing["&nbsp; Trailing Indicators (act now) &nbsp;"]
+        CO(["CircuitOpen"]):::warn
+        WS(["WorkersSaturated"]):::warn
+        QS(["QueueSaturated"]):::crit
+        DL(["DataLoss"]):::crit
+        OOM(["OOMRisk"]):::crit
+        DN(["Down"]):::crit
+    end
+
+    ED --> CO --> QS --> DL
+    BP --> WS
+    OOM --> DN
+
+    classDef warn fill:#f39c12,stroke:#b7770a,color:#fff,stroke-width:2px
+    classDef crit fill:#e74c3c,stroke:#922b21,color:#fff,stroke-width:2px
+
+    style Leading fill:#fef9e7,stroke:#f39c12,stroke-width:2px,color:#b7770a
+    style Trailing fill:#fdedec,stroke:#e74c3c,stroke-width:2px,color:#922b21
 ```
 
 This means:
