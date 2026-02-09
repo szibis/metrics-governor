@@ -48,7 +48,7 @@ jobs:
     needs: check-assets
     if: needs.check-assets.outputs.has_assets != 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -142,7 +142,7 @@ jobs:
     needs: [check-assets, release]
     if: needs.check-assets.outputs.has_assets != 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Get version
         id: version
