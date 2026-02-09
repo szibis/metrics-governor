@@ -1,0 +1,114 @@
+# Processing Classification Example
+#
+# Demonstrates the classify action for deriving team ownership, severity,
+# and priority labels at the proxy layer. Combined with rule ownership
+# labels for dead rule alert routing.
+#
+# Usage:
+#   metrics-governor --processing-config=examples/processing-classification.yaml
+
+# Enforce that every rule has team and owner_email labels.
+# Config validation fails at load time if any rule is missing them.
+required_labels: [team, owner_email]
+
+rules:
+  # ---- Stage 1: Classify team ownership and oncall ----
+  #
+  # This rule runs first (non-terminal, like transform) and adds
+  # team/oncall labels based on the product and component labels
+  # already present on incoming metrics.
+  - name: classify-ownership
+    input: ".*"
+    action: classify
+    labels:
+      team: "platform"
+      owner_email: "platform@company.com"
+    classify:
+      # Ordered chain: first match wins, sets multiple labels at once.
+      chains:
+        # Most specific first: checkout + payment-processor → payments-core
+        - when:
+            - label: product
+              matches: "^checkout$"
+            - label: component
+              matches: "^(payment-processor|fraud-detection)$"
+          set:
+            team: "payments-core"
+            oncall: "payments-core-oncall"
+
+        # Broader: any payments product → payments
+        - when:
+            - label: product
+              matches: "^(checkout|billing|subscriptions)$"
+          set:
+            team: "payments"
+            oncall: "payments-oncall"
+
+        # Platform services
+        - when:
+            - label: product
+              matches: "^(auth|api-gateway|service-mesh)$"
+          set:
+            team: "platform"
+            oncall: "platform-oncall"
+
+      # LUT mappings: all applied in order, after chains.
+      # Map stage label to severity.
+      mappings:
+        - source: stage
+          target: severity
+          values:
+            "^(ga|stable|production)$": "critical"
+            "^(beta|rc|canary)$": "warning"
+          default: "info"
+
+        # Multi-source: combine team + severity → priority
+        - sources: [team, severity]
+          separator: ":"
+          target: priority
+          values:
+            "^payments.*:critical$": "P0"
+            "^.*:critical$": "P1"
+            "^.*:warning$": "P2"
+          default: "P3"
+
+      # Clean up intermediate labels after classification.
+      remove_after: [component]
+
+  # ---- Stage 2: Enrich with environment context ----
+  - name: add-env-context
+    input: ".*"
+    action: transform
+    labels:
+      team: "platform"
+      owner_email: "platform@company.com"
+    operations:
+      - set:
+          label: governor_version
+          value: "v0.37"
+
+  # ---- Stage 3: Drop testing metrics in production ----
+  - name: drop-testing
+    input: "test_.*"
+    action: drop
+    labels:
+      team: "platform"
+      owner_email: "platform@company.com"
+      severity: "low"
+
+  # ---- Stage 4: Sample non-critical metrics ----
+  - name: sample-info-metrics
+    input: ".*"
+    input_labels:
+      severity: "info"
+    action: sample
+    rate: 0.1
+    method: probabilistic
+    labels:
+      team: "platform"
+      owner_email: "platform@company.com"
+
+# Dead rule detection: scan every 30 minutes.
+# Even without this, the always-on last_match_seconds gauge enables
+# PromQL-based alerting via alerts/dead-rules.yaml.
+dead_rule_interval: "30m"

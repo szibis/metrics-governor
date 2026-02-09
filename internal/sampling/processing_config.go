@@ -5,6 +5,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -19,8 +20,17 @@ const (
 	ActionDownsample Action = "downsample"
 	ActionAggregate  Action = "aggregate"
 	ActionTransform  Action = "transform"
+	ActionClassify   Action = "classify"
 	ActionDrop       Action = "drop"
 )
+
+// reservedLabelNames are label names reserved for internal use and cannot be
+// used in rule ownership labels.
+var reservedLabelNames = map[string]bool{
+	"rule":     true,
+	"action":   true,
+	"__name__": true,
+}
 
 // AggFunc identifies a cross-series aggregation function.
 type AggFunc string
@@ -42,9 +52,12 @@ const (
 // ProcessingConfig is the top-level processing rules configuration.
 type ProcessingConfig struct {
 	StalenessInterval string           `yaml:"staleness_interval,omitempty"`
+	DeadRuleInterval  string           `yaml:"dead_rule_interval,omitempty"`
+	RequiredLabels    []string         `yaml:"required_labels,omitempty"`
 	Rules             []ProcessingRule `yaml:"rules"`
 
-	parsedStaleness time.Duration
+	parsedStaleness     time.Duration
+	parsedDeadRuleIntvl time.Duration
 }
 
 // ProcessingRule defines a single processing rule.
@@ -53,6 +66,7 @@ type ProcessingRule struct {
 	Input       string            `yaml:"input"`
 	InputLabels map[string]string `yaml:"input_labels,omitempty"`
 	Action      Action            `yaml:"action"`
+	Labels      map[string]string `yaml:"labels,omitempty"` // Ownership metadata for alerting/routing
 
 	// Sample fields
 	Rate   float64 `yaml:"rate,omitempty"`
@@ -77,15 +91,64 @@ type ProcessingRule struct {
 	When       []Condition `yaml:"when,omitempty"`
 	Operations []Operation `yaml:"operations,omitempty"`
 
+	// Classify fields
+	Classify *ClassifyConfig `yaml:"classify,omitempty"`
+
 	// Compiled (not serialized)
-	compiledInput   *regexp.Regexp
-	compiledLabels  map[string]*regexp.Regexp
-	parsedInterval  time.Duration
-	parsedFunctions []parsedAggFunc
-	dsConfig        *DownsampleConfig
-	compiledOps     []compiledOperation
-	metrics         ruleMetrics // pre-resolved Prometheus counters
-	inputPrefix     string      // literal prefix for fast regex short-circuit
+	compiledInput    *regexp.Regexp
+	compiledLabels   map[string]*regexp.Regexp
+	parsedInterval   time.Duration
+	parsedFunctions  []parsedAggFunc
+	dsConfig         *DownsampleConfig
+	compiledOps      []compiledOperation
+	compiledClassify *compiledClassifyConfig // pre-compiled classify config
+	metrics          ruleMetrics             // pre-resolved Prometheus counters
+	inputPrefix      string                  // literal prefix for fast regex short-circuit
+}
+
+// ClassifyConfig defines the classify action configuration.
+type ClassifyConfig struct {
+	Chains      []ClassifyChain   `yaml:"chains,omitempty"`
+	Mappings    []ClassifyMapping `yaml:"mappings,omitempty"`
+	RemoveAfter []string          `yaml:"remove_after,omitempty"`
+}
+
+// ClassifyChain is an ordered chain entry: first match wins, sets multiple labels.
+type ClassifyChain struct {
+	When []Condition       `yaml:"when"`
+	Set  map[string]string `yaml:"set"` // Supports ${interpolation}
+}
+
+// ClassifyMapping maps source label value(s) to a target label via regex lookup.
+type ClassifyMapping struct {
+	Source    string            `yaml:"source,omitempty"`
+	Sources   []string          `yaml:"sources,omitempty"`
+	Separator string            `yaml:"separator,omitempty"` // Default ":"
+	Target    string            `yaml:"target"`
+	Values    map[string]string `yaml:"values"`
+	Default   string            `yaml:"default,omitempty"`
+}
+
+// compiledClassifyConfig holds pre-compiled classify state.
+type compiledClassifyConfig struct {
+	chains      []compiledClassifyChain
+	mappings    []compiledClassifyMapping
+	removeAfter []string
+}
+
+// compiledClassifyChain holds a pre-compiled chain entry.
+type compiledClassifyChain struct {
+	conditions []Condition // pre-compiled (matches/not_matches regex)
+	set        map[string]string
+}
+
+// compiledClassifyMapping holds a pre-compiled mapping entry.
+type compiledClassifyMapping struct {
+	sources   []string // resolved source list (from Source or Sources)
+	separator string
+	target    string
+	entries   []compiledMapEntry
+	dflt      string
 }
 
 // parsedAggFunc holds a parsed aggregation function with optional quantile parameters.
@@ -191,6 +254,14 @@ type MathOp struct {
 	Operand   float64 `yaml:"operand"`
 }
 
+// deadRuleState holds atomic state for dead rule tracking.
+// Kept behind a pointer so ProcessingRule remains safely copyable.
+type deadRuleState struct {
+	lastMatchTime atomic.Int64 // Unix nanos of last match (0 = never)
+	loadedTime    int64        // Unix nanos when rule was loaded
+	wasDead       atomic.Bool  // For logging state transitions (scanner only)
+}
+
 // ruleMetrics holds pre-resolved Prometheus counters for a single rule.
 // By caching WithLabelValues results at config compile time, the hot path
 // avoids hashing label strings on every datapoint (saves ~33% CPU).
@@ -202,6 +273,15 @@ type ruleMetrics struct {
 	transformAdd    prometheus.Counter
 	transformRemove prometheus.Counter
 	transformMod    prometheus.Counter
+
+	// Classify-specific counters
+	classifyChainMatch   prometheus.Counter
+	classifyChainNoMatch prometheus.Counter
+	classifyLabelsSet    prometheus.Counter
+
+	// Dead rule tracking (always active, regardless of scanner config).
+	// Behind a pointer so ruleMetrics (and ProcessingRule) remain copyable.
+	dead *deadRuleState
 }
 
 // compiledOperation holds pre-compiled regex for a transform operation.
@@ -373,6 +453,18 @@ func validateProcessingConfig(cfg *ProcessingConfig) error {
 		cfg.parsedStaleness = 10 * time.Minute // default
 	}
 
+	// Parse dead_rule_interval (0 = scanner disabled, timestamps still tracked).
+	if cfg.DeadRuleInterval != "" {
+		d, err := time.ParseDuration(cfg.DeadRuleInterval)
+		if err != nil {
+			return fmt.Errorf("processing: invalid dead_rule_interval %q: %w", cfg.DeadRuleInterval, err)
+		}
+		if d < 0 {
+			return fmt.Errorf("processing: dead_rule_interval must be non-negative")
+		}
+		cfg.parsedDeadRuleIntvl = d
+	}
+
 	names := make(map[string]bool, len(cfg.Rules))
 	for i := range cfg.Rules {
 		r := &cfg.Rules[i]
@@ -385,6 +477,20 @@ func validateProcessingConfig(cfg *ProcessingConfig) error {
 			return fmt.Errorf("processing: rule %d: duplicate name %q", i, r.Name)
 		}
 		names[r.Name] = true
+
+		// Validate ownership labels.
+		for k := range r.Labels {
+			if reservedLabelNames[k] {
+				return fmt.Errorf("processing: rule %q: label %q is reserved", r.Name, k)
+			}
+		}
+
+		// Validate required labels.
+		for _, req := range cfg.RequiredLabels {
+			if _, ok := r.Labels[req]; !ok {
+				return fmt.Errorf("processing: rule %q is missing required label %q", r.Name, req)
+			}
+		}
 
 		// Validate input regex.
 		if r.Input == "" {
@@ -426,6 +532,10 @@ func validateProcessingConfig(cfg *ProcessingConfig) error {
 			if err := validateTransformRule(r); err != nil {
 				return fmt.Errorf("processing: rule %q: %w", r.Name, err)
 			}
+		case ActionClassify:
+			if err := validateClassifyRule(r); err != nil {
+				return fmt.Errorf("processing: rule %q: %w", r.Name, err)
+			}
 		case ActionDrop:
 			// No additional validation needed.
 		default:
@@ -444,11 +554,122 @@ func validateProcessingConfig(cfg *ProcessingConfig) error {
 			r.metrics.transformRemove = processingTransformLabelsRemovedTotal.WithLabelValues(r.Name)
 			r.metrics.transformMod = processingTransformLabelsModifiedTotal.WithLabelValues(r.Name)
 		}
+		if r.Action == ActionClassify {
+			r.metrics.classifyChainMatch = processingClassifyChainMatchesTotal.WithLabelValues(r.Name)
+			r.metrics.classifyChainNoMatch = processingClassifyChainNoMatchTotal.WithLabelValues(r.Name)
+			r.metrics.classifyLabelsSet = processingClassifyLabelsSetTotal.WithLabelValues(r.Name)
+		}
+
+		// Initialize dead rule tracking state.
+		r.metrics.dead = &deadRuleState{
+			loadedTime: time.Now().UnixNano(),
+		}
 
 		// Extract literal prefix from input regex for fast short-circuit matching.
 		r.inputPrefix = extractLiteralPrefix(r.Input)
 	}
 
+	return nil
+}
+
+// validateClassifyRule validates and compiles a classify rule.
+func validateClassifyRule(r *ProcessingRule) error {
+	if r.Classify == nil {
+		return fmt.Errorf("classify config is required for classify action")
+	}
+	cc := r.Classify
+	if len(cc.Chains) == 0 && len(cc.Mappings) == 0 {
+		return fmt.Errorf("classify must have at least one chain or mapping")
+	}
+
+	compiled := &compiledClassifyConfig{
+		removeAfter: cc.RemoveAfter,
+	}
+
+	// Compile chains.
+	for i, chain := range cc.Chains {
+		if len(chain.When) == 0 {
+			return fmt.Errorf("classify.chains[%d]: when conditions are required", i)
+		}
+		if len(chain.Set) == 0 {
+			return fmt.Errorf("classify.chains[%d]: set labels are required", i)
+		}
+
+		// Compile conditions (reuse the same pattern as transform when conditions).
+		compiledConds := make([]Condition, len(chain.When))
+		for j := range chain.When {
+			c := chain.When[j]
+			if c.Label == "" {
+				return fmt.Errorf("classify.chains[%d].when[%d]: label is required", i, j)
+			}
+			if c.Matches != "" {
+				re, err := regexp.Compile("^(?:" + c.Matches + ")$")
+				if err != nil {
+					return fmt.Errorf("classify.chains[%d].when[%d]: invalid matches regex %q: %w", i, j, c.Matches, err)
+				}
+				c.compiledMatches = re
+			}
+			if c.NotMatches != "" {
+				re, err := regexp.Compile("^(?:" + c.NotMatches + ")$")
+				if err != nil {
+					return fmt.Errorf("classify.chains[%d].when[%d]: invalid not_matches regex %q: %w", i, j, c.NotMatches, err)
+				}
+				c.compiledNotMatches = re
+			}
+			compiledConds[j] = c
+		}
+
+		compiled.chains = append(compiled.chains, compiledClassifyChain{
+			conditions: compiledConds,
+			set:        chain.Set,
+		})
+	}
+
+	// Compile mappings.
+	for i, m := range cc.Mappings {
+		if m.Target == "" {
+			return fmt.Errorf("classify.mappings[%d]: target is required", i)
+		}
+
+		// Resolve sources.
+		var sources []string
+		if m.Source != "" {
+			sources = []string{m.Source}
+		} else if len(m.Sources) > 0 {
+			sources = m.Sources
+		} else {
+			return fmt.Errorf("classify.mappings[%d]: source or sources is required", i)
+		}
+
+		if len(m.Values) == 0 {
+			return fmt.Errorf("classify.mappings[%d]: values are required", i)
+		}
+
+		separator := m.Separator
+		if separator == "" {
+			separator = ":"
+		}
+
+		// Pre-compile regex values.
+		var entries []compiledMapEntry
+		for pattern, value := range m.Values {
+			re, err := regexp.Compile("^(?:" + pattern + ")$")
+			if err != nil {
+				return fmt.Errorf("classify.mappings[%d]: invalid value regex %q: %w", i, pattern, err)
+			}
+			entries = append(entries, compiledMapEntry{pattern: re, value: value})
+		}
+
+		compiled.mappings = append(compiled.mappings, compiledClassifyMapping{
+			sources:   sources,
+			separator: separator,
+			target:    m.Target,
+			entries:   entries,
+			dflt:      m.Default,
+		})
+	}
+
+	r.compiledClassify = compiled
 	return nil
 }
 

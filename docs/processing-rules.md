@@ -4,14 +4,22 @@
 
 - [Overview](#overview)
 - [Quick Start](#quick-start)
-- [Five Processing Actions](#five-processing-actions)
+- [Six Processing Actions](#six-processing-actions)
 - [Configuration Reference](#configuration-reference)
   - [Common Fields](#common-fields)
   - [Sample](#sample)
   - [Downsample](#downsample)
   - [Aggregate](#aggregate)
   - [Transform](#transform)
+  - [Classify](#classify)
   - [Drop](#drop)
+- [Rule Ownership Labels](#rule-ownership-labels)
+  - [Labels Field](#labels-field)
+  - [Required Labels Enforcement](#required-labels-enforcement)
+- [Dead Rule Detection](#dead-rule-detection)
+  - [Always-On Metrics](#always-on-metrics)
+  - [Optional Scanner](#optional-scanner)
+  - [Alert Rules](#alert-rules)
 - [Unmatched Metrics](#unmatched-metrics)
 - [Execution Model](#execution-model)
 - [Adaptive Downsampling Deep Dive](#adaptive-downsampling-deep-dive)
@@ -45,15 +53,16 @@ Processing rules are configured via a YAML file specified with `--processing-con
 
 ## Overview
 
-The Processing Rules engine is the unified metrics processing layer in metrics-governor. It replaces the older sampling system with a single, declarative configuration file that handles five distinct actions:
+The Processing Rules engine is the unified metrics processing layer in metrics-governor. It replaces the older sampling system with a single, declarative configuration file that handles six distinct actions:
 
 - **Sample** -- stochastic datapoint reduction
 - **Downsample** -- per-series time-windowed compression with fixed or adaptive rates
 - **Aggregate** -- cross-series reduction with configurable functions
 - **Transform** -- label manipulation (non-terminal, chains with other rules)
+- **Classify** -- derive team ownership, severity, and priority labels (non-terminal)
 - **Drop** -- unconditional 100% removal
 
-Rules are evaluated in order. Each incoming metric walks the rule list until it matches a terminal action (sample, downsample, aggregate, or drop) or passes through all rules unchanged. Transform rules are non-terminal: they modify labels and continue evaluation.
+Rules are evaluated in order. Each incoming metric walks the rule list until it matches a terminal action (sample, downsample, aggregate, or drop) or passes through all rules unchanged. Transform and classify rules are non-terminal: they modify labels and continue evaluation.
 
 This design consolidates what previously required separate sampling configs, relabeling configs, and external recording rules into a single pipeline stage.
 
@@ -97,7 +106,7 @@ That is all that is needed. Unmatched metrics pass through unchanged.
 
 ---
 
-## Five Processing Actions
+## Six Processing Actions
 
 | Action | Purpose | Stateful? | Status |
 |--------|---------|:---------:|--------|
@@ -357,6 +366,75 @@ operations:
 
 ---
 
+### Classify
+
+Derives classification labels (team ownership, severity, priority) from existing metric labels. Like transform, classify is **non-terminal** -- it modifies labels and continues to the next rule.
+
+Classify has two phases:
+
+1. **Chains** -- ordered list, first match wins, sets multiple labels at once
+2. **Mappings** -- all applied in order after chains, lookup-table style
+
+```yaml
+- name: classify-ownership
+  input: ".*"
+  action: classify
+  labels:
+    team: "platform"
+    owner_email: "platform@company.com"
+  classify:
+    chains:
+      - when:
+          - label: product
+            matches: "^checkout$"
+          - label: component
+            matches: "^(payment-processor|fraud-detection)$"
+        set:
+          team: "payments-core"
+          oncall: "payments-core-oncall"
+
+      - when:
+          - label: product
+            matches: "^(checkout|billing|subscriptions)$"
+        set:
+          team: "payments"
+          oncall: "payments-oncall"
+
+    mappings:
+      - source: stage
+        target: severity
+        values:
+          "^(ga|stable|production)$": "critical"
+          "^(beta|rc|canary)$": "warning"
+        default: "info"
+
+      - sources: [team, severity]
+        separator: ":"
+        target: priority
+        values:
+          "^payments.*:critical$": "P0"
+          "^.*:critical$": "P1"
+        default: "P3"
+
+    remove_after: [component]
+```
+
+**Chain conditions** reuse the same syntax as transform `when` conditions (`equals`, `matches`, `contains`, `not_matches`). **Mapping values** support regex keys (same as the transform `map` operation). **Set values** support `${interpolation}` for referencing other labels. **Multi-source mappings** concatenate multiple label values with a separator before matching.
+
+| Field | Description |
+|-------|-------------|
+| `classify.chains[].when` | AND conditions (all must match) |
+| `classify.chains[].set` | Labels to set on match (supports `${interpolation}`) |
+| `classify.mappings[].source` | Single source label |
+| `classify.mappings[].sources` | Multiple source labels (alternative to `source`) |
+| `classify.mappings[].separator` | Separator for multi-source concatenation (default: `:`) |
+| `classify.mappings[].target` | Target label name |
+| `classify.mappings[].values` | Regex key -> value lookup table |
+| `classify.mappings[].default` | Default value when no regex matches |
+| `classify.remove_after` | Labels to remove after all classification completes |
+
+See [examples/processing-classification.yaml](../examples/processing-classification.yaml) for a complete working example.
+
 ### Drop
 
 Unconditional 100% removal. No additional fields beyond the common fields.
@@ -368,6 +446,106 @@ Unconditional 100% removal. No additional fields beyond the common fields.
 ```
 
 All matching datapoints are discarded. Use this for metrics that should never reach the backend -- Go runtime metrics, scrape metadata, known-bad metric families, etc.
+
+---
+
+## Rule Ownership Labels
+
+Every rule (processing and limits) supports an optional `labels:` map for ownership metadata. These labels are exposed as Prometheus dimensions on dead-rule detection metrics, enabling Alertmanager routing to the responsible team.
+
+### Labels Field
+
+```yaml
+rules:
+  - name: classify-team
+    input: ".*"
+    action: classify
+    labels:
+      team: "payments"
+      product: "checkout"
+      slack_channel: "#payments-alerts"
+      pagerduty_service: "payments-oncall"
+      owner_email: "payments@company.com"
+```
+
+Labels are free-form key-value pairs. Reserved names (`rule`, `action`, `__name__`) are rejected at config validation time. These labels appear on dead-rule metrics:
+
+```
+metrics_governor_processing_rule_last_match_seconds{rule="classify-team", action="classify", team="payments", product="checkout"} 3600
+```
+
+### Required Labels Enforcement
+
+The top-level `required_labels` field specifies which labels must be present on every rule. Config validation fails at load time if any rule is missing a required label:
+
+```yaml
+required_labels: [team, owner_email]
+
+rules:
+  - name: drop-old
+    input: "old_.*"
+    action: drop
+    labels:
+      team: "platform"
+      # MISSING owner_email -> validation error:
+      # "rule 'drop-old' is missing required label 'owner_email'"
+```
+
+This works the same for both processing config and limits config.
+
+---
+
+## Dead Rule Detection
+
+Processing and limits rules can become stale when products are decommissioned, label values change, or regex patterns no longer match. Dead rule detection provides two independent layers:
+
+### Always-On Metrics
+
+These gauges are **always exposed** regardless of config. They enable PromQL-based alerting even when the in-governor scanner is disabled.
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `processing_rule_last_match_seconds` | Gauge | Seconds since last match (Inf if never) |
+| `processing_rule_never_matched` | Gauge | 1 if never matched since load, 0 otherwise |
+| `processing_rule_loaded_seconds` | Gauge | Seconds since rule was loaded |
+| `limits_rule_last_match_seconds` | Gauge | Same for limits rules |
+| `limits_rule_never_matched` | Gauge | Same for limits rules |
+| `limits_rule_loaded_seconds` | Gauge | Same for limits rules |
+
+All metrics include `rule` and `action` labels, plus any custom labels from the rule's `labels:` map.
+
+### Optional Scanner
+
+The scanner is a periodic goroutine controlled by `dead_rule_interval` in config:
+
+```yaml
+dead_rule_interval: "30m"   # 0 or omitted = scanner disabled
+```
+
+When enabled, it evaluates rules every `interval/2` and:
+- Sets `processing_rule_dead{rule, action}` gauge (1=dead, 0=alive)
+- Sets `processing_rules_dead_total` gauge (total dead count)
+- Logs state transitions: alive->dead (WARN), dead->alive (INFO)
+
+### Alert Rules
+
+Separate alert rule files are provided in `alerts/dead-rules.yaml` and `alerts/dead-rules-prometheusrule.yaml`. These work **without the scanner** using always-on metrics:
+
+```yaml
+# Stopped matching (was working before)
+MetricsGovernorDeadProcessingRule:
+  processing_rule_last_match_seconds > 1800 and processing_rule_never_matched == 0
+
+# Never matched at all (possible config error)
+MetricsGovernorNeverMatchedRule:
+  processing_rule_never_matched == 1 and processing_rule_loaded_seconds > 3600
+
+# Declining rate (gradual drift)
+MetricsGovernorDecliningRuleRate:
+  rate(processing_rule_input_total[6h]) < 0.01 and ... offset 7d > 1
+```
+
+See [Alerting - Dead Rule Alert Routing](alerting.md#dead-rule-alert-routing) for Alertmanager routing setup.
 
 ---
 

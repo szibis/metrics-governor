@@ -12,6 +12,10 @@
   - [Disabling Alerts by Profile](#disabling-alerts-by-profile)
   - [Adding Custom Alerts](#adding-custom-alerts)
 - [Playground — Interactive Threshold Tuning](#playground--interactive-threshold-tuning)
+- [Dead Rule Alerts](#dead-rule-alerts)
+  - [Setup](#setup)
+  - [Alert Reference](#alert-reference)
+  - [Alertmanager Routing by Ownership Labels](#alertmanager-routing-by-ownership-labels)
 - [Runbooks](#runbooks)
   - [MetricsGovernorDown](#metricsgovernordown)
   - [MetricsGovernorDataLoss](#metricsgovernordataloss)
@@ -259,6 +263,71 @@ The **Alert rules** tab in the playground (`tools/playground/index.html`) lets y
 6. Click **"Copy to Clipboard"** or **"Download"**
 
 The playground generates the same alert rules as the Helm chart template, with your custom thresholds embedded directly in the expressions.
+
+---
+
+## Dead Rule Alerts
+
+Dead rule alerts detect processing and limits rules that are no longer matching incoming metrics. They are **separate** from the core 13 operational alerts and live in dedicated files because they depend on user-specific ownership labels.
+
+### Setup
+
+**Install alert rules:**
+
+```bash
+# Prometheus / VictoriaMetrics
+cp alerts/dead-rules.yaml /etc/prometheus/rules/
+
+# Kubernetes (Prometheus Operator)
+kubectl apply -f alerts/dead-rules-prometheusrule.yaml
+```
+
+**Prerequisites:**
+
+1. Configure `labels:` on your processing and/or limits rules (see [docs/processing-rules.md](../docs/processing-rules.md#rule-ownership-labels))
+2. Optionally enforce labels with `required_labels: [team, owner_email]` in your processing config
+
+### Alert Reference
+
+| Alert | Severity | Expression | What It Detects |
+|-------|----------|-----------|-----------------|
+| `MetricsGovernorDeadProcessingRule` | warning | `last_match_seconds > 1800 and never_matched == 0` | Processing rule that stopped matching (product decommissioned, label values changed) |
+| `MetricsGovernorNeverMatchedRule` | critical | `never_matched == 1 and loaded_seconds > 3600` | Rule loaded >1h ago but never matched — likely config error (bad regex, wrong label pattern) |
+| `MetricsGovernorDeadLimitsRule` | warning | `limits_rule_last_match_seconds > 1800 and never_matched == 0` | Limits rule targeting decommissioned metrics |
+| `MetricsGovernorDecliningRuleRate` | info | `rate(input_total[6h]) < 0.01 and rate(input_total[6h] offset 7d) > 1` | Gradual decline from >1 dp/s last week to near-zero now |
+
+All four alerts use **always-on metrics** — they work regardless of whether the `dead_rule_interval` scanner is enabled.
+
+### Alertmanager Routing by Ownership Labels
+
+Ownership labels from the rule's `labels:` map are exposed as Prometheus label dimensions. This enables Alertmanager routing by team:
+
+```yaml
+# alertmanager.yml
+route:
+  routes:
+    - match_re:
+        alertname: "MetricsGovernor(Dead|NeverMatched).*Rule"
+      group_by: [team]
+      routes:
+        - match: { team: payments }
+          receiver: payments-slack
+        - match: { team: platform }
+          receiver: platform-pagerduty
+
+receivers:
+  - name: payments-slack
+    slack_configs:
+      - channel: '{{ .GroupLabels.slack_channel | default "#oncall" }}'
+        title: 'Dead rule: {{ .CommonLabels.rule }}'
+  - name: platform-pagerduty
+    pagerduty_configs:
+      - service_key: '{{ .GroupLabels.pagerduty_service }}'
+```
+
+Available template variables from ownership labels: `{{ $labels.team }}`, `{{ $labels.owner_email }}`, `{{ $labels.slack_channel }}`, `{{ $labels.pagerduty_service }}`, plus any custom labels you define.
+
+For complete dead rule detection documentation, see [docs/processing-rules.md](../docs/processing-rules.md#dead-rule-detection).
 
 ---
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -19,8 +20,18 @@ const (
 
 // Config holds the complete limits configuration.
 type Config struct {
-	Defaults *DefaultLimits `yaml:"defaults"`
-	Rules    []Rule         `yaml:"rules"`
+	Defaults         *DefaultLimits `yaml:"defaults"`
+	DeadRuleInterval string         `yaml:"dead_rule_interval,omitempty"`
+	RequiredLabels   []string       `yaml:"required_labels,omitempty"`
+	Rules            []Rule         `yaml:"rules"`
+
+	parsedDeadRuleIntvl time.Duration
+}
+
+// reservedLimitsLabelNames are label names that cannot be used in rule ownership labels.
+var reservedLimitsLabelNames = map[string]bool{
+	"rule":     true,
+	"__name__": true,
 }
 
 // DefaultLimits defines default limits when no rule matches.
@@ -32,11 +43,12 @@ type DefaultLimits struct {
 
 // Rule defines a limit rule with matching criteria.
 type Rule struct {
-	Name              string    `yaml:"name"`
-	Match             RuleMatch `yaml:"match"`
-	MaxDatapointsRate int64     `yaml:"max_datapoints_rate"` // per minute, 0 = no limit
-	MaxCardinality    int64     `yaml:"max_cardinality"`     // 0 = no limit
-	Action            Action    `yaml:"action"`
+	Name              string            `yaml:"name"`
+	Match             RuleMatch         `yaml:"match"`
+	MaxDatapointsRate int64             `yaml:"max_datapoints_rate"` // per minute, 0 = no limit
+	MaxCardinality    int64             `yaml:"max_cardinality"`     // 0 = no limit
+	Action            Action            `yaml:"action"`
+	Labels            map[string]string `yaml:"labels,omitempty"` // Ownership metadata for alerting/routing
 
 	// GroupBy specifies which labels to use for tracking top offenders.
 	// Datapoints and cardinality are tracked per unique combination of these labels.
@@ -76,12 +88,38 @@ func LoadConfig(path string) (*Config, error) {
 		cfg.Defaults.Action = ActionLog
 	}
 
+	// Parse dead_rule_interval.
+	if cfg.DeadRuleInterval != "" {
+		d, err := time.ParseDuration(cfg.DeadRuleInterval)
+		if err != nil {
+			return nil, fmt.Errorf("limits: invalid dead_rule_interval %q: %w", cfg.DeadRuleInterval, err)
+		}
+		if d < 0 {
+			return nil, fmt.Errorf("limits: dead_rule_interval must be non-negative")
+		}
+		cfg.parsedDeadRuleIntvl = d
+	}
+
 	// Compile regex patterns and validate rules
 	for i := range cfg.Rules {
 		rule := &cfg.Rules[i]
 
 		if rule.Action == "" {
 			rule.Action = cfg.Defaults.Action
+		}
+
+		// Validate ownership labels.
+		for k := range rule.Labels {
+			if reservedLimitsLabelNames[k] {
+				return nil, fmt.Errorf("limits: rule %q: label %q is reserved", rule.Name, k)
+			}
+		}
+
+		// Validate required labels.
+		for _, req := range cfg.RequiredLabels {
+			if _, ok := rule.Labels[req]; !ok {
+				return nil, fmt.Errorf("limits: rule %q is missing required label %q", rule.Name, req)
+			}
 		}
 
 		if rule.Match.MetricName != "" {
@@ -97,6 +135,11 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// ParsedDeadRuleInterval returns the parsed dead rule detection interval.
+func (c *Config) ParsedDeadRuleInterval() time.Duration {
+	return c.parsedDeadRuleIntvl
 }
 
 // containsRegexChars checks if a string contains regex special characters.

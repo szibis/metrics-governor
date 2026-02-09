@@ -613,6 +613,73 @@ kubectl get configmap <config-name> -o jsonpath='{.metadata.resourceVersion}'
 
 ---
 
+## Dead Rule Alert Routing
+
+Dead rule detection alerts include ownership labels from the rule's `labels:` map. This enables Alertmanager to route alerts to the responsible team automatically.
+
+### How Ownership Labels Flow to Alerts
+
+When you configure `labels:` on processing or limits rules, those labels become Prometheus dimensions on dead-rule metrics. Alert annotations can reference them:
+
+```yaml
+# In your alert rule:
+annotations:
+  summary: "Rule {{ $labels.rule }} stopped matching (team: {{ $labels.team }})"
+  slack_channel: "{{ $labels.slack_channel }}"
+  pagerduty_service: "{{ $labels.pagerduty_service }}"
+  owner: "{{ $labels.owner_email }}"
+```
+
+### Alertmanager Routing Example
+
+Route dead rule alerts to the owning team's channels:
+
+```yaml
+# alertmanager.yml
+route:
+  routes:
+    - match_re:
+        alertname: "MetricsGovernor(Dead|NeverMatched).*Rule"
+      group_by: [team]
+      routes:
+        - match: { team: payments }
+          receiver: payments-slack
+        - match: { team: platform }
+          receiver: platform-pagerduty
+
+receivers:
+  - name: payments-slack
+    slack_configs:
+      - channel: '#payments-alerts'
+        title: 'Dead Rule: {{ .GroupLabels.rule }}'
+        text: 'Owner: {{ .CommonAnnotations.owner }}'
+  - name: platform-pagerduty
+    pagerduty_configs:
+      - service_key: '<pagerduty-key>'
+        description: '{{ .CommonAnnotations.summary }}'
+```
+
+### Ensuring Routability with required_labels
+
+Use `required_labels` in your processing config to guarantee every rule has the labels needed for alert routing:
+
+```yaml
+required_labels: [team, owner_email]
+```
+
+Config validation fails at load time if any rule is missing a required label, preventing unroutable dead-rule alerts.
+
+### Alert Rule Files
+
+| File | Format | Purpose |
+|------|--------|---------|
+| `alerts/dead-rules.yaml` | Prometheus | Standalone dead rule alert definitions |
+| `alerts/dead-rules-prometheusrule.yaml` | K8s CRD | Same rules for prometheus-operator |
+
+These alerts work **without** the in-governor scanner -- they use always-on `last_match_seconds` and `never_matched` metrics.
+
+---
+
 ## See Also
 
 - [Production Guide](production-guide.md) — Deployment sizing, resilience tuning, HPA/VPA
@@ -622,3 +689,4 @@ kubectl get configmap <config-name> -o jsonpath='{.metadata.resourceVersion}'
 - [Configuration Profiles](profiles.md) — Profile presets, parameter tables
 - [Alert Rules](../alerts/) — Importable rule files
 - [Alert Runbooks](../alerts/README.md) — Detailed runbooks for each alert
+- [Processing Rules - Dead Rule Detection](processing-rules.md#dead-rule-detection) — Detection architecture and metrics
