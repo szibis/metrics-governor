@@ -367,7 +367,10 @@ func main() {
 		}
 	}
 
-	// Create stats collector (nil for "none" level — disables all stats processing)
+	// Create stats collector (nil for "none" level — disables all stats processing).
+	// Kept as concrete type for direct method calls (ServeHTTP, StartPeriodicLogging);
+	// converted to interface via bufferStats before passing to buffer.New() to avoid
+	// Go's typed nil pitfall.
 	var statsCollector *stats.Collector
 	statsLevel := stats.StatsLevel(cfg.StatsLevel)
 	if statsLevel != stats.StatsLevelNone {
@@ -447,7 +450,10 @@ func main() {
 		))
 	}
 
-	// Create tenant pipeline (if tenancy enabled)
+	// Create tenant pipeline (if tenancy enabled).
+	// Kept as concrete type for direct method calls (SetQuotaEnforcer in SIGHUP
+	// handler); converted to interface via bufferTenant before passing to
+	// NewFusedProcessor() to avoid Go's typed nil pitfall.
 	var tenantPipeline *tenant.Pipeline
 	if cfg.TenancyEnabled {
 		tenancyCfg := tenant.Config{
@@ -536,7 +542,13 @@ func main() {
 
 	// Fuse tenant + limits into a single pipeline step (avoids separate timing overhead).
 	// Falls back to separate processors if neither is configured.
-	fusedProc := pipeline.NewFusedProcessor(tenantPipeline, limitsEnforcer)
+	// Convert concrete pointers to interface to avoid Go's typed nil pitfall:
+	// a nil *tenant.Pipeline wrapped in TenantProcessor passes nil checks.
+	var fusedTenant pipeline.TenantProcessor
+	if tenantPipeline != nil {
+		fusedTenant = tenantPipeline
+	}
+	fusedProc := pipeline.NewFusedProcessor(fusedTenant, limitsEnforcer)
 	if fusedProc != nil {
 		bufOpts = append(bufOpts, buffer.WithFusedProcessor(fusedProc))
 	} else {
@@ -590,7 +602,14 @@ func main() {
 	if fusedProc == nil {
 		bufferLimits = limitsEnforcer
 	}
-	buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, finalExporter, statsCollector, bufferLimits, bufferLogAggregator, bufOpts...)
+	// Pass statsCollector as typed interface to buffer; use explicit nil to avoid
+	// Go's typed nil pitfall (nil *stats.Collector wrapped in StatsCollector
+	// interface passes nil checks, causing panics on method dispatch).
+	var bufferStats buffer.StatsCollector
+	if statsCollector != nil {
+		bufferStats = statsCollector
+	}
+	buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, finalExporter, bufferStats, bufferLimits, bufferLogAggregator, bufOpts...)
 
 	// Wire aggregate output into buffer (bypasses stats+processing to avoid loops)
 	if sampler != nil && sampler.HasAggregation() {
@@ -632,8 +651,10 @@ func main() {
 		// Create a response recorder to capture all metrics
 		recorder := &metricsRecorder{Writer: &buf}
 
-		// Write stats metrics
-		statsCollector.ServeHTTP(recorder, r)
+		// Write stats metrics (nil when stats_level=none)
+		if statsCollector != nil {
+			statsCollector.ServeHTTP(recorder, r)
+		}
 		// Write limits metrics (if enabled)
 		if limitsEnforcer != nil {
 			limitsEnforcer.ServeHTTP(recorder, r)
@@ -680,8 +701,10 @@ func main() {
 		}
 	}()
 
-	// Start periodic stats logging (every 30 seconds)
-	go statsCollector.StartPeriodicLogging(ctx, 30*time.Second)
+	// Start periodic stats logging (every 30 seconds, nil when stats_level=none)
+	if statsCollector != nil {
+		go statsCollector.StartPeriodicLogging(ctx, 30*time.Second)
+	}
 
 	// PRW Pipeline (separate from OTLP)
 	var prwReceiver *receiver.PRWReceiver
