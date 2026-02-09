@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.37.0] - 2026-02-09
+
+### Added
+
+- feat: pipeline performance optimizations with queue modes, stats levels, and pipeline fusion (#146)
+
+
 ## [0.36.1] - 2026-02-08
 
 ### Other
