@@ -6,7 +6,7 @@ require (
 	github.com/KimMachineGun/automemlimit v0.7.5
 	github.com/axiomhq/hyperloglog v0.2.6
 	github.com/bits-and-blooms/bloom/v3 v3.7.1
-	github.com/klauspost/compress v1.18.3
+	github.com/klauspost/compress v1.18.4
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	go.opentelemetry.io/contrib/bridges/prometheus v0.65.0
