@@ -13,6 +13,9 @@ func TestGetProfile(t *testing.T) {
 	}{
 		{"minimal", ProfileMinimal, false},
 		{"balanced", ProfileBalanced, false},
+		{"safety", ProfileSafety, false},
+		{"observable", ProfileObservable, false},
+		{"resilient", ProfileResilient, false},
 		{"performance", ProfilePerformance, false},
 		{"unknown", ProfileName("unknown"), true},
 		{"empty", ProfileName(""), true},
@@ -52,6 +55,9 @@ func TestIsValidProfile(t *testing.T) {
 		{"empty is valid", "", true},
 		{"minimal", "minimal", true},
 		{"balanced", "balanced", true},
+		{"safety", "safety", true},
+		{"observable", "observable", true},
+		{"resilient", "resilient", true},
 		{"performance", "performance", true},
 		{"unknown", "unknown", false},
 		{"capitalized", "Minimal", false},
@@ -70,12 +76,15 @@ func TestIsValidProfile(t *testing.T) {
 
 func TestValidProfileNames(t *testing.T) {
 	names := ValidProfileNames()
-	if len(names) != 3 {
-		t.Fatalf("expected 3 profile names, got %d", len(names))
+	if len(names) != 6 {
+		t.Fatalf("expected 6 profile names, got %d", len(names))
 	}
 	expected := map[ProfileName]bool{
 		ProfileMinimal:     true,
 		ProfileBalanced:    true,
+		ProfileSafety:      true,
+		ProfileObservable:  true,
+		ProfileResilient:   true,
 		ProfilePerformance: true,
 	}
 	for _, n := range names {
@@ -274,6 +283,192 @@ func TestApplyProfile_Performance(t *testing.T) {
 	}
 }
 
+func TestApplyProfile_Safety(t *testing.T) {
+	cfg := DefaultConfig()
+	err := ApplyProfile(cfg, ProfileSafety, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Disk queue — maximum data safety
+	if cfg.QueueMode != "disk" {
+		t.Errorf("QueueMode = %q, want %q", cfg.QueueMode, "disk")
+	}
+	if cfg.QueueType != "disk" {
+		t.Errorf("QueueType = %q, want %q", cfg.QueueType, "disk")
+	}
+	if cfg.QueueEnabled != true {
+		t.Errorf("QueueEnabled = %v, want true", cfg.QueueEnabled)
+	}
+	if cfg.QueueMaxBytes != 8589934592 {
+		t.Errorf("QueueMaxBytes = %d, want 8589934592", cfg.QueueMaxBytes)
+	}
+	// Full stats for cost visibility
+	if cfg.StatsLevel != "full" {
+		t.Errorf("StatsLevel = %q, want %q", cfg.StatsLevel, "full")
+	}
+	// Zstd export compression
+	if cfg.ExporterCompression != "zstd" {
+		t.Errorf("ExporterCompression = %q, want %q", cfg.ExporterCompression, "zstd")
+	}
+	if cfg.QueueCompression != "snappy" {
+		t.Errorf("QueueCompression = %q, want %q", cfg.QueueCompression, "snappy")
+	}
+	// Reject policy — never lose data
+	if cfg.BufferFullPolicy != "reject" {
+		t.Errorf("BufferFullPolicy = %q, want %q", cfg.BufferFullPolicy, "reject")
+	}
+	// Pipeline split off
+	if cfg.QueuePipelineSplitEnabled != false {
+		t.Errorf("QueuePipelineSplitEnabled = %v, want false", cfg.QueuePipelineSplitEnabled)
+	}
+	// Adaptive features on
+	if cfg.QueueAdaptiveWorkersEnabled != true {
+		t.Errorf("QueueAdaptiveWorkersEnabled = %v, want true", cfg.QueueAdaptiveWorkersEnabled)
+	}
+	if cfg.BufferBatchAutoTuneEnabled != true {
+		t.Errorf("BufferBatchAutoTuneEnabled = %v, want true", cfg.BufferBatchAutoTuneEnabled)
+	}
+	// Bloom persistence on
+	if cfg.BloomPersistenceEnabled != true {
+		t.Errorf("BloomPersistenceEnabled = %v, want true", cfg.BloomPersistenceEnabled)
+	}
+	// Resilience on
+	if cfg.QueueBackoffEnabled != true {
+		t.Errorf("QueueBackoffEnabled = %v, want true", cfg.QueueBackoffEnabled)
+	}
+	if cfg.QueueCircuitBreakerEnabled != true {
+		t.Errorf("QueueCircuitBreakerEnabled = %v, want true", cfg.QueueCircuitBreakerEnabled)
+	}
+	if cfg.ExporterPrewarmConnections != true {
+		t.Errorf("ExporterPrewarmConnections = %v, want true", cfg.ExporterPrewarmConnections)
+	}
+	if cfg.LimitsDryRun != false {
+		t.Errorf("LimitsDryRun = %v, want false", cfg.LimitsDryRun)
+	}
+	if cfg.StringInterning != true {
+		t.Errorf("StringInterning = %v, want true", cfg.StringInterning)
+	}
+}
+
+func TestApplyProfile_Observable(t *testing.T) {
+	cfg := DefaultConfig()
+	err := ApplyProfile(cfg, ProfileObservable, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Hybrid queue — memory-speed with disk spillover
+	if cfg.QueueMode != "hybrid" {
+		t.Errorf("QueueMode = %q, want %q", cfg.QueueMode, "hybrid")
+	}
+	if cfg.QueueType != "disk" {
+		t.Errorf("QueueType = %q, want %q", cfg.QueueType, "disk")
+	}
+	if cfg.QueueEnabled != true {
+		t.Errorf("QueueEnabled = %v, want true", cfg.QueueEnabled)
+	}
+	if cfg.QueueMaxBytes != 8589934592 {
+		t.Errorf("QueueMaxBytes = %d, want 8589934592", cfg.QueueMaxBytes)
+	}
+	// Full stats for cost visibility
+	if cfg.StatsLevel != "full" {
+		t.Errorf("StatsLevel = %q, want %q", cfg.StatsLevel, "full")
+	}
+	// Zstd export compression
+	if cfg.ExporterCompression != "zstd" {
+		t.Errorf("ExporterCompression = %q, want %q", cfg.ExporterCompression, "zstd")
+	}
+	// Reject policy
+	if cfg.BufferFullPolicy != "reject" {
+		t.Errorf("BufferFullPolicy = %q, want %q", cfg.BufferFullPolicy, "reject")
+	}
+	// Pipeline split off
+	if cfg.QueuePipelineSplitEnabled != false {
+		t.Errorf("QueuePipelineSplitEnabled = %v, want false", cfg.QueuePipelineSplitEnabled)
+	}
+	// Adaptive features on
+	if cfg.QueueAdaptiveWorkersEnabled != true {
+		t.Errorf("QueueAdaptiveWorkersEnabled = %v, want true", cfg.QueueAdaptiveWorkersEnabled)
+	}
+	// Bloom persistence on
+	if cfg.BloomPersistenceEnabled != true {
+		t.Errorf("BloomPersistenceEnabled = %v, want true", cfg.BloomPersistenceEnabled)
+	}
+	// Memory ratios
+	if cfg.MemoryLimitRatio != 0.82 {
+		t.Errorf("MemoryLimitRatio = %f, want 0.82", cfg.MemoryLimitRatio)
+	}
+	if cfg.LimitsDryRun != false {
+		t.Errorf("LimitsDryRun = %v, want false", cfg.LimitsDryRun)
+	}
+}
+
+func TestApplyProfile_Resilient(t *testing.T) {
+	cfg := DefaultConfig()
+	err := ApplyProfile(cfg, ProfileResilient, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Hybrid queue
+	if cfg.QueueMode != "hybrid" {
+		t.Errorf("QueueMode = %q, want %q", cfg.QueueMode, "hybrid")
+	}
+	if cfg.QueueType != "disk" {
+		t.Errorf("QueueType = %q, want %q", cfg.QueueType, "disk")
+	}
+	if cfg.QueueEnabled != true {
+		t.Errorf("QueueEnabled = %v, want true", cfg.QueueEnabled)
+	}
+	if cfg.QueueMaxBytes != 12884901888 {
+		t.Errorf("QueueMaxBytes = %d, want 12884901888", cfg.QueueMaxBytes)
+	}
+	// Basic stats — lower overhead
+	if cfg.StatsLevel != "basic" {
+		t.Errorf("StatsLevel = %q, want %q", cfg.StatsLevel, "basic")
+	}
+	// Snappy compression — fast
+	if cfg.ExporterCompression != "snappy" {
+		t.Errorf("ExporterCompression = %q, want %q", cfg.ExporterCompression, "snappy")
+	}
+	if cfg.QueueCompression != "snappy" {
+		t.Errorf("QueueCompression = %q, want %q", cfg.QueueCompression, "snappy")
+	}
+	// Reject policy
+	if cfg.BufferFullPolicy != "reject" {
+		t.Errorf("BufferFullPolicy = %q, want %q", cfg.BufferFullPolicy, "reject")
+	}
+	// Pipeline split off
+	if cfg.QueuePipelineSplitEnabled != false {
+		t.Errorf("QueuePipelineSplitEnabled = %v, want false", cfg.QueuePipelineSplitEnabled)
+	}
+	// Adaptive features on
+	if cfg.QueueAdaptiveWorkersEnabled != true {
+		t.Errorf("QueueAdaptiveWorkersEnabled = %v, want true", cfg.QueueAdaptiveWorkersEnabled)
+	}
+	if cfg.BufferBatchAutoTuneEnabled != true {
+		t.Errorf("BufferBatchAutoTuneEnabled = %v, want true", cfg.BufferBatchAutoTuneEnabled)
+	}
+	// Bloom persistence on
+	if cfg.BloomPersistenceEnabled != true {
+		t.Errorf("BloomPersistenceEnabled = %v, want true", cfg.BloomPersistenceEnabled)
+	}
+	// Resilience on
+	if cfg.QueueBackoffEnabled != true {
+		t.Errorf("QueueBackoffEnabled = %v, want true", cfg.QueueBackoffEnabled)
+	}
+	if cfg.QueueCircuitBreakerEnabled != true {
+		t.Errorf("QueueCircuitBreakerEnabled = %v, want true", cfg.QueueCircuitBreakerEnabled)
+	}
+	if cfg.LimitsDryRun != false {
+		t.Errorf("LimitsDryRun = %v, want false", cfg.LimitsDryRun)
+	}
+	if cfg.StringInterning != true {
+		t.Errorf("StringInterning = %v, want true", cfg.StringInterning)
+	}
+}
+
 func TestApplyProfile_UnknownProfile(t *testing.T) {
 	cfg := DefaultConfig()
 	err := ApplyProfile(cfg, ProfileName("unknown"), nil)
@@ -432,6 +627,45 @@ func TestDumpProfile(t *testing.T) {
 				"(default)",
 				"queue.enabled",
 				"true",
+			},
+		},
+		{
+			name:    "safety",
+			profile: ProfileSafety,
+			wantErr: false,
+			mustContain: []string{
+				"Profile: safety",
+				"queue.mode",
+				"disk",
+				"stats.level",
+				"full",
+				"disk required",
+			},
+		},
+		{
+			name:    "observable",
+			profile: ProfileObservable,
+			wantErr: false,
+			mustContain: []string{
+				"Profile: observable",
+				"queue.mode",
+				"hybrid",
+				"stats.level",
+				"full",
+				"disk required",
+			},
+		},
+		{
+			name:    "resilient",
+			profile: ProfileResilient,
+			wantErr: false,
+			mustContain: []string{
+				"Profile: resilient",
+				"queue.mode",
+				"hybrid",
+				"stats.level",
+				"basic",
+				"disk required",
 			},
 		},
 		{
@@ -601,6 +835,69 @@ func TestPrerequisites_PerformanceCPURequired(t *testing.T) {
 	}
 }
 
+func TestPrerequisites_Safety(t *testing.T) {
+	p, err := GetProfile(ProfileSafety)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	prereqs := p.Prerequisites()
+	if len(prereqs) != 2 {
+		t.Fatalf("safety should have 2 prerequisites, got %d", len(prereqs))
+	}
+
+	var hasDiskRequired bool
+	for _, pr := range prereqs {
+		if pr.Type == "disk" && pr.Severity == "required" {
+			hasDiskRequired = true
+		}
+	}
+	if !hasDiskRequired {
+		t.Error("safety profile should have a required disk prerequisite")
+	}
+}
+
+func TestPrerequisites_Observable(t *testing.T) {
+	p, err := GetProfile(ProfileObservable)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	prereqs := p.Prerequisites()
+	if len(prereqs) != 2 {
+		t.Fatalf("observable should have 2 prerequisites, got %d", len(prereqs))
+	}
+
+	var hasDiskRequired bool
+	for _, pr := range prereqs {
+		if pr.Type == "disk" && pr.Severity == "required" {
+			hasDiskRequired = true
+		}
+	}
+	if !hasDiskRequired {
+		t.Error("observable profile should have a required disk prerequisite")
+	}
+}
+
+func TestPrerequisites_Resilient(t *testing.T) {
+	p, err := GetProfile(ProfileResilient)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	prereqs := p.Prerequisites()
+	if len(prereqs) != 2 {
+		t.Fatalf("resilient should have 2 prerequisites, got %d", len(prereqs))
+	}
+
+	var hasDiskRequired bool
+	for _, pr := range prereqs {
+		if pr.Type == "disk" && pr.Severity == "required" {
+			hasDiskRequired = true
+		}
+	}
+	if !hasDiskRequired {
+		t.Error("resilient profile should have a required disk prerequisite")
+	}
+}
+
 func TestProfileConfig_ResourceTargets(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -609,6 +906,9 @@ func TestProfileConfig_ResourceTargets(t *testing.T) {
 	}{
 		{"minimal no disk", ProfileMinimal, false},
 		{"balanced no disk", ProfileBalanced, false},
+		{"safety disk required", ProfileSafety, true},
+		{"observable disk required", ProfileObservable, true},
+		{"resilient disk required", ProfileResilient, true},
 		{"performance disk required", ProfilePerformance, true},
 	}
 
@@ -702,6 +1002,9 @@ func TestApplyProfile_BloomPersistence(t *testing.T) {
 	}{
 		{"minimal bloom off", ProfileMinimal, false},
 		{"balanced bloom off", ProfileBalanced, false},
+		{"safety bloom on", ProfileSafety, true},
+		{"observable bloom on", ProfileObservable, true},
+		{"resilient bloom on", ProfileResilient, true},
 		{"performance bloom on", ProfilePerformance, true},
 	}
 	for _, tt := range tests {

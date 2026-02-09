@@ -6,11 +6,16 @@
 - [Profiles](#profiles)
   - [minimal — Development & Testing](#minimal--development--testing)
   - [balanced — Production Default](#balanced--production-default)
+  - [safety — Maximum Data Safety + Cost Efficiency](#safety--maximum-data-safety--cost-efficiency)
+  - [observable — Full Observability + Cost Efficiency](#observable--full-observability--cost-efficiency)
+  - [resilient — Durable + Fast](#resilient--durable--fast)
   - [performance — High Throughput](#performance--high-throughput)
+- [Cost Efficiency](#cost-efficiency)
 - [Overriding Profile Values](#overriding-profile-values)
 - [Introspection](#introspection)
 - [Choosing a Profile](#choosing-a-profile)
 - [Profile Comparison — Full Parameter Table](#profile-comparison--full-parameter-table)
+- [Resource Sizing at Reference Workload](#resource-sizing-at-reference-workload)
 - [Consolidated Parameters](#consolidated-parameters)
 - [Migration from Manual Config](#migration-from-manual-config)
 
@@ -18,7 +23,7 @@
 
 ## Quick Start
 
-metrics-governor ships with three built-in profiles that bundle sensible defaults for common deployment scenarios.
+metrics-governor ships with six built-in profiles that bundle sensible defaults for common deployment scenarios.
 
 ```yaml
 exporter:
@@ -44,12 +49,13 @@ Best for: local development, CI testing, non-critical metrics, sidecar mode.
 | String interning | Off | Saves interning table memory |
 | Compression | None | Saves CPU |
 | Circuit breaker | Off | Direct export, fail fast |
+| Stats | None | Minimal overhead |
 
 **Prerequisites:** None
 
 ### `balanced` — Production Default
 
-**Resource target:** 1–2 CPU, 256 MB–1 GB RAM, no disk required
+**Resource target:** 1–2 CPU, 256–512 MB RAM, no disk required
 **Max throughput:** ~100k dps
 
 Best for: production infrastructure monitoring, medium cardinality.
@@ -63,32 +69,122 @@ Best for: production infrastructure monitoring, medium cardinality.
 | String interning | On | Reduces GC pressure |
 | Compression | Snappy | Fast, low CPU |
 | Circuit breaker | On (5 failures) | Protect downstream |
+| Stats | Basic | Per-metric counts |
 
 **Prerequisites:**
 - Recommended: 512+ MB memory for adaptive tuning overhead
 
+### `safety` — Maximum Data Safety + Cost Efficiency
+
+**Resource target:** 1–1.5 CPU, 320–768 MB RAM, **disk required** (8 GB PVC)
+**Max throughput:** ~100k dps | **Cost efficiency:** High
+
+Best for: regulated environments, financial metrics, data you cannot afford to lose, cost optimization.
+
+| Feature | Status | Why |
+|---------|--------|-----|
+| Queue | **Disk** (pure disk mode) | Full crash recovery — every batch persisted |
+| Adaptive workers | **On** | Self-tunes worker count |
+| Batch auto-tune | **On** | AIMD batch sizing |
+| Pipeline split | Off | Simplicity over throughput |
+| String interning | On | Reduces GC pressure |
+| Compression | **Zstd** export, snappy queue | Best ratio = less bandwidth cost |
+| Circuit breaker | On (5 failures) | Protect downstream |
+| Stats | **Full** | Per-metric cardinality tracking for cost visibility |
+| Bloom persistence | **On** | Survive restarts without re-learning |
+
+**Prerequisites:**
+- **Required:** PersistentVolumeClaim for disk queue (8+ GB recommended)
+- Recommended: 768+ MB memory for full stats + disk cache
+
+**Cost efficiency:** Full per-metric stats reveal your most expensive metrics. Zstd compression reduces egress bandwidth by 60–80%. Disk persistence ensures no duplicate sends to paid backends after crashes. Spending more on proxy resources typically saves 10–100x in backend SaaS costs.
+
+### `observable` — Full Observability + Cost Efficiency
+
+**Resource target:** 0.75–1.25 CPU, 300–640 MB RAM, **disk required** (8 GB PVC)
+**Max throughput:** ~120k dps | **Cost efficiency:** High
+
+Best for: teams that need per-metric cost tracking with hybrid queue durability.
+
+| Feature | Status | Why |
+|---------|--------|-----|
+| Queue | **Hybrid** (memory L1 + disk spillover) | Memory-speed normally, disk safety for spikes |
+| Adaptive workers | **On** | Self-tunes worker count |
+| Batch auto-tune | **On** | AIMD batch sizing |
+| Pipeline split | Off | Not needed at this scale |
+| String interning | On | Reduces GC pressure |
+| Compression | **Zstd** export, snappy queue | Bandwidth savings |
+| Circuit breaker | On (5 failures) | Protect downstream |
+| Stats | **Full** | Per-metric cardinality tracking finds cost outliers |
+| Bloom persistence | **On** | Survive restarts without re-learning |
+
+**Prerequisites:**
+- **Required:** PersistentVolumeClaim for hybrid queue spillover (8+ GB recommended)
+- Recommended: 640+ MB memory for full stats
+
+**Cost efficiency:** Full per-metric stats reveal exactly where storage costs come from. Hybrid queue avoids duplicate sends to paid backends during spikes. Zstd reduces network egress. Reject policy ensures no silent drops that trigger re-sends.
+
+### `resilient` — Durable + Fast
+
+**Resource target:** 0.5–1 CPU, 240–512 MB RAM, **disk required** (12 GB PVC)
+**Max throughput:** ~150k dps | **Cost efficiency:** Medium
+
+Best for: production workloads that need disk spillover without the overhead of full stats.
+
+| Feature | Status | Why |
+|---------|--------|-----|
+| Queue | **Hybrid** (memory L1 + disk spillover) | Memory-speed normally, disk safety for spikes |
+| Adaptive workers | **On** | Self-tunes worker count |
+| Batch auto-tune | **On** | AIMD batch sizing |
+| Pipeline split | Off | Simpler, more predictable |
+| String interning | On | Reduces GC pressure |
+| Compression | Snappy | Fast compression, low CPU |
+| Circuit breaker | On (5 failures) | Protect downstream |
+| Stats | Basic | Per-metric counts (lower overhead than full) |
+| Bloom persistence | **On** | Survive restarts without re-learning |
+
+**Prerequisites:**
+- **Required:** PersistentVolumeClaim for hybrid queue spillover (12+ GB recommended)
+- Recommended: 512+ MB memory
+
 ### `performance` — High Throughput
 
-**Resource target:** 4+ CPU, 1–4 GB RAM, **disk required**
-**Max throughput:** ~500k+ dps
+**Resource target:** 2–4 CPU, 512 MB–2 GB RAM, **disk required** (12 GB PVC)
+**Max throughput:** ~500k+ dps | **Cost efficiency:** Low
 
 Best for: IoT, high-volume telemetry, APM at scale.
 
 | Feature | Status | Why |
 |---------|--------|-----|
-| Queue | **Disk** | Persistent, survives restarts |
+| Queue | **Hybrid** (memory L1 + disk spillover) | Persistent, survives restarts |
 | Adaptive workers | **On** | Dynamic scaling |
 | Batch auto-tune | **On** | AIMD batch sizing |
 | Pipeline split | **On** | Separates CPU/IO work |
 | String interning | On | Reduces GC pressure |
 | Compression | Zstd | Best ratio for large batches |
 | Circuit breaker | On (3 failures) | Aggressive protection |
+| Stats | Basic | Per-metric counts |
+| Bloom persistence | **On** | Survive restarts without re-learning |
 
 **Prerequisites:**
 - **Required:** PersistentVolumeClaim for disk queue
 - **Required:** At least 2 CPU cores for pipeline split
 - Recommended: SSD/NVMe storage
 - Recommended: 1+ GB memory
+
+## Cost Efficiency
+
+Profiles like `safety` and `observable` use more proxy resources (disk, CPU, memory) but can dramatically reduce backend costs:
+
+| Feature | Cost Impact | How |
+|---------|------------|-----|
+| Full stats (`stats_level: full`) | See exactly which metrics/tenants cost most | Per-metric cardinality tracking reveals top-cost outliers |
+| Zstd compression | Reduce egress bandwidth by 60–80% | Best compression ratio for metric payloads |
+| Disk persistence | Prevent duplicate sends | Crash recovery avoids re-sending same data to paid backends |
+| Limits enforcement | Cap cardinality growth | Stop runaway label values before they reach storage |
+| Bloom filters | Track unique series efficiently | Memory-efficient cardinality estimation |
+
+> **Rule of thumb:** A metrics-governor instance costing $5–20/month in compute can save $500–2000/month in backend SaaS costs (Datadog, Grafana Cloud, New Relic) by identifying and reducing expensive metrics before ingestion.
 
 ## Overriding Profile Values
 
@@ -128,37 +224,61 @@ metrics-governor --show-deprecations
 |----------------|-----|
 | Lowest resource usage | `minimal` |
 | Production defaults with self-tuning | `balanced` |
-| Maximum throughput with persistence | `performance` |
+| Maximum data safety + cost visibility | `safety` |
+| Per-metric cost tracking + hybrid durability | `observable` |
+| Disk spillover without full stats overhead | `resilient` |
+| Maximum throughput with pipeline split | `performance` |
 | Full manual control | Any profile + override everything |
 
 ## Profile Comparison — Full Parameter Table
 
-| Parameter | `minimal` | `balanced` | `performance` |
-|-----------|-----------|-----------|---------------|
-| Workers | 1 | max(2, NumCPU/2) | NumCPU × 2 |
-| Pipeline split | off | off | **on** |
-| Adaptive workers | off | **on** | **on** |
-| Batch auto-tune | off | **on** | **on** |
-| Buffer size | 1,000 | 5,000 | 50,000 |
-| Batch size | 200 | 500 | 1,000 |
-| Flush interval | 10s | 5s | 2s |
-| Queue type | memory | memory | **disk** |
-| Queue mode | memory | memory | **hybrid** |
-| Queue enabled | false | true | true |
-| Queue max size | 1,000 | 5,000 | 50,000 |
-| Queue max bytes | 64 MB | 256 MB | 2 GB |
-| Compression | none | snappy | zstd |
-| String interning | off | on | on |
-| Memory limit ratio | 0.90 | 0.85 | 0.80 |
-| Circuit breaker | off | on (5) | on (3) |
-| Backoff | off | on (2.0x) | on (3.0x) |
-| Cardinality mode | exact | bloom | hybrid |
-| Buffer full policy | reject | reject | drop_oldest |
-| Limits dry-run | true | false | false |
-| Request body limit | 4 MB | 16 MB | 64 MB |
-| Bloom persistence | off | off | on |
-| Stats level | none | basic | basic |
-| Warmup | off | on | on |
+| Parameter | `minimal` | `balanced` | `safety` | `observable` | `resilient` | `performance` |
+|-----------|-----------|-----------|----------|-------------|------------|---------------|
+| Workers | 1 | max(2, N/2) | max(2, N/2) | max(2, N/2) | max(2, N/2) | N × 2 |
+| Pipeline split | off | off | off | off | off | **on** |
+| Adaptive workers | off | **on** | **on** | **on** | **on** | **on** |
+| Batch auto-tune | off | **on** | **on** | **on** | **on** | **on** |
+| Buffer size | 1,000 | 5,000 | 5,000 | 5,000 | 5,000 | 50,000 |
+| Batch size | 200 | 500 | 500 | 500 | 500 | 1,000 |
+| Flush interval | 10s | 5s | 5s | 5s | 5s | 2s |
+| Queue type | memory | memory | **disk** | disk | disk | disk |
+| Queue mode | memory | memory | **disk** | **hybrid** | **hybrid** | **hybrid** |
+| Queue enabled | false | true | true | true | true | true |
+| Queue max size | 1,000 | 5,000 | 10,000 | 10,000 | 10,000 | 50,000 |
+| Queue max bytes | 64 MB | 256 MB | **8 GB** | **8 GB** | **12 GB** | 2 GB |
+| Export compression | none | snappy | **zstd** | **zstd** | snappy | zstd |
+| Queue compression | none | snappy | snappy | snappy | snappy | snappy |
+| String interning | off | on | on | on | on | on |
+| Memory limit ratio | 0.90 | 0.85 | 0.80 | 0.82 | 0.82 | 0.80 |
+| Circuit breaker | off | on (5) | on (5) | on (5) | on (5) | on (3) |
+| Backoff | off | on (2.0x) | on (2.0x) | on (2.0x) | on (2.0x) | on (3.0x) |
+| Cardinality mode | exact | bloom | bloom | bloom | bloom | hybrid |
+| Buffer full policy | reject | reject | reject | reject | reject | drop_oldest |
+| Limits dry-run | true | false | false | false | false | false |
+| Request body limit | 4 MB | 16 MB | 16 MB | 16 MB | 16 MB | 64 MB |
+| Bloom persistence | off | off | **on** | **on** | **on** | on |
+| Stats level | none | basic | **full** | **full** | basic | basic |
+| Warmup | off | on | on | on | on | on |
+| Cost efficiency | — | Medium | **High** | **High** | Medium | Low |
+
+## Resource Sizing at Reference Workload
+
+Reference workload: **100,000 datapoints/sec**, **10,000 unique metric names**, **~10 avg cardinality per metric** (100k unique series).
+
+| Profile | CPU (request) | CPU (limit) | Memory (request) | Memory (limit) | Disk (PVC) | Max throughput |
+|---------|-------------|-------------|-----------------|---------------|------------|---------------|
+| `minimal` | 0.25 | 0.5 | 64 MB | 256 MB | — | ~10k dps |
+| `balanced` | 0.5 | 1.0 | 256 MB | 512 MB | — | ~100k dps |
+| `safety` | 1.0 | 1.5 | 320 MB | 768 MB | 8 GB | ~100k dps |
+| `observable` | 0.75 | 1.25 | 300 MB | 640 MB | 8 GB | ~120k dps |
+| `resilient` | 0.5 | 1.0 | 240 MB | 512 MB | 12 GB | ~150k dps |
+| `performance` | 1.0 | 2.0 | 480 MB | 1 GB | 12 GB | ~500k+ dps |
+
+*CPU request = 50–60% of limit (Burstable QoS). Memory request = actual working set. Memory limit = 2x working set headroom. Disk = 1 hour outage buffer at reference workload.*
+
+Disk queue sizing for 1 hour outage buffer:
+- **zstd** (~5x compression): 100k dps → ~1.5 MB/s → ~5.4 GB/hour → **8 GB** with headroom (safety, observable)
+- **snappy** (~3x compression): 100k dps → ~2.5 MB/s → ~9 GB/hour → **12 GB** with headroom (resilient, performance)
 
 ## Consolidated Parameters
 
@@ -221,7 +341,7 @@ See [DEPRECATIONS.md](../DEPRECATIONS.md) for the full mapping from old to new p
 
 If you already have a config file with manual tuning:
 
-1. Set `profile: balanced` (or whichever matches your use case)
+1. Set `profile: balanced` (or whichever matches your use case — consider `safety` or `observable` for cost optimization)
 2. Remove params that match profile defaults (use `--show-profile` to check)
 3. Keep only your intentional overrides
 4. Use `--show-effective-config` to verify the final result

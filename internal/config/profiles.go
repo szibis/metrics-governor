@@ -13,12 +13,15 @@ type ProfileName string
 const (
 	ProfileMinimal     ProfileName = "minimal"
 	ProfileBalanced    ProfileName = "balanced"
+	ProfileSafety      ProfileName = "safety"
+	ProfileObservable  ProfileName = "observable"
+	ProfileResilient   ProfileName = "resilient"
 	ProfilePerformance ProfileName = "performance"
 )
 
 // ValidProfileNames returns the set of recognized profile names.
 func ValidProfileNames() []ProfileName {
-	return []ProfileName{ProfileMinimal, ProfileBalanced, ProfilePerformance}
+	return []ProfileName{ProfileMinimal, ProfileBalanced, ProfileSafety, ProfileObservable, ProfileResilient, ProfilePerformance}
 }
 
 // IsValidProfile reports whether name is a recognized profile (or empty).
@@ -136,10 +139,16 @@ func GetProfile(name ProfileName) (*ProfileConfig, error) {
 		return minimalProfile(), nil
 	case ProfileBalanced:
 		return balancedProfile(), nil
+	case ProfileSafety:
+		return safetyProfile(), nil
+	case ProfileObservable:
+		return observableProfile(), nil
+	case ProfileResilient:
+		return resilientProfile(), nil
 	case ProfilePerformance:
 		return performanceProfile(), nil
 	default:
-		return nil, fmt.Errorf("unknown profile: %q (valid: minimal, balanced, performance)", name)
+		return nil, fmt.Errorf("unknown profile: %q (valid: minimal, balanced, safety, observable, resilient, performance)", name)
 	}
 }
 
@@ -219,7 +228,7 @@ func minimalProfile() *ProfileConfig {
 	}
 }
 
-func balancedProfile() *ProfileConfig {
+func balancedProfile() *ProfileConfig { //nolint:dupl // declarative config — each profile sets unique field values
 	numCPU := runtime.NumCPU()
 	workers := numCPU / 2
 	if workers < 2 {
@@ -298,9 +307,264 @@ func balancedProfile() *ProfileConfig {
 
 		// Resource targets
 		TargetCPU:     "1-2 cores",
-		TargetMemory:  "256 MB - 1 GB",
+		TargetMemory:  "256-512 MB",
 		DiskRequired:  false,
 		MaxThroughput: "~100k dps",
+	}
+}
+
+func safetyProfile() *ProfileConfig { //nolint:dupl // declarative config — each profile sets unique field values
+	numCPU := runtime.NumCPU()
+	workers := numCPU / 2
+	if workers < 2 {
+		workers = 2
+	}
+
+	return &ProfileConfig{
+		Name: ProfileSafety,
+
+		// Workers: moderate parallelism (like balanced)
+		QueueWorkers:            intPtr(workers),
+		ExportConcurrency:       intPtr(numCPU * 4),
+		QueueMaxConcurrentSends: intPtr(4),
+		QueueGlobalSendLimit:    intPtr(numCPU * 8),
+
+		// Pipeline split off — simplicity over throughput
+		QueuePipelineSplitEnabled: boolPtr(false),
+
+		// Adaptive features ON — self-tunes
+		QueueAdaptiveWorkersEnabled: boolPtr(true),
+		BufferBatchAutoTuneEnabled:  boolPtr(true),
+
+		// Standard buffer with reject policy — never lose data
+		BufferSize:       intPtr(5000),
+		MaxBatchSize:     intPtr(500),
+		FlushInterval:    durPtr(5 * time.Second),
+		BufferFullPolicy: strPtr("reject"),
+
+		// Disk queue — maximum data safety
+		QueueMode:     strPtr("disk"),
+		QueueType:     strPtr("disk"),
+		QueueEnabled:  boolPtr(true),
+		QueueMaxSize:  intPtr(10000),
+		QueueMaxBytes: int64Ptr(8589934592), // 8 GB (1h buffer at 100k dps with zstd)
+
+		// Stats: full — per-metric cost visibility
+		StatsLevel: strPtr("full"),
+
+		// Zstd export (best ratio = less bandwidth $) + snappy queue
+		ExporterCompression: strPtr("zstd"),
+		QueueCompression:    strPtr("snappy"),
+		StringInterning:     boolPtr(true),
+
+		// FastQueue standard
+		QueueInmemoryBlocks:   intPtr(1024),
+		QueueMetaSyncInterval: durPtr(1 * time.Second),
+
+		// Memory ratios — headroom for disk I/O + full stats
+		MemoryLimitRatio:    float64Ptr(0.80),
+		BufferMemoryPercent: float64Ptr(0.10),
+		QueueMemoryPercent:  float64Ptr(0.15),
+
+		// Resilience on
+		QueueBackoffEnabled:             boolPtr(true),
+		QueueBackoffMultiplier:          float64Ptr(2.0),
+		QueueCircuitBreakerEnabled:      boolPtr(true),
+		QueueCircuitBreakerThreshold:    intPtr(5),
+		QueueCircuitBreakerResetTimeout: durPtr(30 * time.Second),
+		QueueBatchDrainSize:             intPtr(10),
+		QueueBurstDrainSize:             intPtr(100),
+
+		// Warmup on
+		ExporterPrewarmConnections: boolPtr(true),
+
+		// Governance: full protection
+		CardinalityMode:            strPtr("bloom"),
+		CardinalityExpectedItems:   uintPtr(100000),
+		LimitsDryRun:               boolPtr(false),
+		LimitsStatsThreshold:       int64Ptr(0),
+		RuleCacheMaxSize:           intPtr(10000),
+		ReceiverMaxRequestBodySize: int64Ptr(16777216), // 16 MB
+
+		// Bloom persistence on
+		BloomPersistenceEnabled:   boolPtr(true),
+		BloomPersistenceMaxMemory: int64Ptr(134217728), // 128 MB
+
+		// Resource targets
+		TargetCPU:     "1-1.5 cores",
+		TargetMemory:  "320-768 MB",
+		DiskRequired:  true,
+		MaxThroughput: "~100k dps",
+	}
+}
+
+func observableProfile() *ProfileConfig { //nolint:dupl // declarative config — each profile sets unique field values
+	numCPU := runtime.NumCPU()
+	workers := numCPU / 2
+	if workers < 2 {
+		workers = 2
+	}
+
+	return &ProfileConfig{
+		Name: ProfileObservable,
+
+		// Workers: moderate parallelism (like balanced)
+		QueueWorkers:            intPtr(workers),
+		ExportConcurrency:       intPtr(numCPU * 4),
+		QueueMaxConcurrentSends: intPtr(4),
+		QueueGlobalSendLimit:    intPtr(numCPU * 8),
+
+		// Pipeline split off
+		QueuePipelineSplitEnabled: boolPtr(false),
+
+		// Adaptive features ON
+		QueueAdaptiveWorkersEnabled: boolPtr(true),
+		BufferBatchAutoTuneEnabled:  boolPtr(true),
+
+		// Standard buffer with reject policy
+		BufferSize:       intPtr(5000),
+		MaxBatchSize:     intPtr(500),
+		FlushInterval:    durPtr(5 * time.Second),
+		BufferFullPolicy: strPtr("reject"),
+
+		// Hybrid queue — memory-speed normally, disk spillover for safety
+		QueueMode:     strPtr("hybrid"),
+		QueueType:     strPtr("disk"),
+		QueueEnabled:  boolPtr(true),
+		QueueMaxSize:  intPtr(10000),
+		QueueMaxBytes: int64Ptr(8589934592), // 8 GB (1h buffer at 100k dps with zstd)
+
+		// Stats: full — per-metric cardinality tracking for cost visibility
+		StatsLevel: strPtr("full"),
+
+		// Zstd export (bandwidth savings) + snappy queue
+		ExporterCompression: strPtr("zstd"),
+		QueueCompression:    strPtr("snappy"),
+		StringInterning:     boolPtr(true),
+
+		// FastQueue standard
+		QueueInmemoryBlocks:   intPtr(1024),
+		QueueMetaSyncInterval: durPtr(1 * time.Second),
+
+		// Memory ratios
+		MemoryLimitRatio:    float64Ptr(0.82),
+		BufferMemoryPercent: float64Ptr(0.10),
+		QueueMemoryPercent:  float64Ptr(0.12),
+
+		// Resilience on
+		QueueBackoffEnabled:             boolPtr(true),
+		QueueBackoffMultiplier:          float64Ptr(2.0),
+		QueueCircuitBreakerEnabled:      boolPtr(true),
+		QueueCircuitBreakerThreshold:    intPtr(5),
+		QueueCircuitBreakerResetTimeout: durPtr(30 * time.Second),
+		QueueBatchDrainSize:             intPtr(10),
+		QueueBurstDrainSize:             intPtr(100),
+
+		// Warmup on
+		ExporterPrewarmConnections: boolPtr(true),
+
+		// Governance: full protection
+		CardinalityMode:            strPtr("bloom"),
+		CardinalityExpectedItems:   uintPtr(100000),
+		LimitsDryRun:               boolPtr(false),
+		LimitsStatsThreshold:       int64Ptr(0),
+		RuleCacheMaxSize:           intPtr(10000),
+		ReceiverMaxRequestBodySize: int64Ptr(16777216), // 16 MB
+
+		// Bloom persistence on
+		BloomPersistenceEnabled:   boolPtr(true),
+		BloomPersistenceMaxMemory: int64Ptr(134217728), // 128 MB
+
+		// Resource targets
+		TargetCPU:     "0.75-1.25 cores",
+		TargetMemory:  "300-640 MB",
+		DiskRequired:  true,
+		MaxThroughput: "~120k dps",
+	}
+}
+
+func resilientProfile() *ProfileConfig { //nolint:dupl // declarative config — each profile sets unique field values
+	numCPU := runtime.NumCPU()
+	workers := numCPU / 2
+	if workers < 2 {
+		workers = 2
+	}
+
+	return &ProfileConfig{
+		Name: ProfileResilient,
+
+		// Workers: moderate parallelism (like balanced)
+		QueueWorkers:            intPtr(workers),
+		ExportConcurrency:       intPtr(numCPU * 4),
+		QueueMaxConcurrentSends: intPtr(4),
+		QueueGlobalSendLimit:    intPtr(numCPU * 8),
+
+		// Pipeline split off — simpler, more predictable
+		QueuePipelineSplitEnabled: boolPtr(false),
+
+		// Adaptive features ON
+		QueueAdaptiveWorkersEnabled: boolPtr(true),
+		BufferBatchAutoTuneEnabled:  boolPtr(true),
+
+		// Standard buffer with reject policy
+		BufferSize:       intPtr(5000),
+		MaxBatchSize:     intPtr(500),
+		FlushInterval:    durPtr(5 * time.Second),
+		BufferFullPolicy: strPtr("reject"),
+
+		// Hybrid queue — memory-speed with disk spillover
+		QueueMode:     strPtr("hybrid"),
+		QueueType:     strPtr("disk"),
+		QueueEnabled:  boolPtr(true),
+		QueueMaxSize:  intPtr(10000),
+		QueueMaxBytes: int64Ptr(12884901888), // 12 GB (1h buffer at 100k dps with snappy)
+
+		// Stats: basic — lower overhead than full
+		StatsLevel: strPtr("basic"),
+
+		// Snappy/snappy — fast compression
+		ExporterCompression: strPtr("snappy"),
+		QueueCompression:    strPtr("snappy"),
+		StringInterning:     boolPtr(true),
+
+		// FastQueue standard
+		QueueInmemoryBlocks:   intPtr(1024),
+		QueueMetaSyncInterval: durPtr(1 * time.Second),
+
+		// Memory ratios
+		MemoryLimitRatio:    float64Ptr(0.82),
+		BufferMemoryPercent: float64Ptr(0.10),
+		QueueMemoryPercent:  float64Ptr(0.12),
+
+		// Resilience on
+		QueueBackoffEnabled:             boolPtr(true),
+		QueueBackoffMultiplier:          float64Ptr(2.0),
+		QueueCircuitBreakerEnabled:      boolPtr(true),
+		QueueCircuitBreakerThreshold:    intPtr(5),
+		QueueCircuitBreakerResetTimeout: durPtr(30 * time.Second),
+		QueueBatchDrainSize:             intPtr(10),
+		QueueBurstDrainSize:             intPtr(100),
+
+		// Warmup on
+		ExporterPrewarmConnections: boolPtr(true),
+
+		// Governance: smart protection
+		CardinalityMode:            strPtr("bloom"),
+		CardinalityExpectedItems:   uintPtr(100000),
+		LimitsDryRun:               boolPtr(false),
+		LimitsStatsThreshold:       int64Ptr(0),
+		RuleCacheMaxSize:           intPtr(10000),
+		ReceiverMaxRequestBodySize: int64Ptr(16777216), // 16 MB
+
+		// Bloom persistence on
+		BloomPersistenceEnabled:   boolPtr(true),
+		BloomPersistenceMaxMemory: int64Ptr(134217728), // 128 MB
+
+		// Resource targets
+		TargetCPU:     "0.5-1 cores",
+		TargetMemory:  "240-512 MB",
+		DiskRequired:  true,
+		MaxThroughput: "~150k dps",
 	}
 }
 
@@ -380,8 +644,8 @@ func performanceProfile() *ProfileConfig {
 		BloomPersistenceMaxMemory: int64Ptr(268435456), // 256 MB
 
 		// Resource targets
-		TargetCPU:     "4+ cores",
-		TargetMemory:  "1-4 GB",
+		TargetCPU:     "2-4 cores",
+		TargetMemory:  "512 MB - 2 GB",
 		DiskRequired:  true,
 		MaxThroughput: "~500k+ dps",
 	}
@@ -395,6 +659,21 @@ func (p *ProfileConfig) Prerequisites() []ProfilePrerequisite {
 	case ProfileBalanced:
 		return []ProfilePrerequisite{
 			{Type: "memory", Description: "At least 512 MB memory for adaptive tuning overhead", Severity: "recommended"},
+		}
+	case ProfileSafety:
+		return []ProfilePrerequisite{
+			{Type: "disk", Description: "Persistent disk (PVC) for disk queue", Severity: "required"},
+			{Type: "memory", Description: "At least 768 MB memory for full stats + disk cache", Severity: "recommended"},
+		}
+	case ProfileObservable:
+		return []ProfilePrerequisite{
+			{Type: "disk", Description: "Persistent disk (PVC) for hybrid queue spillover", Severity: "required"},
+			{Type: "memory", Description: "At least 640 MB memory for full stats", Severity: "recommended"},
+		}
+	case ProfileResilient:
+		return []ProfilePrerequisite{
+			{Type: "disk", Description: "Persistent disk (PVC) for hybrid queue spillover", Severity: "required"},
+			{Type: "memory", Description: "At least 512 MB memory", Severity: "recommended"},
 		}
 	case ProfilePerformance:
 		return []ProfilePrerequisite{
