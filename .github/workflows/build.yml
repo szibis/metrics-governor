@@ -475,7 +475,7 @@ jobs:
 
       - name: Restore base coverage cache
         id: base_cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ./base-coverage-cache
           key: base-coverage-${{ github.event.pull_request.base.sha }}

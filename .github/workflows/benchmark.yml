@@ -148,7 +148,7 @@ jobs:
 
       - name: Check benchmark cache
         id: cache-check
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ./benchmark-cache
           key: benchmark-${{ github.event.pull_request.number }}-${{ matrix.package }}-${{ hashFiles(format('internal/{0}/**/*.go', matrix.package)) }}
@@ -248,7 +248,7 @@ jobs:
           fi
 
       - name: Download previous benchmark data
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ./cache
           key: ${{ runner.os }}-benchmark
@@ -332,7 +332,7 @@ jobs:
         run: go install golang.org/x/perf/cmd/benchstat@latest
 
       - name: Download baseline benchmark
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ./cache
           key: ${{ runner.os }}-benchmark
@@ -347,7 +347,7 @@ jobs:
 
       - name: Restore baseline cache
         id: baseline-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ./baseline-cache
           key: baseline-${{ github.event.pull_request.base.sha }}-${{ join(fromJson(needs.detect-changes.outputs.packages), '-') }}
