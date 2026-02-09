@@ -1,0 +1,74 @@
+# Resilient profile stress test - durability + speed with hybrid queue + basic stats
+# Usage: docker compose -f docker-compose.yaml -f compose_overrides/profile-resilient.yaml up -d
+#
+# Tests the resilient profile at reference workload:
+# - 2 CPU, 1 GB memory, hybrid queue (memory L1 + disk spillover)
+# - Generator sends ~100k dps with spikes enabled
+# - Basic stats (lower overhead than full)
+# - Snappy compression for fast throughput
+# - Verifier threshold 96%
+
+services:
+  metrics-generator:
+    environment:
+      - OTLP_ENDPOINT=otel-collector:4317
+      - METRICS_INTERVAL=200ms
+      - SERVICES=payment-api,order-api,inventory-api,user-api
+      - ENVIRONMENTS=prod,staging
+      - ENABLE_EDGE_CASES=false
+      - ENABLE_HIGH_CARDINALITY=true
+      - ENABLE_BURST_TRAFFIC=true
+      - ENABLE_DIVERSE_METRICS=true
+      - HIGH_CARDINALITY_COUNT=100
+      - DIVERSE_METRIC_COUNT=100
+      - BURST_SIZE=2000
+      - BURST_INTERVAL_SEC=30
+      - TARGET_METRICS_PER_SEC=50000
+      - TARGET_DATAPOINTS_PER_SEC=100000
+      - STATS_INTERVAL_SEC=10
+      - ENABLE_SPIKE_SCENARIOS=true
+      - SPIKE_MODE=realistic
+      - SPIKE_CARDINALITY=200
+      - SPIKE_DURATION_SEC=15
+      - SPIKE_INTERVAL_MIN_SEC=30
+      - SPIKE_INTERVAL_MAX_SEC=60
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2"
+
+  metrics-governor:
+    command:
+      - "--profile=resilient"
+      - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
+      - "-exporter-protocol=http"
+      - "-exporter-insecure=true"
+      - "-stats-labels=service,env"
+      - "-limits-config=/etc/metrics-governor/limits.yaml"
+      - "-limits-dry-run=false"
+      - "-queue-path=/data/queue"
+    volumes:
+      - ./examples/limits.yaml:/etc/metrics-governor/limits.yaml:ro
+      - mg-queue-resilient-profile-data:/data/queue
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2"
+
+  victoriametrics:
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2"
+
+  verifier:
+    environment:
+      - CHECK_INTERVAL=15s
+      - PASS_THRESHOLD=96.0
+
+volumes:
+  mg-queue-resilient-profile-data:
+    driver: local

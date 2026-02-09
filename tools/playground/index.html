@@ -110,6 +110,22 @@
       </summary>
 
     <div class="grid-2" style="margin-top:.5rem">
+      <label style="grid-column: 1 / -1">
+        Profile preset
+        <select x-model="selectedProfile">
+          <option value="">(Custom — manual inputs)</option>
+          <option value="minimal">minimal — Development & Testing</option>
+          <option value="balanced">balanced — Production Default</option>
+          <option value="safety">safety — Maximum Data Safety + Cost Efficiency</option>
+          <option value="observable">observable — Full Observability + Cost Efficiency</option>
+          <option value="resilient">resilient — Durable + Fast</option>
+          <option value="performance">performance — High Throughput</option>
+        </select>
+        <small class="help-tip">Pre-fills inputs for common scenarios. Override any value below. <a href="docs/profiles.md" target="_blank">Docs</a></small>
+        <template x-if="selectedProfile === 'safety' || selectedProfile === 'observable'">
+          <span class="badge-green" style="display:inline-block;margin-top:.25rem">Cost Efficient — full stats + zstd save on backend SaaS costs</span>
+        </template>
+      </label>
       <label>
         Datapoints/sec
         <input type="number" x-model.number="dps" min="1" step="1000">
@@ -1585,6 +1601,7 @@ function configHelper() {
       // Auto-save all reactive state on any change (debounced)
       let saveTimer = null;
       const fields = [
+        'selectedProfile',
         'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
         'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
@@ -1619,6 +1636,14 @@ function configHelper() {
       });
       this.$watch('totalMemory', () => this.autoSizeFitMem());
       this.$watch('perPodPvcSize', () => this.autoSizeFitDisk());
+
+      // Profile selector — apply presets when profile changes
+      this.$watch('selectedProfile', (val) => {
+        if (val && this.profilePresets[val]) {
+          const preset = this.profilePresets[val];
+          Object.assign(this, preset);
+        }
+      });
 
       // Initialize textarea content from generated YAML
       this.helmText = this.helmYaml;
@@ -1692,6 +1717,7 @@ function configHelper() {
     saveState() {
       const state = {};
       const fields = [
+        'selectedProfile',
         'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
         'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
         'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
@@ -1713,6 +1739,7 @@ function configHelper() {
         const state = JSON.parse(raw);
         // Only load known mutable fields — skip old getter-named keys (queueMaxSizeMB, targetRetentionMin)
         const loadable = [
+          'selectedProfile',
           'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
           'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
           'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
@@ -1745,6 +1772,17 @@ function configHelper() {
     },
     toggleTheme() {
       this.theme = this.theme === 'dark' ? 'light' : 'dark';
+    },
+
+    // ---- Profile selector ----
+    selectedProfile: '',
+    profilePresets: {
+      minimal:     { queueType: 'memory', queueCompression: false, pipelineOptimized: false, dps: 10000, availableCores: 1 },
+      balanced:    { queueType: 'memory', queueCompression: true, pipelineOptimized: false, dps: 100000, availableCores: 2 },
+      safety:      { queueType: 'disk', queueCompression: true, pipelineOptimized: false, dps: 100000, availableCores: 2 },
+      observable:  { queueType: 'disk', queueCompression: true, pipelineOptimized: false, dps: 100000, availableCores: 2 },
+      resilient:   { queueType: 'disk', queueCompression: true, pipelineOptimized: false, dps: 100000, availableCores: 2 },
+      performance: { queueType: 'disk', queueCompression: true, pipelineOptimized: true, dps: 500000, availableCores: 4 },
     },
 
     // ---- Simple inputs ----
@@ -2186,6 +2224,10 @@ function configHelper() {
       const recClass = rec ? rec.class : '';
       const recDiskType = rec ? rec.disk_type : '';
       let y = '';
+      if (this.selectedProfile) {
+        y += `# Profile: ${this.selectedProfile} — most settings derived automatically\n`;
+        y += `profile: ${this.selectedProfile}\n\n`;
+      }
       y += `replicaCount: ${this.actualPods}\n`;
       y += `\nresources:\n`;
       y += `  requests:\n`;
@@ -2264,6 +2306,10 @@ function configHelper() {
 
     get appYaml() {
       let y = '';
+      if (this.selectedProfile) {
+        y += `# Profile: ${this.selectedProfile} — most settings derived automatically\n`;
+        y += `profile: ${this.selectedProfile}\n\n`;
+      }
       y += `receiver:\n`;
       y += `  grpc:\n`;
       y += `    address: ":4317"\n`;

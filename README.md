@@ -46,6 +46,12 @@
 | **Single backend** can't keep up | [Consistent sharding](docs/sharding.md) fans out to N backends via K8s DNS discovery with stable hash routing |
 | **No visibility** into the metrics pipeline | [Real-time stats](docs/statistics.md), [13 production alerts](docs/alerting.md), [Grafana dashboards](dashboards/), and [dead rule detection](docs/processing-rules.md#dead-rule-detection) |
 | **Unpredictable costs** from runaway services | [Per-group tracking](docs/limits.md) with configurable limits, dry-run mode, and ownership labels for team routing |
+| **Need team/severity labels** derived from business values | [Transform rules](docs/processing-rules.md) mangle labels — build `severity`, `team`, `env` from product metric names and label values |
+| **Elastic-style data reshaping** before storage | [Classify + Transform](docs/processing-rules.md) chain: classify metrics into categories, then transform labels to match your storage schema |
+| **Storage explosion** from a single noisy tenant | [Adaptive tenant limits](docs/limits.md) intelligently throttle per-tenant cardinality — protect storage without blanket-dropping good data |
+| **Stale rules** pile up unnoticed | [Dead rule detection](docs/processing-rules.md#dead-rule-detection) tracks last-match time for every rule, with alerts for stale cleanup |
+| **No team accountability** for metric costs | [Rule ownership labels](docs/processing-rules.md) attach `team`, `slack_channel`, `pagerduty_service` to any rule for alert routing |
+| **All-or-nothing** enforcement kills good data | [Tiered escalation](docs/limits.md) with graduated responses: log → sample → strip labels → drop |
 | **Complex deployment** planning | [Interactive Playground](https://szibis.github.io/metrics-governor/) generates Helm, app, and limits YAML from your throughput inputs |
 
 ---
@@ -55,6 +61,9 @@
 <p align="center">
   <img src="docs/images/architecture.svg" alt="metrics-governor architecture" width="100%">
 </p>
+
+<details>
+<summary>View as text diagram (Mermaid)</summary>
 
 ```mermaid
 flowchart LR
@@ -105,7 +114,18 @@ flowchart LR
     style Backends fill:#eafaf1,stroke:#2ecc71,stroke-width:2px,color:#1a8c4e
 ```
 
+</details>
+
 Each pipeline runs independently: **Receive** → **Process** → **Limit** → **Queue** → **Prepare** → **Send** → **Backend**. Failed exports retry through the queue with circuit breaker protection.
+
+---
+
+## Supported Backends
+
+| Protocol | Backends |
+|----------|----------|
+| **OTLP** | OpenTelemetry Collector, Grafana Mimir, Cortex, VictoriaMetrics, ClickHouse, Grafana Cloud |
+| **PRW** | Prometheus, VictoriaMetrics, Grafana Mimir, Cortex, Thanos Receive, Amazon Managed Prometheus, GCP Managed Prometheus, Grafana Cloud |
 
 ---
 
@@ -134,11 +154,11 @@ Six actions in a single ordered pipeline — first match wins:
 | **[Classify](docs/processing-rules.md)** | Derive ownership labels (team, severity, priority) from metric metadata | No (chains) |
 | **[Drop](docs/processing-rules.md)** | Unconditional removal | Yes |
 
-Plus **dead rule detection**: always-on metrics track when rules stop matching, with optional scanner and alert rules for stale rule cleanup. [Docs](docs/processing-rules.md)
+**Transform → Classify chaining**: non-terminal actions chain — classify metrics into categories, then transform labels to match your storage schema in a single pass. Plus **dead rule detection**: always-on metrics track when rules stop matching, with optional scanner and alert rules for stale rule cleanup. [Docs](docs/processing-rules.md)
 
 ### Control — Intelligent Cardinality Governance
 
-- **[Adaptive Limiting](docs/limits.md)** — Drops only the top offenders, not everything. Per-group tracking by service, namespace, or any label combination. Dry-run mode for safe rollouts
+- **[Adaptive Limiting](docs/limits.md)** — Drops only the top offenders, not everything. Per-group tracking by service, namespace, or any label combination. Tiered escalation: log → sample → strip labels → drop. Dry-run mode for safe rollouts
 - **[Cardinality Tracking](docs/cardinality-tracking.md)** — Three modes: **Bloom filter** (98% less memory — 1.2 MB vs 75 MB @ 1M series), **HyperLogLog** (constant 12 KB), **Hybrid** (auto-switches at threshold)
 - **[Bloom Persistence](docs/bloom-persistence.md)** — Save/restore filter state across restarts, eliminating cold-start re-learning
 - **[Rule Ownership Labels](docs/processing-rules.md)** — Attach `team`, `slack_channel`, `pagerduty_service` to any rule for Alertmanager routing
@@ -182,7 +202,7 @@ Plus **dead rule detection**: always-on metrics track when rules stop matching, 
 ### Deploy — Production Ready from Day One
 
 - **[Helm Chart](helm/metrics-governor/)** — Full production chart with probes, ConfigMap sidecar, HPA-ready, alert rules integrated
-- **[Profiles](docs/profiles.md)** — `minimal`, `balanced`, `performance` presets — one flag to set 20+ parameters
+- **[Profiles](docs/profiles.md)** — 6 presets (`minimal`, `balanced`, `safety`, `observable`, `resilient`, `performance`) — one flag to set 30+ parameters
 - **[Hot Reload](docs/reload.md)** — SIGHUP reloads limits and processing rules without restart; ConfigMap sidecar for Kubernetes
 - **[Interactive Playground](https://szibis.github.io/metrics-governor/)** — Browser tool estimates resources, generates Helm/YAML/limits configs, recommends cloud storage classes
 - **[TLS/mTLS + Auth](docs/tls.md)** — Full TLS, mutual TLS, bearer token, basic auth, custom headers
@@ -208,13 +228,18 @@ See [Performance Guide](docs/performance.md) and [Benchmarks](https://github.com
 
 ## Flexible Operating Modes
 
-One binary, three operating modes — choose durability, observability, or raw throughput:
+One binary, six profiles — choose durability, observability, cost efficiency, or raw throughput:
 
-| Priority | Queue Mode | Stats Level | Trade-off |
-|----------|-----------|-------------|-----------|
-| **Safety First** | `disk` | `full` | Full crash recovery + cardinality tracking |
-| **Balanced** (default) | `memory` | `basic` | Best performance with essential metrics |
-| **Maximum Throughput** | `memory` | `none` | Minimal overhead, pure proxy mode |
+| Priority | Queue Mode | Stats Level | Profile | Cost Efficiency | Trade-off |
+|----------|-----------|-------------|---------|----------------|-----------|
+| **Maximum Safety** | `disk` | `full` | `safety` | High | Full crash recovery + per-metric cost tracking |
+| **Durable + Observable** | `hybrid` | `full` | `observable` | High | Disk spillover + full per-metric stats for cost visibility |
+| **Resilient** | `hybrid` | `basic` | `resilient` | Medium | Memory-speed normally, disk spillover for spikes |
+| **High Throughput** | `hybrid` | `basic` | `performance` | Low | Pipeline split + max throughput + adaptive tuning |
+| **Balanced** (default) | `memory` | `basic` | `balanced` | Medium | Best performance with essential metrics |
+| **Minimal Footprint** | `memory` | `none` | `minimal` | — | Smallest resource usage, pure proxy |
+
+> Higher proxy resources (disk, CPU) can save 10–100x in backend SaaS costs by identifying and reducing expensive metrics before they reach your storage. See [Cost Efficiency](docs/profiles.md#cost-efficiency).
 
 See [Profiles](docs/profiles.md) and [Performance Tuning](docs/performance.md#performance-tuning-knobs) for details.
 
@@ -288,20 +313,23 @@ Plan your deployment in seconds. The **interactive Playground** estimates CPU, m
 |:---:|-------|-------------|
 | 🚀 | [**Installation**](docs/installation.md) | Source, Docker, or Helm chart |
 | ⚙️ | [**Configuration**](docs/configuration.md) | YAML config and CLI flags reference |
+| 📋 | [**Profiles**](docs/profiles.md) | 6 presets: `minimal`, `balanced`, `safety`, `observable`, `resilient`, `performance` |
+| 📡 | [**Receiving**](docs/receiving.md) | OTLP gRPC/HTTP, PRW 1.0/2.0, backpressure |
 | 📡 | [**PRW Protocol**](docs/prw.md) | PRW 1.0/2.0, native histograms, VictoriaMetrics mode |
-| 🔄 | [**Processing Rules**](docs/processing-rules.md) | Sample, downsample, aggregate, transform, classify, drop |
+| 🔄 | [**Processing Rules**](docs/processing-rules.md) | Sample, downsample, aggregate, transform, classify, drop, dead rule detection |
 | 🏗️ | [**Two-Tier Architecture**](docs/two-tier-architecture.md) | DaemonSet edge + StatefulSet gateway pattern |
-| 🎯 | [**Limits**](docs/limits.md) | Adaptive limiting, cardinality control, dry-run |
+| 🎯 | [**Limits**](docs/limits.md) | Adaptive limiting, tiered escalation, per-label limits, rule ownership |
 | 🔀 | [**Sharding**](docs/sharding.md) | Consistent hashing, K8s DNS discovery |
 | 📊 | [**Statistics**](docs/statistics.md) | Per-metric tracking, three stats levels |
 | ⚡ | [**Export Pipeline**](docs/exporting.md) | Pipeline split, batch tuning, adaptive scaling |
 | ⚡ | [**Performance**](docs/performance.md) | Bloom filters, string interning, I/O optimization |
 | 🛡️ | [**Resilience**](docs/resilience.md) | Circuit breaker, persistent queue, backoff |
+| 📦 | [**Queue**](docs/queue.md) | Memory, disk, hybrid queue modes |
 | 🔢 | [**Cardinality Tracking**](docs/cardinality-tracking.md) | Bloom, HyperLogLog, Hybrid mode |
 | 💾 | [**Bloom Persistence**](docs/bloom-persistence.md) | Save/restore filter state across restarts |
 | 🚨 | [**Alerting**](docs/alerting.md) | 13 alerts with runbooks, dead rule detection |
+| 📊 | [**Dashboards**](docs/dashboards.md) | Grafana operations and development dashboards |
 | 🏭 | [**Production Guide**](docs/production-guide.md) | Sizing, HPA/VPA, DaemonSet, bare metal |
-| 📋 | [**Profiles**](docs/profiles.md) | `minimal`, `balanced`, `performance` presets |
 | 🏥 | [**Health**](docs/health.md) | Kubernetes liveness and readiness probes |
 | 🔄 | [**Dynamic Reload**](docs/reload.md) | Hot-reload via SIGHUP with ConfigMap sidecar |
 | 🔐 | [**TLS**](docs/tls.md) | Server/client TLS, mTLS |
@@ -312,15 +340,6 @@ Plan your deployment in seconds. The **interactive Playground** estimates CPU, m
 | 🖥️ | [**Playground**](docs/playground.md) | Interactive deployment planner |
 | 🧪 | [**Testing**](docs/testing.md) | Test environment, Docker Compose |
 | 🛠️ | [**Development**](docs/development.md) | Building, contributing |
-
----
-
-## Supported Backends
-
-| Protocol | Backends |
-|----------|----------|
-| **OTLP** | OpenTelemetry Collector, Grafana Mimir, Cortex, VictoriaMetrics, ClickHouse, Grafana Cloud |
-| **PRW** | Prometheus, VictoriaMetrics, Grafana Mimir, Cortex, Thanos Receive, Amazon Managed Prometheus, GCP Managed Prometheus, Grafana Cloud |
 
 ---
 
