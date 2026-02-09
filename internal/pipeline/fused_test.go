@@ -205,3 +205,118 @@ func (r *recordingLimits) Process(rms []*metricspb.ResourceMetrics) []*metricspb
 	*r.order = append(*r.order, "limits")
 	return rms
 }
+
+// --- Typed nil tests ---
+// These test Go's "typed nil" pitfall: a nil concrete pointer wrapped in an
+// interface is NOT == nil. Without defense, calling methods on it panics.
+// See: https://go.dev/doc/faq#nil_error
+
+func TestIsNilInterface(t *testing.T) {
+	t.Run("plain nil", func(t *testing.T) {
+		if !isNilInterface(nil) {
+			t.Error("expected nil to be detected as nil")
+		}
+	})
+	t.Run("typed nil TenantProcessor", func(t *testing.T) {
+		var tp *mockTenant // nil concrete pointer
+		var i TenantProcessor = tp
+		if !isNilInterface(i) {
+			t.Error("expected typed nil *mockTenant to be detected as nil")
+		}
+	})
+	t.Run("typed nil LimitsEnforcer", func(t *testing.T) {
+		var lp *mockLimits
+		var i LimitsEnforcer = lp
+		if !isNilInterface(i) {
+			t.Error("expected typed nil *mockLimits to be detected as nil")
+		}
+	})
+	t.Run("non-nil pointer", func(t *testing.T) {
+		tp := &mockTenant{}
+		if isNilInterface(tp) {
+			t.Error("expected non-nil *mockTenant to NOT be detected as nil")
+		}
+	})
+}
+
+func TestNewFusedProcessor_TypedNilBothProcessors(t *testing.T) {
+	// Both typed nils — should return nil FusedProcessor (same as plain nil)
+	var tp *mockTenant
+	var lp *mockLimits
+	fp := NewFusedProcessor(tp, lp)
+	if fp != nil {
+		t.Error("expected nil FusedProcessor when both are typed nils")
+	}
+}
+
+func TestNewFusedProcessor_TypedNilTenantWithRealLimits(t *testing.T) {
+	// Typed nil tenant + real limits — should create processor, skip tenant
+	var tp *mockTenant // nil concrete pointer → typed nil interface
+	lp := &mockLimits{}
+	fp := NewFusedProcessor(tp, lp)
+	if fp == nil {
+		t.Fatal("expected non-nil FusedProcessor when limits is real")
+	}
+	if fp.HasTenant() {
+		t.Error("expected HasTenant=false after typed nil sanitization")
+	}
+	if !fp.HasLimits() {
+		t.Error("expected HasLimits=true")
+	}
+
+	// Process should not panic
+	rms := makeTestRMs(2)
+	result := fp.Process(rms, "header")
+	if len(result) != 2 {
+		t.Errorf("expected 2 RMs, got %d", len(result))
+	}
+	if lp.calls != 1 {
+		t.Errorf("expected 1 limits call, got %d", lp.calls)
+	}
+}
+
+func TestNewFusedProcessor_RealTenantWithTypedNilLimits(t *testing.T) {
+	// Real tenant + typed nil limits — should create processor, skip limits
+	tp := &mockTenant{}
+	var lp *mockLimits // typed nil
+	fp := NewFusedProcessor(tp, lp)
+	if fp == nil {
+		t.Fatal("expected non-nil FusedProcessor when tenant is real")
+	}
+	if !fp.HasTenant() {
+		t.Error("expected HasTenant=true")
+	}
+	if fp.HasLimits() {
+		t.Error("expected HasLimits=false after typed nil sanitization")
+	}
+
+	rms := makeTestRMs(3)
+	result := fp.Process(rms, "t1")
+	if len(result) != 3 {
+		t.Errorf("expected 3 RMs, got %d", len(result))
+	}
+	if tp.calls != 1 {
+		t.Errorf("expected 1 tenant call, got %d", tp.calls)
+	}
+	if tp.lastHdr != "t1" {
+		t.Errorf("expected header t1, got %s", tp.lastHdr)
+	}
+}
+
+func TestNewFusedProcessor_TypedNilTenantNilLimits(t *testing.T) {
+	// Typed nil tenant + plain nil limits — should return nil
+	var tp *mockTenant
+	fp := NewFusedProcessor(tp, nil)
+	if fp != nil {
+		t.Error("expected nil FusedProcessor when tenant is typed nil and limits is nil")
+	}
+}
+
+func TestNewFusedProcessor_NilTenantTypedNilLimits(t *testing.T) {
+	// Plain nil tenant + typed nil limits — should return nil
+	var lp *mockLimits
+	fp := NewFusedProcessor(nil, lp)
+	if fp != nil {
+		t.Error("expected nil FusedProcessor when tenant is nil and limits is typed nil")
+	}
+}
