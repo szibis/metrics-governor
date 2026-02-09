@@ -233,7 +233,7 @@ jobs:
 
       - name: Upload coverage artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-unit
           path: |
@@ -475,7 +475,7 @@ jobs:
 
       - name: Restore base coverage cache
         id: base_cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ./base-coverage-cache
           key: base-coverage-${{ github.event.pull_request.base.sha }}
@@ -745,7 +745,7 @@ jobs:
 
       - name: Upload logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: e2e-docker-logs
           path: |
@@ -804,7 +804,7 @@ jobs:
           ./bin/metrics-governor-linux-amd64 -version
 
       - name: Upload binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: binaries
           path: bin/
