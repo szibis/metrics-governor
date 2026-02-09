@@ -25,7 +25,7 @@ jobs:
       skip_memory: ${{ steps.classify.outputs.skip_memory }}
       skip_codeql: ${{ steps.classify.outputs.skip_codeql }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
