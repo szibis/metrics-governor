@@ -14,14 +14,15 @@
 #   D  generator →  otel-collector → VM  (PRW export)
 #   E  generator →  vmagent       → VM  (PRW export)
 #
-# Results are saved to test/benchmark-results/benchmark-<timestamp>.txt
+# Results are saved to tools/benchmark-results/benchmark-<timestamp>.txt
 #
 # Usage:
-#   ./test/benchmark-proxy.sh              # Run all 5 tests
-#   ./test/benchmark-proxy.sh --test=A     # Run only governor OTLP test
-#   ./test/benchmark-proxy.sh --test=ACE   # Run governor OTLP, collector OTLP, vmagent
-#   ./test/benchmark-proxy.sh --warmup=90  # Custom warmup (seconds)
-#   ./test/benchmark-proxy.sh --samples=5  # Custom sample count
+#   ./tools/benchmark-proxy.sh              # Run all 5 tests
+#   ./tools/benchmark-proxy.sh --test=A     # Run only governor OTLP test
+#   ./tools/benchmark-proxy.sh --test=ACE   # Run governor OTLP, collector OTLP, vmagent
+#   ./tools/benchmark-proxy.sh --warmup=90  # Custom warmup (seconds)
+#   ./tools/benchmark-proxy.sh --samples=5  # Custom sample count
+#   ./tools/benchmark-proxy.sh --profile    # Capture pprof profiles during governor tests
 
 set -e
 
@@ -32,10 +33,13 @@ WARMUP=${WARMUP:-60}
 SAMPLES=${SAMPLES:-3}
 INTERVAL=${INTERVAL:-10}
 NETWORK="metrics-governor_default"
-RESULTS_DIR="test/benchmark-results"
+RESULTS_DIR="tools/benchmark-results"
+PROFILES_DIR="tools/profiles"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 RESULTS_FILE="${RESULTS_DIR}/benchmark-${TIMESTAMP}.txt"
 RUN_TESTS="ABCDE"  # Default: run all tests
+PROFILE_ENABLED=false  # pprof profile capture
+PPROF_ADDR="localhost:9090"  # governor pprof endpoint
 
 # Container images
 OTEL_IMAGE="otel/opentelemetry-collector-contrib:0.144.0"
@@ -48,6 +52,8 @@ for arg in "$@"; do
     --warmup=*) WARMUP="${arg#*=}" ;;
     --samples=*) SAMPLES="${arg#*=}" ;;
     --interval=*) INTERVAL="${arg#*=}" ;;
+    --profile) PROFILE_ENABLED=true ;;
+    --pprof-addr=*) PPROF_ADDR="${arg#*=}" ;;
     *) echo "Unknown argument: $arg"; exit 1 ;;
   esac
 done
@@ -174,6 +180,41 @@ stop_generator() {
   $COMPOSE $COMPOSE_FILES rm -f metrics-generator 2>/dev/null || true
 }
 
+# ── pprof profile capture ──────────────────────────────────────
+capture_pprof() {
+  local test_label=$1
+  if [ "$PROFILE_ENABLED" != "true" ]; then return; fi
+
+  local prefix="${PROFILES_DIR}/${test_label}-${TIMESTAMP}"
+  mkdir -p "$PROFILES_DIR"
+
+  log "Capturing pprof profiles for $test_label..."
+
+  # CPU profile (30 second sample)
+  log "  CPU profile (30s)..."
+  curl -s "http://${PPROF_ADDR}/debug/pprof/profile?seconds=30" > "${prefix}-cpu.pb.gz" 2>/dev/null && \
+    log "  Saved: ${prefix}-cpu.pb.gz" || \
+    log "  WARN: CPU profile capture failed"
+
+  # Heap profile (snapshot)
+  curl -s "http://${PPROF_ADDR}/debug/pprof/heap" > "${prefix}-heap.pb.gz" 2>/dev/null && \
+    log "  Saved: ${prefix}-heap.pb.gz" || \
+    log "  WARN: Heap profile capture failed"
+
+  # Allocs profile (cumulative allocations)
+  curl -s "http://${PPROF_ADDR}/debug/pprof/allocs" > "${prefix}-allocs.pb.gz" 2>/dev/null && \
+    log "  Saved: ${prefix}-allocs.pb.gz" || \
+    log "  WARN: Allocs profile capture failed"
+
+  # Goroutine profile
+  curl -s "http://${PPROF_ADDR}/debug/pprof/goroutine?debug=1" > "${prefix}-goroutine.txt" 2>/dev/null && \
+    log "  Saved: ${prefix}-goroutine.txt" || \
+    log "  WARN: Goroutine profile capture failed"
+
+  log "Profile capture complete. View with:"
+  log "  go tool pprof -http=:8080 ${prefix}-cpu.pb.gz"
+}
+
 # ── Formatting helpers ──────────────────────────────────────────
 
 fmt_cpu() { [ "$1" = "0" ] || [ "$1" = ".0" ] && echo "—" || echo "${1}%"; }
@@ -290,6 +331,7 @@ log "║   Generator: 100k dps flat (stable mode)                     ║"
 log "╚═══════════════════════════════════════════════════════════════╝"
 log ""
 log "Tests to run: $RUN_TESTS"
+[ "$PROFILE_ENABLED" = "true" ] && log "pprof profiling: ENABLED (profiles saved to $PROFILES_DIR/)"
 
 # Ensure results directory exists
 mkdir -p "$RESULTS_DIR"
@@ -313,6 +355,7 @@ if [[ "$RUN_TESTS" == *"A"* ]]; then
   # Generator → governor:4318 (OTLP HTTP)
   start_generator "metrics-governor:4318"
 
+  capture_pprof "A-gov-otlp"
   collect_stats "gov/otlp" "A" "metrics-governor"
   cleanup
 fi
@@ -345,6 +388,7 @@ if [[ "$RUN_TESTS" == *"B"* ]]; then
   # Generator → governor:4318 (OTLP HTTP)
   start_generator "metrics-governor-prw:4318"
 
+  capture_pprof "B-gov-prw"
   collect_stats "gov/prw" "B" "metrics-governor-prw"
   docker rm -f metrics-governor-prw 2>/dev/null || true
   cleanup

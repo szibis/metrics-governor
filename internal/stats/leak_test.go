@@ -11,7 +11,7 @@ import (
 func TestLeakCheck_StatsCollector(t *testing.T) {
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	ctx, cancel := context.WithCancel(context.Background())
 

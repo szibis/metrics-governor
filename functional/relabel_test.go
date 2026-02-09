@@ -85,7 +85,7 @@ func TestFunctional_Relabel_Replace(t *testing.T) {
 	}
 
 	exp := &bufferMockExporter{}
-	statsC := stats.NewCollector(nil)
+	statsC := stats.NewCollector(nil, stats.StatsLevelFull)
 	buf := buffer.New(1000, 100, 50*time.Millisecond, exp, statsC, nil, nil, buffer.WithRelabeler(r))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -143,7 +143,7 @@ func TestFunctional_Relabel_Drop(t *testing.T) {
 	}
 
 	exp := &bufferMockExporter{}
-	statsC := stats.NewCollector(nil)
+	statsC := stats.NewCollector(nil, stats.StatsLevelFull)
 	buf := buffer.New(1000, 100, 50*time.Millisecond, exp, statsC, nil, nil, buffer.WithRelabeler(r))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -182,7 +182,7 @@ func TestFunctional_Relabel_LabelDrop(t *testing.T) {
 	}
 
 	exp := &bufferMockExporter{}
-	statsC := stats.NewCollector(nil)
+	statsC := stats.NewCollector(nil, stats.StatsLevelFull)
 	buf := buffer.New(1000, 100, 50*time.Millisecond, exp, statsC, nil, nil, buffer.WithRelabeler(r))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -240,7 +240,7 @@ func TestFunctional_Relabel_HighVolume(t *testing.T) {
 	}
 
 	exp := &bufferMockExporter{}
-	statsC := stats.NewCollector(nil)
+	statsC := stats.NewCollector(nil, stats.StatsLevelFull)
 	buf := buffer.New(100000, 500, 50*time.Millisecond, exp, statsC, nil, nil, buffer.WithRelabeler(r))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

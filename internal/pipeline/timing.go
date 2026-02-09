@@ -26,6 +26,7 @@ var (
 var knownComponents = []string{
 	"receive_decompress", "receive_unmarshal",
 	"stats", "processing", "tenant", "limits",
+	"fused_tenant_limits",
 	"buffer_mgmt", "relabel", "batch_split",
 	"serialize", "compress", "export_http",
 	"queue_push", "queue_pop",

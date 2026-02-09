@@ -99,7 +99,7 @@ func TestFunctional_Buffer_BatchingBehavior(t *testing.T) {
 	defer cancel()
 
 	exp := &bufferMockExporter{}
-	statsCollector := stats.NewCollector(nil)
+	statsCollector := stats.NewCollector(nil, stats.StatsLevelFull)
 
 	// Buffer size 100, batch size 10, flush interval 100ms
 	buf := buffer.New(100, 10, 100*time.Millisecond, exp, statsCollector, nil, nil)
@@ -138,7 +138,7 @@ func TestFunctional_Buffer_FlushInterval(t *testing.T) {
 	defer cancel()
 
 	exp := &bufferMockExporter{}
-	statsCollector := stats.NewCollector(nil)
+	statsCollector := stats.NewCollector(nil, stats.StatsLevelFull)
 
 	// Large batch size, short flush interval
 	buf := buffer.New(1000, 1000, 100*time.Millisecond, exp, statsCollector, nil, nil)
@@ -168,7 +168,7 @@ func TestFunctional_Buffer_ConcurrentAdds(t *testing.T) {
 	defer cancel()
 
 	exp := &bufferMockExporter{}
-	statsCollector := stats.NewCollector(nil)
+	statsCollector := stats.NewCollector(nil, stats.StatsLevelFull)
 
 	buf := buffer.New(10000, 100, 50*time.Millisecond, exp, statsCollector, nil, nil)
 	go buf.Start(ctx)
@@ -222,7 +222,7 @@ func TestFunctional_Buffer_GracefulShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	exp := &bufferMockExporter{}
-	statsCollector := stats.NewCollector(nil)
+	statsCollector := stats.NewCollector(nil, stats.StatsLevelFull)
 
 	// Large batch size, long flush interval (won't trigger naturally)
 	buf := buffer.New(10000, 10000, 1*time.Hour, exp, statsCollector, nil, nil)
@@ -251,7 +251,7 @@ func TestFunctional_Buffer_StatsIntegration(t *testing.T) {
 	defer cancel()
 
 	exp := &bufferMockExporter{}
-	statsCollector := stats.NewCollector([]string{"service"})
+	statsCollector := stats.NewCollector([]string{"service"}, stats.StatsLevelFull)
 
 	buf := buffer.New(100, 10, 100*time.Millisecond, exp, statsCollector, nil, nil)
 	go buf.Start(ctx)
@@ -288,7 +288,7 @@ func TestFunctional_Buffer_HighThroughput(t *testing.T) {
 	defer cancel()
 
 	exp := &bufferMockExporter{}
-	statsCollector := stats.NewCollector(nil)
+	statsCollector := stats.NewCollector(nil, stats.StatsLevelFull)
 
 	// Larger buffer and batch for throughput
 	buf := buffer.New(100000, 1000, 50*time.Millisecond, exp, statsCollector, nil, nil)

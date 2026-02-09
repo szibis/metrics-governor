@@ -25,6 +25,7 @@ import (
 	"github.com/szibis/metrics-governor/internal/health"
 	"github.com/szibis/metrics-governor/internal/limits"
 	"github.com/szibis/metrics-governor/internal/logging"
+	"github.com/szibis/metrics-governor/internal/pipeline"
 	"github.com/szibis/metrics-governor/internal/prw"
 	"github.com/szibis/metrics-governor/internal/queue"
 	"github.com/szibis/metrics-governor/internal/receiver"
@@ -298,6 +299,8 @@ func main() {
 		// Wrap with queued exporter if enabled
 		if cfg.QueueEnabled {
 			queueCfg := queue.Config{
+				Mode:                       queue.QueueMode(cfg.QueueMode),
+				HybridSpilloverPct:         cfg.QueueHybridSpilloverPct,
 				Path:                       cfg.QueuePath,
 				MaxSize:                    cfg.QueueMaxSize,
 				MaxBytes:                   cfg.QueueMaxBytes,
@@ -344,6 +347,7 @@ func main() {
 			}
 			finalExporter = queuedExp
 			logging.Info("queue enabled", logging.F(
+				"mode", cfg.QueueMode,
 				"path", cfg.QueuePath,
 				"max_size", cfg.QueueMaxSize,
 				"max_bytes", cfg.QueueMaxBytes,
@@ -363,8 +367,13 @@ func main() {
 		}
 	}
 
-	// Create stats collector
-	statsCollector := stats.NewCollector(trackLabels)
+	// Create stats collector (nil for "none" level — disables all stats processing)
+	var statsCollector *stats.Collector
+	statsLevel := stats.StatsLevel(cfg.StatsLevel)
+	if statsLevel != stats.StatsLevelNone {
+		statsCollector = stats.NewCollector(trackLabels, statsLevel)
+	}
+	logging.Info("stats level configured", logging.F("level", cfg.StatsLevel))
 
 	// Create runtime stats collector
 	runtimeStats := stats.NewRuntimeStats()
@@ -525,9 +534,16 @@ func main() {
 		))
 	}
 
-	// Set up tenant processor in buffer (if tenancy enabled)
-	if tenantPipeline != nil {
-		bufOpts = append(bufOpts, buffer.WithTenantProcessor(tenantPipeline))
+	// Fuse tenant + limits into a single pipeline step (avoids separate timing overhead).
+	// Falls back to separate processors if neither is configured.
+	fusedProc := pipeline.NewFusedProcessor(tenantPipeline, limitsEnforcer)
+	if fusedProc != nil {
+		bufOpts = append(bufOpts, buffer.WithFusedProcessor(fusedProc))
+	} else {
+		// Legacy path: set tenant processor separately (limits passed to New() directly)
+		if tenantPipeline != nil {
+			bufOpts = append(bufOpts, buffer.WithTenantProcessor(tenantPipeline))
+		}
 	}
 
 	// Set up failover queue (safety net for export failures)
@@ -568,8 +584,13 @@ func main() {
 		}
 	}
 
-	// Create buffer with stats collector, limits enforcer, and log aggregator
-	buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, finalExporter, statsCollector, limitsEnforcer, bufferLogAggregator, bufOpts...)
+	// Create buffer with stats collector, limits enforcer, and log aggregator.
+	// When the fused processor is active, pass nil for limits (it's handled by the fused processor).
+	var bufferLimits buffer.LimitsEnforcer
+	if fusedProc == nil {
+		bufferLimits = limitsEnforcer
+	}
+	buf := buffer.New(cfg.BufferSize, cfg.MaxBatchSize, cfg.FlushInterval, finalExporter, statsCollector, bufferLimits, bufferLogAggregator, bufOpts...)
 
 	// Wire aggregate output into buffer (bypasses stats+processing to avoid loops)
 	if sampler != nil && sampler.HasAggregation() {

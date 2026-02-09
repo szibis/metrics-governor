@@ -225,6 +225,7 @@ The OTLP exporter supports any OTLP-compatible backend via gRPC or HTTP protocol
 |------|---------|-------------|
 | `-stats-addr` | `:9090` | Stats/metrics HTTP endpoint address |
 | `-stats-labels` | | Comma-separated labels to track (e.g., `service,env,cluster`) |
+| `-stats-level` | `basic` | Stats collection level: `none` (disabled), `basic` (core counters), or `full` (per-label breakdowns) |
 
 ### Limits Options
 
@@ -241,9 +242,11 @@ The queue uses a high-performance FastQueue implementation inspired by VictoriaM
 |------|---------|-------------|
 | `-queue-enabled` | `true` | Enable failover queue (safety net for export failures) |
 | `-queue-type` | `memory` | Queue type: `memory` (bounded in-memory, fast) or `disk` (FastQueue, durable, survives restarts) |
-| `-queue-path` | `./queue` | Queue storage directory (disk mode only) |
+| `-queue-mode` | `memory` | Queue mode: `memory` (in-memory only), `disk` (fully disk-backed via FastQueue), or `hybrid` (L1 memory + L2 disk spillover) |
+| `-queue-path` | `./queue` | Queue storage directory (disk and hybrid modes) |
 | `-queue-max-size` | `10000` | Maximum number of batches in queue |
-| `-queue-max-bytes` | `1073741824` | Maximum total queue size in bytes (1GB) |
+| `-queue-max-bytes` | `268435456` | Maximum memory for in-memory queue (256MB). In hybrid mode, this is the L1 memory capacity before spilling to disk. |
+| `-queue-hybrid-spillover-pct` | `80` | Percentage of in-memory queue capacity before spilling to disk (hybrid mode only, 1-100) |
 | `-queue-retry-interval` | `5s` | Initial retry interval |
 | `-queue-max-retry-delay` | `5m` | Maximum retry backoff delay |
 | `-queue-full-behavior` | `drop_oldest` | Queue full behavior: `drop_oldest`, `drop_newest`, or `block` |
@@ -336,9 +339,11 @@ The queue provides durability for export failures with memory or disk-backed sto
 |------|---------|-------------|
 | `-queue-enabled` | `true` | Enable failover queue (safety net for export failures) |
 | `-queue-type` | `memory` | Queue type: `memory` (bounded, fast) or `disk` (FastQueue, durable) |
-| `-queue-path` | `./queue` | Queue directory path (disk mode only) |
+| `-queue-mode` | `memory` | Queue mode: `memory`, `disk`, or `hybrid` (L1 memory + L2 disk spillover). See [queue.md](./queue.md) for details. |
+| `-queue-path` | `./queue` | Queue directory path (disk and hybrid modes) |
 | `-queue-max-size` | `10000` | Max queue entries |
-| `-queue-max-bytes` | `1073741824` | Max queue size in bytes (1GB) |
+| `-queue-max-bytes` | `268435456` | Maximum memory for in-memory queue (256MB) |
+| `-queue-hybrid-spillover-pct` | `80` | Percentage of in-memory queue capacity before spilling to disk (hybrid mode only) |
 | `-queue-retry-interval` | `5s` | Initial retry interval |
 | `-queue-max-retry-delay` | `5m` | Maximum retry backoff delay |
 | `-queue-full-behavior` | `drop_oldest` | Behavior when full: `drop_oldest`, `drop_newest`, `block` |

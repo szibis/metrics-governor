@@ -175,9 +175,17 @@ type compressedSender interface {
 // (returns instantly in µs) and N worker goroutines pull from the queue
 // and export concurrently. This prevents slow destinations from blocking
 // the buffer flush path.
+//
+// Queue modes:
+//   - "memory": zero-serialization via MemoryBatchQueue (highest throughput)
+//   - "disk":   proto.Marshal → FastQueue (full persistence)
+//   - "hybrid": memory L1 + disk L2 spillover (fast with safety net)
 type QueuedExporter struct {
 	exporter       Exporter
 	queue          *queue.SendQueue
+	memQueue       *queue.MemoryBatchQueue // memory/hybrid mode
+	queueMode      queue.QueueMode
+	hybridSpillPct int // hybrid mode: spillover threshold percentage
 	baseDelay      time.Duration
 	maxDelay       time.Duration
 	circuitBreaker *CircuitBreaker
@@ -239,9 +247,40 @@ type QueuedExporter struct {
 // NewQueued creates a new QueuedExporter.
 // Configuration is read from queueCfg including backoff and circuit breaker settings.
 func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error) {
-	q, err := queue.New(queueCfg)
-	if err != nil {
-		return nil, err
+	queueMode := queueCfg.Mode
+	if queueMode == "" {
+		queueMode = queue.QueueModeDisk // backward-compatible default
+	}
+
+	// Create disk-based SendQueue (needed for disk and hybrid modes)
+	var q *queue.SendQueue
+	if queueMode == queue.QueueModeDisk || queueMode == queue.QueueModeHybrid {
+		var err error
+		q, err = queue.New(queueCfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Create memory batch queue (needed for memory and hybrid modes)
+	var memQ *queue.MemoryBatchQueue
+	if queueMode == queue.QueueModeMemory || queueMode == queue.QueueModeHybrid {
+		memQ = queue.NewMemoryBatchQueue(queue.MemoryBatchQueueConfig{
+			MaxSize:      queueCfg.MaxSize,
+			MaxBytes:     queueCfg.MaxBytes,
+			FullBehavior: queueCfg.FullBehavior,
+			BlockTimeout: queueCfg.BlockTimeout,
+		})
+	}
+
+	// For pure memory mode, create a minimal SendQueue for backward compatibility
+	// (some methods like QueueLen/QueueSize reference it).
+	if q == nil {
+		var err error
+		q, err = queue.New(queueCfg)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Apply defaults for backoff settings
@@ -312,9 +351,17 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 		globalSendLimit = runtime.NumCPU() * 8
 	}
 
+	hybridSpillPct := queueCfg.HybridSpilloverPct
+	if hybridSpillPct <= 0 || hybridSpillPct > 100 {
+		hybridSpillPct = 80
+	}
+
 	qe := &QueuedExporter{
 		exporter:             exporter,
 		queue:                q,
+		memQueue:             memQ,
+		queueMode:            queueMode,
+		hybridSpillPct:       hybridSpillPct,
 		baseDelay:            queueCfg.RetryInterval,
 		maxDelay:             queueCfg.MaxRetryDelay,
 		directExportTimeout:  directExportTimeout,
@@ -378,16 +425,37 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 	if qe.alwaysQueue {
 		qe.workersDone = make(chan struct{})
 
-		if pipelineSplitEnabled {
-			// Pipeline split mode: preparers (compress) + senders (HTTP)
-			qe.preparedCh = make(chan *PreparedEntry, pipelineChannelSize)
-			logging.Info("pipeline split mode enabled", logging.F(
-				"preparers", preparerCount,
-				"senders", senderCount,
-				"channel_size", pipelineChannelSize,
-				"max_concurrent_sends", maxConcurrentSends,
+		// Start memory batch workers for memory/hybrid modes
+		if memQ != nil && (queueMode == queue.QueueModeMemory || queueMode == queue.QueueModeHybrid) {
+			logging.Info("memory batch workers enabled", logging.F(
+				"queue_mode", string(queueMode),
+				"workers", workers,
 			))
-			qe.startPipelineSplitWorkers()
+			qe.startMemBatchWorkers(workers)
+		}
+
+		// Start disk queue workers for disk/hybrid modes
+		if queueMode == queue.QueueModeDisk || queueMode == queue.QueueModeHybrid {
+			if pipelineSplitEnabled {
+				// Pipeline split mode: preparers (compress) + senders (HTTP)
+				qe.preparedCh = make(chan *PreparedEntry, pipelineChannelSize)
+				logging.Info("pipeline split mode enabled", logging.F(
+					"preparers", preparerCount,
+					"senders", senderCount,
+					"channel_size", pipelineChannelSize,
+					"max_concurrent_sends", maxConcurrentSends,
+				))
+				qe.startPipelineSplitWorkers()
+			} else {
+				// Unified worker mode: each worker does pop → compress → send
+				logging.Info("disk queue workers enabled", logging.F(
+					"workers", workers,
+				))
+				qe.startWorkers()
+			}
+		} else if queueMode == queue.QueueModeMemory {
+			// Memory-only mode: no disk workers needed
+			// Close workersDone when memory workers are done (handled by startMemBatchWorkers)
 		} else {
 			// Unified worker mode: each worker does pop → compress → send
 			logging.Info("always-queue mode enabled with worker pool", logging.F(
@@ -439,9 +507,42 @@ func (e *QueuedExporter) Export(ctx context.Context, req *colmetricspb.ExportMet
 		// (ExportData) sends raw bytes without deserializing.
 		datapoints := countDatapoints(req)
 		start := time.Now()
-		if err := e.queue.Push(req); err != nil {
-			return fmt.Errorf("queue push failed: %w", err)
+
+		switch e.queueMode {
+		case queue.QueueModeMemory:
+			// Zero-serialization: pass typed batch through channel
+			batch := queue.NewExportBatch(req)
+			if err := e.memQueue.PushBatch(batch); err != nil {
+				return fmt.Errorf("memory queue push failed: %w", err)
+			}
+
+		case queue.QueueModeHybrid:
+			// Try memory queue first; spill to disk if above threshold
+			batch := queue.NewExportBatch(req)
+			spilloverThreshold := float64(e.hybridSpillPct) / 100.0
+			if e.memQueue.Utilization() < spilloverThreshold {
+				if err := e.memQueue.PushBatch(batch); err != nil {
+					// Memory push failed, try disk fallback
+					queue.IncrementSpilloverTotal()
+					if diskErr := e.queue.Push(req); diskErr != nil {
+						return fmt.Errorf("hybrid queue push failed (memory: %v, disk: %w)", err, diskErr)
+					}
+				}
+			} else {
+				// Above spillover threshold — go directly to disk
+				queue.IncrementSpilloverTotal()
+				if err := e.queue.Push(req); err != nil {
+					return fmt.Errorf("disk queue push failed: %w", err)
+				}
+			}
+
+		default:
+			// Disk mode: serialize and push to FastQueue (original behavior)
+			if err := e.queue.Push(req); err != nil {
+				return fmt.Errorf("queue push failed: %w", err)
+			}
 		}
+
 		pipeline.Record("queue_push", pipeline.Since(start))
 		// Queuing IS the success path — return nil, not ErrExportQueued.
 		// The buffer layer doesn't need to distinguish queued vs exported.
@@ -551,7 +652,12 @@ func (e *QueuedExporter) Close() error {
 		}
 	}
 
-	// Safe to close queue now — drain is done or timed out
+	// Close memory batch queue if present
+	if e.memQueue != nil {
+		e.memQueue.Close()
+	}
+
+	// Safe to close disk queue now — drain is done or timed out
 	if err := e.queue.Close(); err != nil {
 		logging.Error("failed to close queue", logging.F("error", err.Error()))
 	}
@@ -824,6 +930,123 @@ func (e *QueuedExporter) workerLoop(id int) {
 		}
 
 		// Exponential backoff with jitter
+		if e.backoffEnabled {
+			e.workerSleep(currentBackoff)
+			newBackoff := time.Duration(float64(currentBackoff) * e.backoffMultiplier)
+			if newBackoff > e.maxDelay && e.maxDelay > 0 {
+				newBackoff = e.maxDelay
+			}
+			currentBackoff = newBackoff
+		} else {
+			e.workerSleep(currentBackoff)
+		}
+	}
+}
+
+// startMemBatchWorkers launches workers that pull from the memory batch queue
+// and export typed batches directly — no deserialization needed.
+func (e *QueuedExporter) startMemBatchWorkers(count int) {
+	var wg sync.WaitGroup
+	wg.Add(count)
+	for i := 0; i < count; i++ {
+		id := i
+		go func() {
+			defer wg.Done()
+			e.memBatchWorkerLoop(id)
+		}()
+	}
+	// Close workersDone when all mem batch workers finish
+	// (only if we're in pure memory mode and no disk workers)
+	if e.queueMode == queue.QueueModeMemory {
+		go func() {
+			wg.Wait()
+			close(e.workersDone)
+		}()
+	}
+}
+
+// memBatchWorkerLoop is the worker loop for memory/hybrid queue modes.
+// Workers pop typed ExportBatch from the memory queue and export directly.
+// No proto.Unmarshal needed — the batch already has typed ResourceMetrics.
+func (e *QueuedExporter) memBatchWorkerLoop(id int) {
+	currentBackoff := e.baseDelay
+	if currentBackoff <= 0 {
+		currentBackoff = 5 * time.Second
+	}
+
+	for {
+		select {
+		case <-e.retryStop:
+			return
+		default:
+		}
+
+		batch, err := e.memQueue.PopBatchBlocking(e.retryStop)
+		if err != nil {
+			if errors.Is(err, queue.ErrBatchQueueClosed) {
+				return
+			}
+			logging.Error("mem-worker: pop error", logging.F("worker_id", id, "error", err.Error()))
+			e.workerSleep(100 * time.Millisecond)
+			continue
+		}
+		if batch == nil {
+			// Shutdown signaled
+			return
+		}
+
+		// Circuit breaker check
+		if e.circuitBreaker != nil && !e.circuitBreaker.AllowRequest() {
+			queue.IncrementCircuitRejected()
+			// Re-push the batch back to memory queue
+			_ = e.memQueue.PushBatch(batch)
+			e.workerSleep(currentBackoff)
+			continue
+		}
+
+		queue.IncrementRetryTotal()
+		queue.IncrementWorkersActive()
+
+		// Export directly using the typed request — zero deserialization
+		exportStart := time.Now()
+		ctx, cancel := context.WithTimeout(context.Background(), e.retryExportTimeout)
+		exportErr := e.exporter.Export(ctx, batch.ToRequest())
+		cancel()
+
+		exportDuration := pipeline.Since(exportStart)
+		pipeline.Record("export_http", exportDuration)
+		queue.DecrementWorkersActive()
+
+		if exportErr == nil {
+			queue.IncrementRetrySuccessTotal()
+			if e.circuitBreaker != nil {
+				e.circuitBreaker.RecordSuccess()
+			}
+			if e.scaler != nil {
+				e.scaler.RecordLatency(time.Duration(exportDuration))
+			}
+			currentBackoff = e.baseDelay
+			if currentBackoff <= 0 {
+				currentBackoff = 5 * time.Second
+			}
+			continue
+		}
+
+		// Failure
+		if e.circuitBreaker != nil {
+			e.circuitBreaker.RecordFailure()
+		}
+		errType := classifyExportError(exportErr)
+		queue.IncrementRetryFailure(string(errType))
+
+		logging.Warn("mem-worker: export failed, re-pushing", logging.F(
+			"worker_id", id,
+			"error", exportErr.Error(),
+		))
+
+		// Re-push for retry
+		_ = e.memQueue.PushBatch(batch)
+
 		if e.backoffEnabled {
 			e.workerSleep(currentBackoff)
 			newBackoff := time.Duration(float64(currentBackoff) * e.backoffMultiplier)
@@ -1434,13 +1657,28 @@ func (e *QueuedExporter) calculateBackoff(retries int) time.Duration {
 }
 
 // QueueLen returns the current queue length (for testing/monitoring).
+// In memory/hybrid mode, includes memory batch queue count.
 func (e *QueuedExporter) QueueLen() int {
-	return e.queue.Len()
+	total := e.queue.Len()
+	if e.memQueue != nil {
+		total += e.memQueue.Len()
+	}
+	return total
 }
 
 // QueueSize returns the current queue size in bytes (for testing/monitoring).
+// In memory/hybrid mode, includes memory batch queue bytes.
 func (e *QueuedExporter) QueueSize() int64 {
-	return e.queue.Size()
+	total := e.queue.Size()
+	if e.memQueue != nil {
+		total += e.memQueue.Size()
+	}
+	return total
+}
+
+// QueueMode returns the configured queue mode.
+func (e *QueuedExporter) QueueMode() queue.QueueMode {
+	return e.queueMode
 }
 
 // AlwaysQueue returns whether always-queue mode is enabled.

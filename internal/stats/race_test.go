@@ -40,7 +40,7 @@ func makeRaceResourceMetrics(service string, metricName string, numDatapoints in
 // --- Race condition tests ---
 
 func TestRace_Collector_ConcurrentProcess(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
@@ -62,7 +62,7 @@ func TestRace_Collector_ConcurrentProcess(t *testing.T) {
 }
 
 func TestRace_Collector_ProcessWithResetCardinality(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	var wg sync.WaitGroup
 
@@ -96,7 +96,7 @@ func TestRace_Collector_ProcessWithResetCardinality(t *testing.T) {
 }
 
 func TestRace_Collector_ProcessWithServeHTTP(t *testing.T) {
-	c := NewCollector([]string{"service", "env"})
+	c := NewCollector([]string{"service", "env"}, StatsLevelFull)
 
 	var wg sync.WaitGroup
 
@@ -134,7 +134,7 @@ func TestRace_Collector_ProcessWithServeHTTP(t *testing.T) {
 }
 
 func TestRace_Collector_ProcessWithGetGlobalStats(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	var wg sync.WaitGroup
 
@@ -163,7 +163,7 @@ func TestRace_Collector_ProcessWithGetGlobalStats(t *testing.T) {
 }
 
 func TestRace_Collector_ProcessWithAtomicCounters(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	var wg sync.WaitGroup
 
@@ -207,7 +207,7 @@ func TestRace_Collector_ProcessWithAtomicCounters(t *testing.T) {
 }
 
 func TestRace_Collector_PeriodicLoggingWithProcess(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup
@@ -243,7 +243,7 @@ func TestRace_Collector_PeriodicLoggingWithProcess(t *testing.T) {
 // --- Memory leak tests ---
 
 func TestMemLeak_Collector_ResetCycles(t *testing.T) {
-	c := NewCollector([]string{"service", "env"})
+	c := NewCollector([]string{"service", "env"}, StatsLevelFull)
 
 	runtime.GC()
 	runtime.GC()
@@ -283,7 +283,7 @@ func TestMemLeak_Collector_ResetCycles(t *testing.T) {
 }
 
 func TestMemLeak_Collector_HighCardinalityGrowth(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	// Simulate high cardinality: many unique metric names
 	for i := 0; i < 10000; i++ {

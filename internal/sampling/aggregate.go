@@ -419,26 +419,26 @@ func buildGroupLabels(attrs []*commonpb.KeyValue, groupBy []string, dropLabels [
 }
 
 // buildGroupKey creates a deterministic string key from sorted labels.
+// The input slice is sorted in-place (callers pass a copy from buildGroupLabels).
 func buildGroupKey(labels []*commonpb.KeyValue) string {
 	if len(labels) == 0 {
 		return ""
 	}
 
-	sorted := make([]*commonpb.KeyValue, len(labels))
-	copy(sorted, labels)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Key < sorted[j].Key
+	// Sort in-place — safe because buildGroupLabels already returns a copy.
+	sort.Slice(labels, func(i, j int) bool {
+		return labels[i].Key < labels[j].Key
 	})
 
 	// Pre-size: each label contributes key + "=" + value, separated by "|".
-	size := len(sorted) - 1 // separators
-	for _, kv := range sorted {
+	size := len(labels) - 1 // separators
+	for _, kv := range labels {
 		size += len(kv.Key) + 1 + len(kv.Value.GetStringValue())
 	}
 
 	var b strings.Builder
 	b.Grow(size)
-	for i, kv := range sorted {
+	for i, kv := range labels {
 		if i > 0 {
 			b.WriteByte('|')
 		}

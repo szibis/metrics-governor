@@ -10,7 +10,7 @@ import (
 )
 
 func TestStress_StatsMapGrowth(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	var mBefore, mAfter runtime.MemStats
 	runtime.GC()

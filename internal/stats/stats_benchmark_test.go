@@ -12,7 +12,7 @@ import (
 
 // BenchmarkCollector_Process benchmarks the stats collector processing
 func BenchmarkCollector_Process(b *testing.B) {
-	collector := NewCollector([]string{"service", "env"})
+	collector := NewCollector([]string{"service", "env"}, StatsLevelFull)
 
 	metrics := createBenchmarkMetrics(100, 10)
 
@@ -24,7 +24,7 @@ func BenchmarkCollector_Process(b *testing.B) {
 
 // BenchmarkCollector_ProcessHighCardinality benchmarks with high cardinality labels
 func BenchmarkCollector_ProcessHighCardinality(b *testing.B) {
-	collector := NewCollector([]string{"service", "env", "user_id", "request_id"})
+	collector := NewCollector([]string{"service", "env", "user_id", "request_id"}, StatsLevelFull)
 
 	// Create metrics with many unique label combinations
 	metrics := createHighCardinalityMetrics(1000, 10)
@@ -37,7 +37,7 @@ func BenchmarkCollector_ProcessHighCardinality(b *testing.B) {
 
 // BenchmarkCollector_ProcessManyDatapoints benchmarks with many datapoints per metric
 func BenchmarkCollector_ProcessManyDatapoints(b *testing.B) {
-	collector := NewCollector([]string{"service"})
+	collector := NewCollector([]string{"service"}, StatsLevelFull)
 
 	// Create metrics with many datapoints
 	metrics := createMetricsWithManyDatapoints(10, 1000)
@@ -50,7 +50,7 @@ func BenchmarkCollector_ProcessManyDatapoints(b *testing.B) {
 
 // BenchmarkCollector_GetGlobalStats benchmarks getting stats
 func BenchmarkCollector_GetGlobalStats(b *testing.B) {
-	collector := NewCollector([]string{"service", "env"})
+	collector := NewCollector([]string{"service", "env"}, StatsLevelFull)
 
 	// Pre-populate with data
 	for i := 0; i < 100; i++ {
@@ -66,7 +66,7 @@ func BenchmarkCollector_GetGlobalStats(b *testing.B) {
 
 // BenchmarkCollector_ConcurrentProcess benchmarks concurrent processing
 func BenchmarkCollector_ConcurrentProcess(b *testing.B) {
-	collector := NewCollector([]string{"service", "env"})
+	collector := NewCollector([]string{"service", "env"}, StatsLevelFull)
 	metrics := createBenchmarkMetrics(100, 10)
 
 	b.RunParallel(func(pb *testing.PB) {
@@ -92,7 +92,7 @@ func BenchmarkCollector_Scale(b *testing.B) {
 
 	for _, scale := range scales {
 		b.Run(scale.name, func(b *testing.B) {
-			collector := NewCollector([]string{"service"})
+			collector := NewCollector([]string{"service"}, StatsLevelFull)
 			metrics := createBenchmarkMetrics(scale.metrics, scale.datapoints)
 
 			b.ResetTimer()

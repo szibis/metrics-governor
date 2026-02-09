@@ -82,6 +82,11 @@
   - [Persistent Queue Tuning](#persistent-queue-tuning)
   - [Prometheus Scrape Optimization](#prometheus-scrape-optimization)
   - [Complete Production Configuration](#complete-production-configuration)
+- [Performance Tuning Knobs](#performance-tuning-knobs)
+  - [Three Performance Axes](#three-performance-axes)
+  - [Configuration Profiles](#configuration-profiles)
+  - [Micro-optimizations](#micro-optimizations)
+  - [Runtime Flexibility](#runtime-flexibility)
 - [VictoriaMetrics Inspiration](#victoriametrics-inspiration)
 
 metrics-governor includes several high-performance optimizations for production workloads. **All optimizations apply to both OTLP and PRW pipelines.**
@@ -1355,6 +1360,58 @@ metrics-governor \
   -queue-compression snappy \
   -memory-limit-ratio 0.9
 ```
+
+---
+
+## Performance Tuning Knobs
+
+metrics-governor exposes three main performance axes that let you trade between durability, observability, and raw throughput. Every knob can be changed between deployments — no code changes required.
+
+### Three Performance Axes
+
+**Axis 1: Durability** (`--queue-mode`) — Controls how export batches are queued between the pipeline and the backend. `memory` mode uses a zero-copy in-memory ring buffer for maximum throughput and lowest latency. `disk` mode writes every batch to the persistent FastQueue for full crash recovery at the cost of disk I/O. A hybrid mode is also available via `--queue-hybrid-spillover-pct`, which keeps batches in memory until queue utilization reaches the configured percentage (e.g., 80%), then spills to disk — giving you low-latency operation under normal load with disk-backed safety during backpressure.
+
+**Axis 2: Observability** (`--stats-level`) — Controls how much per-metric accounting the limits enforcer performs. `full` enables complete cardinality tracking with per-label-set Bloom filters, giving you full visibility into which label combinations drive cardinality. `basic` (the default) tracks per-metric datapoint counts and rule-level cardinality without per-label-set breakdowns. `none` disables all stats collection, eliminating the accounting overhead entirely — the limits enforcer still enforces rules, but no counters or cardinality trackers are maintained.
+
+**Pipeline fusion** — The tenant identification and limits enforcement stages run as a single timed step rather than two sequential passes over the data. This fusion is automatic and always enabled; there is no flag to control it. It eliminates one full traversal of each incoming batch, which is particularly impactful at high datapoint rates.
+
+### Configuration Profiles
+
+| Configuration | Safety First | Balanced (default) | Performance First |
+|--------------|-------------|-------------------|------------|
+| `--queue-mode` | `disk` | `memory` | `memory` |
+| `--queue-max-bytes` | 512MB | 256MB | 128MB |
+| `--stats-level` | `full` | `basic` | `none` |
+| Pipeline fusion | enabled | enabled | enabled |
+| Expected CPU (100k dps) | ~150% | ~60-80% | ~40-50% |
+| Expected memory | ~1.2 GB | ~700 MB | ~500 MB |
+| Durability | Full crash recovery | No persistence | No persistence |
+| Visibility | Full cardinality tracking | Per-metric counts | Global totals only |
+
+**Safety First** is appropriate for financial or compliance workloads where no datapoint may be lost during a backend outage. Every batch is persisted to disk before acknowledgement, and full cardinality tracking gives complete observability into metric growth. The trade-off is higher CPU (disk I/O + Bloom filter maintenance) and memory (tracking structures).
+
+**Balanced** is the default and suits most production deployments. Memory-mode queuing avoids disk I/O, and basic stats give enough visibility to understand per-metric throughput and enforce limits effectively. This profile handles 100k datapoints per second at roughly 60-80% CPU on a 2-core container.
+
+**Performance First** is designed for high-throughput relay scenarios where metrics-governor acts as a stateless proxy. With stats disabled, the limits enforcer becomes a simple pass/drop gate with negligible overhead. This profile is ideal for staging environments or edge proxies that forward to a central governor instance that handles full accounting.
+
+### Micro-optimizations
+
+In addition to the three main axes, several micro-optimizations contribute to overall throughput:
+
+- **Doubled downsample shards (32)** — The downsampling stage distributes work across 32 shards (up from 16), reducing lock contention under high concurrency. Sharding is by metric name hash, so the improvement scales with the number of distinct metric names in each batch.
+- **In-place label sorting** — Labels are sorted in-place using the existing slice rather than allocating a new sorted copy. This eliminates one allocation per series on the hot path.
+- **Reduced allocations** — Several hot-path functions have been refactored to reuse buffers from `sync.Pool` rather than allocating on each call, reducing GC pressure at high throughput.
+
+### Runtime Flexibility
+
+All three axes can be changed at runtime (between deployments) without any code changes. A common pattern is to run different profiles in different environments:
+
+- **Staging**: `memory` queue + `full` stats — maximum observability for debugging, no need for crash recovery
+- **Production**: `memory` queue + `basic` stats — the default balanced profile for most workloads
+- **Edge proxy**: `memory` queue + `none` stats — minimum overhead, forwarding to a central instance
+- **Regulated / financial**: `disk` queue + `full` stats — full durability and visibility
+
+The `--queue-hybrid-spillover-pct` flag provides a middle ground for production deployments that want low-latency memory queuing under normal operation but automatic disk spillover during backend outages. For example, `--queue-hybrid-spillover-pct=80` keeps batches in memory until the queue is 80% full, then begins writing to disk.
 
 ---
 

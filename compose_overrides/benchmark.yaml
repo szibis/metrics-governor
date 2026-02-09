@@ -10,8 +10,8 @@
 #   BENCH_OTLP_HTTP_PATH  — URL path override (default: empty = /v1/metrics)
 #
 # Usage:
-#   ./test/benchmark-proxy.sh              # Full 5-test benchmark
-#   ./test/benchmark-proxy.sh --test=A     # Single test
+#   ./tools/benchmark-proxy.sh              # Full 5-test benchmark
+#   ./tools/benchmark-proxy.sh --test=A     # Single test
 
 services:
   metrics-generator:
@@ -60,6 +60,8 @@ services:
       - "-queue-enabled=false"
       # Stats
       - "-stats-labels=service,env"
+      # pprof endpoint on stats port for profiling
+      - "--pprof-enabled"
     deploy:
       resources:
         limits:

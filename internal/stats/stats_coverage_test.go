@@ -17,7 +17,7 @@ import (
 
 // TestStartPeriodicLoggingExtended tests the periodic logging goroutine.
 func TestStartPeriodicLoggingExtended(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	// Add some data first
 	c.RecordReceived(100)
@@ -43,7 +43,7 @@ func TestStartPeriodicLoggingExtended(t *testing.T) {
 
 // TestStartPeriodicLoggingWithReset tests that cardinality gets reset periodically.
 func TestStartPeriodicLoggingWithReset(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	// Add data
 	rm := createTestResourceMetricsForCoverage(
@@ -72,7 +72,7 @@ func TestStartPeriodicLoggingWithReset(t *testing.T) {
 
 // TestResetCardinalityEmpty tests resetting when maps are empty.
 func TestResetCardinalityEmpty(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	// Should not panic on empty collector
 	c.ResetCardinality()
@@ -85,7 +85,7 @@ func TestResetCardinalityEmpty(t *testing.T) {
 
 // TestResetCardinalityPreservesDatapoints tests that datapoints are preserved.
 func TestResetCardinalityPreservesDatapoints(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	// Add data
 	c.RecordReceived(100)
@@ -109,7 +109,7 @@ func TestResetCardinalityPreservesDatapoints(t *testing.T) {
 // TestResetCardinalityLargeMetricMap tests reset with >10000 metric entries to
 // trigger the large-map eviction branch.
 func TestResetCardinalityLargeMetricMap(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	c.mu.Lock()
 	for i := 0; i < 10001; i++ {
@@ -143,7 +143,7 @@ func TestResetCardinalityLargeMetricMap(t *testing.T) {
 // TestResetCardinalityLargeLabelMap tests reset with >5000 label entries to
 // trigger the large label-map eviction branch.
 func TestResetCardinalityLargeLabelMap(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	c.mu.Lock()
 	for i := 0; i < 5001; i++ {
@@ -172,7 +172,7 @@ func TestResetCardinalityLargeLabelMap(t *testing.T) {
 
 // TestResetCardinalityBothMapsLarge tests eviction when both maps exceed limits.
 func TestResetCardinalityBothMapsLarge(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	c.mu.Lock()
 	for i := 0; i < 10001; i++ {
@@ -210,7 +210,7 @@ func TestResetCardinalityBothMapsLarge(t *testing.T) {
 // TestResetCardinalityMapsCleared tests that maps are always cleared on reset
 // to prevent unbounded memory growth from stale entries.
 func TestResetCardinalityMapsCleared(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	rm := createTestResourceMetricsForCoverage(
 		map[string]string{"service": "api"},
@@ -244,7 +244,7 @@ func TestResetCardinalityMapsCleared(t *testing.T) {
 
 // TestSetOTLPBufferSize tests buffer size setting.
 func TestSetOTLPBufferSize(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	c.SetOTLPBufferSize(1000)
 
@@ -258,7 +258,7 @@ func TestSetOTLPBufferSize(t *testing.T) {
 
 // TestSetPRWBufferSize tests PRW buffer size setting.
 func TestSetPRWBufferSize(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	c.SetPRWBufferSize(2000)
 
@@ -272,7 +272,7 @@ func TestSetPRWBufferSize(t *testing.T) {
 
 // TestServeHTTPWithBufferSizes tests that buffer sizes are reported.
 func TestServeHTTPWithBufferSizes(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	c.SetOTLPBufferSize(500)
 	c.SetPRWBufferSize(1500)
@@ -305,7 +305,7 @@ func TestServeHTTPExactCardinalityMode(t *testing.T) {
 		FalsePositiveRate: 0.01,
 	}
 
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	// Add some data so the collector has content
 	rm := createTestResourceMetricsForCoverage(
@@ -342,7 +342,7 @@ func TestServeHTTPBloomCardinalityMode(t *testing.T) {
 		FalsePositiveRate: 0.01,
 	}
 
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	req := httptest.NewRequest("GET", "/metrics", nil)
 	w := httptest.NewRecorder()
@@ -359,7 +359,7 @@ func TestServeHTTPBloomCardinalityMode(t *testing.T) {
 // updateLabelStats: ExponentialHistogram metric type with label tracking
 // ---------------------------------------------------------------------------
 func TestUpdateLabelStats_ExponentialHistogram(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	metric := &metricspb.Metric{
 		Name: "exp_hist_metric",
@@ -410,7 +410,7 @@ func TestUpdateLabelStats_ExponentialHistogram(t *testing.T) {
 // updateLabelStats: Summary metric type with label tracking
 // ---------------------------------------------------------------------------
 func TestUpdateLabelStats_Summary(t *testing.T) {
-	c := NewCollector([]string{"env"})
+	c := NewCollector([]string{"env"}, StatsLevelFull)
 
 	metric := &metricspb.Metric{
 		Name: "summary_metric_with_labels",
@@ -461,7 +461,7 @@ func TestUpdateLabelStats_Summary(t *testing.T) {
 // updateLabelStats: Gauge metric type with label tracking
 // ---------------------------------------------------------------------------
 func TestUpdateLabelStats_Gauge(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	metric := &metricspb.Metric{
 		Name: "gauge_with_labels",
@@ -509,7 +509,7 @@ func TestUpdateLabelStats_Gauge(t *testing.T) {
 // updateLabelStats: Histogram metric type with label tracking
 // ---------------------------------------------------------------------------
 func TestUpdateLabelStats_Histogram(t *testing.T) {
-	c := NewCollector([]string{"cluster"})
+	c := NewCollector([]string{"cluster"}, StatsLevelFull)
 
 	metric := &metricspb.Metric{
 		Name: "hist_with_labels",
@@ -563,7 +563,7 @@ func TestUpdateLabelStats_Histogram(t *testing.T) {
 // updateLabelStats: no tracked labels in attributes (empty labelKey -> continue)
 // ---------------------------------------------------------------------------
 func TestUpdateLabelStats_NoTrackedLabelsInAttrs(t *testing.T) {
-	c := NewCollector([]string{"service", "env"})
+	c := NewCollector([]string{"service", "env"}, StatsLevelFull)
 
 	// Datapoints have attributes that do NOT match any tracked labels.
 	// Resource attributes also do NOT contain tracked labels.
@@ -601,7 +601,7 @@ func TestUpdateLabelStats_NoTrackedLabelsInAttrs(t *testing.T) {
 
 // TestGetGlobalStatsAfterMultipleProcesses tests stats accumulation.
 func TestGetGlobalStatsAfterMultipleProcesses(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	// Process multiple batches
 	for i := 0; i < 5; i++ {
@@ -628,7 +628,7 @@ func TestGetGlobalStatsAfterMultipleProcesses(t *testing.T) {
 
 // TestProcessMetricWithEmptyName tests metric with empty name.
 func TestProcessMetricWithEmptyName(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	metric := &metricspb.Metric{
 		Name: "",
@@ -652,7 +652,7 @@ func TestProcessMetricWithEmptyName(t *testing.T) {
 
 // TestProcessMultipleResourceMetrics tests processing multiple resource metrics.
 func TestProcessMultipleResourceMetrics(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	rms := []*metricspb.ResourceMetrics{
 		createTestResourceMetricsForCoverage(map[string]string{"service": "api"}, "metric_a", 2),
@@ -677,7 +677,7 @@ func TestProcessMultipleResourceMetrics(t *testing.T) {
 
 // TestLabelStatsTracking tests label stats are properly tracked.
 func TestLabelStatsTracking(t *testing.T) {
-	c := NewCollector([]string{"service", "env"})
+	c := NewCollector([]string{"service", "env"}, StatsLevelFull)
 
 	rm := &metricspb.ResourceMetrics{
 		Resource: &resourcepb.Resource{
@@ -713,7 +713,7 @@ func TestLabelStatsTracking(t *testing.T) {
 
 // TestServeHTTPWithLabelStats tests serving metrics with label stats.
 func TestServeHTTPWithLabelStats(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	rm := createTestResourceMetricsForCoverage(
 		map[string]string{"service": "api"},
@@ -739,7 +739,7 @@ func TestServeHTTPWithLabelStats(t *testing.T) {
 
 // TestProcessMetricWithUnknownType tests metric with unknown type.
 func TestProcessMetricWithUnknownType(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, StatsLevelFull)
 
 	metric := &metricspb.Metric{
 		Name: "unknown_type",
@@ -767,7 +767,7 @@ func TestProcessMetricWithUnknownType(t *testing.T) {
 // hardcoded 60s ticker cannot practically fire in a unit test.
 // ---------------------------------------------------------------------------
 func TestStartPeriodicLogging_ResetTickerBranch(t *testing.T) {
-	c := NewCollector([]string{"service"})
+	c := NewCollector([]string{"service"}, StatsLevelFull)
 
 	// Add data with cardinality
 	rm := createTestResourceMetricsForCoverage(

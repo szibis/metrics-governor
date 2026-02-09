@@ -591,7 +591,7 @@ func (a *adaptiveProcessor) keepRateValue() float64 { return a.keepRate }
 // Periodically garbage-collects stale series.
 // ---------------------------------------------------------------------------
 
-const dsShardCount = 16
+const dsShardCount = 32
 
 type downsampleShard struct {
 	mu       sync.Mutex
@@ -620,7 +620,7 @@ func fnvShard(key string) uint32 {
 		h ^= uint32(key[i])
 		h *= 16777619
 	}
-	return h % dsShardCount
+	return h & (dsShardCount - 1) // bitmask (power-of-2 shard count)
 }
 
 func (de *downsampleEngine) ingestAndEmit(seriesKey string, cfg *DownsampleConfig, ts uint64, value float64) []emittedPoint {

@@ -99,7 +99,7 @@ func TestFunctional_Processing_DropInPipeline(t *testing.T) {
 	}
 
 	exp := &bufferMockExporter{}
-	statsC := stats.NewCollector(nil)
+	statsC := stats.NewCollector(nil, stats.StatsLevelFull)
 	buf := buffer.New(1000, 100, 50*time.Millisecond, exp, statsC, nil, nil, buffer.WithProcessor(s))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -155,7 +155,7 @@ func TestFunctional_Processing_TransformLabelsVisible(t *testing.T) {
 	}
 
 	exp := &bufferMockExporter{}
-	statsC := stats.NewCollector(nil)
+	statsC := stats.NewCollector(nil, stats.StatsLevelFull)
 	buf := buffer.New(1000, 100, 50*time.Millisecond, exp, statsC, nil, nil, buffer.WithProcessor(s))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -196,7 +196,7 @@ func TestFunctional_Processing_SampleRateAccuracy(t *testing.T) {
 	}
 
 	exp := &bufferMockExporter{}
-	statsC := stats.NewCollector(nil)
+	statsC := stats.NewCollector(nil, stats.StatsLevelFull)
 	buf := buffer.New(100000, 500, 50*time.Millisecond, exp, statsC, nil, nil, buffer.WithProcessor(s))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -242,7 +242,7 @@ func TestFunctional_Processing_DownsampleInPipeline(t *testing.T) {
 	}
 
 	exp := &bufferMockExporter{}
-	statsC := stats.NewCollector(nil)
+	statsC := stats.NewCollector(nil, stats.StatsLevelFull)
 	buf := buffer.New(1000, 100, 50*time.Millisecond, exp, statsC, nil, nil, buffer.WithProcessor(s))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -295,7 +295,7 @@ func TestFunctional_Processing_MixedActions(t *testing.T) {
 	}
 
 	exp := &bufferMockExporter{}
-	statsC := stats.NewCollector(nil)
+	statsC := stats.NewCollector(nil, stats.StatsLevelFull)
 	buf := buffer.New(1000, 100, 50*time.Millisecond, exp, statsC, nil, nil, buffer.WithProcessor(s))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -360,7 +360,7 @@ func TestFunctional_Processing_ConfigReloadUnderLoad(t *testing.T) {
 	}
 
 	exp := &bufferMockExporter{}
-	statsC := stats.NewCollector(nil)
+	statsC := stats.NewCollector(nil, stats.StatsLevelFull)
 	buf := buffer.New(100000, 500, 50*time.Millisecond, exp, statsC, nil, nil, buffer.WithProcessor(s))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -448,7 +448,7 @@ func TestFunctional_Processing_AggregateOutputReinjection(t *testing.T) {
 	}
 
 	exp := &bufferMockExporter{}
-	statsC := stats.NewCollector(nil)
+	statsC := stats.NewCollector(nil, stats.StatsLevelFull)
 	buf := buffer.New(1000, 100, 50*time.Millisecond, exp, statsC, nil, nil, buffer.WithProcessor(s))
 
 	// Wire aggregate output to the buffer's AddAggregated method.

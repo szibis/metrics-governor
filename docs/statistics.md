@@ -2,6 +2,104 @@
 
 > **Dual Pipeline Support**: Statistics are collected separately for OTLP and PRW pipelines. OTLP metrics use the `metrics_governor_*` prefix, while PRW metrics use `metrics_governor_prw_*` prefix.
 
+## Stats Levels
+
+metrics-governor supports three stats levels via the `--stats-level` flag, allowing you to trade observability depth for resource efficiency. Stats collection runs **before filtering**, so you always see all incoming metrics regardless of what limits or rules drop downstream.
+
+The current stats level is exposed as a metric:
+
+```
+metrics_governor_stats_level{level="basic"} 1
+```
+
+### Level Overview
+
+| Level | Description |
+|-------|-------------|
+| **none** | No stats collector is created (nil). Zero CPU/memory overhead from stats processing. Global counters still work because they are atomic counters in the buffer, not in the stats collector. |
+| **basic** (default) | Per-metric datapoint counts and pipeline stage timings. Skips Bloom filters, series key extraction, and per-label cardinality tracking. |
+| **full** | Everything including Bloom-based cardinality tracking, per-label statistics, series key pool metrics, and memory accounting. |
+
+### Metrics Availability by Level
+
+| Metric | none | basic | full |
+|--------|:----:|:-----:|:----:|
+| **Global Counters** | | | |
+| `metrics_governor_datapoints_received_total` | &#10003; | &#10003; | &#10003; |
+| `metrics_governor_datapoints_sent_total` | &#10003; | &#10003; | &#10003; |
+| `metrics_governor_batches_sent_total` | &#10003; | &#10003; | &#10003; |
+| `metrics_governor_export_errors_total` | &#10003; | &#10003; | &#10003; |
+| `metrics_governor_otlp_export_bytes_total` | &#10003; | &#10003; | &#10003; |
+| `metrics_governor_prw_export_bytes_total` | &#10003; | &#10003; | &#10003; |
+| `metrics_governor_buffer_size` | &#10003; | &#10003; | &#10003; |
+| `metrics_governor_stats_level{level}` | &#10003; | &#10003; | &#10003; |
+| **Per-Metric Stats** | | | |
+| `metrics_governor_metric_datapoints_total{metric_name}` | | &#10003; | &#10003; |
+| `metrics_governor_metrics_total` | | &#10003; | &#10003; |
+| Pipeline stage timings | | &#10003; | &#10003; |
+| **Cardinality Tracking** | | | |
+| `metrics_governor_metric_cardinality{metric_name}` | | | &#10003; |
+| `metrics_governor_label_datapoints_total{...}` | | | &#10003; |
+| `metrics_governor_label_cardinality{...}` | | | &#10003; |
+| `metrics_governor_cardinality_trackers_total` | | | &#10003; |
+| `metrics_governor_cardinality_memory_bytes` | | | &#10003; |
+| `metrics_governor_cardinality_mode{mode}` | | | &#10003; |
+| `metrics_governor_serieskey_pool_*` | | | &#10003; |
+
+### Performance Impact
+
+Measured at 100,000 datapoints per second:
+
+| Level | CPU Overhead | Memory Overhead | P99 Latency Impact |
+|-------|:------------:|:---------------:|:-------------------:|
+| **none** | ~0% | ~0 MB | none |
+| **basic** | ~3-5% | ~1-5 MB | negligible |
+| **full** | ~30-40% | ~50-200 MB | moderate (Bloom allocations, series key hashing) |
+
+### What You Lose at Each Downgrade
+
+**full -> basic:**
+- No per-metric cardinality numbers (`metric_cardinality`)
+- No per-label statistics (`label_datapoints_total`, `label_cardinality`)
+- No Bloom filter / cardinality tracker metrics (`cardinality_trackers_total`, `cardinality_memory_bytes`, `cardinality_mode`)
+- No series key pool metrics (`serieskey_pool_*`)
+- Limits rules that use cardinality thresholds will not have cardinality data from the stats collector
+
+**basic -> none:**
+- No per-metric datapoint counts (`metric_datapoints_total`)
+- No unique metric name count (`metrics_total`)
+- No pipeline stage timings
+- You retain only the global atomic counters from the buffer (received, sent, errors, bytes, buffer size)
+
+### Choosing the Right Level
+
+| Use Case | Recommended Level |
+|----------|:-----------------:|
+| High-throughput production relay (>500k dps), observability not critical | **none** |
+| Standard production deployment, need per-metric visibility | **basic** |
+| Development, testing, debugging cardinality issues | **full** |
+| Capacity planning and cardinality audits | **full** |
+| Cost-sensitive environments with tight resource budgets | **none** or **basic** |
+| First deployment (understand your traffic) | **full**, then downgrade |
+
+### Configuration
+
+```bash
+# No stats processing (global counters only)
+metrics-governor --stats-level none
+
+# Per-metric counts and timings (default)
+metrics-governor --stats-level basic
+
+# Full cardinality tracking with Bloom filters
+metrics-governor --stats-level full
+
+# Combine with other flags
+metrics-governor --stats-level full --stats-labels service,env --stats-addr :9090
+```
+
+> **Note:** `--stats-labels` is only effective at the `full` level. At `none` or `basic`, label tracking is skipped regardless of the flag value.
+
 ## Metrics Collection Flow
 
 ```mermaid

@@ -485,6 +485,20 @@ The failover queue is a safety net that catches all export failures. Instead of 
 | `memory` (default) | Lost on restart | Fast, no disk I/O | Transient errors, low-latency |
 | `disk` | Survives restarts | Slower, disk-backed | Critical data, long outages |
 
+### Queue Modes and Crash Recovery
+
+The `--queue-mode` flag controls how data is stored and what survives a process crash:
+
+| Mode | Crash Recovery | Description |
+|------|---------------|-------------|
+| `memory` | None -- all in-flight data is lost on crash | Fastest option, suitable when data loss is acceptable |
+| `disk` | Full -- all queued data survives crashes | Uses FastQueue for durable, disk-backed storage |
+| `hybrid` | Partial -- L1 (memory) data is lost, L2 (disk spillover) survives | In-memory fast path with automatic disk spillover when L1 reaches the `--queue-hybrid-spillover-pct` threshold |
+
+In `hybrid` mode, data flows through an in-memory L1 layer for low latency. When L1 utilization exceeds the spillover percentage (default: 80%), new entries spill to a disk-backed L2 layer. On crash, only L2 data is recovered.
+
+For full details on queue architecture and configuration, see [queue.md](./queue.md).
+
 ### Configuration
 
 ```bash
