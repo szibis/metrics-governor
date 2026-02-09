@@ -2,6 +2,7 @@ package limits
 
 import (
 	"fmt"
+	"hash/fnv"
 	"net/http"
 	"sort"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/cardinality"
+	"github.com/szibis/metrics-governor/internal/ruleactivity"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
@@ -73,9 +75,12 @@ type Enforcer struct {
 	// with >= this many datapoints (0 = report all). Enforcement is not affected.
 	statsThreshold atomic.Int64
 
+	// Per-label cardinality tracking: rule -> label -> set of unique values
+	labelCardTrackers map[string]map[string]map[string]bool
+
 	// Dead rule detection
-	ruleActivityMap map[string]*ruleActivity // ruleName -> activity
-	deadScanner     *limitsDeadRuleScanner   // nil when dead_rule_interval not set
+	ruleActivityMap map[string]*ruleactivity.Activity // ruleName -> activity
+	deadScanner     *limitsDeadRuleScanner            // nil when dead_rule_interval not set
 }
 
 // ViolationMetrics tracks limit violation counts.
@@ -93,11 +98,11 @@ type ViolationMetrics struct {
 // NewEnforcer creates a new limits enforcer.
 // ruleCacheMaxSize controls the bounded LRU rule matching cache size (0 disables caching).
 func NewEnforcer(config *Config, dryRun bool, ruleCacheMaxSize int) *Enforcer {
-	var activityMap map[string]*ruleActivity
+	var activityMap map[string]*ruleactivity.Activity
 	if config != nil {
 		activityMap = initRuleActivity(config.Rules)
 	} else {
-		activityMap = make(map[string]*ruleActivity)
+		activityMap = make(map[string]*ruleactivity.Activity)
 	}
 
 	e := &Enforcer{
@@ -111,11 +116,12 @@ func NewEnforcer(config *Config, dryRun bool, ruleCacheMaxSize int) *Enforcer {
 			datapointsPassed:    make(map[string]*atomic.Int64),
 			groupsDropped:       make(map[string]*atomic.Int64),
 		},
-		dryRun:          dryRun,
-		logAggregator:   NewLogAggregator(10 * time.Second), // Aggregate logs every 10s
-		ruleMatchCache:  newRuleCache(ruleCacheMaxSize),
-		trackerModes:    make(map[string]map[string]*trackerModeInfo),
-		ruleActivityMap: activityMap,
+		dryRun:            dryRun,
+		logAggregator:     NewLogAggregator(10 * time.Second), // Aggregate logs every 10s
+		ruleMatchCache:    newRuleCache(ruleCacheMaxSize),
+		trackerModes:      make(map[string]map[string]*trackerModeInfo),
+		labelCardTrackers: make(map[string]map[string]map[string]bool),
+		ruleActivityMap:   activityMap,
 	}
 	// Initialize reload timestamp to now so "time since reload" metrics
 	// don't report ~56 years (Unix epoch default of 0).
@@ -166,15 +172,22 @@ func (e *Enforcer) ReloadConfig(newConfig *Config) {
 		e.ruleMatchCache = newRuleCache(e.ruleMatchCache.maxSize)
 	}
 
+	// Reset per-label cardinality trackers for removed rules
+	for name := range e.labelCardTrackers {
+		if !newRules[name] {
+			delete(e.labelCardTrackers, name)
+		}
+	}
+
 	// Rebuild rule activity map: preserve activity for rules that still exist,
 	// add new entries for new rules, remove entries for deleted rules.
 	newActivityMap := initRuleActivity(newConfig.Rules)
 	for name, newAct := range newActivityMap {
 		if oldAct, ok := e.ruleActivityMap[name]; ok {
 			// Preserve existing activity timestamps.
-			newAct.lastMatchTime.Store(oldAct.lastMatchTime.Load())
-			newAct.loadedTime = oldAct.loadedTime
-			newAct.wasDead.Store(oldAct.wasDead.Load())
+			newAct.LastMatchTime.Store(oldAct.LastMatchTime.Load())
+			newAct.LoadedTime = oldAct.LoadedTime
+			newAct.WasDead.Store(oldAct.WasDead.Load())
 		}
 	}
 	e.ruleActivityMap = newActivityMap
@@ -299,6 +312,21 @@ func (e *Enforcer) processMetric(m *metricspb.Metric, resourceAttrs map[string]s
 		return injectDatapointLabels(m, "drop", rule.Name)
 	}
 
+	// Check per-label cardinality limits (independent of rate/cardinality limits).
+	if len(rule.LabelLimits) > 0 {
+		result := e.checkLabelLimits(rule, m, resourceAttrs)
+		if result == nil {
+			// Label limit drop action: drop entire metric.
+			e.recordDrop(rule.Name, countDatapoints(m), false)
+			if e.dryRun {
+				return injectDatapointLabels(m, "label_limit_drop", rule.Name)
+			}
+			return nil
+		}
+		// Label limits applied (stripping or pass-through).
+		m = result
+	}
+
 	// Update tracking and check limits
 	exceeded, reason := e.updateAndCheckLimits(rule, groupKey, m, resourceAttrs)
 
@@ -420,6 +448,8 @@ func (e *Enforcer) updateAndCheckLimits(rule *Rule, groupKey string, m *metricsp
 		rs.windowEnd = now.Add(time.Minute)
 		// Clear dropped groups for this rule
 		delete(e.droppedGroups, rule.Name)
+		// Reset per-label cardinality trackers for this rule
+		delete(e.labelCardTrackers, rule.Name)
 		// Clean up expired entries in other rules' droppedGroups
 		e.cleanupExpiredDroppedGroups(now)
 	}
@@ -494,17 +524,33 @@ func (e *Enforcer) handleViolation(rule *Rule, groupKey string, m *metricspb.Met
 	trackerMode := e.getTrackerMode(rule.Name, groupKey)
 	sampleRate := e.calculateSampleRate(rule, groupKey)
 
+	// Resolve effective action: if tiers are configured, use the highest matching tier.
+	effectiveAction := rule.Action
+	effectiveSampleRate := rule.SampleRate
+	effectiveStripLabels := rule.StripLabels
+	if len(rule.Tiers) > 0 {
+		utilPct := e.calculateUtilizationPercent(rule, reason)
+		for i := len(rule.Tiers) - 1; i >= 0; i-- {
+			if utilPct >= rule.Tiers[i].AtPercent {
+				effectiveAction = rule.Tiers[i].Action
+				effectiveSampleRate = rule.Tiers[i].SampleRate
+				effectiveStripLabels = rule.Tiers[i].StripLabels
+				break
+			}
+		}
+	}
+
 	// Aggregate the violation log (key: rule+group+reason+action)
 	// Skip logging for groups below the stats threshold to reduce log noise.
 	statsThresh := e.statsThreshold.Load()
 	if statsThresh == 0 || int64(datapointsCount) >= statsThresh {
-		logKey := fmt.Sprintf("violation:%s:%s:%s:%s", rule.Name, groupKey, reason, rule.Action)
+		logKey := fmt.Sprintf("violation:%s:%s:%s:%s", rule.Name, groupKey, reason, effectiveAction)
 		logFields := map[string]interface{}{
 			"rule":    rule.Name,
 			"metric":  m.Name,
 			"group":   groupKey,
 			"reason":  reason,
-			"action":  string(rule.Action),
+			"action":  string(effectiveAction),
 			"dry_run": e.dryRun,
 		}
 		if trackerMode == cardinality.TrackerModeHLL {
@@ -520,7 +566,7 @@ func (e *Enforcer) handleViolation(rule *Rule, groupKey string, m *metricspb.Met
 	// Update tracker mode info
 	e.updateTrackerModeInfo(rule.Name, groupKey, trackerMode, sampleRate)
 
-	switch rule.Action {
+	switch effectiveAction {
 	case ActionLog:
 		// Just log, pass through
 		e.recordPass(rule.Name, datapointsCount)
@@ -546,9 +592,66 @@ func (e *Enforcer) handleViolation(rule *Rule, groupKey string, m *metricspb.Met
 		// Bloom mode: identify and drop top offenders
 		return e.handleAdaptive(rule, groupKey, m, resourceAttrs, reason, datapointsCount)
 
+	case ActionSample:
+		// Use tier's sample rate if from tiered escalation, otherwise rule's.
+		tierRule := *rule
+		if effectiveSampleRate > 0 {
+			tierRule.SampleRate = effectiveSampleRate
+		}
+		return e.handleSampleAction(&tierRule, m, resourceAttrs, datapointsCount)
+
+	case ActionStripLabels:
+		// Use tier's strip labels if from tiered escalation, otherwise rule's.
+		tierRule := *rule
+		if len(effectiveStripLabels) > 0 {
+			tierRule.StripLabels = effectiveStripLabels
+		}
+		return e.handleStripLabels(&tierRule, m, datapointsCount)
+
 	default:
 		return m
 	}
+}
+
+// calculateUtilizationPercent returns the current utilization percentage for a rule,
+// based on either datapoints rate or cardinality (whichever is the violation reason).
+func (e *Enforcer) calculateUtilizationPercent(rule *Rule, reason string) int {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	rs := e.ruleStats[rule.Name]
+	if rs == nil {
+		return 100 // Default to 100% if stats unavailable
+	}
+
+	switch reason {
+	case "cardinality":
+		if rule.MaxCardinality <= 0 {
+			return 100
+		}
+		return int(rs.totalCard * 100 / rule.MaxCardinality)
+	default: // "datapoints_rate"
+		if rule.MaxDatapointsRate <= 0 {
+			return 100
+		}
+		return int(rs.totalDPs * 100 / rule.MaxDatapointsRate)
+	}
+}
+
+// extractPriorityFromGroupKey parses a group key (e.g., "severity=critical,service=api")
+// and returns the priority for the given label based on the priority map.
+func extractPriorityFromGroupKey(groupKey, priorityLabel string, priorityMap map[string]int, defaultPriority int) int {
+	prefix := priorityLabel + "="
+	for _, part := range strings.Split(groupKey, ",") {
+		if strings.HasPrefix(part, prefix) {
+			val := part[len(prefix):]
+			if p, ok := priorityMap[val]; ok {
+				return p
+			}
+			return defaultPriority
+		}
+	}
+	return defaultPriority
 }
 
 // handleHLLSampling applies deterministic hash-based sampling in HLL mode.
@@ -743,24 +846,50 @@ func (e *Enforcer) handleAdaptive(rule *Rule, groupKey string, m *metricspb.Metr
 		key         string
 		datapoints  int64
 		cardinality int64
+		priority    int // Higher = more important = dropped last
+	}
+
+	// Build priority lookup if configured.
+	var priorityMap map[string]int
+	var defaultPriority int
+	if rule.AdaptivePriority != nil {
+		priorityMap = make(map[string]int, len(rule.AdaptivePriority.Order))
+		// Highest priority value = first in order list.
+		for i, val := range rule.AdaptivePriority.Order {
+			priorityMap[val] = len(rule.AdaptivePriority.Order) - i
+		}
+		defaultPriority = rule.AdaptivePriority.DefaultPriority
 	}
 
 	contribs := make([]groupContrib, 0, len(rs.groups))
 	for k, gs := range rs.groups {
+		prio := defaultPriority
+		if priorityMap != nil {
+			// Extract priority label value from group key (format: "label=value,label2=value2").
+			prio = extractPriorityFromGroupKey(k, rule.AdaptivePriority.Label, priorityMap, defaultPriority)
+		}
 		contribs = append(contribs, groupContrib{
 			key:         k,
 			datapoints:  gs.datapoints,
 			cardinality: gs.cardinality.Count(),
+			priority:    prio,
 		})
 	}
 
-	// Sort by contribution (descending) based on the violation reason
+	// Sort: lowest priority first (dropped first), then by contribution descending.
+	// This means high-priority groups are at the end and dropped last.
 	if reason == "cardinality" {
 		sort.Slice(contribs, func(i, j int) bool {
+			if contribs[i].priority != contribs[j].priority {
+				return contribs[i].priority < contribs[j].priority // Low priority = drop first
+			}
 			return contribs[i].cardinality > contribs[j].cardinality
 		})
 	} else {
 		sort.Slice(contribs, func(i, j int) bool {
+			if contribs[i].priority != contribs[j].priority {
+				return contribs[i].priority < contribs[j].priority
+			}
 			return contribs[i].datapoints > contribs[j].datapoints
 		})
 	}
@@ -832,6 +961,189 @@ func (e *Enforcer) handleAdaptive(rule *Rule, groupKey string, m *metricspb.Metr
 	// This group wasn't a top offender, pass through
 	e.recordPass(rule.Name, datapointsCount)
 	return injectDatapointLabels(m, "adaptive", rule.Name)
+}
+
+// checkLabelLimits enforces per-label cardinality limits.
+// Returns the (possibly modified) metric, or nil if all DPs were dropped.
+func (e *Enforcer) checkLabelLimits(rule *Rule, m *metricspb.Metric, resourceAttrs map[string]string) *metricspb.Metric {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	// Initialize per-label trackers for this rule.
+	if _, ok := e.labelCardTrackers[rule.Name]; !ok {
+		e.labelCardTrackers[rule.Name] = make(map[string]map[string]bool)
+	}
+	ruleTrackers := e.labelCardTrackers[rule.Name]
+
+	dpAttrs := extractDatapointAttributes(m)
+
+	// Collect labels to strip (across all datapoints).
+	labelsToStrip := make(map[string]bool)
+
+	for _, attrs := range dpAttrs {
+		merged := mergeAttrs(resourceAttrs, attrs)
+		for label, limit := range rule.LabelLimits {
+			val, exists := merged[label]
+			if !exists {
+				continue
+			}
+
+			// Limit 0 = always strip/drop this label.
+			if limit == 0 {
+				labelsToStrip[label] = true
+				continue
+			}
+
+			if _, ok := ruleTrackers[label]; !ok {
+				ruleTrackers[label] = make(map[string]bool)
+			}
+			tracker := ruleTrackers[label]
+
+			if !tracker[val] {
+				if int64(len(tracker)) >= limit {
+					// Exceeded per-label limit.
+					if rule.LabelLimitAction == "drop" {
+						// Drop mode: return nil (drop entire metric).
+						return nil
+					}
+					// Strip mode: mark label for stripping.
+					labelsToStrip[label] = true
+				} else {
+					tracker[val] = true
+				}
+			}
+		}
+	}
+
+	if len(labelsToStrip) == 0 {
+		return m
+	}
+
+	// Strip the offending labels from all datapoints.
+	stripFn := func(attrs []*commonpb.KeyValue) []*commonpb.KeyValue {
+		n := 0
+		for _, kv := range attrs {
+			if !labelsToStrip[kv.Key] {
+				attrs[n] = kv
+				n++
+			}
+		}
+		return attrs[:n]
+	}
+
+	switch d := m.Data.(type) {
+	case *metricspb.Metric_Gauge:
+		for _, dp := range d.Gauge.DataPoints {
+			dp.Attributes = stripFn(dp.Attributes)
+		}
+	case *metricspb.Metric_Sum:
+		for _, dp := range d.Sum.DataPoints {
+			dp.Attributes = stripFn(dp.Attributes)
+		}
+	case *metricspb.Metric_Histogram:
+		for _, dp := range d.Histogram.DataPoints {
+			dp.Attributes = stripFn(dp.Attributes)
+		}
+	case *metricspb.Metric_ExponentialHistogram:
+		for _, dp := range d.ExponentialHistogram.DataPoints {
+			dp.Attributes = stripFn(dp.Attributes)
+		}
+	case *metricspb.Metric_Summary:
+		for _, dp := range d.Summary.DataPoints {
+			dp.Attributes = stripFn(dp.Attributes)
+		}
+	}
+
+	return m
+}
+
+// shouldSampleSeriesKey performs deterministic hash-based sampling on a series key.
+// Returns true if the datapoint should be kept, false if it should be dropped.
+func shouldSampleSeriesKey(seriesKey string, sampleRate float64) bool {
+	if sampleRate >= 1.0 {
+		return true
+	}
+	if sampleRate <= 0.0 {
+		return false
+	}
+	h := fnv.New32a()
+	h.Write([]byte(seriesKey))
+	hashVal := h.Sum32()
+	threshold := uint32(sampleRate * 10000)
+	return (hashVal % 10000) < threshold
+}
+
+// handleSampleAction applies deterministic hash-based sampling when a limit is exceeded.
+// Each datapoint is independently sampled based on its series key hash.
+func (e *Enforcer) handleSampleAction(rule *Rule, m *metricspb.Metric, resourceAttrs map[string]string, datapointsCount int) *metricspb.Metric {
+	dpAttrs := extractDatapointAttributes(m)
+	if len(dpAttrs) == 0 {
+		e.recordDrop(rule.Name, datapointsCount, false)
+		if e.dryRun {
+			return injectDatapointLabels(m, "sampled_drop", rule.Name)
+		}
+		return nil
+	}
+
+	// Build series key from first datapoint for sampling decision.
+	merged := mergeAttrs(resourceAttrs, dpAttrs[0])
+	seriesKey := buildSeriesKey(merged)
+
+	if shouldSampleSeriesKey(seriesKey, rule.SampleRate) {
+		e.recordPass(rule.Name, datapointsCount)
+		return injectDatapointLabels(m, "sampled_keep", rule.Name)
+	}
+
+	e.recordDrop(rule.Name, datapointsCount, false)
+	if e.dryRun {
+		return injectDatapointLabels(m, "sampled_drop", rule.Name)
+	}
+	return nil
+}
+
+// handleStripLabels removes specified labels from all datapoints in the metric.
+func (e *Enforcer) handleStripLabels(rule *Rule, m *metricspb.Metric, datapointsCount int) *metricspb.Metric {
+	stripSet := make(map[string]bool, len(rule.StripLabels))
+	for _, l := range rule.StripLabels {
+		stripSet[l] = true
+	}
+
+	stripAttributes := func(attrs []*commonpb.KeyValue) []*commonpb.KeyValue {
+		n := 0
+		for _, kv := range attrs {
+			if !stripSet[kv.Key] {
+				attrs[n] = kv
+				n++
+			}
+		}
+		return attrs[:n]
+	}
+
+	switch d := m.Data.(type) {
+	case *metricspb.Metric_Gauge:
+		for _, dp := range d.Gauge.DataPoints {
+			dp.Attributes = stripAttributes(dp.Attributes)
+		}
+	case *metricspb.Metric_Sum:
+		for _, dp := range d.Sum.DataPoints {
+			dp.Attributes = stripAttributes(dp.Attributes)
+		}
+	case *metricspb.Metric_Histogram:
+		for _, dp := range d.Histogram.DataPoints {
+			dp.Attributes = stripAttributes(dp.Attributes)
+		}
+	case *metricspb.Metric_ExponentialHistogram:
+		for _, dp := range d.ExponentialHistogram.DataPoints {
+			dp.Attributes = stripAttributes(dp.Attributes)
+		}
+	case *metricspb.Metric_Summary:
+		for _, dp := range d.Summary.DataPoints {
+			dp.Attributes = stripAttributes(dp.Attributes)
+		}
+	}
+
+	e.recordPass(rule.Name, datapointsCount)
+	return injectDatapointLabels(m, "stripped", rule.Name)
 }
 
 func (e *Enforcer) recordViolation(ruleName, reason string) {

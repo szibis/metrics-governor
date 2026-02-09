@@ -1,21 +1,13 @@
 package limits
 
 import (
-	"log"
 	"math"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/szibis/metrics-governor/internal/ruleactivity"
 )
-
-// ruleActivity tracks the last match time for a limits rule (for dead rule detection).
-type ruleActivity struct {
-	lastMatchTime atomic.Int64 // Unix nanos of last match (0 = never)
-	loadedTime    int64        // Unix nanos when rule was loaded
-	wasDead       atomic.Bool  // For logging state transitions
-}
 
 // Dead rule detection metrics (always-on).
 var (
@@ -58,11 +50,10 @@ func init() {
 }
 
 // initRuleActivity initializes the activity map for all configured rules.
-func initRuleActivity(rules []Rule) map[string]*ruleActivity {
-	now := time.Now().UnixNano()
-	m := make(map[string]*ruleActivity, len(rules))
+func initRuleActivity(rules []Rule) map[string]*ruleactivity.Activity {
+	m := make(map[string]*ruleactivity.Activity, len(rules))
 	for _, r := range rules {
-		m[r.Name] = &ruleActivity{loadedTime: now}
+		m[r.Name] = ruleactivity.NewActivity()
 	}
 	return m
 }
@@ -70,7 +61,7 @@ func initRuleActivity(rules []Rule) map[string]*ruleActivity {
 // recordRuleMatch updates the last match timestamp for a rule.
 func (e *Enforcer) recordRuleMatch(ruleName string) {
 	if a, ok := e.ruleActivityMap[ruleName]; ok {
-		a.lastMatchTime.Store(time.Now().UnixNano())
+		a.RecordMatch()
 	}
 }
 
@@ -78,7 +69,7 @@ func (e *Enforcer) recordRuleMatch(ruleName string) {
 func (e *Enforcer) updateLimitsDeadRuleMetrics() {
 	now := time.Now().UnixNano()
 	for name, a := range e.ruleActivityMap {
-		lastMatch := a.lastMatchTime.Load()
+		lastMatch := a.LastMatchTime.Load()
 		if lastMatch == 0 {
 			limitsRuleLastMatchSeconds.WithLabelValues(name).Set(math.Inf(1))
 			limitsRuleNeverMatched.WithLabelValues(name).Set(1)
@@ -87,7 +78,7 @@ func (e *Enforcer) updateLimitsDeadRuleMetrics() {
 			limitsRuleLastMatchSeconds.WithLabelValues(name).Set(elapsed)
 			limitsRuleNeverMatched.WithLabelValues(name).Set(0)
 		}
-		loadedElapsed := float64(now-a.loadedTime) / float64(time.Second)
+		loadedElapsed := float64(now-a.LoadedTime) / float64(time.Second)
 		limitsRuleLoadedSeconds.WithLabelValues(name).Set(loadedElapsed)
 	}
 }
@@ -138,27 +129,17 @@ func (s *limitsDeadRuleScanner) scan() {
 	deadCount := 0
 
 	for name, a := range e.ruleActivityMap {
-		lastMatch := a.lastMatchTime.Load()
-		isDead := false
-
-		if lastMatch == 0 {
-			loadedAge := now - a.loadedTime
-			isDead = loadedAge > thresholdNanos
-		} else {
-			isDead = (now - lastMatch) > thresholdNanos
-		}
+		isDead, transitioned, _ := a.EvaluateAndTransition(now, thresholdNanos)
 
 		if isDead {
 			deadCount++
 			limitsRuleDead.WithLabelValues(name).Set(1)
-			if !a.wasDead.Swap(true) {
-				log.Printf("[WARN] limits rule %q appears dead — no match in %v", name, threshold)
-			}
 		} else {
 			limitsRuleDead.WithLabelValues(name).Set(0)
-			if a.wasDead.Swap(false) {
-				log.Printf("[INFO] limits rule %q is alive again", name)
-			}
+		}
+
+		if transitioned {
+			ruleactivity.LogTransition("limits", name, isDead, transitioned, threshold)
 		}
 	}
 

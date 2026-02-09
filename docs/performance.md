@@ -82,6 +82,7 @@
   - [Persistent Queue Tuning](#persistent-queue-tuning)
   - [Prometheus Scrape Optimization](#prometheus-scrape-optimization)
   - [Complete Production Configuration](#complete-production-configuration)
+- [New Feature Cost Reference](#new-feature-cost-reference)
 - [Performance Tuning Knobs](#performance-tuning-knobs)
   - [Three Performance Axes](#three-performance-axes)
   - [Configuration Profiles](#configuration-profiles)
@@ -1412,6 +1413,27 @@ All three axes can be changed at runtime (between deployments) without any code 
 - **Regulated / financial**: `disk` queue + `full` stats — full durability and visibility
 
 The `--queue-hybrid-spillover-pct` flag provides a middle ground for production deployments that want low-latency memory queuing under normal operation but automatic disk spillover during backend outages. For example, `--queue-hybrid-spillover-pct=80` keeps batches in memory until the queue is 80% full, then begins writing to disk.
+
+---
+
+## New Feature Cost Reference
+
+The following table summarizes the CPU overhead of recently added limits features. All costs are per-event on the hot path and measured on a typical production workload.
+
+| Feature | Trigger | CPU per Event | Max CPU/s at 100K DPs/s |
+|---------|---------|:-------------:|:-----------------------:|
+| Sample action | On violation | 50ns/DP | 5ms (at 100% violation rate) |
+| Label stripping | On violation | 50ns/DP/label | 15ms (3 labels, 100% violation) |
+| Tiered escalation | On violation | 5ns/tier | negligible |
+| Per-label cardinality | Always (tracked DPs) | 200ns/DP/label | 60ms (3 labels, all DPs) |
+| Priority adaptive | On adaptive violation | 100ns/group | 0.1ms |
+
+**Key observations:**
+
+- **Sample** and **strip_labels** actions only run when a violation is detected, so their cost is proportional to the violation rate. At typical violation rates (<5%), overhead is negligible.
+- **Per-label cardinality** tracking runs on every datapoint for rules that configure `label_limits`, making it the most expensive feature. Size `label_limits` maps conservatively.
+- **Tiered escalation** adds only a linear scan over the (small) tier list per violation — effectively free.
+- **Priority adaptive** sorting is per-group (not per-datapoint), so even with thousands of groups the cost is minimal.
 
 ---
 

@@ -39,7 +39,7 @@ func TestDeadRules_NeverMatched(t *testing.T) {
 	rules = cfg.Rules
 
 	// Set loadedTime to a past timestamp so the rule appears to have been loaded a while ago.
-	rules[0].metrics.dead.loadedTime = time.Now().Add(-5 * time.Minute).UnixNano()
+	rules[0].metrics.dead.LoadedTime = time.Now().Add(-5 * time.Minute).UnixNano()
 
 	// Do NOT call lastMatchTime.Store — simulate never matched.
 	updateDeadRuleMetrics(rules)
@@ -79,7 +79,7 @@ func TestDeadRules_RecentMatch(t *testing.T) {
 	rules = cfg.Rules
 
 	// Simulate a recent match.
-	rules[0].metrics.dead.lastMatchTime.Store(time.Now().UnixNano())
+	rules[0].metrics.dead.LastMatchTime.Store(time.Now().UnixNano())
 
 	updateDeadRuleMetrics(rules)
 
@@ -115,7 +115,7 @@ func TestDeadRules_ScannerTransitions(t *testing.T) {
 	rules = cfg.Rules
 
 	// Set loaded time far in the past so the rule is immediately dead.
-	rules[0].metrics.dead.loadedTime = time.Now().Add(-10 * time.Second).UnixNano()
+	rules[0].metrics.dead.LoadedTime = time.Now().Add(-10 * time.Second).UnixNano()
 
 	scanner := newDeadRuleScanner(interval, rules)
 	defer scanner.stop()
@@ -127,7 +127,7 @@ func TestDeadRules_ScannerTransitions(t *testing.T) {
 	if deadVal != 1 {
 		t.Errorf("after initial period: dead = %v, want 1", deadVal)
 	}
-	if !rules[0].metrics.dead.wasDead.Load() {
+	if !rules[0].metrics.dead.WasDead.Load() {
 		t.Error("after initial period: wasDead should be true")
 	}
 
@@ -142,7 +142,7 @@ func TestDeadRules_ScannerTransitions(t *testing.T) {
 		for {
 			select {
 			case <-ticker.C:
-				rules[0].metrics.dead.lastMatchTime.Store(time.Now().UnixNano())
+				rules[0].metrics.dead.LastMatchTime.Store(time.Now().UnixNano())
 			case <-deadline:
 				return
 			}
@@ -156,7 +156,7 @@ func TestDeadRules_ScannerTransitions(t *testing.T) {
 	if deadVal != 0 {
 		t.Errorf("after match: dead = %v, want 0", deadVal)
 	}
-	if rules[0].metrics.dead.wasDead.Load() {
+	if rules[0].metrics.dead.WasDead.Load() {
 		t.Error("after match: wasDead should be false")
 	}
 
@@ -168,7 +168,7 @@ func TestDeadRules_ScannerTransitions(t *testing.T) {
 	if deadVal != 1 {
 		t.Errorf("after second dead period: dead = %v, want 1", deadVal)
 	}
-	if !rules[0].metrics.dead.wasDead.Load() {
+	if !rules[0].metrics.dead.WasDead.Load() {
 		t.Error("after second dead period: wasDead should be true")
 	}
 }
@@ -216,7 +216,7 @@ func TestDeadRules_Integration_ProcessUpdatesTimestamp(t *testing.T) {
 
 	// Before processing, lastMatchTime should be 0 (never matched).
 	s.mu.RLock()
-	lastBefore := s.procRules[0].metrics.dead.lastMatchTime.Load()
+	lastBefore := s.procRules[0].metrics.dead.LastMatchTime.Load()
 	s.mu.RUnlock()
 
 	if lastBefore != 0 {
@@ -246,7 +246,7 @@ func TestDeadRules_Integration_ProcessUpdatesTimestamp(t *testing.T) {
 
 	// After processing, lastMatchTime should be nonzero.
 	s.mu.RLock()
-	lastAfter := s.procRules[0].metrics.dead.lastMatchTime.Load()
+	lastAfter := s.procRules[0].metrics.dead.LastMatchTime.Load()
 	s.mu.RUnlock()
 
 	if lastAfter == 0 {

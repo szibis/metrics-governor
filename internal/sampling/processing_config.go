@@ -5,10 +5,10 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/szibis/metrics-governor/internal/ruleactivity"
 	"gopkg.in/yaml.v3"
 )
 
@@ -254,13 +254,9 @@ type MathOp struct {
 	Operand   float64 `yaml:"operand"`
 }
 
-// deadRuleState holds atomic state for dead rule tracking.
+// deadRuleState is an alias for ruleactivity.Activity.
 // Kept behind a pointer so ProcessingRule remains safely copyable.
-type deadRuleState struct {
-	lastMatchTime atomic.Int64 // Unix nanos of last match (0 = never)
-	loadedTime    int64        // Unix nanos when rule was loaded
-	wasDead       atomic.Bool  // For logging state transitions (scanner only)
-}
+type deadRuleState = ruleactivity.Activity
 
 // ruleMetrics holds pre-resolved Prometheus counters for a single rule.
 // By caching WithLabelValues results at config compile time, the hot path
@@ -561,9 +557,7 @@ func validateProcessingConfig(cfg *ProcessingConfig) error {
 		}
 
 		// Initialize dead rule tracking state.
-		r.metrics.dead = &deadRuleState{
-			loadedTime: time.Now().UnixNano(),
-		}
+		r.metrics.dead = ruleactivity.NewActivity()
 
 		// Extract literal prefix from input regex for fast short-circuit matching.
 		r.inputPrefix = extractLiteralPrefix(r.Input)

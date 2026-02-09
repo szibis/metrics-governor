@@ -13,9 +13,11 @@ import (
 type Action string
 
 const (
-	ActionLog      Action = "log"      // Log only, don't modify data
-	ActionAdaptive Action = "adaptive" // Adaptive: drop top offenders to stay within limits
-	ActionDrop     Action = "drop"     // Drop all data when limit exceeded
+	ActionLog         Action = "log"          // Log only, don't modify data
+	ActionAdaptive    Action = "adaptive"     // Adaptive: drop top offenders to stay within limits
+	ActionDrop        Action = "drop"         // Drop all data when limit exceeded
+	ActionSample      Action = "sample"       // Deterministic hash-based sampling when limit exceeded
+	ActionStripLabels Action = "strip_labels" // Strip specified labels when limit exceeded
 )
 
 // Config holds the complete limits configuration.
@@ -56,8 +58,49 @@ type Rule struct {
 	// Example: ["service", "env"] tracks per service+env combination.
 	GroupBy []string `yaml:"group_by"`
 
+	// SampleRate is the fraction of datapoints to keep when action=sample (0 < rate <= 1).
+	SampleRate float64 `yaml:"sample_rate,omitempty"`
+
+	// StripLabels lists attribute keys to remove when action=strip_labels.
+	StripLabels []string `yaml:"strip_labels,omitempty"`
+
+	// Tiers defines escalation thresholds. When set, the highest matching
+	// tier's action overrides the rule's base action during violations.
+	Tiers []Tier `yaml:"tiers,omitempty"`
+
+	// LabelLimits sets per-label cardinality limits. Each key is a label name,
+	// the value is the maximum unique values allowed (0 = always strip/drop).
+	LabelLimits map[string]int64 `yaml:"label_limits,omitempty"`
+
+	// LabelLimitAction specifies what to do when a per-label limit is exceeded:
+	// "strip" removes the offending label, "drop" drops the entire datapoint.
+	LabelLimitAction string `yaml:"label_limit_action,omitempty"`
+
+	// AdaptivePriority configures priority-based dropping for action=adaptive.
+	// Groups are sorted by priority (highest preserved longest) before contribution.
+	AdaptivePriority *AdaptivePriorityConfig `yaml:"adaptive_priority,omitempty"`
+
 	// Compiled regex (internal)
 	metricRegex *regexp.Regexp
+}
+
+// AdaptivePriorityConfig controls priority-based adaptive dropping.
+type AdaptivePriorityConfig struct {
+	// Label is the attribute key whose value determines priority.
+	Label string `yaml:"label"`
+	// Order lists values from highest to lowest priority (first = preserved last).
+	Order []string `yaml:"order"`
+	// DefaultPriority is assigned to groups whose label value is not in Order (0 = lowest).
+	DefaultPriority int `yaml:"default_priority"`
+}
+
+// Tier defines an escalation threshold within a rule.
+// Tiers are evaluated in order; the highest matching tier's action is used.
+type Tier struct {
+	AtPercent   int      `yaml:"at_percent"`             // Utilization % threshold (1-100)
+	Action      Action   `yaml:"action"`                 // Action to take at this tier
+	SampleRate  float64  `yaml:"sample_rate,omitempty"`  // For action=sample
+	StripLabels []string `yaml:"strip_labels,omitempty"` // For action=strip_labels
 }
 
 // RuleMatch defines matching criteria for a rule.
@@ -119,6 +162,61 @@ func LoadConfig(path string) (*Config, error) {
 		for _, req := range cfg.RequiredLabels {
 			if _, ok := rule.Labels[req]; !ok {
 				return nil, fmt.Errorf("limits: rule %q is missing required label %q", rule.Name, req)
+			}
+		}
+
+		// Validate sample_rate for action=sample.
+		if rule.Action == ActionSample {
+			if rule.SampleRate <= 0 || rule.SampleRate > 1 {
+				return nil, fmt.Errorf("limits: rule %q: sample_rate must be >0 and <=1, got %v", rule.Name, rule.SampleRate)
+			}
+		}
+
+		// Validate strip_labels for action=strip_labels.
+		if rule.Action == ActionStripLabels {
+			if len(rule.StripLabels) == 0 {
+				return nil, fmt.Errorf("limits: rule %q: strip_labels must be non-empty when action=strip_labels", rule.Name)
+			}
+		}
+
+		// Validate tiers.
+		for j, tier := range rule.Tiers {
+			if tier.AtPercent < 1 || tier.AtPercent > 100 {
+				return nil, fmt.Errorf("limits: rule %q: tiers[%d].at_percent must be 1-100, got %d", rule.Name, j, tier.AtPercent)
+			}
+			if j > 0 && tier.AtPercent <= rule.Tiers[j-1].AtPercent {
+				return nil, fmt.Errorf("limits: rule %q: tiers must be sorted ascending by at_percent", rule.Name)
+			}
+			if tier.Action == ActionSample && (tier.SampleRate <= 0 || tier.SampleRate > 1) {
+				return nil, fmt.Errorf("limits: rule %q: tiers[%d] sample_rate must be >0 and <=1", rule.Name, j)
+			}
+			if tier.Action == ActionStripLabels && len(tier.StripLabels) == 0 {
+				return nil, fmt.Errorf("limits: rule %q: tiers[%d] strip_labels must be non-empty when action=strip_labels", rule.Name, j)
+			}
+		}
+
+		// Validate label_limits.
+		if len(rule.LabelLimits) > 0 {
+			for k := range rule.LabelLimits {
+				if k == "" {
+					return nil, fmt.Errorf("limits: rule %q: empty label name in label_limits", rule.Name)
+				}
+			}
+			if rule.LabelLimitAction == "" {
+				rule.LabelLimitAction = "strip" // default
+			}
+			if rule.LabelLimitAction != "strip" && rule.LabelLimitAction != "drop" {
+				return nil, fmt.Errorf("limits: rule %q: label_limit_action must be strip or drop, got %q", rule.Name, rule.LabelLimitAction)
+			}
+		}
+
+		// Validate adaptive_priority.
+		if rule.AdaptivePriority != nil {
+			if rule.AdaptivePriority.Label == "" {
+				return nil, fmt.Errorf("limits: rule %q: adaptive_priority.label must be non-empty", rule.Name)
+			}
+			if len(rule.AdaptivePriority.Order) == 0 {
+				return nil, fmt.Errorf("limits: rule %q: adaptive_priority.order must be non-empty", rule.Name)
 			}
 		}
 
