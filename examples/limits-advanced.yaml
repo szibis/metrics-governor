@@ -1,0 +1,100 @@
+# Advanced Limits Configuration Example
+#
+# Demonstrates the full range of limits enforcement actions and strategies:
+#   - sample:         Probabilistic sampling — keep a fraction of datapoints
+#   - strip_labels:   Remove high-cardinality labels to collapse series
+#   - tiers:          Progressive escalation as utilisation climbs
+#   - label_limits:   Per-label cardinality caps with automatic stripping
+#   - adaptive:       Priority-aware shedding that protects critical data
+#
+# Dead Rule Detection:
+#   dead_rule_interval controls how often the system checks for rules that
+#   matched zero datapoints. Stale rules waste evaluation time; the system
+#   logs them so you can clean up or fix match patterns.
+
+defaults:
+  max_datapoints_rate: 50000   # per minute — comfortable headroom
+  action: log
+
+dead_rule_interval: "5m"
+
+rules:
+  # ── Sample Action ──────────────────────────────────────────────────
+  # Probabilistic sampling: when the rate limit is exceeded, keep only
+  # 25% of datapoints instead of dropping everything. Ideal for noisy
+  # telemetry where partial visibility is better than none.
+  - name: sample-noisy-telemetry
+    match:
+      metric_name: "telemetry_.*"
+    max_datapoints_rate: 10000
+    action: sample
+    sample_rate: 0.25
+
+  # ── Label Stripping ────────────────────────────────────────────────
+  # When cardinality exceeds the threshold, remove the listed labels.
+  # This collapses many unique series into fewer aggregated ones.
+  # Order matters: labels are stripped in the order listed.
+  - name: strip-high-card-labels
+    match:
+      metric_name: "http_requests_.*"
+    max_cardinality: 5000
+    action: strip_labels
+    strip_labels: [pod_id, container_id, request_id]
+
+  # ── Tiered Escalation ──────────────────────────────────────────────
+  # Progressive response to increasing pressure. Each tier activates
+  # when utilisation reaches its at_percent threshold:
+  #   80% → log warnings (observe)
+  #   95% → sample at 50% (shed load)
+  #  100% → strip pod_id label (reduce cardinality)
+  # The rule-level action (drop) applies if all tiers are exceeded.
+  - name: api-tiered-protection
+    match:
+      metric_name: "api_.*"
+    max_datapoints_rate: 100000
+    max_cardinality: 10000
+    action: drop
+    tiers:
+      - at_percent: 80
+        action: log
+      - at_percent: 95
+        action: sample
+        sample_rate: 0.5
+      - at_percent: 100
+        action: strip_labels
+        strip_labels: [pod_id]
+
+  # ── Per-Label Cardinality Limits ───────────────────────────────────
+  # Surgical control of label explosion without a blanket cardinality
+  # cap. Each label gets its own ceiling; exceeding it triggers the
+  # label_limit_action (strip) for that label only.
+  #   user_id:    cap at 1,000 unique values
+  #   request_id: 0 means always strip (effectively a banned label)
+  #   pod_id:     cap at 500 unique values
+  - name: control-label-explosion
+    match:
+      metric_name: ".*"
+    max_datapoints_rate: 500000
+    label_limits:
+      user_id: 1000
+      request_id: 0            # 0 = always strip (banned label)
+      pod_id: 500
+    label_limit_action: strip
+
+  # ── Priority-Based Adaptive ────────────────────────────────────────
+  # When shedding load, drop lowest-priority data first. The priority
+  # order is derived from a label value; series whose label matches
+  # an earlier position in the list are protected longer.
+  #
+  # Example: severity=critical is shed last, severity=debug first.
+  # Series without the label receive default_priority (0 = lowest).
+  - name: priority-adaptive-global
+    match:
+      metric_name: ".*"
+    max_datapoints_rate: 500000
+    action: adaptive
+    group_by: [service, severity]
+    adaptive_priority:
+      label: severity
+      order: [critical, warning, info, debug]
+      default_priority: 0

@@ -1,10 +1,11 @@
 package sampling
 
 import (
-	"log"
 	"math"
 	"sync"
 	"time"
+
+	"github.com/szibis/metrics-governor/internal/ruleactivity"
 )
 
 // deadRuleScanner periodically evaluates processing rules for liveness.
@@ -25,8 +26,8 @@ func updateDeadRuleMetrics(rules []ProcessingRule) {
 		ruleName := r.Name
 		action := string(r.Action)
 
-		lastMatch := r.metrics.dead.lastMatchTime.Load()
-		loadedAt := r.metrics.dead.loadedTime
+		lastMatch := r.metrics.dead.LastMatchTime.Load()
+		loadedAt := r.metrics.dead.LoadedTime
 
 		if lastMatch == 0 {
 			// Never matched: report Inf for last_match_seconds.
@@ -87,32 +88,17 @@ func (s *deadRuleScanner) scan() {
 		ruleName := r.Name
 		action := string(r.Action)
 
-		lastMatch := r.metrics.dead.lastMatchTime.Load()
-		isDead := false
-
-		if lastMatch == 0 {
-			// Never matched — consider dead if loaded longer than threshold.
-			loadedAge := now - r.metrics.dead.loadedTime
-			isDead = loadedAge > thresholdNanos
-		} else {
-			isDead = (now - lastMatch) > thresholdNanos
-		}
+		isDead, transitioned, _ := r.metrics.dead.EvaluateAndTransition(now, thresholdNanos)
 
 		if isDead {
 			deadCount++
 			processingRuleDead.WithLabelValues(ruleName, action).Set(1)
-
-			// Log state transition: alive → dead.
-			if !r.metrics.dead.wasDead.Swap(true) {
-				log.Printf("[WARN] processing rule %q (action=%s) appears dead — no match in %v", ruleName, action, threshold)
-			}
 		} else {
 			processingRuleDead.WithLabelValues(ruleName, action).Set(0)
+		}
 
-			// Log state transition: dead → alive.
-			if r.metrics.dead.wasDead.Swap(false) {
-				log.Printf("[INFO] processing rule %q (action=%s) is alive again", ruleName, action)
-			}
+		if transitioned {
+			ruleactivity.LogTransition("processing", ruleName, isDead, transitioned, threshold)
 		}
 	}
 

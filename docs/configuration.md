@@ -36,6 +36,10 @@
   - [Bloom Persistence Options](#bloom-persistence-options)
   - [Stats Options (Extended)](#stats-options-extended)
   - [Limits Options (Extended)](#limits-options-extended)
+  - [Limits Actions (Extended)](#limits-actions-extended)
+  - [Tiered Escalation](#tiered-escalation)
+  - [Per-Label Cardinality Limits](#per-label-cardinality-limits)
+  - [Adaptive Priority](#adaptive-priority)
   - [Shutdown](#shutdown)
   - [General](#general)
 - [Configuration Priority](#configuration-priority)
@@ -497,6 +501,125 @@ When `-telemetry-endpoint` is set, metrics-governor exports its own logs (as OTL
 | `-limits-log-interval` | `10s` | Limits enforcement summary log interval |
 | `-limits-log-individual` | `false` | Log individual limit violations |
 | `-rule-cache-max-size` | `10000` | Maximum entries in rule matching LRU cache |
+
+### Limits Actions (Extended)
+
+In addition to `log`, `adaptive`, and `drop`, the limits enforcer supports two additional actions:
+
+| Action | Description |
+|--------|-------------|
+| `sample` | Deterministic hash-based sampling when limit exceeded. Keeps a fraction of datapoints defined by `sample_rate`. |
+| `strip_labels` | Strip specified labels from datapoints when limit exceeded. Removes attributes listed in `strip_labels`. |
+
+**Sample action:**
+
+```yaml
+rules:
+  - name: "sample-noisy-metrics"
+    match:
+      metric_name: "http_request_duration_.*"
+    max_datapoints_rate: 100000
+    action: sample
+    sample_rate: 0.5  # Keep 50% of datapoints (0 < rate <= 1)
+```
+
+`sample_rate` must be >0 and <=1. The sampling is deterministic (hash-based), so the same series are consistently kept or dropped within a window.
+
+**Strip labels action:**
+
+```yaml
+rules:
+  - name: "strip-high-cardinality-labels"
+    match:
+      metric_name: "http_request_.*"
+    max_cardinality: 5000
+    action: strip_labels
+    strip_labels: ["request_id", "trace_id", "span_id"]  # Must be non-empty
+```
+
+`strip_labels` must contain at least one label name. Only the listed attributes are removed; the datapoint itself is preserved.
+
+### Tiered Escalation
+
+Tiers allow a single rule to escalate its response as utilization increases. When `tiers` is set, the highest matching tier's action overrides the rule's base action during violations.
+
+Each tier specifies an `at_percent` threshold (1-100) representing the percentage of the rule's limit that triggers it. Tiers must be sorted ascending by `at_percent`.
+
+```yaml
+rules:
+  - name: "escalating-response"
+    match:
+      metric_name: "http_request_.*"
+    max_cardinality: 10000
+    action: log  # Base action (used below first tier)
+    tiers:
+      - at_percent: 80   # At 80% utilization: start sampling
+        action: sample
+        sample_rate: 0.5
+      - at_percent: 95   # At 95%: strip labels to reduce cardinality
+        action: strip_labels
+        strip_labels: ["request_id"]
+      - at_percent: 100  # At 100%: drop everything
+        action: drop
+```
+
+Tier-specific fields:
+- `at_percent` (required): Utilization percentage threshold (1-100)
+- `action` (required): Action for this tier (`log`, `sample`, `strip_labels`, `drop`, `adaptive`)
+- `sample_rate`: Required when tier action is `sample`
+- `strip_labels`: Required when tier action is `strip_labels`
+
+### Per-Label Cardinality Limits
+
+`label_limits` sets per-label cardinality limits. Each key is a label name, the value is the maximum unique values allowed for that label. When exceeded, `label_limit_action` controls the response.
+
+```yaml
+rules:
+  - name: "per-label-cardinality"
+    match:
+      metric_name: "http_request_.*"
+    max_cardinality: 10000
+    action: adaptive
+    group_by: ["service"]
+    label_limits:
+      request_id: 1000   # Max 1000 unique request_id values
+      user_id: 500        # Max 500 unique user_id values
+    label_limit_action: strip  # "strip" (default) or "drop"
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `label_limits` | (none) | Map of label name to max unique values. `0` = always strip/drop that label. |
+| `label_limit_action` | `strip` | `strip` removes the offending label; `drop` drops the entire datapoint. |
+
+Per-label limits are evaluated independently of the rule's `max_cardinality`. They track cardinality per label name and act when any individual label exceeds its threshold.
+
+### Adaptive Priority
+
+`adaptive_priority` configures priority-based dropping for `action: adaptive`. When set, groups are sorted by priority (highest preserved longest) before falling back to contribution-based ordering.
+
+```yaml
+rules:
+  - name: "priority-adaptive"
+    match:
+      labels:
+        env: "prod"
+    max_cardinality: 50000
+    action: adaptive
+    group_by: ["service"]
+    adaptive_priority:
+      label: "tier"              # Attribute key whose value determines priority
+      order: ["critical", "standard", "best-effort"]  # Highest to lowest priority
+      default_priority: 0        # Priority for unlisted values (0 = lowest)
+```
+
+| Field | Description |
+|-------|-------------|
+| `label` | Attribute key whose value determines group priority. Must be non-empty. |
+| `order` | List of label values from highest to lowest priority. Groups with the first value are preserved longest. Must be non-empty. |
+| `default_priority` | Priority assigned to groups whose label value is not in `order`. `0` = lowest priority (dropped first). |
+
+When limits are exceeded, groups are first sorted by priority (low priority dropped first), then by contribution within the same priority tier.
 
 ### Shutdown
 

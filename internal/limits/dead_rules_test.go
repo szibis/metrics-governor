@@ -80,8 +80,8 @@ func TestLimitsDeadRules_ActivityTracking(t *testing.T) {
 	if act == nil {
 		t.Fatal("expected ruleActivityMap entry for ldr-track-1")
 	}
-	if act.lastMatchTime.Load() != 0 {
-		t.Fatalf("expected lastMatchTime=0 before processing, got %d", act.lastMatchTime.Load())
+	if act.LastMatchTime.Load() != 0 {
+		t.Fatalf("expected lastMatchTime=0 before processing, got %d", act.LastMatchTime.Load())
 	}
 
 	// Process a matching metric.
@@ -89,7 +89,7 @@ func TestLimitsDeadRules_ActivityTracking(t *testing.T) {
 	e.Process(rms)
 
 	// After processing, lastMatchTime should be non-zero.
-	lastMatch := act.lastMatchTime.Load()
+	lastMatch := act.LastMatchTime.Load()
 	if lastMatch == 0 {
 		t.Error("expected lastMatchTime to be updated after processing matching metric")
 	}
@@ -124,7 +124,7 @@ func TestLimitsDeadRules_NeverMatched(t *testing.T) {
 	defer e.Stop()
 
 	// Set loadedTime to the past so loaded_seconds is meaningful.
-	e.ruleActivityMap["ldr-nomatch-1"].loadedTime = time.Now().Add(-3 * time.Minute).UnixNano()
+	e.ruleActivityMap["ldr-nomatch-1"].LoadedTime = time.Now().Add(-3 * time.Minute).UnixNano()
 
 	// Process a non-matching metric — rule should remain unmatched.
 	rms := makeLimitsRM("completely_different_metric", map[string]string{}, 1)
@@ -242,14 +242,14 @@ func TestLimitsDeadRules_ReloadPreservesActivity(t *testing.T) {
 	if act == nil {
 		t.Fatal("expected ruleActivityMap entry for ldr-reload-1")
 	}
-	lastMatchBefore := act.lastMatchTime.Load()
-	loadedTimeBefore := act.loadedTime
+	lastMatchBefore := act.LastMatchTime.Load()
+	loadedTimeBefore := act.LoadedTime
 	if lastMatchBefore == 0 {
 		t.Fatal("expected lastMatchTime to be non-zero after processing")
 	}
 
 	// Mark the rule as wasDead to verify it's preserved.
-	act.wasDead.Store(true)
+	act.WasDead.Store(true)
 
 	// Reload with the first rule still present and a new rule replacing the second.
 	newCfg := &Config{
@@ -277,13 +277,13 @@ func TestLimitsDeadRules_ReloadPreservesActivity(t *testing.T) {
 	if actAfter == nil {
 		t.Fatal("expected ruleActivityMap entry for ldr-reload-1 after reload")
 	}
-	if actAfter.lastMatchTime.Load() != lastMatchBefore {
-		t.Errorf("lastMatchTime changed after reload: got %d, want %d", actAfter.lastMatchTime.Load(), lastMatchBefore)
+	if actAfter.LastMatchTime.Load() != lastMatchBefore {
+		t.Errorf("lastMatchTime changed after reload: got %d, want %d", actAfter.LastMatchTime.Load(), lastMatchBefore)
 	}
-	if actAfter.loadedTime != loadedTimeBefore {
-		t.Errorf("loadedTime changed after reload: got %d, want %d", actAfter.loadedTime, loadedTimeBefore)
+	if actAfter.LoadedTime != loadedTimeBefore {
+		t.Errorf("loadedTime changed after reload: got %d, want %d", actAfter.LoadedTime, loadedTimeBefore)
 	}
-	if !actAfter.wasDead.Load() {
+	if !actAfter.WasDead.Load() {
 		t.Error("wasDead was not preserved after reload")
 	}
 
@@ -297,10 +297,10 @@ func TestLimitsDeadRules_ReloadPreservesActivity(t *testing.T) {
 	if actNew == nil {
 		t.Fatal("expected ruleActivityMap entry for ldr-reload-new-1 after reload")
 	}
-	if actNew.lastMatchTime.Load() != 0 {
-		t.Errorf("new rule lastMatchTime = %d, want 0", actNew.lastMatchTime.Load())
+	if actNew.LastMatchTime.Load() != 0 {
+		t.Errorf("new rule lastMatchTime = %d, want 0", actNew.LastMatchTime.Load())
 	}
-	if actNew.wasDead.Load() {
+	if actNew.WasDead.Load() {
 		t.Error("new rule wasDead should be false")
 	}
 }

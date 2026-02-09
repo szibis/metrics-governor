@@ -683,6 +683,7 @@ For comprehensive Prometheus alerting rules (circuit breaker, cardinality spikes
 3. **Set appropriate thresholds** - Too low causes unnecessary circuit trips
 4. **Configure memory limits** - Prevents OOM kills in containers
 5. **Review backoff delays** - High delays indicate prolonged backend issues
+6. **Use tiered escalation for graceful degradation** - Configure `tiers` on limits rules to progressively escalate from sampling to label stripping to dropping as utilization increases, rather than jumping directly to a hard drop. See [Tiered Escalation](configuration.md#tiered-escalation) for configuration details.
 
 ### Development/Testing
 

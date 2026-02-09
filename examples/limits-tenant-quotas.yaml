@@ -1,0 +1,81 @@
+# Per-Tenant Quota Configuration Example
+#
+# Shows how to combine GroupBy with new actions for multi-tenant rate limiting.
+# No additional code is required — this uses the existing GroupBy feature
+# together with the new action types (sample, adaptive, tiers).
+#
+# Design:
+#   Each rule targets a tenant tier via label matching and uses group_by
+#   to track usage per org_id independently. This gives every organisation
+#   its own quota bucket; one noisy tenant cannot consume another's budget.
+#
+# Tier summary:
+#   enterprise — 500k dps/min, adaptive shedding (preserves critical data)
+#   standard   — 100k dps/min, 50% sampling on breach
+#   free       —  10k dps/min, hard drop on breach
+#   default    —  50k dps/min, tiered escalation per org
+
+defaults:
+  max_datapoints_rate: 100000  # per minute — system-wide safety net
+  action: log
+
+rules:
+  # ── Enterprise Tier ────────────────────────────────────────────────
+  # Generous limits. Adaptive action ensures that when limits are hit,
+  # the groups (org_id) contributing the most are throttled first while
+  # critical data is preserved.
+  - name: enterprise-quota
+    match:
+      labels:
+        org_tier: "enterprise"
+    max_datapoints_rate: 500000
+    max_cardinality: 100000
+    action: adaptive
+    group_by: [org_id]
+
+  # ── Standard Tier ──────────────────────────────────────────────────
+  # Moderate limits. On breach, 50% probabilistic sampling keeps partial
+  # visibility without overwhelming the backend. Each org_id is tracked
+  # independently so one customer's spike does not affect others.
+  - name: standard-quota
+    match:
+      labels:
+        org_tier: "standard"
+    max_datapoints_rate: 100000
+    max_cardinality: 50000
+    action: sample
+    sample_rate: 0.5
+    group_by: [org_id]
+
+  # ── Free Tier ──────────────────────────────────────────────────────
+  # Strict limits, hard drop on breach. Free-tier tenants get a fixed
+  # budget; anything above it is discarded immediately.
+  - name: free-tier-quota
+    match:
+      labels:
+        org_tier: "free"
+    max_datapoints_rate: 10000
+    max_cardinality: 5000
+    action: drop
+    group_by: [org_id]
+
+  # ── Default Catch-All ──────────────────────────────────────────────
+  # Any traffic not matched by the tier rules above lands here.
+  # Tiered escalation gives a smooth ramp-up before dropping:
+  #   70% utilisation → log (observe)
+  #   90% utilisation → sample at 25% (shed load)
+  #  100% utilisation → drop (hard cap)
+  - name: default-quota
+    match:
+      metric_name: ".*"
+    max_datapoints_rate: 50000
+    action: drop
+    group_by: [org_id]
+    tiers:
+      - at_percent: 70
+        action: log
+      - at_percent: 90
+        action: sample
+        sample_rate: 0.25
+      - at_percent: 100
+        action: drop

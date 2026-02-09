@@ -80,10 +80,11 @@ type Sampler struct {
 	dsEngine    *downsampleEngine // nil when no downsample rules exist
 
 	// Processing engine fields (set when using NewFromProcessing).
-	procConfig  *ProcessingConfig
-	procRules   []ProcessingRule
-	aggEngine   *aggregateEngine
-	deadScanner *deadRuleScanner // nil when dead_rule_interval not set
+	procConfig    *ProcessingConfig
+	procRules     []ProcessingRule
+	aggEngine     *aggregateEngine
+	deadScanner   *deadRuleScanner     // nil when dead_rule_interval not set
+	ruleNameCache *processingRuleCache // LRU cache: metric name → matching rule indices
 }
 
 // New creates a Sampler from a config.
@@ -557,13 +558,14 @@ func NewFromProcessing(cfg ProcessingConfig) (*Sampler, error) {
 	}
 
 	s := &Sampler{
-		defaultRate: 1.0,
-		strategy:    StrategyHead,
-		procConfig:  &cfg,
-		procRules:   cfg.Rules,
-		dsEngine:    dsEngine,
-		aggEngine:   aggEngine,
-		deadScanner: scanner,
+		defaultRate:   1.0,
+		strategy:      StrategyHead,
+		procConfig:    &cfg,
+		procRules:     cfg.Rules,
+		dsEngine:      dsEngine,
+		aggEngine:     aggEngine,
+		deadScanner:   scanner,
+		ruleNameCache: newProcessingRuleCache(50000),
 	}
 
 	updateProcessingRulesActive(cfg.Rules)
@@ -691,31 +693,49 @@ func (s *Sampler) processMetric(m *metricspb.Metric, rules []ProcessingRule) *me
 	return m
 }
 
-// matchProcessingRule checks if a metric name and attributes match a processing rule.
-// Uses literal prefix short-circuit to avoid regex engine for non-matching metrics.
-func matchProcessingRule(rule *ProcessingRule, metricName string, attrs []*commonpb.KeyValue) bool {
-	// Fast path: literal prefix check before invoking regex engine.
+// matchProcessingRuleName checks if a metric name matches a rule's name pattern
+// (prefix + regex). Does NOT check label conditions.
+func matchProcessingRuleName(rule *ProcessingRule, metricName string) bool {
 	if rule.inputPrefix != "" && !strings.HasPrefix(metricName, rule.inputPrefix) {
 		return false
 	}
 	if rule.compiledInput != nil && !rule.compiledInput.MatchString(metricName) {
 		return false
 	}
+	return true
+}
+
+// matchProcessingRuleLabels checks if a rule's label conditions match the given
+// attributes. Uses a pre-built attribute map for O(1) lookups.
+func matchProcessingRuleLabels(rule *ProcessingRule, attrMap map[string]string) bool {
 	for key, re := range rule.compiledLabels {
-		found := false
-		for _, kv := range attrs {
-			if kv.Key == key {
-				if re.MatchString(kv.Value.GetStringValue()) {
-					found = true
-				}
-				break
-			}
-		}
-		if !found {
+		val, ok := attrMap[key]
+		if !ok || !re.MatchString(val) {
 			return false
 		}
 	}
 	return true
+}
+
+// buildAttrMap creates a map from a KeyValue slice for O(1) label lookups.
+func buildAttrMap(attrs []*commonpb.KeyValue) map[string]string {
+	m := make(map[string]string, len(attrs))
+	for _, kv := range attrs {
+		m[kv.Key] = kv.Value.GetStringValue()
+	}
+	return m
+}
+
+// computeNameMatchingIndices returns the indices of all rules whose name pattern
+// matches the given metric name. Used to populate the rule name cache.
+func computeNameMatchingIndices(rules []ProcessingRule, metricName string) []int {
+	var indices []int
+	for i := range rules {
+		if matchProcessingRuleName(&rules[i], metricName) {
+			indices = append(indices, i)
+		}
+	}
+	return indices
 }
 
 // processNumberDataPoints applies multi-touch processing rules to number data points.
@@ -742,17 +762,35 @@ func (s *Sampler) processNumberDataPoints(metricName string, dps []*metricspb.Nu
 
 // applyProcessingRules walks rules in order with multi-touch semantics.
 // Returns true if the datapoint should be kept in the output.
+// Uses the rule name cache to skip rules whose name pattern doesn't match.
 func (s *Sampler) applyProcessingRules(metricName string, dp *metricspb.NumberDataPoint, rules []ProcessingRule) bool {
-	for i := range rules {
+	// Get name-matching rule indices from cache (or compute and cache).
+	indices, ok := s.ruleNameCache.Get(metricName)
+	if !ok {
+		indices = computeNameMatchingIndices(rules, metricName)
+		s.ruleNameCache.Put(metricName, indices)
+	}
+
+	// Pre-build attribute map once per DP for O(1) label lookups.
+	var attrMap map[string]string
+
+	for _, i := range indices {
 		rule := &rules[i]
-		if !matchProcessingRule(rule, metricName, dp.Attributes) {
-			continue
+
+		// Check label conditions if present.
+		if len(rule.compiledLabels) > 0 {
+			if attrMap == nil {
+				attrMap = buildAttrMap(dp.Attributes)
+			}
+			if !matchProcessingRuleLabels(rule, attrMap) {
+				continue
+			}
 		}
 
 		rule.metrics.evalCounter.Inc()
 
 		// Record last-match timestamp for dead rule detection (always, unconditionally).
-		rule.metrics.dead.lastMatchTime.Store(time.Now().UnixNano())
+		rule.metrics.dead.RecordMatch()
 
 		switch rule.Action {
 		case ActionTransform:
@@ -910,16 +948,31 @@ func (s *Sampler) processExponentialHistogramDataPoints(metricName string, dps [
 // applyProcessingRulesGeneric handles multi-touch routing for non-NumberDataPoint types.
 // Only sample, drop, transform, and classify actions apply. Downsample/aggregate are skipped (NumberDataPoint only).
 func (s *Sampler) applyProcessingRulesGeneric(metricName string, attrs []*commonpb.KeyValue, rules []ProcessingRule, setAttrs func([]*commonpb.KeyValue)) bool {
-	for i := range rules {
+	// Get name-matching rule indices from cache (or compute and cache).
+	indices, ok := s.ruleNameCache.Get(metricName)
+	if !ok {
+		indices = computeNameMatchingIndices(rules, metricName)
+		s.ruleNameCache.Put(metricName, indices)
+	}
+
+	var attrMap map[string]string
+
+	for _, i := range indices {
 		rule := &rules[i]
-		if !matchProcessingRule(rule, metricName, attrs) {
-			continue
+
+		if len(rule.compiledLabels) > 0 {
+			if attrMap == nil {
+				attrMap = buildAttrMap(attrs)
+			}
+			if !matchProcessingRuleLabels(rule, attrMap) {
+				continue
+			}
 		}
 
 		rule.metrics.evalCounter.Inc()
 
 		// Record last-match timestamp for dead rule detection.
-		rule.metrics.dead.lastMatchTime.Store(time.Now().UnixNano())
+		rule.metrics.dead.RecordMatch()
 
 		switch rule.Action {
 		case ActionTransform:
@@ -990,6 +1043,9 @@ func (s *Sampler) ReloadProcessingConfig(cfg ProcessingConfig) error {
 	s.procRules = cfg.Rules
 	s.dsEngine = dsEngine
 	s.mu.Unlock()
+
+	// Clear the rule name cache — rule indices are no longer valid.
+	s.ruleNameCache.ClearCache()
 
 	// Reload aggregate engine (flushes existing state).
 	if s.aggEngine != nil {
