@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 550" width="1200" height="550">
   <style>
     .bg { fill: #ffffff; }
     .title { fill: #1e1b4b; font: bold 22px 'Segoe UI', system-ui, sans-serif; }
@@ -8,13 +8,16 @@
     .section-label { fill: #4338ca; font: bold 11px 'Segoe UI', system-ui, sans-serif; letter-spacing: 0.5px; }
     .badge-text { fill: #ffffff; font: bold 10px 'Segoe UI', system-ui, sans-serif; }
     .badge-text-dark { fill: #1e293b; font: bold 10px 'Segoe UI', system-ui, sans-serif; }
+    .phase-label { fill: #4338ca; font: bold 12px 'Segoe UI', system-ui, sans-serif; letter-spacing: 1px; }
+    .phase-bg { fill: #f0eeff; rx: 10; ry: 10; }
+    .feature-text { fill: #64748b; font: 10px 'Segoe UI', system-ui, sans-serif; }
+    .feature-text-bold { fill: #475569; font: bold 10px 'Segoe UI', system-ui, sans-serif; }
     .arrow-line { stroke: #94a3b8; stroke-width: 2; fill: none; }
     .arrow-line-otlp { stroke: #0891b2; stroke-width: 2.5; fill: none; }
     .arrow-line-prw { stroke: #059669; stroke-width: 2.5; fill: none; }
     .arrow-head { fill: #94a3b8; }
     .arrow-head-otlp { fill: #0891b2; }
     .arrow-head-prw { fill: #059669; }
-    .dashed { stroke-dasharray: 6,4; }
     .backpressure { stroke: #dc2626; stroke-width: 1.5; fill: none; stroke-dasharray: 4,3; }
     .bp-head { fill: #dc2626; }
     .bp-label { fill: #dc2626; font: bold 9px 'Segoe UI', system-ui, sans-serif; }
@@ -32,6 +35,10 @@
       .box-label { fill: #e2e8f0; }
       .box-sub { fill: #94a3b8; }
       .section-label { fill: #a5b4fc; }
+      .phase-label { fill: #a5b4fc; }
+      .phase-bg { fill: #1e1b4b; opacity: 0.5; }
+      .feature-text { fill: #94a3b8; }
+      .feature-text-bold { fill: #cbd5e1; }
       .arrow-line { stroke: #475569; }
       .arrow-head { fill: #475569; }
       .governor-bg { fill: #1e1b4b; opacity: 0.4; }
@@ -90,7 +97,7 @@
       <stop offset="100%" stop-color="#4338ca" stop-opacity="0.08"/>
     </linearGradient>
 
-    <!-- Drop shadow (stronger) -->
+    <!-- Drop shadows -->
     <filter id="shadow" x="-4%" y="-4%" width="108%" height="116%">
       <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000" flood-opacity="0.15"/>
     </filter>
@@ -146,228 +153,224 @@
   </defs>
 
   <!-- Background -->
-  <rect width="1200" height="600" class="bg"/>
+  <rect width="1200" height="550" class="bg"/>
 
-  <!-- ═══════════════════ SOURCES COLUMN (x=30) ═══════════════════ -->
-  <text x="85" y="100" text-anchor="middle" class="section-label">SOURCES</text>
+  <!-- ═══════════════════ SOURCES COLUMN (x=20) ═══════════════════ -->
+  <text x="85" y="92" text-anchor="middle" class="section-label">SOURCES</text>
 
   <!-- OpenTelemetry Apps -->
-  <rect x="20" y="115" width="130" height="70" rx="10" fill="url(#grad-cyan)" filter="url(#shadow)"/>
-  <text x="85" y="147" text-anchor="middle" class="badge-text" style="font-size:12px">OpenTelemetry</text>
-  <text x="85" y="165" text-anchor="middle" class="badge-text" style="font-size:11px;opacity:0.85">Apps &amp; Services</text>
+  <rect x="20" y="108" width="130" height="70" rx="10" fill="url(#grad-cyan)" filter="url(#shadow)"/>
+  <text x="85" y="138" text-anchor="middle" class="badge-text" style="font-size:12px">OpenTelemetry</text>
+  <text x="85" y="156" text-anchor="middle" class="badge-text" style="font-size:10px;opacity:0.85">Apps &amp; SDKs</text>
 
   <!-- Prometheus Servers -->
-  <rect x="20" y="335" width="130" height="70" rx="10" fill="url(#grad-green)" filter="url(#shadow)"/>
-  <text x="85" y="367" text-anchor="middle" class="badge-text" style="font-size:12px">Prometheus</text>
-  <text x="85" y="385" text-anchor="middle" class="badge-text" style="font-size:11px;opacity:0.85">Remote Write</text>
+  <rect x="20" y="330" width="130" height="70" rx="10" fill="url(#grad-green)" filter="url(#shadow)"/>
+  <text x="85" y="360" text-anchor="middle" class="badge-text" style="font-size:12px">Prometheus</text>
+  <text x="85" y="378" text-anchor="middle" class="badge-text" style="font-size:10px;opacity:0.85">Remote Write</text>
 
-  <!-- ═══════════════════ METRICS-GOVERNOR (x=195..930) ═══════════════════ -->
+  <!-- ═══════════════════ METRICS-GOVERNOR (x=190..940) ═══════════════════ -->
   <!-- Inner glow background layer -->
-  <rect x="195" y="55" width="750" height="480" class="governor-bg" filter="url(#inner-glow)"/>
+  <rect x="190" y="50" width="760" height="450" class="governor-bg" filter="url(#inner-glow)"/>
   <!-- Glowing border -->
-  <rect x="195" y="55" width="750" height="480" class="governor-border" filter="url(#governor-glow)"/>
+  <rect x="190" y="50" width="760" height="450" class="governor-border" filter="url(#governor-glow)"/>
 
   <!-- Title bar -->
-  <text x="570" y="84" text-anchor="middle" class="title">metrics-governor</text>
+  <text x="570" y="78" text-anchor="middle" class="title">metrics-governor</text>
 
-  <!-- ─── OTLP Pipeline Lane (y=105..230) ─── -->
-  <text x="215" y="118" class="pipe-label otlp-label">OTLP PIPELINE</text>
+  <!-- ═══════════════════ PHASE 1: INGEST (x=210..340) ═══════════════════ -->
+  <rect x="210" y="90" width="130" height="310" class="phase-bg" stroke="#c7d2fe" stroke-width="1"/>
+  <text x="275" y="108" text-anchor="middle" class="phase-label">INGEST</text>
 
-  <!-- Receiver -->
-  <rect x="215" y="128" width="90" height="55" rx="8" fill="url(#grad-cyan)" filter="url(#shadow-sm)"/>
-  <text x="260" y="152" text-anchor="middle" class="badge-text" style="font-size:11px">Receiver</text>
-  <text x="260" y="168" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">gRPC / HTTP</text>
+  <!-- OTLP lane -->
+  <text x="220" y="127" class="pipe-label otlp-label" style="font-size:9px">OTLP</text>
+  <rect x="220" y="132" width="110" height="55" rx="8" fill="url(#grad-cyan)" filter="url(#shadow-sm)"/>
+  <text x="275" y="155" text-anchor="middle" class="badge-text" style="font-size:11px">Receiver</text>
+  <text x="275" y="172" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">gRPC / HTTP</text>
 
-  <!-- Stats + Limits -->
-  <rect x="325" y="128" width="90" height="55" rx="8" fill="url(#grad-indigo)" filter="url(#shadow-sm)"/>
-  <text x="370" y="152" text-anchor="middle" class="badge-text" style="font-size:11px">Stats</text>
-  <text x="370" y="168" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">Limits</text>
+  <!-- Shared features zone -->
+  <text x="275" y="210" text-anchor="middle" class="feature-text-bold">TLS / mTLS</text>
+  <text x="275" y="224" text-anchor="middle" class="feature-text">Bearer token</text>
+  <text x="275" y="238" text-anchor="middle" class="feature-text">Content negotiation</text>
 
-  <!-- Buffer -->
-  <rect x="435" y="128" width="90" height="55" rx="8" fill="url(#grad-amber)" filter="url(#shadow-sm)"/>
-  <text x="480" y="152" text-anchor="middle" class="badge-text" style="font-size:11px">Buffer</text>
-  <text x="480" y="168" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">Bounded</text>
+  <!-- PRW lane -->
+  <text x="220" y="272" class="pipe-label prw-label" style="font-size:9px">PRW</text>
+  <rect x="220" y="277" width="110" height="55" rx="8" fill="url(#grad-green)" filter="url(#shadow-sm)"/>
+  <text x="275" y="300" text-anchor="middle" class="badge-text" style="font-size:11px">Receiver</text>
+  <text x="275" y="317" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">HTTP :9091</text>
 
-  <!-- Queue -->
-  <rect x="545" y="128" width="90" height="55" rx="8" fill="url(#grad-slate)" filter="url(#shadow-sm)"/>
-  <text x="590" y="148" text-anchor="middle" class="badge-text" style="font-size:11px">Queue</text>
-  <text x="590" y="163" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">Always-Queue</text>
-  <text x="590" y="176" text-anchor="middle" class="badge-text" style="font-size:8px;opacity:0.7">Disk Persistent</text>
+  <!-- Backpressure annotation -->
+  <text x="275" y="360" text-anchor="middle" class="bp-label">429 / ResourceExhausted</text>
+  <text x="275" y="373" text-anchor="middle" class="feature-text">Backpressure built-in</text>
 
-  <!-- ═══ Pipeline Split: Preparers -> Channel -> Senders (OTLP) ═══ -->
-  <!-- Preparers -->
-  <rect x="655" y="128" width="80" height="55" rx="8" fill="url(#grad-violet)" filter="url(#shadow-sm)"/>
-  <text x="695" y="148" text-anchor="middle" class="badge-text" style="font-size:11px">Preparers</text>
-  <text x="695" y="163" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">NumCPU</text>
-  <text x="695" y="176" text-anchor="middle" class="badge-text" style="font-size:8px;opacity:0.7">CPU-bound</text>
+  <!-- ═══════════════════ PHASE 2: PROCESS (x=355..520) ═══════════════════ -->
+  <rect x="355" y="90" width="165" height="310" class="phase-bg" stroke="#c7d2fe" stroke-width="1"/>
+  <text x="438" y="108" text-anchor="middle" class="phase-label">PROCESS</text>
 
-  <!-- Channel indicator -->
-  <rect x="745" y="141" width="28" height="28" rx="6" fill="url(#grad-orange)" filter="url(#channel-glow)"/>
-  <text x="759" y="161" text-anchor="middle" class="badge-text" style="font-size:14px;font-weight:bold">&gt;</text>
+  <!-- OTLP lane -->
+  <rect x="365" y="132" width="145" height="55" rx="8" fill="url(#grad-indigo)" filter="url(#shadow-sm)"/>
+  <text x="438" y="152" text-anchor="middle" class="badge-text" style="font-size:11px">Stats + Limits</text>
+  <text x="438" y="167" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">Fused Processor</text>
+  <text x="438" y="180" text-anchor="middle" class="badge-text" style="font-size:8px;opacity:0.7">Cardinality Tracking</text>
 
-  <!-- Senders -->
-  <rect x="783" y="128" width="80" height="55" rx="8" fill="url(#grad-sky)" filter="url(#shadow-sm)"/>
-  <text x="823" y="148" text-anchor="middle" class="badge-text" style="font-size:11px">Senders</text>
-  <text x="823" y="163" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">NumCPU&#xd7;2</text>
-  <text x="823" y="176" text-anchor="middle" class="badge-text" style="font-size:8px;opacity:0.7">Async I/O</text>
+  <!-- Shared features zone -->
+  <text x="438" y="206" text-anchor="middle" class="feature-text-bold">Adaptive Limits</text>
+  <text x="438" y="220" text-anchor="middle" class="feature-text">Bloom / HLL / Hybrid</text>
+  <text x="438" y="234" text-anchor="middle" class="feature-text">Sample &#xB7; Downsample</text>
+  <text x="438" y="248" text-anchor="middle" class="feature-text">Aggregate &#xB7; Transform</text>
+  <text x="438" y="262" text-anchor="middle" class="feature-text">Classify &#xB7; Drop</text>
 
-  <!-- Export -->
-  <rect x="873" y="128" width="55" height="55" rx="8" fill="url(#grad-indigo)" filter="url(#shadow-sm)"/>
-  <text x="900" y="152" text-anchor="middle" class="badge-text" style="font-size:11px">Export</text>
-  <text x="900" y="168" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">OTLP</text>
+  <!-- PRW lane -->
+  <rect x="365" y="277" width="145" height="55" rx="8" fill="url(#grad-indigo)" filter="url(#shadow-sm)"/>
+  <text x="438" y="297" text-anchor="middle" class="badge-text" style="font-size:11px">Stats + Limits</text>
+  <text x="438" y="312" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">Fused Processor</text>
+  <text x="438" y="325" text-anchor="middle" class="badge-text" style="font-size:8px;opacity:0.7">Cardinality Tracking</text>
 
-  <!-- OTLP pipeline arrows -->
-  <line x1="305" y1="155" x2="323" y2="155" class="arrow-line-otlp" marker-end="url(#ah-otlp)"/>
-  <line x1="415" y1="155" x2="433" y2="155" class="arrow-line-otlp" marker-end="url(#ah-otlp)"/>
-  <line x1="525" y1="155" x2="543" y2="155" class="arrow-line-otlp" marker-end="url(#ah-otlp)"/>
-  <line x1="635" y1="155" x2="653" y2="155" class="arrow-line-otlp" marker-end="url(#ah-otlp)"/>
-  <!-- Preparers to Channel -->
-  <line x1="735" y1="155" x2="743" y2="155" class="arrow-line-otlp" marker-end="url(#ah-otlp)"/>
-  <!-- Channel to Senders -->
-  <line x1="773" y1="155" x2="781" y2="155" class="arrow-line-otlp" marker-end="url(#ah-otlp)"/>
-  <!-- Senders to Export -->
-  <line x1="863" y1="155" x2="871" y2="155" class="arrow-line-otlp" marker-end="url(#ah-otlp)"/>
+  <!-- Dead rule detection annotation -->
+  <text x="438" y="360" text-anchor="middle" class="feature-text-bold">Dead Rule Detection</text>
+  <text x="438" y="373" text-anchor="middle" class="feature-text">Rule Ownership Labels</text>
 
-  <!-- ─── PRW Pipeline Lane (y=290..410) ─── -->
-  <text x="215" y="308" class="pipe-label prw-label">PRW PIPELINE</text>
+  <!-- ═══════════════════ PHASE 3: BUFFER / QUEUE (x=535..700) ═══════════════════ -->
+  <rect x="535" y="90" width="165" height="310" class="phase-bg" stroke="#c7d2fe" stroke-width="1"/>
+  <text x="618" y="108" text-anchor="middle" class="phase-label">BUFFER / QUEUE</text>
 
-  <!-- Receiver -->
-  <rect x="215" y="318" width="90" height="55" rx="8" fill="url(#grad-green)" filter="url(#shadow-sm)"/>
-  <text x="260" y="342" text-anchor="middle" class="badge-text" style="font-size:11px">Receiver</text>
-  <text x="260" y="358" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">HTTP</text>
+  <!-- OTLP lane -->
+  <rect x="545" y="132" width="145" height="55" rx="8" fill="url(#grad-amber)" filter="url(#shadow-sm)"/>
+  <text x="618" y="149" text-anchor="middle" class="badge-text" style="font-size:11px">Buffer + Queue</text>
+  <text x="618" y="164" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">Always-Queue</text>
+  <text x="618" y="177" text-anchor="middle" class="badge-text" style="font-size:8px;opacity:0.7">Disk Persistent</text>
 
-  <!-- Stats + Limits -->
-  <rect x="325" y="318" width="90" height="55" rx="8" fill="url(#grad-indigo)" filter="url(#shadow-sm)"/>
-  <text x="370" y="342" text-anchor="middle" class="badge-text" style="font-size:11px">Stats</text>
-  <text x="370" y="358" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">Limits</text>
+  <!-- Shared features zone -->
+  <text x="618" y="206" text-anchor="middle" class="feature-text-bold">Memory Sizing %</text>
+  <text x="618" y="220" text-anchor="middle" class="feature-text">15% buffer / 15% queue</text>
+  <text x="618" y="234" text-anchor="middle" class="feature-text">Snappy compression</text>
+  <text x="618" y="248" text-anchor="middle" class="feature-text">Batch Tuning (AIMD)</text>
+  <text x="618" y="262" text-anchor="middle" class="feature-text">128x fewer IOPS</text>
 
-  <!-- Queue -->
-  <rect x="475" y="318" width="90" height="55" rx="8" fill="url(#grad-slate)" filter="url(#shadow-sm)"/>
-  <text x="520" y="338" text-anchor="middle" class="badge-text" style="font-size:11px">Queue</text>
-  <text x="520" y="353" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">Always-Queue</text>
-  <text x="520" y="366" text-anchor="middle" class="badge-text" style="font-size:8px;opacity:0.7">Disk Persistent</text>
+  <!-- PRW lane -->
+  <rect x="545" y="277" width="145" height="55" rx="8" fill="url(#grad-amber)" filter="url(#shadow-sm)"/>
+  <text x="618" y="294" text-anchor="middle" class="badge-text" style="font-size:11px">Buffer + Queue</text>
+  <text x="618" y="309" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">Always-Queue</text>
+  <text x="618" y="322" text-anchor="middle" class="badge-text" style="font-size:8px;opacity:0.7">Disk Persistent</text>
 
-  <!-- ═══ Pipeline Split: Preparers -> Channel -> Senders (PRW) ═══ -->
-  <!-- Preparers -->
-  <rect x="585" y="318" width="80" height="55" rx="8" fill="url(#grad-violet)" filter="url(#shadow-sm)"/>
-  <text x="625" y="338" text-anchor="middle" class="badge-text" style="font-size:11px">Preparers</text>
-  <text x="625" y="353" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">NumCPU</text>
-  <text x="625" y="366" text-anchor="middle" class="badge-text" style="font-size:8px;opacity:0.7">CPU-bound</text>
+  <!-- Queue modes annotation -->
+  <text x="618" y="360" text-anchor="middle" class="feature-text-bold">Three Queue Modes</text>
+  <text x="618" y="373" text-anchor="middle" class="feature-text">memory &#xB7; disk &#xB7; hybrid</text>
 
-  <!-- Channel indicator -->
-  <rect x="675" y="331" width="28" height="28" rx="6" fill="url(#grad-orange)" filter="url(#channel-glow)"/>
-  <text x="689" y="351" text-anchor="middle" class="badge-text" style="font-size:14px;font-weight:bold">&gt;</text>
+  <!-- ═══════════════════ PHASE 4: EXPORT (x=715..935) ═══════════════════ -->
+  <rect x="715" y="90" width="220" height="310" class="phase-bg" stroke="#c7d2fe" stroke-width="1"/>
+  <text x="825" y="108" text-anchor="middle" class="phase-label">EXPORT</text>
 
-  <!-- Senders -->
-  <rect x="713" y="318" width="80" height="55" rx="8" fill="url(#grad-sky)" filter="url(#shadow-sm)"/>
-  <text x="753" y="338" text-anchor="middle" class="badge-text" style="font-size:11px">Senders</text>
-  <text x="753" y="353" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">NumCPU&#xd7;2</text>
-  <text x="753" y="366" text-anchor="middle" class="badge-text" style="font-size:8px;opacity:0.7">Async I/O</text>
+  <!-- OTLP lane -->
+  <rect x="725" y="132" width="65" height="55" rx="8" fill="url(#grad-violet)" filter="url(#shadow-sm)"/>
+  <text x="758" y="152" text-anchor="middle" class="badge-text" style="font-size:10px">Preparers</text>
+  <text x="758" y="167" text-anchor="middle" class="badge-text" style="font-size:8px;opacity:0.8">NumCPU</text>
+  <text x="758" y="179" text-anchor="middle" class="badge-text" style="font-size:7px;opacity:0.7">CPU-bound</text>
 
-  <!-- Export -->
-  <rect x="803" y="318" width="55" height="55" rx="8" fill="url(#grad-indigo)" filter="url(#shadow-sm)"/>
-  <text x="830" y="342" text-anchor="middle" class="badge-text" style="font-size:11px">Export</text>
-  <text x="830" y="358" text-anchor="middle" class="badge-text" style="font-size:9px;opacity:0.8">PRW</text>
+  <!-- OTLP Channel -->
+  <rect x="797" y="144" width="22" height="22" rx="5" fill="url(#grad-orange)" filter="url(#channel-glow)"/>
+  <text x="808" y="161" text-anchor="middle" class="badge-text" style="font-size:12px;font-weight:bold">&gt;</text>
 
-  <!-- PRW pipeline arrows -->
-  <line x1="305" y1="345" x2="323" y2="345" class="arrow-line-prw" marker-end="url(#ah-prw)"/>
-  <line x1="415" y1="345" x2="473" y2="345" class="arrow-line-prw" marker-end="url(#ah-prw)"/>
-  <line x1="565" y1="345" x2="583" y2="345" class="arrow-line-prw" marker-end="url(#ah-prw)"/>
-  <!-- Preparers to Channel -->
-  <line x1="665" y1="345" x2="673" y2="345" class="arrow-line-prw" marker-end="url(#ah-prw)"/>
-  <!-- Channel to Senders -->
-  <line x1="703" y1="345" x2="711" y2="345" class="arrow-line-prw" marker-end="url(#ah-prw)"/>
-  <!-- Senders to Export -->
-  <line x1="793" y1="345" x2="801" y2="345" class="arrow-line-prw" marker-end="url(#ah-prw)"/>
+  <!-- OTLP Senders -->
+  <rect x="826" y="132" width="60" height="55" rx="8" fill="url(#grad-sky)" filter="url(#shadow-sm)"/>
+  <text x="856" y="152" text-anchor="middle" class="badge-text" style="font-size:10px">Senders</text>
+  <text x="856" y="167" text-anchor="middle" class="badge-text" style="font-size:8px;opacity:0.8">NumCPU&#xd7;2</text>
+  <text x="856" y="179" text-anchor="middle" class="badge-text" style="font-size:7px;opacity:0.7">Async I/O</text>
 
-  <!-- ─── Circuit Breaker (shared concept, center) ─── -->
-  <rect x="445" y="215" width="165" height="55" rx="10" fill="none" stroke="url(#grad-rose)" stroke-width="2" stroke-dasharray="6,3"/>
-  <text x="528" y="239" text-anchor="middle" class="box-label" style="font-size:11px">Circuit Breaker Gate</text>
-  <text x="528" y="256" text-anchor="middle" class="box-sub" style="font-size:9px">CAS half-open + backoff</text>
+  <!-- OTLP Export -->
+  <rect x="893" y="138" width="32" height="43" rx="6" fill="url(#grad-cyan)" filter="url(#shadow-sm)"/>
+  <text x="909" y="164" text-anchor="middle" class="badge-text" style="font-size:9px">OTLP</text>
 
-  <!-- CB arrows from senders -->
-  <path d="M823,183 L823,200 Q823,210 813,215 L612,215" class="backpressure" style="stroke:#e11d48;stroke-dasharray:5,3"/>
-  <path d="M753,318 L753,300 Q753,280 743,272 L612,270" class="backpressure" style="stroke:#e11d48;stroke-dasharray:5,3"/>
+  <!-- Shared features zone -->
+  <rect x="725" y="198" width="200" height="68" rx="8" fill="none" stroke="url(#grad-rose)" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="825" y="215" text-anchor="middle" class="feature-text-bold">Circuit Breaker</text>
+  <text x="825" y="229" text-anchor="middle" class="feature-text">CAS half-open + backoff</text>
+  <text x="825" y="243" text-anchor="middle" class="feature-text">Split-on-Error &#xB7; Auto-Scale</text>
+  <text x="825" y="257" text-anchor="middle" class="feature-text">Pre-warming &#xB7; Sharding</text>
 
-  <!-- Retry arrows from senders back to queue (OTLP) -->
-  <path d="M790,183 L790,200 L595,200 L595,183" class="arrow-line" style="stroke:#94a3b8;stroke-dasharray:4,3" marker-end="url(#ah)"/>
-  <text x="693" y="197" text-anchor="middle" class="box-sub" style="font-size:8px">retry</text>
+  <!-- PRW lane -->
+  <rect x="725" y="277" width="65" height="55" rx="8" fill="url(#grad-violet)" filter="url(#shadow-sm)"/>
+  <text x="758" y="297" text-anchor="middle" class="badge-text" style="font-size:10px">Preparers</text>
+  <text x="758" y="312" text-anchor="middle" class="badge-text" style="font-size:8px;opacity:0.8">NumCPU</text>
+  <text x="758" y="324" text-anchor="middle" class="badge-text" style="font-size:7px;opacity:0.7">CPU-bound</text>
 
-  <!-- Retry arrows from senders back to queue (PRW) -->
-  <path d="M720,373 L720,393 L525,393 L525,373" class="arrow-line" style="stroke:#94a3b8;stroke-dasharray:4,3" marker-end="url(#ah)"/>
-  <text x="623" y="388" text-anchor="middle" class="box-sub" style="font-size:8px">retry</text>
+  <!-- PRW Channel -->
+  <rect x="797" y="289" width="22" height="22" rx="5" fill="url(#grad-orange)" filter="url(#channel-glow)"/>
+  <text x="808" y="306" text-anchor="middle" class="badge-text" style="font-size:12px;font-weight:bold">&gt;</text>
 
-  <!-- ─── Backpressure arrow (buffer -> receiver) ─── -->
-  <path d="M480,183 C480,203 260,203 260,183" class="backpressure" marker-end="url(#ah-bp)"/>
-  <text x="370" y="212" text-anchor="middle" class="bp-label">429 / ResourceExhausted</text>
+  <!-- PRW Senders -->
+  <rect x="826" y="277" width="60" height="55" rx="8" fill="url(#grad-sky)" filter="url(#shadow-sm)"/>
+  <text x="856" y="297" text-anchor="middle" class="badge-text" style="font-size:10px">Senders</text>
+  <text x="856" y="312" text-anchor="middle" class="badge-text" style="font-size:8px;opacity:0.8">NumCPU&#xd7;2</text>
+  <text x="856" y="324" text-anchor="middle" class="badge-text" style="font-size:7px;opacity:0.7">Async I/O</text>
 
-  <!-- ─── Feature Badges Row 1 (existing features) ─── -->
-  <rect x="210" y="435" width="78" height="22" rx="11" fill="url(#grad-indigo)" filter="url(#shadow-sm)"/>
-  <text x="249" y="450" text-anchor="middle" class="badge-text" style="font-size:9px">Adaptive Limits</text>
+  <!-- PRW Export -->
+  <rect x="893" y="283" width="32" height="43" rx="6" fill="url(#grad-green)" filter="url(#shadow-sm)"/>
+  <text x="909" y="309" text-anchor="middle" class="badge-text" style="font-size:9px">PRW</text>
 
-  <rect x="296" y="435" width="78" height="22" rx="11" fill="url(#grad-cyan)" filter="url(#shadow-sm)"/>
-  <text x="335" y="450" text-anchor="middle" class="badge-text" style="font-size:9px">TLS / mTLS</text>
+  <!-- Export annotations -->
+  <text x="825" y="360" text-anchor="middle" class="feature-text-bold">Pipeline Split Architecture</text>
+  <text x="825" y="373" text-anchor="middle" class="feature-text">+60-76% throughput</text>
 
-  <rect x="382" y="435" width="60" height="22" rx="11" fill="url(#grad-green)" filter="url(#shadow-sm)"/>
-  <text x="412" y="450" text-anchor="middle" class="badge-text" style="font-size:9px">Sharding</text>
+  <!-- ═══════════════════ PHASE-TO-PHASE ARROWS ═══════════════════ -->
 
-  <rect x="450" y="435" width="78" height="22" rx="11" fill="url(#grad-amber)" filter="url(#shadow-sm)"/>
-  <text x="489" y="450" text-anchor="middle" class="badge-text" style="font-size:9px">Split-on-Error</text>
+  <!-- OTLP lane arrows: Ingest -> Process -> Buffer -> Export -->
+  <line x1="330" y1="160" x2="363" y2="160" class="arrow-line-otlp" marker-end="url(#ah-otlp)"/>
+  <line x1="510" y1="160" x2="543" y2="160" class="arrow-line-otlp" marker-end="url(#ah-otlp)"/>
+  <line x1="690" y1="160" x2="723" y2="160" class="arrow-line-otlp" marker-end="url(#ah-otlp)"/>
+  <!-- Preparers -> Channel -> Senders -> Export (OTLP) -->
+  <line x1="790" y1="155" x2="795" y2="155" class="arrow-line-otlp"/>
+  <line x1="819" y1="155" x2="824" y2="155" class="arrow-line-otlp"/>
+  <line x1="886" y1="160" x2="891" y2="160" class="arrow-line-otlp"/>
 
-  <rect x="536" y="435" width="85" height="22" rx="11" fill="url(#grad-rose)" filter="url(#shadow-sm)"/>
-  <text x="579" y="450" text-anchor="middle" class="badge-text" style="font-size:9px">Circuit Breaker</text>
+  <!-- PRW lane arrows: Ingest -> Process -> Buffer -> Export -->
+  <line x1="330" y1="305" x2="363" y2="305" class="arrow-line-prw" marker-end="url(#ah-prw)"/>
+  <line x1="510" y1="305" x2="543" y2="305" class="arrow-line-prw" marker-end="url(#ah-prw)"/>
+  <line x1="690" y1="305" x2="723" y2="305" class="arrow-line-prw" marker-end="url(#ah-prw)"/>
+  <!-- Preparers -> Channel -> Senders -> Export (PRW) -->
+  <line x1="790" y1="300" x2="795" y2="300" class="arrow-line-prw"/>
+  <line x1="819" y1="300" x2="824" y2="300" class="arrow-line-prw"/>
+  <line x1="886" y1="305" x2="891" y2="305" class="arrow-line-prw"/>
 
-  <rect x="629" y="435" width="62" height="22" rx="11" fill="url(#grad-sky)" filter="url(#shadow-sm)"/>
-  <text x="660" y="450" text-anchor="middle" class="badge-text" style="font-size:9px">Helm Chart</text>
+  <!-- ═══════════════════ RETRY ARROWS ═══════════════════ -->
+  <!-- OTLP: Senders -> Queue retry -->
+  <path d="M856,187 L856,195 L618,195 L618,187" class="arrow-line" style="stroke:#94a3b8;stroke-dasharray:4,3" marker-end="url(#ah)"/>
+  <text x="737" y="193" text-anchor="middle" class="box-sub" style="font-size:8px">retry</text>
 
-  <rect x="699" y="435" width="88" height="22" rx="11" fill="url(#grad-slate)" filter="url(#shadow-sm)"/>
-  <text x="743" y="450" text-anchor="middle" class="badge-text" style="font-size:9px">Memory Sizing %</text>
+  <!-- PRW: Senders -> Queue retry -->
+  <path d="M856,332 L856,345 L618,345 L618,332" class="arrow-line" style="stroke:#94a3b8;stroke-dasharray:4,3" marker-end="url(#ah)"/>
+  <text x="737" y="343" text-anchor="middle" class="box-sub" style="font-size:8px">retry</text>
 
-  <!-- ─── Feature Badges Row 2 (new pipeline split features) ─── -->
-  <rect x="210" y="465" width="82" height="22" rx="11" fill="url(#grad-violet)" filter="url(#shadow-sm)"/>
-  <text x="251" y="480" text-anchor="middle" class="badge-text" style="font-size:9px">Pipeline Split</text>
+  <!-- ═══════════════════ SOURCES -> RECEIVERS ═══════════════════ -->
+  <line x1="150" y1="143" x2="218" y2="155" class="arrow-line-otlp" marker-end="url(#ah-otlp)"/>
+  <text x="178" y="137" text-anchor="middle" class="pipe-label otlp-label" style="font-size:9px">OTLP</text>
 
-  <rect x="300" y="465" width="82" height="22" rx="11" fill="url(#grad-orange)" filter="url(#shadow-sm)"/>
-  <text x="341" y="480" text-anchor="middle" class="badge-text" style="font-size:9px">Batch Tuning</text>
-
-  <rect x="390" y="465" width="72" height="22" rx="11" fill="url(#grad-sky)" filter="url(#shadow-sm)"/>
-  <text x="426" y="480" text-anchor="middle" class="badge-text" style="font-size:9px">Auto-Scale</text>
-
-  <rect x="470" y="465" width="82" height="22" rx="11" fill="url(#grad-green)" filter="url(#shadow-sm)"/>
-  <text x="511" y="480" text-anchor="middle" class="badge-text" style="font-size:9px">Pre-warming</text>
+  <line x1="150" y1="365" x2="218" y2="305" class="arrow-line-prw" marker-end="url(#ah-prw)"/>
+  <text x="178" y="348" text-anchor="middle" class="pipe-label prw-label" style="font-size:9px">PRW</text>
 
   <!-- ═══════════════════ BACKENDS COLUMN (x=970) ═══════════════════ -->
-  <text x="1075" y="100" text-anchor="middle" class="section-label">BACKENDS</text>
+  <text x="1075" y="92" text-anchor="middle" class="section-label">BACKENDS</text>
 
   <!-- OTLP Backends -->
-  <rect x="985" y="115" width="175" height="85" rx="10" fill="url(#grad-cyan)" filter="url(#shadow)"/>
-  <text x="1073" y="141" text-anchor="middle" class="badge-text" style="font-size:12px">OTLP Backends</text>
-  <text x="1073" y="160" text-anchor="middle" class="badge-text" style="font-size:10px;opacity:0.85">OTel Collector</text>
-  <text x="1073" y="176" text-anchor="middle" class="badge-text" style="font-size:10px;opacity:0.85">Mimir / VictoriaMetrics</text>
+  <rect x="985" y="108" width="175" height="85" rx="10" fill="url(#grad-cyan)" filter="url(#shadow)"/>
+  <text x="1073" y="134" text-anchor="middle" class="badge-text" style="font-size:12px">OTLP Backends</text>
+  <text x="1073" y="153" text-anchor="middle" class="badge-text" style="font-size:10px;opacity:0.85">OTel Collector &#xB7; Mimir</text>
+  <text x="1073" y="170" text-anchor="middle" class="badge-text" style="font-size:10px;opacity:0.85">VictoriaMetrics &#xB7; Cloud</text>
 
   <!-- PRW Backends -->
-  <rect x="985" y="325" width="175" height="85" rx="10" fill="url(#grad-green)" filter="url(#shadow)"/>
-  <text x="1073" y="351" text-anchor="middle" class="badge-text" style="font-size:12px">PRW Backends</text>
-  <text x="1073" y="370" text-anchor="middle" class="badge-text" style="font-size:10px;opacity:0.85">Prometheus / Thanos</text>
-  <text x="1073" y="386" text-anchor="middle" class="badge-text" style="font-size:10px;opacity:0.85">Cortex / VictoriaMetrics</text>
+  <rect x="985" y="318" width="175" height="85" rx="10" fill="url(#grad-green)" filter="url(#shadow)"/>
+  <text x="1073" y="344" text-anchor="middle" class="badge-text" style="font-size:12px">PRW Backends</text>
+  <text x="1073" y="363" text-anchor="middle" class="badge-text" style="font-size:10px;opacity:0.85">Prometheus &#xB7; Thanos</text>
+  <text x="1073" y="380" text-anchor="middle" class="badge-text" style="font-size:10px;opacity:0.85">Cortex &#xB7; VictoriaMetrics</text>
 
-  <!-- ═══════════════════ CONNECTION ARROWS ═══════════════════ -->
-  <!-- Sources -> Receivers -->
-  <line x1="150" y1="150" x2="213" y2="150" class="arrow-line-otlp" marker-end="url(#ah-otlp)"/>
-  <text x="180" y="142" text-anchor="middle" class="pipe-label otlp-label" style="font-size:9px">OTLP</text>
+  <!-- ═══════════════════ EXPORTERS -> BACKENDS ═══════════════════ -->
+  <line x1="925" y1="160" x2="983" y2="150" class="arrow-line-otlp" marker-end="url(#ah-otlp)"/>
+  <line x1="925" y1="305" x2="983" y2="360" class="arrow-line-prw" marker-end="url(#ah-prw)"/>
 
-  <line x1="150" y1="365" x2="213" y2="345" class="arrow-line-prw" marker-end="url(#ah-prw)"/>
-  <text x="180" y="362" text-anchor="middle" class="pipe-label prw-label" style="font-size:9px">PRW</text>
+  <!-- ═══════════════════ SELF-MONITORING ═══════════════════ -->
+  <rect x="980" y="225" width="175" height="55" rx="10" fill="none" stroke="#4f46e5" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="1068" y="246" text-anchor="middle" class="section-label" style="font-size:10px">SELF-MONITORING</text>
+  <text x="1068" y="262" text-anchor="middle" class="box-sub" style="font-size:9px">Prometheus /metrics :9090</text>
 
-  <!-- Exporters -> Backends -->
-  <line x1="928" y1="155" x2="983" y2="155" class="arrow-line-otlp" marker-end="url(#ah-otlp)"/>
-  <line x1="858" y1="345" x2="983" y2="365" class="arrow-line-prw" marker-end="url(#ah-prw)"/>
-
-  <!-- ═══════════════════ METRICS / OBSERVABILITY ═══════════════════ -->
-  <rect x="980" y="238" width="175" height="55" rx="10" fill="none" stroke="#4f46e5" stroke-width="1.5" stroke-dasharray="4,3"/>
-  <text x="1068" y="259" text-anchor="middle" class="section-label" style="font-size:10px">SELF-MONITORING</text>
-  <text x="1068" y="275" text-anchor="middle" class="box-sub" style="font-size:9px">Prometheus /metrics :9090</text>
-
-  <!-- Subtitle -->
-  <text x="600" y="585" text-anchor="middle" class="subtitle">Intelligent metrics proxy with pipeline split architecture, dual OTLP + PRW pipelines, and production resilience</text>
+  <!-- Footer tagline -->
+  <text x="570" y="525" text-anchor="middle" class="subtitle">Dual OTLP + PRW governance proxy with pipeline split architecture &#xB7; Helm chart included</text>
 </svg>

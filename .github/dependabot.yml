@@ -23,6 +23,10 @@ updates:
       day: "monday"
     commit-message:
       prefix: "ci:"
+    groups:
+      all-actions:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
     reviewers:
       - "szibis"

@@ -89,7 +89,7 @@ jobs:
         run: trivy fs --format sarif --output trivy-fs.sarif --severity CRITICAL,HIGH,MEDIUM,LOW .
 
       - name: Upload SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-fs.sarif'
@@ -152,7 +152,7 @@ jobs:
         run: trivy image --format sarif --output trivy-image.sarif --severity CRITICAL,HIGH,MEDIUM,LOW metrics-governor:scan
 
       - name: Upload SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-image.sarif'
@@ -324,7 +324,7 @@ jobs:
         run: syft dir:. -o cyclonedx-json=sbom-cyclonedx.json
 
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: sbom
           path: |

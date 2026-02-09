@@ -36,6 +36,14 @@
 
 > **Two native pipelines. Zero conversion.** OTLP stays OTLP. PRW stays PRW. Each protocol runs its own receive-process-export path with full feature parity and no conversion overhead.
 
+### Universal Governance for Mixed Environments
+
+Whether you're running **legacy Prometheus Remote Write**, migrating to **modern OpenTelemetry**, or operating both in parallel — metrics-governor provides a single governance layer across all your metrics traffic.
+
+- **Bridge old and new** — adopt OTel incrementally while maintaining full control over existing Prometheus infrastructure
+- **Same rules, same protection** — cardinality limits, processing rules, and alerting work identically across both protocols
+- **Single pane of governance** — one proxy, one config, one set of dashboards for your entire metrics pipeline regardless of protocol mix
+
 ## Why metrics-governor?
 
 | Challenge | How metrics-governor Solves It |
