@@ -143,6 +143,101 @@ func BenchmarkBuildSeriesKey_Parallel(b *testing.B) {
 	}
 }
 
+// BenchmarkProcessFull_50k_MergedAttrs benchmarks full stats processing at 50k datapoints
+// (the observable profile budget) with the merged attribute extraction optimization.
+func BenchmarkProcessFull_50k_MergedAttrs(b *testing.B) {
+	collector := NewCollector([]string{"service", "env"}, StatsLevelFull)
+	// 500 metrics × 100 datapoints = 50k datapoints per batch
+	metrics := createBenchmarkMetrics(500, 100)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		collector.Process(metrics)
+	}
+}
+
+// BenchmarkProcessFull_100k_MergedAttrs benchmarks full stats at 100k datapoints
+// (the safety/observable ceiling). Reports allocs to track sync.Pool effectiveness.
+func BenchmarkProcessFull_100k_MergedAttrs(b *testing.B) {
+	collector := NewCollector([]string{"service", "env"}, StatsLevelFull)
+	// 1000 metrics × 100 datapoints = 100k datapoints per batch
+	metrics := createBenchmarkMetrics(1000, 100)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		collector.Process(metrics)
+	}
+}
+
+// BenchmarkProcessBasic_100k_Baseline benchmarks basic stats at 100k datapoints.
+// Establishes the allocation floor — basic mode doesn't use Bloom filters or label tracking.
+func BenchmarkProcessBasic_100k_Baseline(b *testing.B) {
+	collector := NewCollector([]string{"service", "env"}, StatsLevelBasic)
+	metrics := createBenchmarkMetrics(1000, 100)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		collector.Process(metrics)
+	}
+}
+
+// BenchmarkProcessFull_LockContention_8Goroutines benchmarks full stats with 8 parallel
+// goroutines to measure lock contention under the reduced lock scope optimization.
+func BenchmarkProcessFull_LockContention_8Goroutines(b *testing.B) {
+	collector := NewCollector([]string{"service", "env"}, StatsLevelFull)
+	metrics := createBenchmarkMetrics(100, 100) // 10k per batch
+
+	b.SetParallelism(8)
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			collector.Process(metrics)
+		}
+	})
+}
+
+// BenchmarkExtractAttributes_Pooled benchmarks the pooled attribute extraction.
+func BenchmarkExtractAttributes_Pooled(b *testing.B) {
+	sizes := []int{2, 5, 10, 20}
+	for _, size := range sizes {
+		attrs := make([]*commonpb.KeyValue, size)
+		for i := 0; i < size; i++ {
+			attrs[i] = &commonpb.KeyValue{
+				Key:   fmt.Sprintf("key_%d", i),
+				Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: fmt.Sprintf("value_%d", i)}},
+			}
+		}
+		b.Run(fmt.Sprintf("attrs_%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				m := extractAttributesPooled(attrs)
+				putPooledMap(m)
+			}
+		})
+	}
+}
+
+// BenchmarkBuildLabelKeyFromAttrs benchmarks the lock-free label key builder.
+func BenchmarkBuildLabelKeyFromAttrs(b *testing.B) {
+	collector := NewCollector([]string{"service", "env", "region", "cluster"}, StatsLevelFull)
+	attrs := map[string]string{
+		"service": "test-svc",
+		"env":     "prod",
+		"region":  "us-east-1",
+		"cluster": "main",
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = collector.buildLabelKeyFromAttrs(attrs)
+	}
+}
+
 // Helper functions
 
 func createBenchmarkMetrics(numMetrics, datapointsPerMetric int) []*metricspb.ResourceMetrics {

@@ -10,12 +10,42 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/szibis/metrics-governor/internal/cardinality"
 	"github.com/szibis/metrics-governor/internal/intern"
 	"github.com/szibis/metrics-governor/internal/logging"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
+
+var (
+	statsDegradationTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_stats_degradation_total",
+		Help: "Total number of stats level degradations",
+	})
+
+	statsLevelCurrent = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_stats_level_current",
+		Help: "Current stats level (0=none, 1=basic, 2=full)",
+	})
+)
+
+func init() {
+	prometheus.MustRegister(statsDegradationTotal)
+	prometheus.MustRegister(statsLevelCurrent)
+}
+
+// statsLevelToNum converts a StatsLevel to a numeric value for Prometheus.
+func statsLevelToNum(level StatsLevel) float64 {
+	switch level {
+	case StatsLevelFull:
+		return 2
+	case StatsLevelBasic:
+		return 1
+	default:
+		return 0
+	}
+}
 
 // StatsLevel defines the granularity of stats collection.
 type StatsLevel string
@@ -32,12 +62,48 @@ const (
 	StatsLevelFull StatsLevel = "full"
 )
 
+// level constants for atomic operations (must match StatsLevel values).
+const (
+	levelNone  uint32 = 0
+	levelBasic uint32 = 1
+	levelFull  uint32 = 2
+)
+
+func levelFromString(s StatsLevel) uint32 {
+	switch s {
+	case StatsLevelFull:
+		return levelFull
+	case StatsLevelBasic:
+		return levelBasic
+	default:
+		return levelNone
+	}
+}
+
+func levelToString(l uint32) StatsLevel {
+	switch l {
+	case levelFull:
+		return StatsLevelFull
+	case levelBasic:
+		return StatsLevelBasic
+	default:
+		return StatsLevelNone
+	}
+}
+
 // Collector tracks cardinality and datapoints per metric and label combinations.
 type Collector struct {
 	mu sync.RWMutex
 
 	// Level controls what stats are collected.
 	level StatsLevel
+
+	// configuredLevel is the level set at creation time (never changes).
+	configuredLevel StatsLevel
+
+	// effectiveLevel is the current operational level, stored atomically for
+	// lock-free reads in the hot path. Updated by Degrade().
+	effectiveLevel atomic.Uint32
 
 	// Labels to track for grouping (e.g., service, env, cluster)
 	trackLabels []string
@@ -105,24 +171,65 @@ func NewCollector(trackLabels []string, level StatsLevel) *Collector {
 	if level == "" {
 		level = StatsLevelFull // backward-compatible default
 	}
-	return &Collector{
-		level:       level,
-		trackLabels: trackLabels,
-		metricStats: make(map[string]*MetricStats),
-		labelStats:  make(map[string]*LabelStats),
+	c := &Collector{
+		level:           level,
+		configuredLevel: level,
+		trackLabels:     trackLabels,
+		metricStats:     make(map[string]*MetricStats),
+		labelStats:      make(map[string]*LabelStats),
 	}
+	c.effectiveLevel.Store(levelFromString(level))
+	statsLevelCurrent.Set(statsLevelToNum(level))
+	return c
 }
 
-// Level returns the stats collection level.
+// Level returns the current effective stats collection level.
+// This is safe for concurrent reads (uses atomic load).
 func (c *Collector) Level() StatsLevel {
-	return c.level
+	return levelToString(c.effectiveLevel.Load())
+}
+
+// ConfiguredLevel returns the original stats level set at creation time.
+func (c *Collector) ConfiguredLevel() StatsLevel {
+	return c.configuredLevel
+}
+
+// Degrade drops the stats collection level by one step: full → basic → none.
+// Returns true if degradation occurred, false if already at the lowest level.
+// Existing collected data is preserved; new batches use the lower level.
+// This is safe for concurrent use.
+func (c *Collector) Degrade() bool {
+	for {
+		current := c.effectiveLevel.Load()
+		if current == levelNone {
+			return false
+		}
+		next := current - 1
+		if c.effectiveLevel.CompareAndSwap(current, next) {
+			newLevel := levelToString(next)
+			oldLevel := levelToString(current)
+			c.level = newLevel // Update for legacy code paths
+			statsDegradationTotal.Inc()
+			statsLevelCurrent.Set(statsLevelToNum(newLevel))
+			logging.Warn("stats level degraded due to memory pressure",
+				logging.F("from", string(oldLevel)),
+				logging.F("to", string(newLevel)),
+			)
+			return true
+		}
+		// CAS failed (concurrent Degrade), retry
+	}
 }
 
 // Process processes incoming metrics and updates stats.
 // At basic level, only per-metric datapoint counts are tracked (no Bloom filters).
 // At full level, Bloom-based cardinality and per-label stats are also tracked.
 func (c *Collector) Process(resourceMetrics []*metricspb.ResourceMetrics) {
-	if c.level == StatsLevelBasic {
+	level := c.effectiveLevel.Load()
+	if level == levelNone {
+		return // degraded to none — skip all stats
+	}
+	if level == levelBasic {
 		c.processBasic(resourceMetrics)
 		return
 	}
@@ -153,41 +260,196 @@ func (c *Collector) processBasic(resourceMetrics []*metricspb.ResourceMetrics) {
 	}
 }
 
+// attrsPool pools map[string]string used in attribute extraction to reduce GC pressure.
+var attrsPool = sync.Pool{New: func() any { m := make(map[string]string, 16); return &m }}
+
+// getPooledMap gets a map from the pool (or allocates one).
+func getPooledMap() map[string]string {
+	mp := attrsPool.Get().(*map[string]string)
+	return *mp
+}
+
+// putPooledMap returns a map to the pool after clearing it.
+func putPooledMap(m map[string]string) {
+	if m == nil || len(m) > 128 {
+		return // Don't pool oversized maps
+	}
+	clear(m)
+	attrsPool.Put(&m)
+}
+
+// precomputedDatapoint holds pre-extracted attributes and computed keys for a single datapoint.
+type precomputedDatapoint struct {
+	seriesKey []byte
+	labelKey  string
+}
+
 // processFull runs the full cardinality tracking with Bloom filters and per-label stats.
-// CPU overhead: ~30-40% at 100k dps.
+// Optimized: extracts attributes once per datapoint (not twice), computes keys outside lock.
 func (c *Collector) processFull(resourceMetrics []*metricspb.ResourceMetrics) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	// Phase 1: Pre-compute all attribute extraction, merging, and key building
+	// outside the lock. This is the expensive CPU work that doesn't need
+	// exclusive access to the collector's maps.
+	type metricBatch struct {
+		name       string
+		datapoints int
+		precomp    []precomputedDatapoint
+	}
+
+	var batches []metricBatch
 
 	for _, rm := range resourceMetrics {
 		resourceAttrs := extractAttributes(rm.Resource.GetAttributes())
 
 		for _, sm := range rm.ScopeMetrics {
 			for _, m := range sm.Metrics {
-				metricName := m.Name
-				datapoints := c.countDatapoints(m)
-
-				c.totalDatapoints += uint64(datapoints)
-
-				ms, ok := c.metricStats[metricName]
-				if !ok {
-					ms = &MetricStats{
-						Name:        metricName,
-						cardinality: cardinality.NewTrackerFromGlobal(),
-					}
-					c.metricStats[metricName] = ms
-					c.totalMetrics++
+				dpCount := c.countDatapoints(m)
+				if dpCount == 0 {
+					batches = append(batches, metricBatch{name: m.Name})
+					continue
 				}
-				ms.Datapoints += uint64(datapoints)
 
-				// Process each datapoint for cardinality (Bloom filter)
-				c.processDatapointsForCardinality(m, resourceAttrs, ms)
+				dpAttrs := extractAllDatapointAttrs(m)
+				precomp := make([]precomputedDatapoint, len(dpAttrs))
 
-				// Update per-label-combination stats
-				c.updateLabelStats(metricName, m, resourceAttrs)
+				for i, dpAttr := range dpAttrs {
+					// Merge resource + datapoint attrs into a single map (extract once)
+					merged := mergeAttrs(resourceAttrs, dpAttr)
+					seriesKey := buildSeriesKey(merged)
+
+					var labelKey string
+					if len(c.trackLabels) > 0 {
+						labelKey = c.buildLabelKeyFromAttrs(merged)
+					}
+
+					precomp[i] = precomputedDatapoint{
+						seriesKey: []byte(seriesKey),
+						labelKey:  labelKey,
+					}
+
+					// Return the datapoint attrs map to pool (merged is not pooled — short-lived)
+					putPooledMap(dpAttr)
+				}
+
+				batches = append(batches, metricBatch{
+					name:       m.Name,
+					datapoints: dpCount,
+					precomp:    precomp,
+				})
 			}
 		}
 	}
+
+	// Phase 2: Hold lock only for counter updates and Bloom filter mutations.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for _, batch := range batches {
+		c.totalDatapoints += uint64(batch.datapoints)
+
+		ms, ok := c.metricStats[batch.name]
+		if !ok {
+			ms = &MetricStats{
+				Name:        batch.name,
+				cardinality: cardinality.NewTrackerFromGlobal(),
+			}
+			c.metricStats[batch.name] = ms
+			c.totalMetrics++
+		}
+		ms.Datapoints += uint64(batch.datapoints)
+
+		for _, pc := range batch.precomp {
+			// Cardinality tracking (Bloom filter Add)
+			if ms.cardinality != nil {
+				ms.cardinality.Add(pc.seriesKey)
+			}
+
+			// Per-label stats
+			if pc.labelKey != "" {
+				ls, ok := c.labelStats[pc.labelKey]
+				if !ok {
+					ls = &LabelStats{
+						Labels:      pc.labelKey,
+						cardinality: cardinality.NewTrackerFromGlobal(),
+					}
+					c.labelStats[pc.labelKey] = ls
+				}
+				ls.Datapoints++
+				ls.cardinality.Add(append([]byte(batch.name+"|"), pc.seriesKey...))
+			}
+		}
+	}
+}
+
+// extractAllDatapointAttrs extracts attributes from all datapoints in a metric.
+// Uses pooled maps to reduce allocation pressure.
+func extractAllDatapointAttrs(m *metricspb.Metric) []map[string]string {
+	switch d := m.Data.(type) {
+	case *metricspb.Metric_Gauge:
+		result := make([]map[string]string, len(d.Gauge.DataPoints))
+		for i, dp := range d.Gauge.DataPoints {
+			result[i] = extractAttributesPooled(dp.Attributes)
+		}
+		return result
+	case *metricspb.Metric_Sum:
+		result := make([]map[string]string, len(d.Sum.DataPoints))
+		for i, dp := range d.Sum.DataPoints {
+			result[i] = extractAttributesPooled(dp.Attributes)
+		}
+		return result
+	case *metricspb.Metric_Histogram:
+		result := make([]map[string]string, len(d.Histogram.DataPoints))
+		for i, dp := range d.Histogram.DataPoints {
+			result[i] = extractAttributesPooled(dp.Attributes)
+		}
+		return result
+	case *metricspb.Metric_ExponentialHistogram:
+		result := make([]map[string]string, len(d.ExponentialHistogram.DataPoints))
+		for i, dp := range d.ExponentialHistogram.DataPoints {
+			result[i] = extractAttributesPooled(dp.Attributes)
+		}
+		return result
+	case *metricspb.Metric_Summary:
+		result := make([]map[string]string, len(d.Summary.DataPoints))
+		for i, dp := range d.Summary.DataPoints {
+			result[i] = extractAttributesPooled(dp.Attributes)
+		}
+		return result
+	}
+	return nil
+}
+
+// extractAttributesPooled extracts attributes into a pooled map.
+func extractAttributesPooled(attrs []*commonpb.KeyValue) map[string]string {
+	result := getPooledMap()
+	for _, kv := range attrs {
+		if kv.Value != nil {
+			if sv := kv.Value.GetStringValue(); sv != "" {
+				result[kv.Key] = sv
+			}
+		}
+	}
+	return result
+}
+
+// buildLabelKeyFromAttrs builds a label combination key from merged attributes.
+// This is the lock-free equivalent of buildLabelKey — reads only c.trackLabels
+// which is immutable after construction.
+func (c *Collector) buildLabelKeyFromAttrs(attrs map[string]string) string {
+	var sb strings.Builder
+	first := true
+	for _, label := range c.trackLabels {
+		if val, ok := attrs[label]; ok {
+			if !first {
+				sb.WriteByte(',')
+			}
+			sb.WriteString(label)
+			sb.WriteByte('=')
+			sb.WriteString(val)
+			first = false
+		}
+	}
+	return sb.String()
 }
 
 // countDatapoints counts the number of datapoints in a metric.

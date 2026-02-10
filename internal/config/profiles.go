@@ -116,6 +116,10 @@ type ProfileConfig struct {
 	BloomPersistenceEnabled   *bool
 	BloomPersistenceMaxMemory *int64
 
+	// Stability
+	LoadSheddingThreshold *float64 // Pipeline health score threshold for load shedding (0.0-1.0)
+	GOGC                  *int     // GC target percentage (lower = more GC but tighter memory)
+
 	// Resource targets (informational, not applied to config)
 	TargetCPU     string
 	TargetMemory  string
@@ -220,6 +224,9 @@ func minimalProfile() *ProfileConfig {
 		BloomPersistenceEnabled:   boolPtr(false),
 		BloomPersistenceMaxMemory: int64Ptr(33554432), // 32 MB
 
+		LoadSheddingThreshold: float64Ptr(0.80), // Small buffer, no queue fallback
+		GOGC:                  intPtr(100),       // Low allocation rate, default GC
+
 		// Resource targets
 		TargetCPU:     "0.25-0.5 cores",
 		TargetMemory:  "128-256 MB",
@@ -304,6 +311,9 @@ func balancedProfile() *ProfileConfig { //nolint:dupl // declarative config — 
 		// Bloom persistence off (memory queue)
 		BloomPersistenceEnabled:   boolPtr(false),
 		BloomPersistenceMaxMemory: int64Ptr(134217728), // 128 MB
+
+		LoadSheddingThreshold: float64Ptr(0.85), // Memory-only queue, moderate buffer
+		GOGC:                  intPtr(75),        // Moderate allocation, slightly aggressive GC
 
 		// Resource targets
 		TargetCPU:     "1-2 cores",
@@ -390,8 +400,11 @@ func safetyProfile() *ProfileConfig { //nolint:dupl // declarative config — ea
 		BloomPersistenceEnabled:   boolPtr(true),
 		BloomPersistenceMaxMemory: int64Ptr(134217728), // 128 MB
 
-		// Resource targets
-		TargetCPU:     "1-1.5 cores",
+		LoadSheddingThreshold: float64Ptr(0.90), // Full disk persistence, high tolerance
+		GOGC:                  intPtr(50),        // High allocation (full stats), aggressive GC
+
+		// Resource targets — honest: full stats (~35% CPU) + disk queue + zstd
+		TargetCPU:     "1.25-2.0 cores",
 		TargetMemory:  "320-768 MB",
 		DiskRequired:  true,
 		MaxThroughput: "~100k dps",
@@ -442,9 +455,9 @@ func observableProfile() *ProfileConfig { //nolint:dupl // declarative config �
 		QueueCompression:    strPtr("snappy"),
 		StringInterning:     boolPtr(true),
 
-		// FastQueue standard
-		QueueInmemoryBlocks:   intPtr(1024),
-		QueueMetaSyncInterval: durPtr(1 * time.Second),
+		// FastQueue — more headroom before spillover + relaxed sync for observability
+		QueueInmemoryBlocks:   intPtr(2048),
+		QueueMetaSyncInterval: durPtr(5 * time.Second),
 
 		// Memory ratios
 		MemoryLimitRatio:    float64Ptr(0.82),
@@ -475,11 +488,15 @@ func observableProfile() *ProfileConfig { //nolint:dupl // declarative config �
 		BloomPersistenceEnabled:   boolPtr(true),
 		BloomPersistenceMaxMemory: int64Ptr(134217728), // 128 MB
 
-		// Resource targets
-		TargetCPU:     "0.75-1.25 cores",
+		// Load shedding
+		LoadSheddingThreshold: float64Ptr(0.85), // Hybrid queue but full stats overhead
+		GOGC:                  intPtr(50),        // High allocation (full stats), aggressive GC
+
+		// Resource targets — honest: full stats (~35% CPU) + zstd (~10%) + hybrid queue
+		TargetCPU:     "1.0-1.75 cores",
 		TargetMemory:  "300-640 MB",
 		DiskRequired:  true,
-		MaxThroughput: "~120k dps",
+		MaxThroughput: "~80k dps",
 	}
 }
 
@@ -527,9 +544,9 @@ func resilientProfile() *ProfileConfig { //nolint:dupl // declarative config —
 		QueueCompression:    strPtr("snappy"),
 		StringInterning:     boolPtr(true),
 
-		// FastQueue standard
+		// FastQueue — balance durability + IOPS
 		QueueInmemoryBlocks:   intPtr(1024),
-		QueueMetaSyncInterval: durPtr(1 * time.Second),
+		QueueMetaSyncInterval: durPtr(3 * time.Second),
 
 		// Memory ratios
 		MemoryLimitRatio:    float64Ptr(0.82),
@@ -559,6 +576,10 @@ func resilientProfile() *ProfileConfig { //nolint:dupl // declarative config —
 		// Bloom persistence on
 		BloomPersistenceEnabled:   boolPtr(true),
 		BloomPersistenceMaxMemory: int64Ptr(134217728), // 128 MB
+
+		// Load shedding
+		LoadSheddingThreshold: float64Ptr(0.90), // 12 GB queue buffer, high tolerance
+		GOGC:                  intPtr(75),        // Moderate allocation (basic stats), slightly aggressive GC
 
 		// Resource targets
 		TargetCPU:     "0.5-1 cores",
@@ -610,9 +631,9 @@ func performanceProfile() *ProfileConfig {
 		QueueCompression:    strPtr("snappy"),
 		StringInterning:     boolPtr(true),
 
-		// FastQueue large
+		// FastQueue large — throughput > durability
 		QueueInmemoryBlocks:   intPtr(4096),
-		QueueMetaSyncInterval: durPtr(500 * time.Millisecond),
+		QueueMetaSyncInterval: durPtr(2 * time.Second),
 
 		// More headroom for disk I/O
 		MemoryLimitRatio:    float64Ptr(0.80),
@@ -642,6 +663,10 @@ func performanceProfile() *ProfileConfig {
 		// Bloom persistence on
 		BloomPersistenceEnabled:   boolPtr(true),
 		BloomPersistenceMaxMemory: int64Ptr(268435456), // 256 MB
+
+		// Load shedding
+		LoadSheddingThreshold: float64Ptr(0.95), // Maximum headroom, pipeline split
+		GOGC:                  intPtr(25),        // Very high allocation, maximize memory reuse
 
 		// Resource targets
 		TargetCPU:     "2-4 cores",
@@ -853,6 +878,14 @@ func ApplyProfile(cfg *Config, profile ProfileName, explicitFields map[string]bo
 		set("bloom-persistence-max-memory", func() { cfg.BloomPersistenceMaxMemory = *p.BloomPersistenceMaxMemory })
 	}
 
+	// Pipeline health / load shedding
+	if p.LoadSheddingThreshold != nil {
+		set("load-shedding-threshold", func() { cfg.LoadSheddingThreshold = *p.LoadSheddingThreshold })
+	}
+	if p.GOGC != nil {
+		set("gogc", func() { cfg.GOGC = *p.GOGC })
+	}
+
 	return nil
 }
 
@@ -1039,6 +1072,14 @@ func collectGovernanceParams(p *ProfileConfig) []profileParam {
 	if p.RuleCacheMaxSize != nil {
 		v := fmt.Sprintf("%d", *p.RuleCacheMaxSize)
 		params = append(params, profileParam{"rule_cache_size", v, "Rule matching cache"})
+	}
+	if p.LoadSheddingThreshold != nil {
+		v := fmt.Sprintf("%.2f", *p.LoadSheddingThreshold)
+		params = append(params, profileParam{"load_shedding.threshold", v, "Pipeline health shed threshold"})
+	}
+	if p.GOGC != nil {
+		v := fmt.Sprintf("%d", *p.GOGC)
+		params = append(params, profileParam{"gogc", v, "GC aggressiveness"})
 	}
 
 	return params

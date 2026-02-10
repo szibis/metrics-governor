@@ -115,6 +115,33 @@ var (
 		Name: "metrics_governor_queue_spillover_total",
 		Help: "Total batches spilled from memory to disk in hybrid mode",
 	})
+
+	// Graduated spillover metrics
+	spilloverActive = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_governor_spillover_active",
+		Help: "Whether spillover cascade is currently active (1=active, 0=inactive)",
+	})
+
+	spilloverDurationSeconds = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "metrics_governor_spillover_duration_seconds",
+		Help:    "Duration of spillover cascade events",
+		Buckets: []float64{1, 5, 10, 30, 60, 120, 300, 600},
+	})
+
+	spilloverModeGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "metrics_governor_spillover_mode",
+		Help: "Current spillover mode (1=active): memory_only, partial_disk, all_disk, load_shedding",
+	}, []string{"mode"})
+
+	spilloverRateLimitedTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_spillover_rate_limited_total",
+		Help: "Total batches delayed by spillover rate limiter",
+	})
+
+	loadSheddingTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_load_shedding_total",
+		Help: "Total batches rejected by load shedding",
+	})
 )
 
 func init() {
@@ -124,7 +151,18 @@ func init() {
 		memBatchQueueUtilization,
 		memBatchQueueDroppedTotal,
 		memBatchQueueSpilloverTotal,
+		spilloverActive,
+		spilloverDurationSeconds,
+		spilloverModeGauge,
+		spilloverRateLimitedTotal,
+		loadSheddingTotal,
 	)
+	// Initialize gauge vectors
+	spilloverActive.Set(0)
+	spilloverModeGauge.WithLabelValues("memory_only").Set(1)
+	spilloverModeGauge.WithLabelValues("partial_disk").Set(0)
+	spilloverModeGauge.WithLabelValues("all_disk").Set(0)
+	spilloverModeGauge.WithLabelValues("load_shedding").Set(0)
 }
 
 // NewMemoryBatchQueue creates a new zero-serialization in-memory batch queue.
@@ -358,6 +396,154 @@ func (q *MemoryBatchQueue) updateMetrics() {
 // IncrementSpilloverTotal increments the spillover counter for hybrid mode.
 func IncrementSpilloverTotal() {
 	memBatchQueueSpilloverTotal.Inc()
+}
+
+// SpilloverMode represents the graduated spillover state.
+type SpilloverMode int
+
+const (
+	// SpilloverMemoryOnly — all batches go to memory (normal operation).
+	SpilloverMemoryOnly SpilloverMode = iota
+	// SpilloverPartialDisk — alternate batches between memory and disk (50%).
+	SpilloverPartialDisk
+	// SpilloverAllDisk — all new batches go to disk.
+	SpilloverAllDisk
+	// SpilloverLoadShedding — reject lowest-priority batches.
+	SpilloverLoadShedding
+)
+
+// String returns the mode name for metrics labels.
+func (m SpilloverMode) String() string {
+	switch m {
+	case SpilloverMemoryOnly:
+		return "memory_only"
+	case SpilloverPartialDisk:
+		return "partial_disk"
+	case SpilloverAllDisk:
+		return "all_disk"
+	case SpilloverLoadShedding:
+		return "load_shedding"
+	default:
+		return "unknown"
+	}
+}
+
+// SpilloverState tracks the graduated spillover state machine.
+// It's designed to be used by a single goroutine (the Export path is already
+// serialized per-request), so no internal mutex is needed — the caller holds
+// the decision lock.
+type SpilloverState struct {
+	mode      SpilloverMode
+	counter   atomic.Uint64 // monotonic counter for alternating in partial mode
+	startTime time.Time     // when spillover became active (non-memory-only)
+}
+
+// NewSpilloverState returns a SpilloverState in the default memory-only mode.
+func NewSpilloverState() *SpilloverState {
+	return &SpilloverState{mode: SpilloverMemoryOnly}
+}
+
+// Mode returns the current spillover mode.
+func (s *SpilloverState) Mode() SpilloverMode { return s.mode }
+
+// Evaluate determines the correct spillover mode based on current queue utilization.
+// Hysteresis: transitions UP at configured thresholds, transitions DOWN only below
+// recoveryPct to prevent oscillation.
+//
+// Thresholds (all configurable via spillPct):
+//
+//	< spillPct        → MemoryOnly (or recovery below hysteresisPct)
+//	spillPct to +10%  → PartialDisk (50% of batches spill)
+//	+10% to +15%      → AllDisk
+//	> spillPct+15%    → LoadShedding
+//
+// Recovery: stays in current mode until utilization drops below hysteresisPct.
+func (s *SpilloverState) Evaluate(utilization float64, spillPct int, hysteresisPct int) SpilloverMode {
+	spillThresh := float64(spillPct) / 100.0
+	partialThresh := spillThresh                // e.g., 0.80
+	allDiskThresh := spillThresh + 0.10         // e.g., 0.90
+	loadShedThresh := spillThresh + 0.15        // e.g., 0.95
+	recoveryThresh := float64(hysteresisPct) / 100.0 // e.g., 0.70
+
+	oldMode := s.mode
+
+	// Determine target mode from utilization thresholds.
+	// Then apply hysteresis: only allow downward transition if utilization is
+	// below the threshold for the target mode (not the current mode).
+	var targetMode SpilloverMode
+	if utilization >= loadShedThresh {
+		targetMode = SpilloverLoadShedding
+	} else if utilization >= allDiskThresh {
+		targetMode = SpilloverAllDisk
+	} else if utilization >= partialThresh {
+		targetMode = SpilloverPartialDisk
+	} else if utilization < recoveryThresh {
+		targetMode = SpilloverMemoryOnly
+	} else {
+		// Between recoveryThresh and partialThresh: hysteresis zone.
+		// Stay in current mode (don't escalate, don't de-escalate).
+		targetMode = s.mode
+	}
+
+	// Escalation is immediate; de-escalation is bounded by one step at a time
+	// (except full recovery below hysteresis, which goes straight to MemoryOnly).
+	if targetMode > s.mode {
+		s.mode = targetMode
+	} else if targetMode < s.mode {
+		if targetMode == SpilloverMemoryOnly {
+			// Full recovery: jump straight to MemoryOnly
+			s.mode = SpilloverMemoryOnly
+		} else {
+			// Step down one level at a time
+			s.mode = s.mode - 1
+		}
+	}
+
+	// Track spillover active state transitions
+	if oldMode == SpilloverMemoryOnly && s.mode != SpilloverMemoryOnly {
+		s.startTime = time.Now()
+		spilloverActive.Set(1)
+	} else if oldMode != SpilloverMemoryOnly && s.mode == SpilloverMemoryOnly {
+		if !s.startTime.IsZero() {
+			spilloverDurationSeconds.Observe(time.Since(s.startTime).Seconds())
+		}
+		spilloverActive.Set(0)
+	}
+
+	// Update mode gauge if changed
+	if oldMode != s.mode {
+		setSpilloverModeGauge(s.mode)
+	}
+
+	return s.mode
+}
+
+// ShouldSpillThisBatch returns true if this particular batch should go to disk
+// in PartialDisk mode (alternating pattern).
+func (s *SpilloverState) ShouldSpillThisBatch() bool {
+	if s.mode != SpilloverPartialDisk {
+		return s.mode >= SpilloverAllDisk
+	}
+	// Alternate: even counter → memory, odd counter → disk
+	return s.counter.Add(1)%2 == 0
+}
+
+func setSpilloverModeGauge(mode SpilloverMode) {
+	spilloverModeGauge.WithLabelValues("memory_only").Set(0)
+	spilloverModeGauge.WithLabelValues("partial_disk").Set(0)
+	spilloverModeGauge.WithLabelValues("all_disk").Set(0)
+	spilloverModeGauge.WithLabelValues("load_shedding").Set(0)
+	spilloverModeGauge.WithLabelValues(mode.String()).Set(1)
+}
+
+// IncrementSpilloverRateLimited increments the rate-limited counter.
+func IncrementSpilloverRateLimited() {
+	spilloverRateLimitedTotal.Inc()
+}
+
+// IncrementLoadShedding increments the load shedding counter.
+func IncrementLoadShedding() {
+	loadSheddingTotal.Inc()
 }
 
 // QueueMode defines the queue operating mode.

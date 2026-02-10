@@ -636,6 +636,61 @@ exporter:
     max_latency: 500ms         # Latency EWMA threshold suppressing scale-up (default: 500ms)
 ```
 
+## Load Shedding
+
+When the pipeline is under sustained pressure, receivers actively reject incoming requests to prevent the system from being pushed past its recovery point.
+
+### Pipeline Health Score
+
+A unified health score (0.0 = healthy, 1.0 = overloaded) is computed from four weighted components:
+
+| Component | Weight | Source |
+|---|---|---|
+| Queue pressure | 35% | Queue utilization ratio |
+| Buffer pressure | 30% | Buffer utilization ratio |
+| Export latency | 20% | EWMA export latency (normalized) |
+| Circuit breaker | 15% | 1.0 if open, 0.0 if closed |
+
+When the score exceeds the profile's load shedding threshold, receivers return backpressure signals:
+
+- **gRPC**: `codes.ResourceExhausted` — standard OTLP retry signal
+- **HTTP**: `429 Too Many Requests` with `Retry-After: 5` header
+- **PRW**: `429 Too Many Requests` with `Retry-After: 5` header
+
+### Recovery
+
+Load shedding stops automatically when the health score drops below the threshold. There is no cooldown — recovery is immediate. Upstream senders should use retry with exponential backoff to handle shedding gracefully.
+
+### Monitoring
+
+- `metrics_governor_pipeline_health_score` — gauge: current health score
+- `metrics_governor_receiver_load_shedding_total{protocol}` — counter by protocol
+
+## Graceful Stats Degradation
+
+Under memory pressure, the stats collector automatically downgrades its processing level to reduce overhead while keeping the core proxy functioning:
+
+```
+full → basic → none
+```
+
+| Level | CPU Cost | Memory | What's Tracked |
+|---|---|---|---|
+| `full` | ~35% at 100k dps | ~50 MB | Cardinality (Bloom filter), per-metric stats, label stats |
+| `basic` | ~5% at 100k dps | ~10 MB | Aggregate counters only |
+| `none` | 0% | 0 MB | Nothing — all stats collection disabled |
+
+**Preservation guarantees**: Existing data is preserved (degradation never clears stats). The configured level is remembered. Data forwarding is unaffected.
+
+**Recovery**: Stats auto-upgrade back to the configured level when memory pressure drops. Alternatively, restart to restore immediately.
+
+### Monitoring
+
+- `metrics_governor_stats_level_current` — gauge: 2=full, 1=basic, 0=none
+- `metrics_governor_stats_degradation_total` — counter of degradation events
+
+See [stability-guide.md](stability-guide.md) for full tuning details.
+
 ## Pipeline Parity
 
 Both the OTLP and PRW pipelines now have identical resilience features:

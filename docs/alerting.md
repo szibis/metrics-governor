@@ -39,7 +39,7 @@
 
 ## Overview
 
-metrics-governor ships with **10 production-ready alert rules** designed around three principles:
+metrics-governor ships with **13 production-ready alert rules** designed around three principles:
 
 1. **Zero overlap** — each alert fires for a distinct failure mode. No two alerts fire for the same root cause.
 2. **Signal chain** — alerts are ordered by timing: leading indicators warn early, trailing indicators demand action.
@@ -54,7 +54,7 @@ All rules are in the `alerts/` folder, ready to import into any Prometheus-compa
 **Fastest path to production alerting:**
 
 ```yaml
-# Helm values.yaml — one line enables all 10 alerts
+# Helm values.yaml — one line enables all 13 alerts
 alerting:
   enabled: true
 ```
@@ -72,24 +72,30 @@ kubectl apply -f alerts/prometheusrule.yaml
 
 ---
 
-## Alert Rules — 10 Alerts, Zero Overlap
+## Alert Rules — 13 Alerts, Zero Overlap
 
 ### Signal Chain — How Alerts Escalate
 
 Alerts are not independent — they form escalation chains. During a backend outage, you'll see them fire in sequence:
 
 ```
-Leading indicators (warn early)      Trailing indicators (act now)
-────────────────────────────────     ────────────────────────────
+Leading indicators (warn early)         Trailing indicators (act now)
+────────────────────────────────        ────────────────────────────
 ExportDegraded ──> CircuitOpen ──> QueueSaturated ──> DataLoss
 Backpressure ──> WorkersSaturated
 CardinalityExplosion
-                                     OOMRisk ──> Down
+SpilloverCascade ──> QueueSaturated ──> DataLoss
+LoadSheddingActive                       (parallel to Backpressure)
+StatsDegraded                            (parallel to OOMRisk)
+                                         OOMRisk ──> Down
 ```
 
 This means:
 - If you see `ExportDegraded`, fix it before `CircuitOpen` fires
 - If you see `QueueSaturated`, the backend has been down long enough to fill the queue — `DataLoss` is next
+- If you see `SpilloverCascade`, the queue is in a feedback loop — fix before it exhausts CPU
+- If you see `LoadSheddingActive`, upstream clients are being rejected — check pipeline health
+- If you see `StatsDegraded`, memory pressure caused stats to downgrade — cardinality dashboards may be stale
 - If you see `OOMRisk`, the process will crash (`Down`) unless you act
 
 ### Complete Alert Reference
@@ -106,6 +112,9 @@ This means:
 | 8 | **WorkersSaturated** | warning | CPU/export ceiling | Workers > 90% for 10m | [Runbook](#metricsgovernorworkerssaturated) |
 | 9 | **CardinalityExplosion** | warning | Governance breach | Cardinality violations for 10m | [Runbook](#metricsgovernorcardinalityexplosion) |
 | 10 | **ConfigStale** | info | Operational drift | No reload in 24h | [Runbook](#metricsgovernorconfigstale) |
+| 11 | **SpilloverCascade** | warning | Queue cascade feedback loop | `spillover_active == 1` for 2m | [Runbook](#metricsgovernorspillovercascade) |
+| 12 | **LoadSheddingActive** | warning | Pipeline rejecting requests | `load_shedding_total` rate > 0 for 2m | [Runbook](#metricsgovernorloadsheddingactive) |
+| 13 | **StatsDegraded** | warning | Stats auto-downgraded | `stats_level_current` < configured for 5m | [Runbook](#metricsgovernorstatsdegraded) |
 
 **Coverage by dimension** (no dimension has duplicate coverage):
 
@@ -117,6 +126,7 @@ This means:
 | **Performance** | `Backpressure`, `WorkersSaturated`, `CardinalityExplosion` | Three independent bottleneck points |
 | **Resource** | `OOMRisk` | Memory is the binding constraint |
 | **Operational** | `ConfigStale` | Config freshness |
+| **Stability** | `SpilloverCascade`, `LoadSheddingActive`, `StatsDegraded` | Queue feedback loop, admission control, graceful degradation |
 
 ---
 
@@ -610,6 +620,87 @@ kubectl get configmap <config-name> -o jsonpath='{.metadata.resourceVersion}'
 | No changes needed | Suppress alert or increase threshold |
 
 **Prevent:** Use directory mounts, enable `configReload.enabled: true`.
+
+---
+
+### MetricsGovernorSpilloverCascade
+
+**Severity:** Warning | **Fires when:** `metrics_governor_spillover_active == 1` for 2 minutes
+
+**What it means:** The hybrid queue entered a spillover cascade. Memory queue filled past the threshold, forcing batches to disk. Disk serialization adds CPU, which slows processing, which fills the queue faster.
+
+**Impact:** Export latency spikes. CPU saturates. IOPS spike. If sustained, leads to QueueSaturated then DataLoss.
+
+**Investigate:**
+
+| Check | Command |
+|-------|---------|
+| Spillover state | `curl -s http://<governor>:9090/metrics \| grep spillover` |
+| Input vs drain rate | `curl -s http://<governor>:9090/metrics \| grep -E 'receiver_datapoints\|export_datapoints'` |
+| Export health | `curl -s http://<governor>:9090/metrics \| grep -E 'export_latency_ewma\|circuit_breaker_state'` |
+
+| Root Cause | Fix |
+|-----------|-----|
+| Input exceeds drain | Reduce upstream traffic or scale out |
+| Backend slow/down | Fix backend. See `ExportDegraded` / `CircuitOpen` runbooks |
+| Threshold too low | Raise `spillover_threshold_pct` to 90% |
+| Memory queue too small | Increase `queue.inmemory_blocks` |
+
+**Prevent:** Size memory queue for 2x burst duration. Monitor `spillover_active` in Grafana. See [stability-guide.md](stability-guide.md).
+
+---
+
+### MetricsGovernorLoadSheddingActive
+
+**Severity:** Warning | **Fires when:** `rate(metrics_governor_receiver_load_shedding_total[2m]) > 0`
+
+**What it means:** Pipeline health score exceeded the load shedding threshold. Receivers are rejecting requests. gRPC clients receive `ResourceExhausted`, HTTP/PRW clients receive `429`.
+
+**Impact:** Upstream senders see errors. Data is NOT lost at metrics-governor (rejected before acceptance), but senders must retry.
+
+**Investigate:**
+
+| Check | Command |
+|-------|---------|
+| Shedding rate | `curl -s http://<governor>:9090/metrics \| grep load_shedding_total` |
+| Health score | `curl -s http://<governor>:9090/metrics \| grep pipeline_health` |
+| Queue pressure | `curl -s http://<governor>:9090/metrics \| grep -E 'queue_bytes\|queue_max_bytes'` |
+
+| Root Cause | Fix |
+|-----------|-----|
+| Queue full (backend down) | Fix backend. Shedding stops when health recovers |
+| Traffic spike (temporary) | Wait. Shedding auto-resolves. Ensure senders retry with backoff |
+| Sustained overload | Scale out or switch to higher-capacity profile |
+| Threshold too aggressive | Raise `load_shedding_threshold` (e.g., 0.85 to 0.95) |
+
+**Prevent:** Configure upstream senders with retry + exponential backoff. Size pipeline for 1.5x peak. See [stability-guide.md](stability-guide.md).
+
+---
+
+### MetricsGovernorStatsDegraded
+
+**Severity:** Warning | **Fires when:** `metrics_governor_stats_level_current` < configured stats level for 5 minutes
+
+**What it means:** Stats collector auto-downgraded to reduce memory pressure. Levels: `full` (2) -> `basic` (1) -> `none` (0). Core proxy function (receive, queue, export) is unaffected.
+
+**Impact:** At `basic`: cardinality dashboards go stale. At `none`: all stats dashboards go blank. Limits enforcement continues from cached state.
+
+**Investigate:**
+
+| Check | Command |
+|-------|---------|
+| Current stats level | `curl -s http://<governor>:9090/metrics \| grep stats_level_current` |
+| Memory pressure | `curl -s http://<governor>:9090/metrics \| grep -E 'heap_alloc_bytes\|memory_limit_bytes'` |
+| Cardinality memory | `curl -s http://<governor>:9090/metrics \| grep cardinality_memory_bytes` |
+
+| Root Cause | Fix |
+|-----------|-----|
+| High cardinality consuming memory | Tighten limits rules or use `bloom` tracker |
+| Container memory too low | Increase memory limit. Full stats at 100k dps needs ~50 MB |
+| GOMEMLIMIT too aggressive | Increase `memory.limit_ratio` from 0.85 to 0.90 |
+| Stats `full` not needed | Switch to `balanced` profile (uses basic stats) |
+
+**Prevent:** Size container for stats overhead: `full` needs 50-100 MB headroom. Monitor `heap_alloc_bytes / memory_limit_bytes` ratio. See [stability-guide.md](stability-guide.md).
 
 ---
 

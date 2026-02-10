@@ -107,6 +107,7 @@ type FastQueue struct {
 	// Metadata sync
 	lastMetaSync   time.Time
 	lastBlockWrite time.Time
+	metaDirty      atomic.Bool // set on disk writes/reads, cleared on sync
 	stopCh         chan struct{}
 	doneCh         chan struct{}
 
@@ -684,6 +685,7 @@ func (fq *FastQueue) writeBlockToDiskLocked(data []byte) error {
 	fq.pendingBytes += int64(blockHeaderSize + len(writeData))
 	fq.diskBytes.Add(int64(blockHeaderSize + len(writeData)))
 	fq.lastBlockWrite = time.Now()
+	fq.metaDirty.Store(true)
 
 	return nil
 }
@@ -771,6 +773,7 @@ func (fq *FastQueue) readBlockFromDiskLocked() ([]byte, error) {
 
 	fq.readerOffset += int64(blockHeaderSize) + int64(dataLen)
 	fq.pendingBytes -= int64(blockHeaderSize) + int64(dataLen)
+	fq.metaDirty.Store(true)
 
 	// Decompress if needed
 	if compressed {
@@ -982,6 +985,8 @@ func (fq *FastQueue) syncMetadataLocked() error {
 }
 
 // metaSyncLoop periodically syncs metadata to disk.
+// Skips sync when metadata hasn't changed (dirty flag is false),
+// eliminating idle IOPS (3 fsyncs per interval when nothing changed).
 func (fq *FastQueue) metaSyncLoop() {
 	ticker := time.NewTicker(fq.cfg.MetaSyncInterval)
 	defer ticker.Stop()
@@ -991,9 +996,16 @@ func (fq *FastQueue) metaSyncLoop() {
 		case <-fq.stopCh:
 			return
 		case <-ticker.C:
+			// Skip sync if nothing changed since last sync
+			if !fq.metaDirty.Load() {
+				IncrementMetaSyncSkip()
+				continue
+			}
 			fq.mu.Lock()
 			if !fq.closed {
-				_ = fq.syncMetadataLocked()
+				if err := fq.syncMetadataLocked(); err == nil {
+					fq.metaDirty.Store(false)
+				}
 			}
 			fq.mu.Unlock()
 		}

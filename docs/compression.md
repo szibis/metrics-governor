@@ -217,3 +217,21 @@ Each encoder is explicitly `Reset()` before being returned to the pool. This ens
 ### Configuration
 
 Encoder pooling is always enabled and requires no configuration. The pool is managed by Go's `sync.Pool`, which automatically sizes itself based on GC pressure and usage patterns.
+
+## Compression Decision Matrix
+
+Choose compression based on the path and requirements:
+
+| Path | Recommended | Why |
+|---|---|---|
+| **Export** (observable, safety, performance) | zstd | Best compression ratio (60-78%), pooled encoders via `sync.Pool` |
+| **Export** (balanced, resilient) | snappy | High throughput, lower ratio acceptable |
+| **Export** (compatibility) | gzip | Widest backend support |
+| **Disk queue** (all profiles) | snappy | Fast, allocation-free via `s2.EncodeSnappy`, controls queue size |
+| **Receiver** (decompression) | auto-detect | Supports gzip, zstd, snappy, zlib, deflate |
+
+### Stability Impact
+
+During spillover (memory queue → disk), **disk queue compression** becomes critical: every batch spilled to disk goes through protobuf marshal + snappy compress. Snappy is chosen for this path specifically because it's allocation-free and fast — minimizing the CPU cost of spillover, which helps prevent the spillover cascade feedback loop.
+
+**Export compression** (zstd) is the right choice for bandwidth savings even though it costs more CPU than snappy. The CPU optimization comes from code-level improvements (merged attribute extraction, reduced lock scope, sync.Pool), not from downgrading the compression algorithm.

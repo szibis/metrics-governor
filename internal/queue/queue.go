@@ -141,6 +141,13 @@ type Config struct {
 	Mode QueueMode
 	// HybridSpilloverPct is the percentage of capacity before hybrid mode spills to disk.
 	HybridSpilloverPct int
+	// HybridHysteresisPct is the recovery threshold percentage for graduated spillover.
+	// Queue utilization must drop below this before returning to memory-only mode.
+	// Defaults to HybridSpilloverPct - 10 (e.g., 70 if spillover is 80).
+	HybridHysteresisPct int
+	// SpilloverRateLimitPerSec caps disk queue push rate during spillover (ops/sec).
+	// 0 = no rate limiting (default).
+	SpilloverRateLimitPerSec int
 }
 
 // DefaultConfig returns a default queue configuration.

@@ -6513,6 +6513,121 @@
           "sort": "desc"
         }
       }
+    },
+    {
+      "id": 600,
+      "title": "Pipeline Stability",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 180 },
+      "panels": []
+    },
+    {
+      "id": 601,
+      "title": "Pipeline Health Score",
+      "type": "gauge",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 181 },
+      "targets": [
+        { "expr": "metrics_governor_pipeline_health_score", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "red", "value": 0.8 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 602,
+      "title": "Load Shedding Rate",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 181 },
+      "targets": [
+        { "expr": "rate(metrics_governor_receiver_load_shedding_total[1m])", "legendFormat": "{{protocol}}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "fillOpacity": 20, "stacking": { "mode": "normal" } }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      }
+    },
+    {
+      "id": 603,
+      "title": "Spillover State",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 181 },
+      "targets": [
+        { "expr": "metrics_governor_spillover_active", "legendFormat": "spillover active", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 1,
+          "custom": { "fillOpacity": 50 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      }
+    },
+    {
+      "id": 604,
+      "title": "Stats Level",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 181 },
+      "targets": [
+        { "expr": "metrics_governor_stats_level_current", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "green", "value": 2 }
+            ]
+          },
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "none", "index": 0 }, "1": { "text": "basic", "index": 1 }, "2": { "text": "full", "index": 2 } } }
+          ]
+        },
+        "overrides": []
+      },
+      "options": { "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
     }
   ],
   "schemaVersion": 39,

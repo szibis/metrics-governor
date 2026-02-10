@@ -1030,8 +1030,163 @@ func TestApplyProfile_FastQueueFields(t *testing.T) {
 	if cfg.QueueInmemoryBlocks != 4096 {
 		t.Errorf("QueueInmemoryBlocks = %d, want 4096", cfg.QueueInmemoryBlocks)
 	}
-	if cfg.QueueMetaSyncInterval != 500*time.Millisecond {
-		t.Errorf("QueueMetaSyncInterval = %v, want 500ms", cfg.QueueMetaSyncInterval)
+	if cfg.QueueMetaSyncInterval != 2*time.Second {
+		t.Errorf("QueueMetaSyncInterval = %v, want 2s", cfg.QueueMetaSyncInterval)
+	}
+}
+
+// --- Phase 8.5: Profile parameter validation tests ---
+
+func TestAllProfiles_HaveConsistentStatsAndCompression(t *testing.T) {
+	profiles := ValidProfileNames()
+	for _, name := range profiles {
+		t.Run(string(name), func(t *testing.T) {
+			p, err := GetProfile(name)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			// Every profile must set stats level
+			if p.StatsLevel == nil {
+				t.Error("StatsLevel must be set")
+			}
+
+			// Every profile must set export compression
+			if p.ExporterCompression == nil {
+				t.Error("ExporterCompression must be set")
+			}
+		})
+	}
+}
+
+func TestAllProfiles_ExportCompression_Policy(t *testing.T) {
+	// zstd profiles: safety, observable, performance (best compression ratio)
+	zstdProfiles := []ProfileName{ProfileSafety, ProfileObservable, ProfilePerformance}
+	for _, name := range zstdProfiles {
+		t.Run(string(name)+"_zstd", func(t *testing.T) {
+			p, err := GetProfile(name)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if *p.ExporterCompression != "zstd" {
+				t.Errorf("%s: ExporterCompression = %q, want %q", name, *p.ExporterCompression, "zstd")
+			}
+		})
+	}
+
+	// snappy profiles: balanced, resilient (high throughput, lower ratio acceptable)
+	snappyProfiles := []ProfileName{ProfileBalanced, ProfileResilient}
+	for _, name := range snappyProfiles {
+		t.Run(string(name)+"_snappy", func(t *testing.T) {
+			p, err := GetProfile(name)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if *p.ExporterCompression != "snappy" {
+				t.Errorf("%s: ExporterCompression = %q, want %q", name, *p.ExporterCompression, "snappy")
+			}
+		})
+	}
+
+	// none: minimal (zero overhead)
+	t.Run("minimal_none", func(t *testing.T) {
+		p, err := GetProfile(ProfileMinimal)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if *p.ExporterCompression != "none" {
+			t.Errorf("minimal: ExporterCompression = %q, want %q", *p.ExporterCompression, "none")
+		}
+	})
+}
+
+func TestAllProfiles_QueueCompression_Policy(t *testing.T) {
+	// All disk/hybrid profiles must use snappy for queue (fast, allocation-free)
+	diskProfiles := []ProfileName{ProfileSafety, ProfileObservable, ProfileResilient, ProfilePerformance}
+	for _, name := range diskProfiles {
+		t.Run(string(name), func(t *testing.T) {
+			p, err := GetProfile(name)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if *p.QueueCompression != "snappy" {
+				t.Errorf("%s: QueueCompression = %q, want %q", name, *p.QueueCompression, "snappy")
+			}
+		})
+	}
+}
+
+func TestObservableProfile_InmemoryBlocks_2048(t *testing.T) {
+	p, err := GetProfile(ProfileObservable)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if *p.QueueInmemoryBlocks != 2048 {
+		t.Errorf("observable QueueInmemoryBlocks = %d, want 2048", *p.QueueInmemoryBlocks)
+	}
+}
+
+func TestObservableProfile_CPUTarget_Honest(t *testing.T) {
+	p, err := GetProfile(ProfileObservable)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Observable uses full stats + zstd + hybrid queue — must claim >= 1.0 cores minimum
+	if p.TargetCPU == "0.75-1.25 cores" {
+		t.Error("observable CPU target must not claim 0.75 cores minimum — full stats + zstd requires >= 1.0")
+	}
+}
+
+func TestSafetyProfile_CPUTarget_Honest(t *testing.T) {
+	p, err := GetProfile(ProfileSafety)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Safety uses full stats + disk queue + zstd — must claim >= 1.25 cores minimum
+	if p.TargetCPU == "1-1.5 cores" {
+		t.Error("safety CPU target must not claim 1.0 cores minimum — full stats + disk queue + zstd requires >= 1.25")
+	}
+}
+
+func TestAllProfiles_MetaSyncIntervals_Appropriate(t *testing.T) {
+	tests := []struct {
+		name        string
+		profile     ProfileName
+		minInterval time.Duration
+		maxInterval time.Duration
+	}{
+		{"minimal", ProfileMinimal, 1 * time.Second, 10 * time.Second},
+		{"balanced", ProfileBalanced, 1 * time.Second, 5 * time.Second},
+		{"safety", ProfileSafety, 1 * time.Second, 1 * time.Second},        // maximum durability
+		{"observable", ProfileObservable, 3 * time.Second, 10 * time.Second}, // observability > durability
+		{"resilient", ProfileResilient, 2 * time.Second, 5 * time.Second},    // balance durability + IOPS
+		{"performance", ProfilePerformance, 1 * time.Second, 5 * time.Second}, // throughput > durability
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, err := GetProfile(tt.profile)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if p.QueueMetaSyncInterval == nil {
+				t.Fatal("QueueMetaSyncInterval must be set")
+			}
+			interval := *p.QueueMetaSyncInterval
+			if interval < tt.minInterval || interval > tt.maxInterval {
+				t.Errorf("MetaSyncInterval = %v, want [%v, %v]", interval, tt.minInterval, tt.maxInterval)
+			}
+		})
+	}
+}
+
+func TestObservableProfile_MaxThroughput_80k(t *testing.T) {
+	p, err := GetProfile(ProfileObservable)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p.MaxThroughput != "~80k dps" {
+		t.Errorf("observable MaxThroughput = %q, want %q", p.MaxThroughput, "~80k dps")
 	}
 }
 
@@ -1048,4 +1203,145 @@ func searchSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestAllProfiles_HaveLoadSheddingThreshold(t *testing.T) {
+	for _, name := range ValidProfileNames() {
+		t.Run(string(name), func(t *testing.T) {
+			p, err := GetProfile(name)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if p.LoadSheddingThreshold == nil {
+				t.Fatal("LoadSheddingThreshold must be set")
+			}
+			threshold := *p.LoadSheddingThreshold
+			if threshold < 0.5 || threshold > 1.0 {
+				t.Errorf("LoadSheddingThreshold = %f, want [0.5, 1.0]", threshold)
+			}
+		})
+	}
+}
+
+func TestAllProfiles_LoadSheddingThresholdOrdering(t *testing.T) {
+	// Higher capacity profiles should tolerate more pressure before shedding.
+	// minimal <= balanced <= observable <= safety/resilient <= performance
+	expectedOrder := []struct {
+		name      ProfileName
+		threshold float64
+	}{
+		{ProfileMinimal, 0.80},
+		{ProfileBalanced, 0.85},
+		{ProfileObservable, 0.85},
+		{ProfileSafety, 0.90},
+		{ProfileResilient, 0.90},
+		{ProfilePerformance, 0.95},
+	}
+
+	for _, expected := range expectedOrder {
+		t.Run(string(expected.name), func(t *testing.T) {
+			p, err := GetProfile(expected.name)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if *p.LoadSheddingThreshold != expected.threshold {
+				t.Errorf("%s: LoadSheddingThreshold = %f, want %f",
+					expected.name, *p.LoadSheddingThreshold, expected.threshold)
+			}
+		})
+	}
+}
+
+func TestApplyProfile_LoadSheddingThreshold(t *testing.T) {
+	cfg := &Config{}
+	err := ApplyProfile(cfg, ProfileObservable, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.LoadSheddingThreshold != 0.85 {
+		t.Errorf("LoadSheddingThreshold = %f, want 0.85", cfg.LoadSheddingThreshold)
+	}
+}
+
+func TestApplyProfile_LoadSheddingThreshold_ExplicitOverride(t *testing.T) {
+	cfg := &Config{LoadSheddingThreshold: 0.99}
+	explicit := map[string]bool{"load-shedding-threshold": true}
+	err := ApplyProfile(cfg, ProfileObservable, explicit)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Explicit override should be preserved
+	if cfg.LoadSheddingThreshold != 0.99 {
+		t.Errorf("LoadSheddingThreshold = %f, want 0.99 (explicit override)", cfg.LoadSheddingThreshold)
+	}
+}
+
+func TestAllProfiles_HaveGOGC(t *testing.T) {
+	for _, name := range ValidProfileNames() {
+		t.Run(string(name), func(t *testing.T) {
+			p, err := GetProfile(name)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if p.GOGC == nil {
+				t.Fatal("GOGC must be set")
+			}
+			gogc := *p.GOGC
+			if gogc < 10 || gogc > 200 {
+				t.Errorf("GOGC=%d, want range [10, 200]", gogc)
+			}
+		})
+	}
+}
+
+func TestAllProfiles_GOGCValues(t *testing.T) {
+	expected := []struct {
+		name ProfileName
+		gogc int
+	}{
+		{ProfileMinimal, 100},
+		{ProfileBalanced, 75},
+		{ProfileSafety, 50},
+		{ProfileObservable, 50},
+		{ProfileResilient, 75},
+		{ProfilePerformance, 25},
+	}
+	for _, tc := range expected {
+		t.Run(string(tc.name), func(t *testing.T) {
+			p, err := GetProfile(tc.name)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if p.GOGC == nil {
+				t.Fatalf("GOGC is nil, want %d", tc.gogc)
+			}
+			if *p.GOGC != tc.gogc {
+				t.Errorf("GOGC=%d, want %d", *p.GOGC, tc.gogc)
+			}
+		})
+	}
+}
+
+func TestApplyProfile_GOGC(t *testing.T) {
+	cfg := &Config{}
+	err := ApplyProfile(cfg, ProfileObservable, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.GOGC != 50 {
+		t.Errorf("GOGC = %d, want 50 (observable profile)", cfg.GOGC)
+	}
+}
+
+func TestApplyProfile_GOGC_ExplicitOverride(t *testing.T) {
+	cfg := &Config{GOGC: 42}
+	explicit := map[string]bool{"gogc": true}
+	err := ApplyProfile(cfg, ProfilePerformance, explicit)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Explicit override should be preserved
+	if cfg.GOGC != 42 {
+		t.Errorf("GOGC = %d, want 42 (explicit override)", cfg.GOGC)
+	}
 }

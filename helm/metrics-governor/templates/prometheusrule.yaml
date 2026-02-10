@@ -206,6 +206,42 @@ spec:
             runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorprocessinghighdroprate"
         {{- end }}
 
+        {{- if not (has "MetricsGovernorSpilloverCascade" .Values.alerting.disabledAlerts) }}
+        - alert: MetricsGovernorSpilloverCascade
+          expr: metrics_governor_spillover_active == 1
+          for: {{ .Values.alerting.thresholds.spilloverCascadeFor | default "2m" }}
+          labels:
+            severity: warning
+          annotations:
+            summary: "metrics-governor spillover cascade active"
+            description: "{{`{{ $labels.instance }}`}} hybrid queue in spillover mode for 2+ minutes."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/docs/alerting.md#metricsgovernorspillovercascade"
+        {{- end }}
+
+        {{- if not (has "MetricsGovernorLoadSheddingActive" .Values.alerting.disabledAlerts) }}
+        - alert: MetricsGovernorLoadSheddingActive
+          expr: rate(metrics_governor_receiver_load_shedding_total[2m]) > 0
+          for: {{ .Values.alerting.thresholds.loadSheddingFor | default "2m" }}
+          labels:
+            severity: warning
+          annotations:
+            summary: "metrics-governor is shedding load"
+            description: "{{`{{ $labels.instance }}`}} rejecting requests due to pipeline pressure."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/docs/alerting.md#metricsgovernorloadsheddingactive"
+        {{- end }}
+
+        {{- if not (has "MetricsGovernorStatsDegraded" .Values.alerting.disabledAlerts) }}
+        - alert: MetricsGovernorStatsDegraded
+          expr: metrics_governor_stats_level_current < metrics_governor_stats_level_configured
+          for: {{ .Values.alerting.thresholds.statsDegradedFor | default "5m" }}
+          labels:
+            severity: warning
+          annotations:
+            summary: "metrics-governor stats level degraded"
+            description: "{{`{{ $labels.instance }}`}} stats auto-downgraded due to memory pressure."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/docs/alerting.md#metricsgovernorstatsdegraded"
+        {{- end }}
+
         {{- with .Values.alerting.additionalRules }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

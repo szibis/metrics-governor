@@ -185,8 +185,11 @@ type QueuedExporter struct {
 	queue          *queue.SendQueue
 	memQueue       *queue.MemoryBatchQueue // memory/hybrid mode
 	queueMode      queue.QueueMode
-	hybridSpillPct int // hybrid mode: spillover threshold percentage
-	baseDelay      time.Duration
+	hybridSpillPct      int // hybrid mode: spillover threshold percentage
+	hybridHysteresisPct int // hybrid mode: recovery threshold percentage
+	spilloverState      *queue.SpilloverState
+	spillRateLimiter    *spilloverRateLimiter // nil = no rate limiting
+	baseDelay           time.Duration
 	maxDelay       time.Duration
 	circuitBreaker *CircuitBreaker
 
@@ -355,6 +358,19 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 	if hybridSpillPct <= 0 || hybridSpillPct > 100 {
 		hybridSpillPct = 80
 	}
+	hybridHysteresisPct := queueCfg.HybridHysteresisPct
+	if hybridHysteresisPct <= 0 {
+		hybridHysteresisPct = hybridSpillPct - 10
+		if hybridHysteresisPct < 10 {
+			hybridHysteresisPct = 10
+		}
+	}
+
+	// Spillover rate limiter (only for hybrid mode)
+	var spillRL *spilloverRateLimiter
+	if queueMode == queue.QueueModeHybrid && queueCfg.SpilloverRateLimitPerSec > 0 {
+		spillRL = newSpilloverRateLimiter(queueCfg.SpilloverRateLimitPerSec)
+	}
 
 	qe := &QueuedExporter{
 		exporter:             exporter,
@@ -362,6 +378,9 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 		memQueue:             memQ,
 		queueMode:            queueMode,
 		hybridSpillPct:       hybridSpillPct,
+		hybridHysteresisPct:  hybridHysteresisPct,
+		spilloverState:       queue.NewSpilloverState(),
+		spillRateLimiter:     spillRL,
 		baseDelay:            queueCfg.RetryInterval,
 		maxDelay:             queueCfg.MaxRetryDelay,
 		directExportTimeout:  directExportTimeout,
@@ -424,6 +443,19 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 
 	if qe.alwaysQueue {
 		qe.workersDone = make(chan struct{})
+
+		// Log graduated spillover configuration for hybrid mode
+		if queueMode == queue.QueueModeHybrid {
+			rlStr := "disabled"
+			if spillRL != nil {
+				rlStr = fmt.Sprintf("%d ops/sec", queueCfg.SpilloverRateLimitPerSec)
+			}
+			logging.Info("graduated spillover enabled", logging.F(
+				"spill_pct", hybridSpillPct,
+				"hysteresis_pct", hybridHysteresisPct,
+				"rate_limiter", rlStr,
+			))
+		}
 
 		// Start memory batch workers for memory/hybrid modes
 		if memQ != nil && (queueMode == queue.QueueModeMemory || queueMode == queue.QueueModeHybrid) {
@@ -517,10 +549,14 @@ func (e *QueuedExporter) Export(ctx context.Context, req *colmetricspb.ExportMet
 			}
 
 		case queue.QueueModeHybrid:
-			// Try memory queue first; spill to disk if above threshold
+			// Graduated spillover: evaluate mode based on utilization with hysteresis
 			batch := queue.NewExportBatch(req)
-			spilloverThreshold := float64(e.hybridSpillPct) / 100.0
-			if e.memQueue.Utilization() < spilloverThreshold {
+			utilization := e.memQueue.Utilization()
+			mode := e.spilloverState.Evaluate(utilization, e.hybridSpillPct, e.hybridHysteresisPct)
+
+			switch mode {
+			case queue.SpilloverMemoryOnly:
+				// Normal: push to memory queue
 				if err := e.memQueue.PushBatch(batch); err != nil {
 					// Memory push failed, try disk fallback
 					queue.IncrementSpilloverTotal()
@@ -528,12 +564,48 @@ func (e *QueuedExporter) Export(ctx context.Context, req *colmetricspb.ExportMet
 						return fmt.Errorf("hybrid queue push failed (memory: %v, disk: %w)", err, diskErr)
 					}
 				}
-			} else {
-				// Above spillover threshold — go directly to disk
-				queue.IncrementSpilloverTotal()
-				if err := e.queue.Push(req); err != nil {
-					return fmt.Errorf("disk queue push failed: %w", err)
+
+			case queue.SpilloverPartialDisk:
+				// 80-90%: alternate between memory and disk (50/50)
+				if e.spilloverState.ShouldSpillThisBatch() {
+					queue.IncrementSpilloverTotal()
+					if e.spillRateLimiter == nil || e.spillRateLimiter.Allow() {
+						if err := e.queue.Push(req); err != nil {
+							return fmt.Errorf("disk queue push failed: %w", err)
+						}
+					} else {
+						// Rate limited — try memory instead
+						if err := e.memQueue.PushBatch(batch); err != nil {
+							return fmt.Errorf("memory queue push failed (rate limited): %w", err)
+						}
+					}
+				} else {
+					if err := e.memQueue.PushBatch(batch); err != nil {
+						queue.IncrementSpilloverTotal()
+						if diskErr := e.queue.Push(req); diskErr != nil {
+							return fmt.Errorf("hybrid queue push failed (memory: %v, disk: %w)", err, diskErr)
+						}
+					}
 				}
+
+			case queue.SpilloverAllDisk:
+				// 90-95%: all to disk
+				queue.IncrementSpilloverTotal()
+				if e.spillRateLimiter == nil || e.spillRateLimiter.Allow() {
+					if err := e.queue.Push(req); err != nil {
+						return fmt.Errorf("disk queue push failed: %w", err)
+					}
+				} else {
+					// Rate limited — still try memory as last resort
+					if err := e.memQueue.PushBatch(batch); err != nil {
+						return fmt.Errorf("queue push failed (all paths exhausted): %w", err)
+					}
+				}
+
+			case queue.SpilloverLoadShedding:
+				// >95%: reject (load shed)
+				queue.IncrementLoadShedding()
+				return fmt.Errorf("load shedding: queue utilization %.1f%% exceeds threshold", utilization*100)
 			}
 
 		default:

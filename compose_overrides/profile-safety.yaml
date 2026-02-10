@@ -1,9 +1,9 @@
 # Safety profile stress test - maximum data safety with disk queue + full stats
 # Usage: docker compose -f docker-compose.yaml -f compose_overrides/profile-safety.yaml up -d
 #
-# Tests the safety profile at reference workload:
+# Tests the safety profile at 70% of rated throughput (100k dps):
 # - 2 CPU, 1 GB memory, disk queue (pure disk mode)
-# - Generator sends ~100k dps (profile's max throughput)
+# - Generator sends ~70k dps (leaves headroom for spikes)
 # - Full stats for per-metric cost visibility
 # - Zstd export compression for bandwidth savings
 # - Verifier threshold 99% (safety = no data loss)
@@ -23,8 +23,8 @@ services:
       - DIVERSE_METRIC_COUNT=100
       - BURST_SIZE=2000
       - BURST_INTERVAL_SEC=30
-      - TARGET_METRICS_PER_SEC=50000
-      - TARGET_DATAPOINTS_PER_SEC=100000
+      - TARGET_METRICS_PER_SEC=35000
+      - TARGET_DATAPOINTS_PER_SEC=70000
       - STATS_INTERVAL_SEC=10
       - ENABLE_SPIKE_SCENARIOS=true
       - SPIKE_MODE=realistic

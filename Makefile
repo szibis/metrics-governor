@@ -5,7 +5,7 @@ LDFLAGS=-ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/
 
 BUILD_DIR=bin
 
-.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all test-helm bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all lint lint-dockerfile lint-yaml lint-helm lint-all validate-playground generate-config-meta ship ship-dry-run tag compose-up compose-down compose-light compose-stable compose-perf compose-queue compose-persistence compose-sharding compose-logs
+.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all test-helm test-stability test-stability-stress bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all bench-stability bench-profile-budget bench-handoff bench-contention bench-hotpath bench-full-stability lint lint-dockerfile lint-yaml lint-helm lint-all validate-playground generate-config-meta ship ship-dry-run tag compose-up compose-down compose-light compose-stable compose-perf compose-queue compose-persistence compose-sharding compose-logs
 
 all: darwin-arm64 linux-arm64 linux-amd64
 
@@ -100,6 +100,38 @@ bench-compare:
 bench-quick:
 	@echo "Running quick benchmarks (scale tests only)..."
 	go test -bench=Scale -benchmem ./internal/...
+
+bench-stability:
+	@echo "Running stability-related benchmarks..."
+	go test -bench='Spillover|MetaSync|LoadShed|Degrad|Cascade|Hysteresis' -benchmem ./internal/...
+
+bench-profile-budget:
+	@echo "Running profile CPU budget benchmarks..."
+	go test -bench='ProcessFull_50k|ProcessBasic_100k' -benchmem -benchtime=3s ./internal/stats/...
+
+bench-handoff:
+	@echo "Running cross-component handoff benchmarks..."
+	go test -bench='BufferToExport|EndToEnd' -benchmem -benchtime=2s ./internal/pipeline/...
+
+bench-contention:
+	@echo "Running concurrent contention benchmarks..."
+	go test -bench='Concurrent|Contention|ConcurrentAdd|AllWriters' -benchmem ./internal/...
+
+bench-hotpath:
+	@echo "Running hot path regression benchmarks..."
+	go test -bench='PipelineHealth_Score|PipelineHealth_IsOverloaded|CircuitBreaker_Allow|Buffer_Add$|Export_Circuit' -benchmem ./internal/...
+
+bench-full-stability:
+	@echo "Running full stability + regression benchmark suite..."
+	$(MAKE) bench-stability bench-profile-budget bench-handoff bench-contention bench-hotpath
+
+test-stability:
+	@echo "Running stability unit tests..."
+	go test -run='Spillover|LoadShed|Degrad|Cascade|Hysteresis|Health|PipelineHealth' -race -count=1 ./internal/...
+
+test-stability-stress:
+	@echo "Running stability stress tests..."
+	go test -run='TestStress_Pipeline|TestStress_Mem' -race -count=1 -timeout=10m ./internal/...
 
 test-coverage:
 	@mkdir -p $(BUILD_DIR)
@@ -279,6 +311,12 @@ help:
 	@echo "  bench-all        - Run all benchmark suites"
 	@echo "  bench-compare    - Run benchmarks and save results"
 	@echo "  bench-quick      - Run quick scale benchmarks only"
+	@echo "  bench-stability  - Run stability-related benchmarks"
+	@echo "  bench-profile-budget - Run profile CPU budget benchmarks"
+	@echo "  bench-handoff    - Run cross-component handoff benchmarks"
+	@echo "  bench-contention - Run concurrent contention benchmarks"
+	@echo "  bench-hotpath    - Run hot path regression benchmarks"
+	@echo "  bench-full-stability - Run full stability benchmark suite"
 	@echo "  lint             - Run go vet"
 	@echo "  lint-dockerfile  - Lint Dockerfiles with hadolint"
 	@echo "  lint-yaml        - Lint YAML files with yamllint"

@@ -123,7 +123,7 @@ func main() {
 
 	// Auto-detect and set GOMEMLIMIT based on container memory limits (cgroups)
 	// Uses configurable ratio (default 90%) to leave headroom for other processes
-	initMemoryLimit(cfg.MemoryLimitRatio)
+	initMemoryLimit(cfg.MemoryLimitRatio, cfg.GOGC)
 
 	// Set OTEL-compatible resource attributes for structured logging
 	logging.SetResource(map[string]string{
@@ -991,7 +991,7 @@ func runValidate(args []string) {
 	}
 }
 
-func initMemoryLimit(ratio float64) {
+func initMemoryLimit(ratio float64, gogc int) {
 	// Check if GOMEMLIMIT is already set via environment
 	if os.Getenv("GOMEMLIMIT") != "" {
 		// User explicitly set GOMEMLIMIT, respect their choice
@@ -1000,7 +1000,7 @@ func initMemoryLimit(ratio float64) {
 			"limit_bytes", limit,
 			"limit_mb", limit/(1024*1024),
 		))
-		autoSetGOGC()
+		autoSetGOGC(gogc)
 		return
 	}
 
@@ -1036,16 +1036,20 @@ func initMemoryLimit(ratio float64) {
 		"ratio", ratio,
 		"source", "cgroup/system",
 	))
-	autoSetGOGC()
+	autoSetGOGC(gogc)
 }
 
-// autoSetGOGC sets GOGC=50 for tighter heap control when not explicitly set.
-// GOGC=50 means GC triggers when the live heap grows by 50% (vs 100% default),
-// trading slightly more GC CPU for much tighter memory usage. Acceptable for
-// an I/O-bound proxy doing minimal computation. Users can override via GOGC env var.
-func autoSetGOGC() {
-	if os.Getenv("GOGC") == "" {
-		debug.SetGCPercent(50)
-		logging.Info("GOGC auto-set to 50 for tighter heap control")
+// autoSetGOGC sets GOGC to the profile-specific value when not explicitly set.
+// Lower GOGC means more frequent GC but tighter memory usage. Profile defaults:
+// minimal=100, balanced=75, safety/observable=50, performance=25.
+// Users can override via GOGC env var.
+func autoSetGOGC(gogc int) {
+	if os.Getenv("GOGC") != "" {
+		return
 	}
+	if gogc <= 0 {
+		gogc = 50 // fallback default
+	}
+	debug.SetGCPercent(gogc)
+	logging.Info("GOGC auto-set from profile", logging.F("gogc", gogc))
 }

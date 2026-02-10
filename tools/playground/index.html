@@ -890,6 +890,9 @@
               <tr><td>8</td><td><code>WorkersSaturated</code></td><td><span class="badge-yellow">warning</span></td><td>Export ceiling</td><td><span x-text="alertWorkerPct + '%'"></span> for 10m</td></tr>
               <tr><td>9</td><td><code>CardinalityExplosion</code></td><td><span class="badge-yellow">warning</span></td><td>Governance breach</td><td>violations for 10m</td></tr>
               <tr><td>10</td><td><code>ConfigStale</code></td><td style="color:var(--pico-muted-color)">info</td><td>Operational drift</td><td><span x-text="alertConfigStaleHours + 'h'"></span></td></tr>
+              <tr><td>11</td><td><code>SpilloverCascade</code></td><td><span class="badge-yellow">warning</span></td><td>Queue cascade</td><td>active for 2m</td></tr>
+              <tr><td>12</td><td><code>LoadSheddingActive</code></td><td><span class="badge-yellow">warning</span></td><td>Rejecting requests</td><td>rate &gt; 0 for 2m</td></tr>
+              <tr><td>13</td><td><code>StatsDegraded</code></td><td><span class="badge-yellow">warning</span></td><td>Stats downgraded</td><td>level &lt; configured for 5m</td></tr>
             </tbody>
           </table>
         </details>
@@ -2436,6 +2439,12 @@ function configHelper() {
         {name:'MetricsGovernorConfigStale', sev:'info',
          expr:`(time() - metrics_governor_limits_config_reload_last_success_timestamp_seconds) > ${staleSecs}`,
          forD:'1h', sum:'metrics-governor config not reloaded recently', desc:'{{ $labels.instance }} config may be stale.'},
+        {name:'MetricsGovernorSpilloverCascade', sev:'warning', expr:'metrics_governor_spillover_active == 1', forD:'2m',
+         sum:'metrics-governor spillover cascade active', desc:'{{ $labels.instance }} hybrid queue in spillover mode for 2+ minutes.'},
+        {name:'MetricsGovernorLoadSheddingActive', sev:'warning', expr:'rate(metrics_governor_receiver_load_shedding_total[2m]) > 0', forD:'2m',
+         sum:'metrics-governor is shedding load', desc:'{{ $labels.instance }} rejecting requests due to pipeline pressure.'},
+        {name:'MetricsGovernorStatsDegraded', sev:'warning', expr:'metrics_governor_stats_level_current < metrics_governor_stats_level_configured', forD:'5m',
+         sum:'metrics-governor stats level degraded', desc:'{{ $labels.instance }} stats auto-downgraded due to memory pressure.'},
       ];
 
       let y = '';

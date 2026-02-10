@@ -58,11 +58,13 @@ type HTTPConfig struct {
 
 // HTTPReceiver receives metrics via OTLP HTTP.
 type HTTPReceiver struct {
-	server             *http.Server
-	buffer             *buffer.MetricsBuffer
-	addr               string
-	tlsConfig          *tls.Config
-	maxRequestBodySize int64
+	server                *http.Server
+	buffer                *buffer.MetricsBuffer
+	addr                  string
+	tlsConfig             *tls.Config
+	maxRequestBodySize    int64
+	health                PipelineHealthChecker
+	loadSheddingThreshold float64
 }
 
 // NewHTTP creates a new HTTP receiver with default configuration.
@@ -136,11 +138,25 @@ func NewHTTPWithConfig(cfg HTTPConfig, buf *buffer.MetricsBuffer) *HTTPReceiver 
 }
 
 // handleMetrics handles incoming OTLP HTTP metrics requests.
+// SetPipelineHealth configures pipeline health checking for load shedding.
+func (r *HTTPReceiver) SetPipelineHealth(h PipelineHealthChecker, threshold float64) {
+	r.health = h
+	r.loadSheddingThreshold = threshold
+}
+
 func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 	IncrementReceiverRequests("http")
 
 	if req.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Load shedding: reject if pipeline is overloaded
+	if r.health != nil && r.health.IsOverloaded(r.loadSheddingThreshold) {
+		IncrementLoadShedding("http")
+		w.Header().Set("Retry-After", "5")
+		http.Error(w, "pipeline overloaded, retry later", http.StatusTooManyRequests)
 		return
 	}
 

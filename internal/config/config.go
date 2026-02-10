@@ -141,6 +141,10 @@ type Config struct {
 	// Hybrid queue settings
 	QueueHybridSpilloverPct int // Percentage of max before spilling to disk in hybrid mode (default: 80)
 
+	// Pipeline health / load shedding
+	LoadSheddingThreshold float64 // Pipeline health score above which receivers reject (0.0-1.0, default: 0.85)
+	GOGC                  int     // GC target percentage (0 = use profile default, default: 50)
+
 	// Memory limit settings
 	MemoryLimitRatio    float64 // Ratio of container memory to use for GOMEMLIMIT (default: 0.85)
 	BufferMemoryPercent float64 // Buffer capacity as % of detected memory limit (default: 0.10)
