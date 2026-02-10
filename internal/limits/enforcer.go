@@ -1609,7 +1609,14 @@ func countDatapoints(m *metricspb.Metric) int {
 }
 
 func mergeAttrs(a, b map[string]string) map[string]string {
-	result := make(map[string]string, len(a)+len(b))
+	la, lb := len(a), len(b)
+	if la > 1024 {
+		la = 1024
+	}
+	if lb > 1024 {
+		lb = 1024
+	}
+	result := make(map[string]string, la+lb)
 	for k, v := range a {
 		result[k] = v
 	}
