@@ -128,6 +128,34 @@ func BufferActiveCount() int64 {
 	return bufferActive.Load()
 }
 
+// maxPoolBufSize is the maximum buffer capacity retained in the pool.
+// Buffers larger than this are discarded to prevent memory bloat from outlier requests.
+const maxPoolBufSize = 4 * 1024 * 1024 // 4 MB
+
+// GetBuffer returns a *bytes.Buffer from the pool, ready for use.
+// The caller MUST call ReleaseBuffer when done with the buffer.
+func GetBuffer() *bytes.Buffer {
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	bufferPoolGets.Add(1)
+	bufferActive.Add(1)
+	return buf
+}
+
+// ReleaseBuffer returns a buffer to the pool. Oversized buffers are discarded.
+func ReleaseBuffer(buf *bytes.Buffer) {
+	if buf == nil {
+		return
+	}
+	bufferActive.Add(-1)
+	if buf.Cap() > maxPoolBufSize {
+		compressionPoolDiscards.Add(1)
+		return
+	}
+	bufferPoolPuts.Add(1)
+	bufPool.Put(buf)
+}
+
 // ResetPoolStats resets all pool metric counters to zero (useful in tests).
 func ResetPoolStats() {
 	compressionPoolGets.Store(0)
@@ -270,6 +298,121 @@ func Decompress(data []byte, compressionType Type) ([]byte, error) {
 	}
 }
 
+// CompressToBuf compresses data into dst using the specified compression config.
+// The caller owns dst and must release it via ReleaseBuffer when done.
+// For snappy, dst is unused and the result is written to a new allocation
+// (snappy is already allocation-free via s2.EncodeSnappy).
+func CompressToBuf(dst *bytes.Buffer, data []byte, cfg Config) error {
+	if cfg.Type == TypeNone || cfg.Type == "" {
+		dst.Write(data)
+		return nil
+	}
+
+	if cfg.Type == TypeSnappy {
+		// Snappy uses s2.EncodeSnappy which manages its own output buffer.
+		// Write the result into dst.
+		dst.Write(compressSnappy(data))
+		return nil
+	}
+
+	switch cfg.Type {
+	case TypeGzip:
+		return compressGzip(dst, data, cfg.Level)
+	case TypeZstd:
+		return compressZstd(dst, data, cfg.Level)
+	case TypeZlib:
+		return compressZlib(dst, data, cfg.Level)
+	case TypeDeflate:
+		return compressDeflate(dst, data, cfg.Level)
+	default:
+		return fmt.Errorf("unsupported compression type: %s", cfg.Type)
+	}
+}
+
+// DecompressToBuf decompresses data into dst using the specified compression type.
+// The caller owns dst and must release it via ReleaseBuffer when done.
+func DecompressToBuf(dst *bytes.Buffer, data []byte, compressionType Type) error {
+	if compressionType == TypeNone || compressionType == "" {
+		dst.Write(data)
+		return nil
+	}
+
+	switch compressionType {
+	case TypeGzip:
+		return decompressIntoBuf(dst, data, func(r io.Reader) (io.ReadCloser, error) {
+			return gzip.NewReader(r)
+		})
+	case TypeZstd:
+		return decompressZstdIntoBuf(dst, data)
+	case TypeSnappy:
+		result, err := decompressSnappy(data)
+		if err != nil {
+			return err
+		}
+		dst.Write(result)
+		return nil
+	case TypeZlib:
+		return decompressIntoBuf(dst, data, func(r io.Reader) (io.ReadCloser, error) {
+			return zlib.NewReader(r)
+		})
+	case TypeDeflate:
+		return decompressIntoBuf(dst, data, func(r io.Reader) (io.ReadCloser, error) {
+			return flate.NewReader(r), nil
+		})
+	default:
+		return fmt.Errorf("unsupported compression type: %s", compressionType)
+	}
+}
+
+// decompressIntoBuf is a generic helper that decompresses into a caller-provided buffer
+// using a reader factory (gzip, zlib, deflate all follow the same pattern).
+func decompressIntoBuf(dst *bytes.Buffer, data []byte, newReader func(io.Reader) (io.ReadCloser, error)) error {
+	r, err := newReader(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	_, err = dst.ReadFrom(r)
+	return err
+}
+
+// decompressZstdIntoBuf decompresses zstd data into a caller-provided buffer using pooled decoder.
+func decompressZstdIntoBuf(dst *bytes.Buffer, data []byte) error {
+	var decoder *zstd.Decoder
+	if v := zstdDecoderPool.Get(); v != nil {
+		compressionPoolGets.Add(1)
+		decoder = v.(*zstd.Decoder)
+		if err := decoder.Reset(bytes.NewReader(data)); err != nil {
+			decoder.Close()
+			compressionPoolDiscards.Add(1)
+			var err2 error
+			decoder, err2 = zstd.NewReader(bytes.NewReader(data))
+			if err2 != nil {
+				return fmt.Errorf("failed to create zstd decoder: %w", err2)
+			}
+			compressionPoolNews.Add(1)
+		}
+	} else {
+		compressionPoolNews.Add(1)
+		var err error
+		decoder, err = zstd.NewReader(bytes.NewReader(data))
+		if err != nil {
+			return fmt.Errorf("failed to create zstd decoder: %w", err)
+		}
+	}
+
+	_, err := dst.ReadFrom(decoder)
+	if err != nil {
+		decoder.Close()
+		compressionPoolDiscards.Add(1)
+		return err
+	}
+	_ = decoder.Reset(nil)
+	compressionPoolPuts.Add(1)
+	zstdDecoderPool.Put(decoder)
+	return nil
+}
+
 // -----------------------------------------------------------------------
 // gzip compression (pooled)
 // -----------------------------------------------------------------------
@@ -313,7 +456,7 @@ func decompressGzip(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
 	}
 	defer gr.Close()
-	return io.ReadAll(gr)
+	return readAllPooled(gr)
 }
 
 // -----------------------------------------------------------------------
@@ -384,7 +527,7 @@ func decompressZstd(data []byte) ([]byte, error) {
 		}
 	}
 
-	result, err := io.ReadAll(decoder)
+	result, err := readAllPooledFromDecoder(decoder)
 	if err != nil {
 		decoder.Close()
 		compressionPoolDiscards.Add(1)
@@ -451,7 +594,7 @@ func decompressZlib(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to create zlib reader: %w", err)
 	}
 	defer zr.Close()
-	return io.ReadAll(zr)
+	return readAllPooled(zr)
 }
 
 // -----------------------------------------------------------------------
@@ -494,5 +637,34 @@ func compressDeflate(w io.Writer, data []byte, level Level) error {
 func decompressDeflate(data []byte) ([]byte, error) {
 	fr := flate.NewReader(bytes.NewReader(data))
 	defer fr.Close()
-	return io.ReadAll(fr)
+	return readAllPooled(fr)
+}
+
+// -----------------------------------------------------------------------
+// Pooled read helpers
+// -----------------------------------------------------------------------
+
+// readAllPooled reads all data from r using a pooled intermediate buffer,
+// then returns an exact-sized copy. This avoids the repeated growth allocations
+// that io.ReadAll performs (512 → 1K → 2K → ...) by reusing a buffer that
+// already has capacity from previous calls.
+func readAllPooled(r io.Reader) ([]byte, error) {
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	_, err := buf.ReadFrom(r)
+	if err != nil {
+		bufPool.Put(buf)
+		return nil, err
+	}
+	// Copy to exact-sized slice so buffer can return to pool safely.
+	result := make([]byte, buf.Len())
+	copy(result, buf.Bytes())
+	bufPool.Put(buf)
+	return result, nil
+}
+
+// readAllPooledFromDecoder is like readAllPooled but takes an io.Reader
+// (the zstd.Decoder satisfies io.Reader).
+func readAllPooledFromDecoder(r io.Reader) ([]byte, error) {
+	return readAllPooled(r)
 }

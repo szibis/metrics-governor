@@ -1,0 +1,109 @@
+# Performance comparison: vmagent (VictoriaMetrics agent) — DIRECT connection
+# Usage:
+#   15k dps:  docker compose -f docker-compose.yaml -f compose_overrides/compare-vmagent.yaml up -d
+#   50k dps:  TARGET_DPS=50000 TARGET_MPS=25000 PROXY_MEM=1G PROXY_CPU=2 GEN_MEM=2G VM_MEM=2G docker compose ...
+#   100k dps: TARGET_DPS=100000 TARGET_MPS=50000 PROXY_MEM=2G PROXY_CPU=4 GEN_MEM=2G VM_MEM=2G docker compose ...
+#
+# Pipeline: generator --OTLP HTTP--> vmagent --Remote Write--> VictoriaMetrics
+# vmagent uses native Prometheus Remote Write for VM export
+#
+# NOTE: Verifier will report FAIL for vmagent because Remote Write converts
+# OTLP metric names to Prometheus format (e.g., "generator_verification_counter_total"
+# becomes "generator_verification_counter" without _total suffix, and label keys
+# may be rewritten). Data IS flowing — verify via VM TSDB status:
+#   curl -s "http://localhost:8428/api/v1/status/tsdb" | jq .data.totalSeries
+
+services:
+  # OTel Collector disabled — generator sends directly to vmagent
+  otel-collector:
+    image: alpine:3.21
+    entrypoint: ["sh", "-c", "sleep infinity"]
+    command: []
+    volumes: []
+    deploy:
+      resources:
+        limits:
+          memory: 16M
+          cpus: "0.01"
+
+  metrics-generator:
+    environment:
+      - OTLP_ENDPOINT=vmagent:8429
+      - OTLP_PROTOCOL=http
+      - OTLP_HTTP_URL_PATH=/opentelemetry/v1/metrics
+      - METRICS_INTERVAL=${GEN_INTERVAL:-500ms}
+      - SERVICES=payment-api,order-api
+      - ENVIRONMENTS=prod
+      - ENABLE_EDGE_CASES=false
+      - ENABLE_HIGH_CARDINALITY=true
+      - ENABLE_BURST_TRAFFIC=false
+      - ENABLE_DIVERSE_METRICS=true
+      - HIGH_CARDINALITY_COUNT=${HIGH_CARD:-20}
+      - DIVERSE_METRIC_COUNT=${DIVERSE_COUNT:-30}
+      - TARGET_METRICS_PER_SEC=${TARGET_MPS:-7500}
+      - TARGET_DATAPOINTS_PER_SEC=${TARGET_DPS:-15000}
+      - STATS_INTERVAL_SEC=10
+      - ENABLE_SPIKE_SCENARIOS=false
+    depends_on:
+      - vmagent
+    deploy:
+      resources:
+        limits:
+          memory: ${GEN_MEM:-1G}
+          cpus: "${GEN_CPU:-1}"
+
+  # Governor disabled — replaced by vmagent
+  metrics-governor:
+    image: alpine:3.21
+    entrypoint: ["sh", "-c", "sleep infinity"]
+    command: []
+    volumes: []
+    deploy:
+      resources:
+        limits:
+          memory: 16M
+          cpus: "0.01"
+
+  # vmagent — receives OTLP HTTP, exports Remote Write to VM
+  vmagent:
+    image: victoriametrics/vmagent:v1.134.0
+    ports:
+      - "8429:8429"
+    command:
+      - "-httpListenAddr=:8429"
+      - "-remoteWrite.url=http://victoriametrics:8428/api/v1/write"
+      - "-remoteWrite.maxDiskUsagePerURL=0"
+      - "-remoteWrite.queues=4"
+      - "-remoteWrite.showURL"
+    depends_on:
+      - victoriametrics
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          memory: ${PROXY_MEM:-512M}
+          cpus: "${PROXY_CPU:-1}"
+
+  victoriametrics:
+    deploy:
+      resources:
+        limits:
+          memory: ${VM_MEM:-1G}
+          cpus: "${VM_CPU:-2}"
+
+  verifier:
+    environment:
+      - CHECK_INTERVAL=15s
+      - PASS_THRESHOLD=90.0
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+  grafana:
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"

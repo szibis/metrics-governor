@@ -103,8 +103,10 @@ type ProfileConfig struct {
 	QueueBatchDrainSize             *int
 	QueueBurstDrainSize             *int
 
-	// Connection warmup
-	ExporterPrewarmConnections *bool
+	// Connection pool & warmup
+	ExporterMaxIdleConns        *int
+	ExporterMaxIdleConnsPerHost *int
+	ExporterPrewarmConnections  *bool
 
 	// Cardinality & governance
 	CardinalityMode            *string
@@ -200,8 +202,8 @@ func minimalProfile() *ProfileConfig {
 		QueueInmemoryBlocks:   intPtr(256),
 		QueueMetaSyncInterval: durPtr(5 * time.Second),
 
-		// Tight memory ratio
-		MemoryLimitRatio:    float64Ptr(0.90),
+		// Tight memory ratio — 0.80 leaves headroom for GC without sawtooth spikes
+		MemoryLimitRatio:    float64Ptr(0.80),
 		BufferMemoryPercent: float64Ptr(0.15),
 		QueueMemoryPercent:  float64Ptr(0.0),
 
@@ -210,6 +212,10 @@ func minimalProfile() *ProfileConfig {
 		QueueCircuitBreakerEnabled: boolPtr(false),
 		QueueBatchDrainSize:        intPtr(5),
 		QueueBurstDrainSize:        intPtr(50),
+
+		// Small connection pool — 10 idle conns saves ~6 MB vs default 100
+		ExporterMaxIdleConns:        intPtr(10),
+		ExporterMaxIdleConnsPerHost: intPtr(10),
 
 		// No warmup
 		ExporterPrewarmConnections: boolPtr(false),
@@ -227,7 +233,7 @@ func minimalProfile() *ProfileConfig {
 		BloomPersistenceMaxMemory: int64Ptr(33554432), // 32 MB
 
 		LoadSheddingThreshold: float64Ptr(0.80), // Small buffer, no queue fallback
-		GOGC:                  intPtr(100),      // Low allocation rate, default GC
+		GOGC:                  intPtr(50),       // Balanced: tighter memory band without excessive GC CPU
 
 		// Resource targets
 		TargetCPU:     "0.25-0.5 cores",
@@ -285,8 +291,8 @@ func balancedProfile() *ProfileConfig { //nolint:dupl // declarative config — 
 		QueueInmemoryBlocks:   intPtr(1024),
 		QueueMetaSyncInterval: durPtr(1 * time.Second),
 
-		// Balanced memory ratio
-		MemoryLimitRatio:    float64Ptr(0.85),
+		// Balanced memory ratio — 0.80 prevents GC sawtooth
+		MemoryLimitRatio:    float64Ptr(0.80),
 		BufferMemoryPercent: float64Ptr(0.10),
 		QueueMemoryPercent:  float64Ptr(0.10),
 
@@ -315,7 +321,7 @@ func balancedProfile() *ProfileConfig { //nolint:dupl // declarative config — 
 		BloomPersistenceMaxMemory: int64Ptr(134217728), // 128 MB
 
 		LoadSheddingThreshold: float64Ptr(0.85), // Memory-only queue, moderate buffer
-		GOGC:                  intPtr(75),       // Moderate allocation, slightly aggressive GC
+		GOGC:                  intPtr(50),       // Tighter GC for stable memory and predictable CPU
 
 		// Resource targets
 		TargetCPU:     "1-2 cores",
@@ -463,8 +469,8 @@ func observableProfile() *ProfileConfig { //nolint:dupl // declarative config �
 		QueueHybridSpilloverPct:  intPtr(90), // Higher threshold: full stats overhead means less headroom
 		QueueHybridHysteresisPct: intPtr(80), // 10% gap prevents oscillation
 
-		// Memory ratios
-		MemoryLimitRatio:    float64Ptr(0.82),
+		// Memory ratios — 0.80 prevents GC sawtooth
+		MemoryLimitRatio:    float64Ptr(0.80),
 		BufferMemoryPercent: float64Ptr(0.10),
 		QueueMemoryPercent:  float64Ptr(0.12),
 
@@ -554,8 +560,8 @@ func resilientProfile() *ProfileConfig { //nolint:dupl // declarative config —
 		QueueHybridSpilloverPct:  intPtr(85), // Moderate: basic stats, lower overhead
 		QueueHybridHysteresisPct: intPtr(75), // 10% gap prevents oscillation
 
-		// Memory ratios
-		MemoryLimitRatio:    float64Ptr(0.82),
+		// Memory ratios — 0.80 prevents GC sawtooth
+		MemoryLimitRatio:    float64Ptr(0.80),
 		BufferMemoryPercent: float64Ptr(0.10),
 		QueueMemoryPercent:  float64Ptr(0.12),
 
@@ -585,7 +591,7 @@ func resilientProfile() *ProfileConfig { //nolint:dupl // declarative config —
 
 		// Load shedding
 		LoadSheddingThreshold: float64Ptr(0.90), // 12 GB queue buffer, high tolerance
-		GOGC:                  intPtr(75),       // Moderate allocation (basic stats), slightly aggressive GC
+		GOGC:                  intPtr(50),       // Tighter GC for stable memory and predictable CPU
 
 		// Resource targets
 		TargetCPU:     "0.5-1 cores",
@@ -859,7 +865,13 @@ func ApplyProfile(cfg *Config, profile ProfileName, explicitFields map[string]bo
 		set("queue-burst-drain-size", func() { cfg.QueueBurstDrainSize = *p.QueueBurstDrainSize })
 	}
 
-	// Connection warmup
+	// Connection pool & warmup
+	if p.ExporterMaxIdleConns != nil {
+		set("exporter-max-idle-conns", func() { cfg.ExporterMaxIdleConns = *p.ExporterMaxIdleConns })
+	}
+	if p.ExporterMaxIdleConnsPerHost != nil {
+		set("exporter-max-idle-conns-per-host", func() { cfg.ExporterMaxIdleConnsPerHost = *p.ExporterMaxIdleConnsPerHost })
+	}
 	if p.ExporterPrewarmConnections != nil {
 		set("exporter-prewarm-connections", func() { cfg.ExporterPrewarmConnections = *p.ExporterPrewarmConnections })
 	}

@@ -1,16 +1,17 @@
+# OTel Collector config for governor comparison test
+# Receives OTLP gRPC from generator, forwards OTLP gRPC to metrics-governor
 receivers:
   otlp:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
-        max_recv_msg_size_mib: 64
       http:
         endpoint: 0.0.0.0:4318
 
 processors:
   memory_limiter:
     check_interval: 1s
-    limit_mib: 512
+    limit_mib: 384
     spike_limit_mib: 128
   batch:
     timeout: 200ms
@@ -18,14 +19,12 @@ processors:
     send_batch_max_size: 2048
 
 exporters:
-  debug:
-    verbosity: basic
   otlp:
     endpoint: metrics-governor:4317
     tls:
       insecure: true
     compression: zstd
-    timeout: 120s
+    timeout: 30s
     sending_queue:
       enabled: true
       num_consumers: 4
@@ -49,4 +48,4 @@ service:
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [debug, otlp]
+      exporters: [otlp]

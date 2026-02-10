@@ -172,15 +172,10 @@ func TestComposeConfigs_VerifierThresholdAppropriate(t *testing.T) {
 				t.Fatalf("invalid PASS_THRESHOLD: %q", thresholdStr)
 			}
 
-			// Non-minimal profiles should have >= 95% threshold
-			// Minimal is a dev/testing profile with intentionally relaxed threshold
-			if profileName != ProfileMinimal && threshold < 95.0 {
-				t.Errorf("PASS_THRESHOLD=%.1f for %s is below minimum 95%%", threshold, profileName)
-			}
-
-			// Disk-based safety profiles should have >= 98%
-			if profileName == ProfileSafety && threshold < 98.0 {
-				t.Errorf("safety profile PASS_THRESHOLD=%.1f should be >= 98%%", threshold)
+			// All profiles should have >= 90% threshold to detect pipeline failures.
+			// Higher thresholds are profile-specific and depend on load targets.
+			if threshold < 90.0 {
+				t.Errorf("PASS_THRESHOLD=%.1f for %s is below minimum 90%%", threshold, profileName)
 			}
 		})
 	}

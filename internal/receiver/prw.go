@@ -1,6 +1,7 @@
 package receiver
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -181,13 +182,18 @@ func (r *PRWReceiver) handleWrite(w http.ResponseWriter, req *http.Request) {
 		bodyReader = io.LimitReader(req.Body, r.maxRequestBodySize)
 	}
 
-	body, err := io.ReadAll(bodyReader)
-	if err != nil {
+	// Read body into pooled buffer to avoid per-request allocation.
+	readBuf := compression.GetBuffer()
+	if _, err := readBuf.ReadFrom(bodyReader); err != nil {
+		compression.ReleaseBuffer(readBuf)
 		IncrementReceiverError("read")
 		http.Error(w, "Failed to read body", http.StatusBadRequest)
 		return
 	}
-	defer req.Body.Close()
+	req.Body.Close()
+
+	body := readBuf.Bytes()
+	var decompBuf *bytes.Buffer
 
 	// Decompress body based on Content-Encoding
 	contentEncoding := req.Header.Get("Content-Encoding")
@@ -195,9 +201,10 @@ func (r *PRWReceiver) handleWrite(w http.ResponseWriter, req *http.Request) {
 		compressionType := compression.ParseContentEncoding(contentEncoding)
 		if compressionType != compression.TypeNone {
 			start := time.Now()
-			body, err = compression.Decompress(body, compressionType)
-			pipeline.Record("receive_decompress", pipeline.Since(start))
-			if err != nil {
+			decompBuf = compression.GetBuffer()
+			if err := compression.DecompressToBuf(decompBuf, body, compressionType); err != nil {
+				compression.ReleaseBuffer(decompBuf)
+				compression.ReleaseBuffer(readBuf)
 				IncrementReceiverError("decompress")
 				logging.Error("failed to decompress PRW request body", logging.F(
 					"encoding", contentEncoding,
@@ -206,9 +213,22 @@ func (r *PRWReceiver) handleWrite(w http.ResponseWriter, req *http.Request) {
 				http.Error(w, "Failed to decompress body", http.StatusBadRequest)
 				return
 			}
+			pipeline.Record("receive_decompress", pipeline.Since(start))
+			compression.ReleaseBuffer(readBuf)
+			readBuf = nil
+			body = decompBuf.Bytes()
 			pipeline.RecordBytes("receive_decompress", len(body))
 		}
 	}
+
+	defer func() {
+		if readBuf != nil {
+			compression.ReleaseBuffer(readBuf)
+		}
+		if decompBuf != nil {
+			compression.ReleaseBuffer(decompBuf)
+		}
+	}()
 
 	// Unmarshal the WriteRequest
 	unmarshalStart := time.Now()

@@ -1,6 +1,7 @@
 package receiver
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -166,13 +167,19 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 		bodyReader = io.LimitReader(req.Body, r.maxRequestBodySize)
 	}
 
-	body, err := io.ReadAll(bodyReader)
-	if err != nil {
+	// Read body into pooled buffer to avoid per-request allocation.
+	readBuf := compression.GetBuffer()
+	if _, err := readBuf.ReadFrom(bodyReader); err != nil {
+		compression.ReleaseBuffer(readBuf)
 		IncrementReceiverError("read")
 		http.Error(w, "Failed to read body", http.StatusBadRequest)
 		return
 	}
-	defer req.Body.Close()
+	req.Body.Close()
+
+	// body points to pooled buffer bytes; valid until the owning buffer is released.
+	body := readBuf.Bytes()
+	var decompBuf *bytes.Buffer // non-nil when decompression replaces body
 
 	// Decompress body if Content-Encoding is set
 	contentEncoding := req.Header.Get("Content-Encoding")
@@ -180,17 +187,33 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 		compressionType := compression.ParseContentEncoding(contentEncoding)
 		if compressionType != compression.TypeNone {
 			start := time.Now()
-			body, err = compression.Decompress(body, compressionType)
-			pipeline.Record("receive_decompress", pipeline.Since(start))
-			if err != nil {
+			decompBuf = compression.GetBuffer()
+			if err := compression.DecompressToBuf(decompBuf, body, compressionType); err != nil {
+				compression.ReleaseBuffer(decompBuf)
+				compression.ReleaseBuffer(readBuf)
 				IncrementReceiverError("decompress")
 				logging.Error("failed to decompress request body", logging.F("encoding", contentEncoding, "error", err.Error()))
 				http.Error(w, "Failed to decompress body", http.StatusBadRequest)
 				return
 			}
+			pipeline.Record("receive_decompress", pipeline.Since(start))
+			// Decompression consumed the read buffer — release it early.
+			compression.ReleaseBuffer(readBuf)
+			readBuf = nil
+			body = decompBuf.Bytes()
 			pipeline.RecordBytes("receive_decompress", len(body))
 		}
 	}
+
+	// Release whichever buffer is still active after unmarshal.
+	defer func() {
+		if readBuf != nil {
+			compression.ReleaseBuffer(readBuf)
+		}
+		if decompBuf != nil {
+			compression.ReleaseBuffer(decompBuf)
+		}
+	}()
 
 	var exportReq colmetricspb.ExportMetricsServiceRequest
 

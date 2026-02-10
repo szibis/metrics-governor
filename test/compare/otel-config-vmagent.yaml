@@ -1,16 +1,18 @@
+# OTel Collector config for vmagent comparison test
+# Receives OTLP gRPC from generator, exports Prometheus Remote Write to vmagent
+# Uses vmagent's native ingestion protocol for fair production-like comparison
 receivers:
   otlp:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
-        max_recv_msg_size_mib: 64
       http:
         endpoint: 0.0.0.0:4318
 
 processors:
   memory_limiter:
     check_interval: 1s
-    limit_mib: 512
+    limit_mib: 384
     spike_limit_mib: 128
   batch:
     timeout: 200ms
@@ -18,18 +20,13 @@ processors:
     send_batch_max_size: 2048
 
 exporters:
-  debug:
-    verbosity: basic
-  otlp:
-    endpoint: metrics-governor:4317
+  prometheusremotewrite:
+    endpoint: http://vmagent:8429/api/v1/write
     tls:
       insecure: true
-    compression: zstd
-    timeout: 120s
-    sending_queue:
+    timeout: 30s
+    resource_to_telemetry_conversion:
       enabled: true
-      num_consumers: 4
-      queue_size: 1000
     retry_on_failure:
       enabled: true
       initial_interval: 1s
@@ -49,4 +46,4 @@ service:
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [debug, otlp]
+      exporters: [prometheusremotewrite]

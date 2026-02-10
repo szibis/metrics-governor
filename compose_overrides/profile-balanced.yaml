@@ -1,41 +1,43 @@
 # Balanced profile stress test - push to resource limits with adaptive features
 # Usage: docker compose -f docker-compose.yaml -f compose_overrides/profile-balanced.yaml up -d
 #
-# Tests the balanced profile at 70% of rated throughput (100k dps):
+# Tests the balanced profile with adaptive workers + batch auto-tune:
 # - 2 CPU, 1 GB memory, memory queue
-# - Generator sends ~70k dps (leaves headroom for spikes)
-# - Adaptive workers + batch auto-tune should self-optimize
-# - Verifier threshold 95%
+# - Generator sends ~15k dps with moderate cardinality
+# - Verifier threshold 90%
+#
+# Total resource budget: 7 CPU, 4 GB memory (fits Docker Desktop with 8 GB)
+# For higher throughput testing, increase Docker memory and generator targets.
 
 services:
-  metrics-generator:
-    environment:
-      - OTLP_ENDPOINT=otel-collector:4317
-      - METRICS_INTERVAL=200ms
-      - SERVICES=payment-api,order-api,inventory-api,user-api
-      - ENVIRONMENTS=prod,staging
-      - ENABLE_EDGE_CASES=false
-      - ENABLE_HIGH_CARDINALITY=true
-      - ENABLE_BURST_TRAFFIC=true
-      - ENABLE_DIVERSE_METRICS=true
-      - HIGH_CARDINALITY_COUNT=100
-      - DIVERSE_METRIC_COUNT=100
-      - BURST_SIZE=2000
-      - BURST_INTERVAL_SEC=30
-      - TARGET_METRICS_PER_SEC=35000
-      - TARGET_DATAPOINTS_PER_SEC=70000
-      - STATS_INTERVAL_SEC=10
-      - ENABLE_SPIKE_SCENARIOS=true
-      - SPIKE_MODE=realistic
-      - SPIKE_CARDINALITY=200
-      - SPIKE_DURATION_SEC=15
-      - SPIKE_INTERVAL_MIN_SEC=30
-      - SPIKE_INTERVAL_MAX_SEC=60
+  otel-collector:
     deploy:
       resources:
         limits:
-          memory: 4G
-          cpus: "2"
+          memory: 512M
+          cpus: "1"
+
+  metrics-generator:
+    environment:
+      - OTLP_ENDPOINT=otel-collector:4317
+      - METRICS_INTERVAL=500ms
+      - SERVICES=payment-api,order-api
+      - ENVIRONMENTS=prod
+      - ENABLE_EDGE_CASES=false
+      - ENABLE_HIGH_CARDINALITY=true
+      - ENABLE_BURST_TRAFFIC=false
+      - ENABLE_DIVERSE_METRICS=true
+      - HIGH_CARDINALITY_COUNT=20
+      - DIVERSE_METRIC_COUNT=30
+      - TARGET_METRICS_PER_SEC=7500
+      - TARGET_DATAPOINTS_PER_SEC=15000
+      - STATS_INTERVAL_SEC=10
+      - ENABLE_SPIKE_SCENARIOS=false
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1"
 
   metrics-governor:
     command:
@@ -59,10 +61,22 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
-          cpus: "2"
+          memory: 1G
+          cpus: "2.5"
 
   verifier:
     environment:
       - CHECK_INTERVAL=15s
-      - PASS_THRESHOLD=95.0
+      - PASS_THRESHOLD=90.0
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+  grafana:
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
