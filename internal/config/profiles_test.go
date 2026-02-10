@@ -1157,9 +1157,9 @@ func TestAllProfiles_MetaSyncIntervals_Appropriate(t *testing.T) {
 	}{
 		{"minimal", ProfileMinimal, 1 * time.Second, 10 * time.Second},
 		{"balanced", ProfileBalanced, 1 * time.Second, 5 * time.Second},
-		{"safety", ProfileSafety, 1 * time.Second, 1 * time.Second},        // maximum durability
-		{"observable", ProfileObservable, 3 * time.Second, 10 * time.Second}, // observability > durability
-		{"resilient", ProfileResilient, 2 * time.Second, 5 * time.Second},    // balance durability + IOPS
+		{"safety", ProfileSafety, 1 * time.Second, 1 * time.Second},           // maximum durability
+		{"observable", ProfileObservable, 3 * time.Second, 10 * time.Second},  // observability > durability
+		{"resilient", ProfileResilient, 2 * time.Second, 5 * time.Second},     // balance durability + IOPS
 		{"performance", ProfilePerformance, 1 * time.Second, 5 * time.Second}, // throughput > durability
 	}
 

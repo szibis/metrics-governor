@@ -227,7 +227,7 @@ func minimalProfile() *ProfileConfig {
 		BloomPersistenceMaxMemory: int64Ptr(33554432), // 32 MB
 
 		LoadSheddingThreshold: float64Ptr(0.80), // Small buffer, no queue fallback
-		GOGC:                  intPtr(100),       // Low allocation rate, default GC
+		GOGC:                  intPtr(100),      // Low allocation rate, default GC
 
 		// Resource targets
 		TargetCPU:     "0.25-0.5 cores",
@@ -315,7 +315,7 @@ func balancedProfile() *ProfileConfig { //nolint:dupl // declarative config — 
 		BloomPersistenceMaxMemory: int64Ptr(134217728), // 128 MB
 
 		LoadSheddingThreshold: float64Ptr(0.85), // Memory-only queue, moderate buffer
-		GOGC:                  intPtr(75),        // Moderate allocation, slightly aggressive GC
+		GOGC:                  intPtr(75),       // Moderate allocation, slightly aggressive GC
 
 		// Resource targets
 		TargetCPU:     "1-2 cores",
@@ -403,7 +403,7 @@ func safetyProfile() *ProfileConfig { //nolint:dupl // declarative config — ea
 		BloomPersistenceMaxMemory: int64Ptr(134217728), // 128 MB
 
 		LoadSheddingThreshold: float64Ptr(0.90), // Full disk persistence, high tolerance
-		GOGC:                  intPtr(50),        // High allocation (full stats), aggressive GC
+		GOGC:                  intPtr(50),       // High allocation (full stats), aggressive GC
 
 		// Resource targets — honest: full stats (~35% CPU) + disk queue + zstd
 		TargetCPU:     "1.25-2.0 cores",
@@ -494,7 +494,7 @@ func observableProfile() *ProfileConfig { //nolint:dupl // declarative config �
 
 		// Load shedding
 		LoadSheddingThreshold: float64Ptr(0.85), // Hybrid queue but full stats overhead
-		GOGC:                  intPtr(50),        // High allocation (full stats), aggressive GC
+		GOGC:                  intPtr(50),       // High allocation (full stats), aggressive GC
 
 		// Resource targets — honest: full stats (~35% CPU) + zstd (~10%) + hybrid queue
 		TargetCPU:     "1.0-1.75 cores",
@@ -585,7 +585,7 @@ func resilientProfile() *ProfileConfig { //nolint:dupl // declarative config —
 
 		// Load shedding
 		LoadSheddingThreshold: float64Ptr(0.90), // 12 GB queue buffer, high tolerance
-		GOGC:                  intPtr(75),        // Moderate allocation (basic stats), slightly aggressive GC
+		GOGC:                  intPtr(75),       // Moderate allocation (basic stats), slightly aggressive GC
 
 		// Resource targets
 		TargetCPU:     "0.5-1 cores",
@@ -674,7 +674,7 @@ func performanceProfile() *ProfileConfig {
 
 		// Load shedding
 		LoadSheddingThreshold: float64Ptr(0.95), // Maximum headroom, pipeline split
-		GOGC:                  intPtr(25),        // Very high allocation, maximize memory reuse
+		GOGC:                  intPtr(25),       // Very high allocation, maximize memory reuse
 
 		// Resource targets
 		TargetCPU:     "2-4 cores",

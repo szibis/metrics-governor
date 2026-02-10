@@ -163,11 +163,11 @@ type GRPCConfig struct {
 // GRPCReceiver receives metrics via OTLP gRPC.
 type GRPCReceiver struct {
 	colmetricspb.UnimplementedMetricsServiceServer
-	server               *grpc.Server
-	buffer               *buffer.MetricsBuffer
-	addr                 string
-	running              atomic.Bool
-	health               PipelineHealthChecker
+	server                *grpc.Server
+	buffer                *buffer.MetricsBuffer
+	addr                  string
+	running               atomic.Bool
+	health                PipelineHealthChecker
 	loadSheddingThreshold float64
 }
 

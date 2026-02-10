@@ -36,9 +36,9 @@ func init() {
 // a profile-specific threshold, receivers should reject incoming data.
 type PipelineHealth struct {
 	// Weights for each component (must sum to 1.0).
-	queueWeight  float64
-	bufferWeight float64
-	exportWeight float64
+	queueWeight   float64
+	bufferWeight  float64
+	exportWeight  float64
 	circuitWeight float64
 
 	// Cached score for fast read (updated by Recompute).
@@ -77,7 +77,7 @@ func (h *PipelineHealth) IsOverloaded(threshold float64) bool {
 // SetQueuePressure updates the queue utilization signal (0.0-1.0).
 func (h *PipelineHealth) SetQueuePressure(pressure float64) {
 	h.mu.Lock()
-	h.queuePressure = clamp(pressure, 0, 1)
+	h.queuePressure = clamp01(pressure)
 	h.mu.Unlock()
 	h.recompute()
 }
@@ -85,7 +85,7 @@ func (h *PipelineHealth) SetQueuePressure(pressure float64) {
 // SetBufferPressure updates the buffer utilization signal (0.0-1.0).
 func (h *PipelineHealth) SetBufferPressure(pressure float64) {
 	h.mu.Lock()
-	h.bufferPressure = clamp(pressure, 0, 1)
+	h.bufferPressure = clamp01(pressure)
 	h.mu.Unlock()
 	h.recompute()
 }
@@ -112,7 +112,7 @@ func (h *PipelineHealth) recompute() {
 	h.mu.RLock()
 	queueP := h.queuePressure
 	bufferP := h.bufferPressure
-	exportP := clamp(h.exportLatencyMs/2000.0, 0, 1) // Normalize: 2s → 1.0
+	exportP := clamp01(h.exportLatencyMs / 2000.0) // Normalize: 2s → 1.0
 	var circuitP float64
 	if h.circuitOpen {
 		circuitP = 1.0
@@ -124,7 +124,7 @@ func (h *PipelineHealth) recompute() {
 		exportP*h.exportWeight +
 		circuitP*h.circuitWeight
 
-	score = clamp(score, 0, 1)
+	score = clamp01(score)
 
 	h.score.Store(math.Float64bits(score))
 
@@ -136,13 +136,12 @@ func (h *PipelineHealth) recompute() {
 	pipelineHealthComponents.WithLabelValues("circuit").Set(circuitP)
 }
 
-func clamp(v, min, max float64) float64 {
-	if v < min {
-		return min
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
 	}
-	if v > max {
-		return max
+	if v > 1 {
+		return 1
 	}
 	return v
 }
-

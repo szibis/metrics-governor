@@ -181,17 +181,17 @@ type compressedSender interface {
 //   - "disk":   proto.Marshal → FastQueue (full persistence)
 //   - "hybrid": memory L1 + disk L2 spillover (fast with safety net)
 type QueuedExporter struct {
-	exporter       Exporter
-	queue          *queue.SendQueue
-	memQueue       *queue.MemoryBatchQueue // memory/hybrid mode
-	queueMode      queue.QueueMode
+	exporter            Exporter
+	queue               *queue.SendQueue
+	memQueue            *queue.MemoryBatchQueue // memory/hybrid mode
+	queueMode           queue.QueueMode
 	hybridSpillPct      int // hybrid mode: spillover threshold percentage
 	hybridHysteresisPct int // hybrid mode: recovery threshold percentage
 	spilloverState      *queue.SpilloverState
 	spillRateLimiter    *spilloverRateLimiter // nil = no rate limiting
 	baseDelay           time.Duration
-	maxDelay       time.Duration
-	circuitBreaker *CircuitBreaker
+	maxDelay            time.Duration
+	circuitBreaker      *CircuitBreaker
 
 	// Always-queue mode: when true, Export() pushes to queue, workers export.
 	alwaysQueue bool

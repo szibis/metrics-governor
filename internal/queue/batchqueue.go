@@ -460,9 +460,9 @@ func (s *SpilloverState) Mode() SpilloverMode { return s.mode }
 // Recovery: stays in current mode until utilization drops below hysteresisPct.
 func (s *SpilloverState) Evaluate(utilization float64, spillPct int, hysteresisPct int) SpilloverMode {
 	spillThresh := float64(spillPct) / 100.0
-	partialThresh := spillThresh                // e.g., 0.80
-	allDiskThresh := spillThresh + 0.10         // e.g., 0.90
-	loadShedThresh := spillThresh + 0.15        // e.g., 0.95
+	partialThresh := spillThresh                     // e.g., 0.80
+	allDiskThresh := spillThresh + 0.10              // e.g., 0.90
+	loadShedThresh := spillThresh + 0.15             // e.g., 0.95
 	recoveryThresh := float64(hysteresisPct) / 100.0 // e.g., 0.70
 
 	oldMode := s.mode

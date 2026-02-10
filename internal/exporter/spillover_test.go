@@ -111,10 +111,10 @@ func TestGraduatedSpillover_Escalation(t *testing.T) {
 		{0.91, queue.SpilloverAllDisk},
 		{0.96, queue.SpilloverLoadShedding},
 		// Now de-escalate
-		{0.91, queue.SpilloverAllDisk},      // below 95% but above 90%
-		{0.82, queue.SpilloverPartialDisk},   // below 90% but above 80%
-		{0.72, queue.SpilloverPartialDisk},   // above hysteresis 70%, stays
-		{0.69, queue.SpilloverMemoryOnly},    // below hysteresis 70%
+		{0.91, queue.SpilloverAllDisk},     // below 95% but above 90%
+		{0.82, queue.SpilloverPartialDisk}, // below 90% but above 80%
+		{0.72, queue.SpilloverPartialDisk}, // above hysteresis 70%, stays
+		{0.69, queue.SpilloverMemoryOnly},  // below hysteresis 70%
 	}
 
 	for i, step := range steps {

@@ -59,9 +59,9 @@ func TestPipelineHealth_BufferPressure(t *testing.T) {
 
 func TestPipelineHealth_CombinedPressure(t *testing.T) {
 	h := NewPipelineHealth()
-	h.SetQueuePressure(0.5)    // 0.5 * 0.35 = 0.175
-	h.SetBufferPressure(0.6)   // 0.6 * 0.30 = 0.18
-	h.SetExportLatency(500)    // 0.25 * 0.20 = 0.05
+	h.SetQueuePressure(0.5)  // 0.5 * 0.35 = 0.175
+	h.SetBufferPressure(0.6) // 0.6 * 0.30 = 0.18
+	h.SetExportLatency(500)  // 0.25 * 0.20 = 0.05
 	// Total: 0.175 + 0.18 + 0.05 = 0.405
 	s := h.Score()
 	if s < 0.38 || s > 0.43 {
