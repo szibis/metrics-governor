@@ -1437,6 +1437,32 @@ The following table summarizes the CPU overhead of recently added limits feature
 
 ---
 
+## Stability & Memory Tuning
+
+### Per-Profile GOGC
+
+Each profile sets `GOGC` to balance GC overhead vs memory usage. Lower GOGC = more GC cycles but lower peak heap:
+
+| Profile | GOGC | Rationale |
+|---|---|---|
+| minimal | 100 | Default GC — low allocation rate |
+| balanced | 75 | Slightly more aggressive — moderate allocation |
+| safety / observable | 50 | Aggressive — high allocation (full stats) |
+| resilient | 75 | Moderate — balanced throughput vs memory |
+| performance | 25 | Very aggressive — maximize memory reuse |
+
+Override with the `GOGC` environment variable: `GOGC=100 ./metrics-governor --profile observable`.
+
+### GOMEMLIMIT
+
+Auto-configured from container memory limits (or system memory on bare metal). Uses `memory_limit_ratio` (default 0.85) to set the soft limit, leaving headroom for transient spikes and kernel buffers. When GOMEMLIMIT is approached, the GC runs more aggressively, and stats degradation may activate to shed memory.
+
+### Pipeline Health & Load Shedding
+
+A unified health score (0.0–1.0) computed from queue pressure (35%), buffer pressure (30%), export latency (20%), and circuit breaker state (15%) drives admission control. When the score exceeds the profile threshold, receivers return backpressure (gRPC `ResourceExhausted` / HTTP `429`). This prevents the pipeline from being pushed past its recovery point — the single most important long-term stability mechanism.
+
+See [stability-guide.md](stability-guide.md) for full details.
+
 ## VictoriaMetrics Inspiration
 
 Many of these optimizations are inspired by techniques described in [VictoriaMetrics articles](https://valyala.medium.com/), including:

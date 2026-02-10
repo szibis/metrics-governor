@@ -4,6 +4,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// PipelineHealthChecker checks whether the pipeline is overloaded.
+// Implemented by pipeline.PipelineHealth.
+type PipelineHealthChecker interface {
+	IsOverloaded(threshold float64) bool
+}
+
 var (
 	receiverErrorsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "metrics_governor_receiver_errors_total",
@@ -19,12 +25,18 @@ var (
 		Name: "metrics_governor_receiver_datapoints_total",
 		Help: "Total number of datapoints received",
 	})
+
+	receiverLoadSheddingTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "metrics_governor_receiver_load_shedding_total",
+		Help: "Total number of requests rejected by receiver-level load shedding",
+	}, []string{"protocol"})
 )
 
 func init() {
 	prometheus.MustRegister(receiverErrorsTotal)
 	prometheus.MustRegister(receiverRequestsTotal)
 	prometheus.MustRegister(receiverDatapointsTotal)
+	prometheus.MustRegister(receiverLoadSheddingTotal)
 
 	// Initialize counters with 0 so they appear in /metrics immediately
 	receiverErrorsTotal.WithLabelValues("decode").Add(0)
@@ -35,6 +47,9 @@ func init() {
 	receiverRequestsTotal.WithLabelValues("http").Add(0)
 	receiverRequestsTotal.WithLabelValues("prw").Add(0)
 	receiverDatapointsTotal.Add(0)
+	receiverLoadSheddingTotal.WithLabelValues("grpc").Add(0)
+	receiverLoadSheddingTotal.WithLabelValues("http").Add(0)
+	receiverLoadSheddingTotal.WithLabelValues("prw").Add(0)
 }
 
 // IncrementReceiverError increments the receiver error counter for a specific type.
@@ -50,4 +65,9 @@ func IncrementReceiverRequests(protocol string) {
 // AddReceiverDatapoints increments the receiver datapoints counter.
 func AddReceiverDatapoints(count int) {
 	receiverDatapointsTotal.Add(float64(count))
+}
+
+// IncrementLoadShedding increments the load shedding counter for a protocol.
+func IncrementLoadShedding(protocol string) {
+	receiverLoadSheddingTotal.WithLabelValues(protocol).Inc()
 }

@@ -93,6 +93,11 @@ var (
 		Help: "Total number of metadata sync operations",
 	})
 
+	fastqueueMetaSyncSkipTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "metrics_governor_fastqueue_meta_sync_skip_total",
+		Help: "Total number of metadata sync operations skipped (queue idle, no dirty data)",
+	})
+
 	fastqueueChunkRotations = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "metrics_governor_fastqueue_chunk_rotations",
 		Help: "Total number of chunk file rotations",
@@ -227,6 +232,7 @@ func init() {
 	prometheus.MustRegister(fastqueueInmemoryBlocks)
 	prometheus.MustRegister(fastqueueDiskBytes)
 	prometheus.MustRegister(fastqueueMetaSyncTotal)
+	prometheus.MustRegister(fastqueueMetaSyncSkipTotal)
 	prometheus.MustRegister(fastqueueChunkRotations)
 	prometheus.MustRegister(fastqueueInmemoryFlushes)
 	// Circuit breaker metrics
@@ -287,6 +293,7 @@ func init() {
 	queueRetrySuccessTotal.Add(0)
 	queueDiskFullTotal.Add(0)
 	fastqueueMetaSyncTotal.Add(0)
+	fastqueueMetaSyncSkipTotal.Add(0)
 	fastqueueChunkRotations.Add(0)
 	fastqueueInmemoryFlushes.Add(0)
 	circuitBreakerOpenTotal.Add(0)
@@ -379,6 +386,11 @@ func SetDiskBytes(bytes int64) {
 // IncrementMetaSync increments the metadata sync counter.
 func IncrementMetaSync() {
 	fastqueueMetaSyncTotal.Inc()
+}
+
+// IncrementMetaSyncSkip increments the skipped metadata sync counter.
+func IncrementMetaSyncSkip() {
+	fastqueueMetaSyncSkipTotal.Inc()
 }
 
 // IncrementChunkRotation increments the chunk rotation counter.

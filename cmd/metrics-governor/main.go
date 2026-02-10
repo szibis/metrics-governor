@@ -123,7 +123,7 @@ func main() {
 
 	// Auto-detect and set GOMEMLIMIT based on container memory limits (cgroups)
 	// Uses configurable ratio (default 90%) to leave headroom for other processes
-	initMemoryLimit(cfg.MemoryLimitRatio)
+	initMemoryLimit(cfg.MemoryLimitRatio, cfg.GOGC)
 
 	// Set OTEL-compatible resource attributes for structured logging
 	logging.SetResource(map[string]string{
@@ -247,6 +247,7 @@ func main() {
 				Path:                       cfg.QueuePath,
 				MaxSize:                    cfg.QueueMaxSize,
 				MaxBytes:                   cfg.QueueMaxBytes,
+				MemoryMaxBytes:             cfg.QueueMemoryMaxBytes,
 				RetryInterval:              cfg.QueueRetryInterval,
 				MaxRetryDelay:              cfg.QueueMaxRetryDelay,
 				FullBehavior:               queue.FullBehavior(cfg.QueueFullBehavior),
@@ -301,9 +302,11 @@ func main() {
 			queueCfg := queue.Config{
 				Mode:                       queue.QueueMode(cfg.QueueMode),
 				HybridSpilloverPct:         cfg.QueueHybridSpilloverPct,
+				HybridHysteresisPct:        cfg.QueueHybridHysteresisPct,
 				Path:                       cfg.QueuePath,
 				MaxSize:                    cfg.QueueMaxSize,
 				MaxBytes:                   cfg.QueueMaxBytes,
+				MemoryMaxBytes:             cfg.QueueMemoryMaxBytes,
 				RetryInterval:              cfg.QueueRetryInterval,
 				MaxRetryDelay:              cfg.QueueMaxRetryDelay,
 				FullBehavior:               queue.FullBehavior(cfg.QueueFullBehavior),
@@ -529,14 +532,25 @@ func main() {
 		bufOpts = append(bufOpts, buffer.WithMaxBufferBytes(memorySizing.BufferMaxBytes))
 	}
 
-	// Apply derived queue byte capacity from GOMEMLIMIT percentage
+	// Apply derived queue byte capacity from GOMEMLIMIT percentage.
+	// MemoryMaxBytes is used for the in-memory batch queue (hybrid/memory modes),
+	// while QueueMaxBytes is the disk queue budget. In hybrid mode these MUST differ:
+	// the memory queue needs a memory-appropriate limit (e.g., 100 MB in a 1 GB container),
+	// not the disk budget (e.g., 8 GB). Without this separation, byte-based utilization
+	// in the memory queue is always ~0%, preventing graduated spillover from working.
 	if memorySizing.QueueMaxBytes > 0 {
-		cfg.QueueMaxBytes = memorySizing.QueueMaxBytes
+		cfg.QueueMemoryMaxBytes = memorySizing.QueueMaxBytes
+		// Only override disk MaxBytes if no explicit profile/config value was set,
+		// or if the derived value is smaller (memory constraint takes precedence)
+		if cfg.QueueMaxBytes == 0 || memorySizing.QueueMaxBytes < cfg.QueueMaxBytes {
+			cfg.QueueMaxBytes = memorySizing.QueueMaxBytes
+		}
 		cfg.PRWQueueMaxBytes = memorySizing.QueueMaxBytes
 		logging.Info("percentage-based queue sizing", logging.F(
 			"memory_limit_bytes", memorySizing.MemoryLimit,
 			"queue_percent", cfg.QueueMemoryPercent,
-			"queue_max_bytes", memorySizing.QueueMaxBytes,
+			"queue_memory_max_bytes", cfg.QueueMemoryMaxBytes,
+			"queue_disk_max_bytes", cfg.QueueMaxBytes,
 		))
 	}
 
@@ -991,7 +1005,7 @@ func runValidate(args []string) {
 	}
 }
 
-func initMemoryLimit(ratio float64) {
+func initMemoryLimit(ratio float64, gogc int) {
 	// Check if GOMEMLIMIT is already set via environment
 	if os.Getenv("GOMEMLIMIT") != "" {
 		// User explicitly set GOMEMLIMIT, respect their choice
@@ -1000,7 +1014,7 @@ func initMemoryLimit(ratio float64) {
 			"limit_bytes", limit,
 			"limit_mb", limit/(1024*1024),
 		))
-		autoSetGOGC()
+		autoSetGOGC(gogc)
 		return
 	}
 
@@ -1036,16 +1050,20 @@ func initMemoryLimit(ratio float64) {
 		"ratio", ratio,
 		"source", "cgroup/system",
 	))
-	autoSetGOGC()
+	autoSetGOGC(gogc)
 }
 
-// autoSetGOGC sets GOGC=50 for tighter heap control when not explicitly set.
-// GOGC=50 means GC triggers when the live heap grows by 50% (vs 100% default),
-// trading slightly more GC CPU for much tighter memory usage. Acceptable for
-// an I/O-bound proxy doing minimal computation. Users can override via GOGC env var.
-func autoSetGOGC() {
-	if os.Getenv("GOGC") == "" {
-		debug.SetGCPercent(50)
-		logging.Info("GOGC auto-set to 50 for tighter heap control")
+// autoSetGOGC sets GOGC to the profile-specific value when not explicitly set.
+// Lower GOGC means more frequent GC but tighter memory usage. Profile defaults:
+// minimal=100, balanced=75, safety/observable=50, performance=25.
+// Users can override via GOGC env var.
+func autoSetGOGC(gogc int) {
+	if os.Getenv("GOGC") != "" {
+		return
 	}
+	if gogc <= 0 {
+		gogc = 50 // fallback default
+	}
+	debug.SetGCPercent(gogc)
+	logging.Info("GOGC auto-set from profile", logging.F("gogc", gogc))
 }

@@ -351,6 +351,23 @@ var knownMetrics = []string{
 
 	// Export data loss (queue/metrics.go + exporter)
 	"metrics_governor_export_data_loss_total",
+
+	// Pipeline health (pipeline/health.go)
+	"metrics_governor_pipeline_health_score",
+
+	// Receiver load shedding (receiver/metrics.go)
+	"metrics_governor_receiver_load_shedding_total",
+
+	// Spillover metrics (queue/metrics.go)
+	"metrics_governor_spillover_active",
+
+	// Stats degradation (stats/stats.go)
+	"metrics_governor_stats_degradation_total",
+	"metrics_governor_stats_level_current",
+
+	// Queue memory metrics (queue/metrics.go)
+	"metrics_governor_queue_memory_bytes",
+	"metrics_governor_queue_memory_max_bytes",
 }
 
 // goRuntimeMetrics lists standard Go runtime metrics that are expected.
@@ -359,6 +376,7 @@ var goRuntimeMetrics = []string{
 	"go_memstats_heap_sys_bytes",
 	"go_memstats_heap_inuse_bytes",
 	"go_memstats_stack_inuse_bytes",
+	"go_memstats_gc_gomemlimit_bytes",
 	"go_memstats_gc_sys_bytes",
 	"go_memstats_next_gc_bytes",
 	"go_memstats_last_gc_time_seconds",
@@ -591,6 +609,10 @@ func TestKnownMetricsAreSorted(t *testing.T) {
 		"metrics_governor_cgroup",
 		// Pipeline component metrics
 		"metrics_governor_component",
+		// Pipeline stability metrics
+		"metrics_governor_pipeline",
+		"metrics_governor_spillover",
+		"metrics_governor_stats",
 	}
 
 	// Just verify list is valid - no sorting requirement

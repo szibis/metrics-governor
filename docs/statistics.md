@@ -558,6 +558,33 @@ service:
 
 > **Why not built-in?** Protocol conversion is complex and well-solved by the OTel Collector ecosystem. metrics-governor focuses on what it does best: proxying, limiting, and shaping metrics within each protocol. Use an OTel Collector sidecar or gateway for format bridging.
 
+## Stats Degradation Under Pressure
+
+When the proxy is under memory pressure, the stats collector automatically downgrades to reduce overhead:
+
+1. **full → basic**: Cardinality tracking stops (Bloom filter frozen). Per-metric and per-label counters freeze at last values. Aggregate counters (datapoints received/sent) continue.
+2. **basic → none**: All stats collection stops. `Process()` becomes a no-op. Zero CPU cost.
+
+The `Degrade()` method uses a lock-free atomic CAS loop — safe to call from any goroutine without contention. The configured level is preserved in `ConfiguredLevel()` so the original intent is known.
+
+### Monitoring
+
+| Metric | Type | Description |
+|---|---|---|
+| `metrics_governor_stats_level_current` | gauge | Current level: 2=full, 1=basic, 0=none |
+| `metrics_governor_stats_level_configured` | gauge | Originally configured level |
+| `metrics_governor_stats_degradation_total` | counter | Number of degradation events |
+
+### CPU Budget by Level
+
+| Level | CPU at 50k dps | CPU at 100k dps | Allocations |
+|---|---|---|---|
+| `full` | ~17% | ~35% | High (attribute extraction, Bloom filter) |
+| `basic` | ~2.5% | ~5% | Low (counters only) |
+| `none` | 0% | 0% | Zero |
+
+See [stability-guide.md](stability-guide.md) for tuning guidance.
+
 ## YAML Configuration
 
 ```yaml

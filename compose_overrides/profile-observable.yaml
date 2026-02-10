@@ -1,12 +1,12 @@
 # Observable profile stress test - full observability with hybrid queue + full stats
 # Usage: docker compose -f docker-compose.yaml -f compose_overrides/profile-observable.yaml up -d
 #
-# Tests the observable profile at reference workload:
+# Tests the observable profile at 75% of rated throughput (80k dps):
 # - 2 CPU, 1 GB memory, hybrid queue (memory L1 + disk spillover)
-# - Generator sends ~100k dps with spikes enabled
+# - Generator sends ~60k dps with moderate spikes (leaves headroom for bursts)
 # - Full stats for per-metric cardinality tracking
 # - Zstd export compression for bandwidth savings
-# - Verifier threshold 97%
+# - Verifier threshold 98%
 
 services:
   metrics-generator:
@@ -21,14 +21,14 @@ services:
       - ENABLE_DIVERSE_METRICS=true
       - HIGH_CARDINALITY_COUNT=100
       - DIVERSE_METRIC_COUNT=100
-      - BURST_SIZE=2000
+      - BURST_SIZE=1000
       - BURST_INTERVAL_SEC=30
-      - TARGET_METRICS_PER_SEC=50000
-      - TARGET_DATAPOINTS_PER_SEC=100000
+      - TARGET_METRICS_PER_SEC=30000
+      - TARGET_DATAPOINTS_PER_SEC=60000
       - STATS_INTERVAL_SEC=10
       - ENABLE_SPIKE_SCENARIOS=true
       - SPIKE_MODE=realistic
-      - SPIKE_CARDINALITY=200
+      - SPIKE_CARDINALITY=100
       - SPIKE_DURATION_SEC=15
       - SPIKE_INTERVAL_MIN_SEC=30
       - SPIKE_INTERVAL_MAX_SEC=60
@@ -67,7 +67,7 @@ services:
   verifier:
     environment:
       - CHECK_INTERVAL=15s
-      - PASS_THRESHOLD=97.0
+      - PASS_THRESHOLD=98.0
 
 volumes:
   mg-queue-observable-profile-data:

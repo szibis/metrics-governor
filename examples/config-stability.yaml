@@ -1,0 +1,42 @@
+# Stability-tuned configuration example
+# Observable profile with explicit stability overrides for high-visibility workloads.
+# See docs/stability-guide.md for tuning details.
+
+profile: observable
+
+receiver:
+  grpc:
+    address: ":4317"
+  http:
+    address: ":4318"
+
+exporter:
+  endpoint: "otel-collector.monitoring:4317"
+  protocol: "grpc"
+  timeout: 60s
+  compression:
+    type: zstd           # Best compression ratio for export (must-have for observable)
+
+  queue:
+    mode: hybrid
+    hybrid_spillover_pct: 90   # Higher threshold — more memory headroom before disk spillover
+    inmemory_blocks: 2048      # 2x default for observable — more room before spillover
+    meta_sync_interval: 5s     # Observability > durability — reduce IOPS
+    compression:
+      type: snappy             # Fast, allocation-free — minimizes spillover CPU cost
+
+stats:
+  address: ":9090"
+  level: full                  # Full cardinality tracking — why you chose observable
+  labels:
+    - service
+    - env
+    - cluster
+
+# Limits example — tighten cardinality to reduce stats memory
+limits:
+  rules:
+    - match: "*"
+      max_series: 100000
+      max_labels: 20
+      max_label_value_length: 128

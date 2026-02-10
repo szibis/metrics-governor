@@ -136,11 +136,24 @@ type Config struct {
 	// Compression is the block compression type (default: "snappy").
 	Compression string
 
+	// MemoryMaxBytes is the max bytes for the in-memory batch queue (hybrid/memory modes).
+	// When > 0, this is used instead of MaxBytes for the MemoryBatchQueue so that
+	// the memory queue uses a memory-appropriate limit rather than the disk queue budget.
+	// Derived from GOMEMLIMIT × QueueMemoryPercent in main.go.
+	MemoryMaxBytes int64
+
 	// Queue mode settings (used by QueuedExporter to select push/pop path)
 	// Mode is the queue operating mode: "memory", "disk", or "hybrid".
 	Mode QueueMode
 	// HybridSpilloverPct is the percentage of capacity before hybrid mode spills to disk.
 	HybridSpilloverPct int
+	// HybridHysteresisPct is the recovery threshold percentage for graduated spillover.
+	// Queue utilization must drop below this before returning to memory-only mode.
+	// Defaults to HybridSpilloverPct - 10 (e.g., 70 if spillover is 80).
+	HybridHysteresisPct int
+	// SpilloverRateLimitPerSec caps disk queue push rate during spillover (ops/sec).
+	// 0 = no rate limiting (default).
+	SpilloverRateLimitPerSec int
 }
 
 // DefaultConfig returns a default queue configuration.

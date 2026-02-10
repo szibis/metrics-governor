@@ -337,6 +337,26 @@ See [DEPRECATIONS.md](../DEPRECATIONS.md) for the full mapping from old to new p
 
 > **Operational deployment guidance** — For auto-derivation engine details, resilience auto-sensing (AIMD batch tuning, adaptive worker scaling, circuit breaker), HPA/VPA best practices, Deployment vs StatefulSet, DaemonSet mode, and bare metal deployment, see [Production Guide](production-guide.md).
 
+## Stability Settings Per Profile
+
+Each profile includes tuned stability parameters that control how the proxy behaves under pressure:
+
+| Setting | minimal | balanced | safety | observable | resilient | performance |
+|---|---|---|---|---|---|---|
+| GOGC | 100 | 75 | 50 | 50 | 75 | 25 |
+| Load shedding threshold | 0.80 | 0.85 | 0.90 | 0.85 | 0.90 | 0.95 |
+| Spillover threshold | — | — | — | 90% | 80% | 80% |
+| Stats degradation | auto | auto | auto | auto | auto | auto |
+| Meta sync interval | — | — | 1s | 5s | 3s | 2s |
+
+**GOGC**: Lower values mean more frequent GC but lower peak heap. The `performance` profile uses GOGC=25 to maximize memory reuse at the cost of GC CPU. Override with the `GOGC` environment variable if needed.
+
+**Load shedding**: When the pipeline health score exceeds this threshold, receivers return `ResourceExhausted` (gRPC) or `429 Too Many Requests` (HTTP). Higher-capacity profiles tolerate more pressure before shedding.
+
+**Stats degradation**: Under memory pressure, stats automatically downgrade: `full` → `basic` → `none`. The core proxy function (receive → queue → export) is never affected.
+
+See [stability-guide.md](stability-guide.md) for tuning details.
+
 ## Migration from Manual Config
 
 If you already have a config file with manual tuning:

@@ -163,10 +163,12 @@ type GRPCConfig struct {
 // GRPCReceiver receives metrics via OTLP gRPC.
 type GRPCReceiver struct {
 	colmetricspb.UnimplementedMetricsServiceServer
-	server  *grpc.Server
-	buffer  *buffer.MetricsBuffer
-	addr    string
-	running atomic.Bool
+	server                *grpc.Server
+	buffer                *buffer.MetricsBuffer
+	addr                  string
+	running               atomic.Bool
+	health                PipelineHealthChecker
+	loadSheddingThreshold float64
 }
 
 // NewGRPC creates a new gRPC receiver with default configuration.
@@ -208,9 +210,22 @@ func NewGRPCWithConfig(cfg GRPCConfig, buf *buffer.MetricsBuffer) *GRPCReceiver 
 	}
 }
 
+// SetPipelineHealth configures pipeline health checking for load shedding.
+func (r *GRPCReceiver) SetPipelineHealth(h PipelineHealthChecker, threshold float64) {
+	r.health = h
+	r.loadSheddingThreshold = threshold
+}
+
 // Export implements the OTLP MetricsService Export method.
 func (r *GRPCReceiver) Export(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) (*colmetricspb.ExportMetricsServiceResponse, error) {
 	IncrementReceiverRequests("grpc")
+
+	// Load shedding: reject if pipeline is overloaded
+	if r.health != nil && r.health.IsOverloaded(r.loadSheddingThreshold) {
+		IncrementLoadShedding("grpc")
+		return nil, status.Error(codes.ResourceExhausted, "pipeline overloaded, retry later")
+	}
+
 	if err := r.buffer.Add(req.ResourceMetrics); err != nil {
 		if errors.Is(err, buffer.ErrBufferFull) {
 			return nil, status.Error(codes.ResourceExhausted, "buffer capacity exceeded")

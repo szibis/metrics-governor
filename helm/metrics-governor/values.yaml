@@ -370,6 +370,12 @@ alerting:
     aggregateGroupLimit: 100000
     # -- Processing drop rate threshold (0.0-1.0, 0.95 = 95%)
     processingDropRate: 0.95
+    # -- Spillover cascade alert 'for' duration
+    spilloverCascadeFor: "2m"
+    # -- Load shedding alert 'for' duration
+    loadSheddingFor: "2m"
+    # -- Stats degraded alert 'for' duration
+    statsDegradedFor: "5m"
   # -- Disable specific alerts by name
   disabledAlerts: []
   #   - MetricsGovernorConfigStale

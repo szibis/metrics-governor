@@ -107,6 +107,7 @@ type FastQueue struct {
 	// Metadata sync
 	lastMetaSync   time.Time
 	lastBlockWrite time.Time
+	metaDirty      atomic.Bool // set on disk writes/reads, cleared on sync
 	stopCh         chan struct{}
 	doneCh         chan struct{}
 
@@ -208,9 +209,10 @@ func (fq *FastQueue) Push(data []byte) error {
 		return ErrQueueClosed
 	}
 
-	// Flush all channel blocks to disk
-	if err := fq.flushInmemoryBlocksLocked(); err != nil {
-		return fmt.Errorf("failed to flush in-memory blocks: %w", err)
+	// Drain channel blocks to bufio writer (lean path: no bufio.Flush syscall).
+	// Data reaches disk via bufio auto-flush at 256 KB or stale flush loop.
+	if err := fq.drainChannelToDiskLocked(); err != nil {
+		return fmt.Errorf("failed to drain in-memory blocks: %w", err)
 	}
 
 	// Write the new block directly to disk
@@ -564,9 +566,13 @@ func (fq *FastQueue) chunkPath(offset int64) string {
 	return filepath.Join(fq.cfg.Path, fmt.Sprintf("%016x", chunkStart))
 }
 
-// flushInmemoryBlocksLocked drains the channel to disk with write coalescing (must hold lock).
-func (fq *FastQueue) flushInmemoryBlocksLocked() error {
-	// Drain all pending blocks from channel first (coalescing)
+// drainChannelToDiskLocked drains the in-memory channel to the bufio writer
+// WITHOUT flushing the bufio buffer to disk. This is the lean hot-path version
+// used by Push() when the channel is full — it avoids a write syscall per call,
+// preventing IOPS cascades during spillover (was causing 10-30k IOPS).
+// The bufio.Writer auto-flushes at WriteBufferSize (256 KB default), and the
+// stale flush loop provides periodic durability for anything remaining in bufio.
+func (fq *FastQueue) drainChannelToDiskLocked() error {
 	var blocks []*block
 	for {
 		select {
@@ -582,21 +588,28 @@ done:
 		return nil
 	}
 
-	// Write all blocks through the buffered writer
 	for _, b := range blocks {
 		if err := fq.writeBlockToDiskLocked(b.data); err != nil {
 			return err
 		}
 	}
 
-	// Flush the bufio.Writer after the entire batch
+	IncrementInmemoryFlush()
+	return nil
+}
+
+// flushInmemoryBlocksLocked drains the channel to disk AND flushes the bufio
+// writer, ensuring all data is written to the OS. Used by Close(), stale flush
+// loop, and tests that need data durably on disk.
+func (fq *FastQueue) flushInmemoryBlocksLocked() error {
+	if err := fq.drainChannelToDiskLocked(); err != nil {
+		return err
+	}
 	if fq.writerBuf != nil {
 		if err := fq.writerBuf.Flush(); err != nil {
 			return err
 		}
 	}
-
-	IncrementInmemoryFlush()
 	return nil
 }
 
@@ -684,6 +697,7 @@ func (fq *FastQueue) writeBlockToDiskLocked(data []byte) error {
 	fq.pendingBytes += int64(blockHeaderSize + len(writeData))
 	fq.diskBytes.Add(int64(blockHeaderSize + len(writeData)))
 	fq.lastBlockWrite = time.Now()
+	fq.metaDirty.Store(true)
 
 	return nil
 }
@@ -771,6 +785,7 @@ func (fq *FastQueue) readBlockFromDiskLocked() ([]byte, error) {
 
 	fq.readerOffset += int64(blockHeaderSize) + int64(dataLen)
 	fq.pendingBytes -= int64(blockHeaderSize) + int64(dataLen)
+	fq.metaDirty.Store(true)
 
 	// Decompress if needed
 	if compressed {
@@ -982,6 +997,8 @@ func (fq *FastQueue) syncMetadataLocked() error {
 }
 
 // metaSyncLoop periodically syncs metadata to disk.
+// Skips sync when metadata hasn't changed (dirty flag is false),
+// eliminating idle IOPS (3 fsyncs per interval when nothing changed).
 func (fq *FastQueue) metaSyncLoop() {
 	ticker := time.NewTicker(fq.cfg.MetaSyncInterval)
 	defer ticker.Stop()
@@ -991,9 +1008,16 @@ func (fq *FastQueue) metaSyncLoop() {
 		case <-fq.stopCh:
 			return
 		case <-ticker.C:
+			// Skip sync if nothing changed since last sync
+			if !fq.metaDirty.Load() {
+				IncrementMetaSyncSkip()
+				continue
+			}
 			fq.mu.Lock()
 			if !fq.closed {
-				_ = fq.syncMetadataLocked()
+				if err := fq.syncMetadataLocked(); err == nil {
+					fq.metaDirty.Store(false)
+				}
 			}
 			fq.mu.Unlock()
 		}
@@ -1012,11 +1036,14 @@ func (fq *FastQueue) staleFlushLoop() {
 			return
 		case <-ticker.C:
 			fq.mu.Lock()
-			if !fq.closed && len(fq.ch) > 0 {
-				// Check if oldest block is stale
-				if time.Since(fq.lastBlockWrite) >= fq.cfg.StaleFlushInterval {
+			if !fq.closed {
+				// Flush stale in-memory blocks to disk (includes bufio.Flush).
+				if len(fq.ch) > 0 && time.Since(fq.lastBlockWrite) >= fq.cfg.StaleFlushInterval {
 					_ = fq.flushInmemoryBlocksLocked()
-					// flushInmemoryBlocksLocked already flushes the bufio.Writer
+				} else if fq.writerBuf != nil {
+					// Even without stale blocks, flush any pending bufio data
+					// written by the Push hot path (drainChannelToDiskLocked).
+					_ = fq.writerBuf.Flush()
 				}
 			}
 			fq.mu.Unlock()

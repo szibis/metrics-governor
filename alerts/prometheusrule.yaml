@@ -138,3 +138,33 @@ spec:
             summary: "metrics-governor config not reloaded in 24h"
             description: "{{ $labels.instance }} config may be stale."
             runbook_url: "https://github.com/your-org/metrics-governor/blob/main/alerts/README.md#metricsgovernorconfigstale"
+
+        - alert: MetricsGovernorSpilloverCascade
+          expr: metrics_governor_spillover_active == 1
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "metrics-governor spillover cascade active"
+            description: "{{ $labels.instance }} hybrid queue in spillover mode for 2+ minutes."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/docs/alerting.md#metricsgovernorspillovercascade"
+
+        - alert: MetricsGovernorLoadSheddingActive
+          expr: rate(metrics_governor_receiver_load_shedding_total[2m]) > 0
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "metrics-governor is shedding load"
+            description: "{{ $labels.instance }} rejecting requests due to pipeline pressure."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/docs/alerting.md#metricsgovernorloadsheddingactive"
+
+        - alert: MetricsGovernorStatsDegraded
+          expr: metrics_governor_stats_level_current < metrics_governor_stats_level_configured
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "metrics-governor stats level degraded"
+            description: "{{ $labels.instance }} stats auto-downgraded due to memory pressure."
+            runbook_url: "https://github.com/your-org/metrics-governor/blob/main/docs/alerting.md#metricsgovernorstatsdegraded"

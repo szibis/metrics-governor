@@ -546,6 +546,234 @@ func TestBuildSeriesKey(t *testing.T) {
 	}
 }
 
+// TestProcessFull_MergedAttributeExtraction verifies that the optimized processFull()
+// extracts attributes once and uses them for both cardinality and label stats.
+func TestProcessFull_MergedAttributeExtraction(t *testing.T) {
+	c := NewCollector([]string{"service", "env"}, StatsLevelFull)
+
+	rm := createTestResourceMetrics(
+		map[string]string{"service.name": "test-svc"},
+		[]*metricspb.Metric{
+			createTestMetric("http_requests_total", []map[string]string{
+				{"service": "web", "env": "prod", "method": "GET"},
+				{"service": "web", "env": "prod", "method": "POST"},
+				{"service": "api", "env": "staging", "method": "GET"},
+			}),
+		},
+	)
+
+	c.Process([]*metricspb.ResourceMetrics{rm})
+
+	dp, metrics, _ := c.GetGlobalStats()
+	if dp != 3 {
+		t.Errorf("expected 3 datapoints, got %d", dp)
+	}
+	if metrics != 1 {
+		t.Errorf("expected 1 metric, got %d", metrics)
+	}
+
+	// Verify label stats captured both tracked labels
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.labelStats) == 0 {
+		t.Error("expected label stats to be populated")
+	}
+	// Should have entries for service=web,env=prod and service=api,env=staging
+	foundWebProd := false
+	foundAPIStagging := false
+	for key := range c.labelStats {
+		if strings.Contains(key, "service=web") && strings.Contains(key, "env=prod") {
+			foundWebProd = true
+		}
+		if strings.Contains(key, "service=api") && strings.Contains(key, "env=staging") {
+			foundAPIStagging = true
+		}
+	}
+	if !foundWebProd {
+		t.Error("expected label stats entry for service=web,env=prod")
+	}
+	if !foundAPIStagging {
+		t.Error("expected label stats entry for service=api,env=staging")
+	}
+}
+
+// TestProcessFull_MergedAttrs_AllMetricTypes verifies that merged attribute extraction
+// works correctly for all 5 OTLP metric types.
+func TestProcessFull_MergedAttrs_AllMetricTypes(t *testing.T) {
+	baseAttrs := []*commonpb.KeyValue{
+		{Key: "service", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "test"}}},
+	}
+
+	tests := []struct {
+		name   string
+		metric *metricspb.Metric
+		want   uint64 // expected datapoint count
+	}{
+		{
+			name: "gauge",
+			metric: &metricspb.Metric{
+				Name: "gauge_metric",
+				Data: &metricspb.Metric_Gauge{Gauge: &metricspb.Gauge{
+					DataPoints: []*metricspb.NumberDataPoint{
+						{Attributes: baseAttrs},
+						{Attributes: baseAttrs},
+					},
+				}},
+			},
+			want: 2,
+		},
+		{
+			name: "sum",
+			metric: &metricspb.Metric{
+				Name: "sum_metric",
+				Data: &metricspb.Metric_Sum{Sum: &metricspb.Sum{
+					DataPoints: []*metricspb.NumberDataPoint{
+						{Attributes: baseAttrs},
+					},
+				}},
+			},
+			want: 1,
+		},
+		{
+			name: "histogram",
+			metric: &metricspb.Metric{
+				Name: "histogram_metric",
+				Data: &metricspb.Metric_Histogram{Histogram: &metricspb.Histogram{
+					DataPoints: []*metricspb.HistogramDataPoint{
+						{Attributes: baseAttrs, Count: 10, Sum: ptrFloat64(100.0)},
+						{Attributes: baseAttrs, Count: 20, Sum: ptrFloat64(200.0)},
+						{Attributes: baseAttrs, Count: 30, Sum: ptrFloat64(300.0)},
+					},
+				}},
+			},
+			want: 3,
+		},
+		{
+			name: "exponential_histogram",
+			metric: &metricspb.Metric{
+				Name: "exp_histogram_metric",
+				Data: &metricspb.Metric_ExponentialHistogram{ExponentialHistogram: &metricspb.ExponentialHistogram{
+					DataPoints: []*metricspb.ExponentialHistogramDataPoint{
+						{Attributes: baseAttrs, Count: 5},
+					},
+				}},
+			},
+			want: 1,
+		},
+		{
+			name: "summary",
+			metric: &metricspb.Metric{
+				Name: "summary_metric",
+				Data: &metricspb.Metric_Summary{Summary: &metricspb.Summary{
+					DataPoints: []*metricspb.SummaryDataPoint{
+						{Attributes: baseAttrs, Count: 100},
+						{Attributes: baseAttrs, Count: 200},
+					},
+				}},
+			},
+			want: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewCollector([]string{"service"}, StatsLevelFull)
+			rm := &metricspb.ResourceMetrics{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "test"}}},
+					},
+				},
+				ScopeMetrics: []*metricspb.ScopeMetrics{{Metrics: []*metricspb.Metric{tt.metric}}},
+			}
+
+			c.Process([]*metricspb.ResourceMetrics{rm})
+
+			dp, _, _ := c.GetGlobalStats()
+			if dp != tt.want {
+				t.Errorf("expected %d datapoints, got %d", tt.want, dp)
+			}
+		})
+	}
+}
+
+func ptrFloat64(v float64) *float64 { return &v }
+
+// TestProcessFull_ReducedLockScope verifies that concurrent processing
+// produces consistent results with the reduced lock scope optimization.
+func TestProcessFull_ReducedLockScope(t *testing.T) {
+	c := NewCollector([]string{"service"}, StatsLevelFull)
+
+	rm := createTestResourceMetrics(
+		map[string]string{"service.name": "test"},
+		[]*metricspb.Metric{
+			createTestMetric("metric_a", []map[string]string{
+				{"service": "web"},
+			}),
+		},
+	)
+
+	const goroutines = 4
+	const iterations = 100
+	done := make(chan struct{}, goroutines)
+
+	for g := 0; g < goroutines; g++ {
+		go func() {
+			for i := 0; i < iterations; i++ {
+				c.Process([]*metricspb.ResourceMetrics{rm})
+			}
+			done <- struct{}{}
+		}()
+	}
+
+	for g := 0; g < goroutines; g++ {
+		<-done
+	}
+
+	dp, metrics, _ := c.GetGlobalStats()
+	expectedDP := uint64(goroutines * iterations * 1) // 1 datapoint per metric
+	if dp != expectedDP {
+		t.Errorf("expected %d datapoints, got %d", expectedDP, dp)
+	}
+	if metrics != 1 {
+		t.Errorf("expected 1 unique metric, got %d", metrics)
+	}
+}
+
+// TestExtractAllDatapointAttrs_Pooled verifies pooled extraction returns correct attrs.
+func TestExtractAllDatapointAttrs_Pooled(t *testing.T) {
+	metric := &metricspb.Metric{
+		Name: "test_metric",
+		Data: &metricspb.Metric_Gauge{Gauge: &metricspb.Gauge{
+			DataPoints: []*metricspb.NumberDataPoint{
+				{Attributes: []*commonpb.KeyValue{
+					{Key: "k1", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "v1"}}},
+					{Key: "k2", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "v2"}}},
+				}},
+				{Attributes: []*commonpb.KeyValue{
+					{Key: "k3", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "v3"}}},
+				}},
+			},
+		}},
+	}
+
+	result := extractAllDatapointAttrs(metric)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 attr maps, got %d", len(result))
+	}
+	if result[0]["k1"] != "v1" || result[0]["k2"] != "v2" {
+		t.Errorf("first datapoint attrs wrong: %v", result[0])
+	}
+	if result[1]["k3"] != "v3" {
+		t.Errorf("second datapoint attrs wrong: %v", result[1])
+	}
+
+	// Return to pool
+	for _, m := range result {
+		putPooledMap(m)
+	}
+}
+
 func TestGetGlobalStatsEmpty(t *testing.T) {
 	c := NewCollector(nil, StatsLevelFull)
 

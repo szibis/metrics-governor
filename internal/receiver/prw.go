@@ -62,12 +62,14 @@ type PRWBuffer interface {
 
 // PRWReceiver receives metrics via Prometheus Remote Write protocol.
 type PRWReceiver struct {
-	server             *http.Server
-	buffer             PRWBuffer
-	addr               string
-	tlsConfig          *tls.Config
-	maxRequestBodySize int64
-	version            prw.Version
+	server                *http.Server
+	buffer                PRWBuffer
+	addr                  string
+	tlsConfig             *tls.Config
+	maxRequestBodySize    int64
+	version               prw.Version
+	health                PipelineHealthChecker
+	loadSheddingThreshold float64
 }
 
 // NewPRW creates a new PRW receiver with default configuration.
@@ -143,11 +145,25 @@ func NewPRWWithConfig(cfg PRWConfig, buf PRWBuffer) *PRWReceiver {
 }
 
 // handleWrite handles incoming PRW write requests.
+// SetPipelineHealth configures pipeline health checking for load shedding.
+func (r *PRWReceiver) SetPipelineHealth(h PipelineHealthChecker, threshold float64) {
+	r.health = h
+	r.loadSheddingThreshold = threshold
+}
+
 func (r *PRWReceiver) handleWrite(w http.ResponseWriter, req *http.Request) {
 	IncrementReceiverRequests("prw")
 
 	if req.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Load shedding: reject if pipeline is overloaded
+	if r.health != nil && r.health.IsOverloaded(r.loadSheddingThreshold) {
+		IncrementLoadShedding("prw")
+		w.Header().Set("Retry-After", "5")
+		http.Error(w, "pipeline overloaded, retry later", http.StatusTooManyRequests)
 		return
 	}
 

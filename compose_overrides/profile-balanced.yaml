@@ -1,9 +1,9 @@
 # Balanced profile stress test - push to resource limits with adaptive features
 # Usage: docker compose -f docker-compose.yaml -f compose_overrides/profile-balanced.yaml up -d
 #
-# Tests the balanced profile at its resource ceiling:
+# Tests the balanced profile at 70% of rated throughput (100k dps):
 # - 2 CPU, 1 GB memory, memory queue
-# - Generator sends ~100k dps (profile's max throughput)
+# - Generator sends ~70k dps (leaves headroom for spikes)
 # - Adaptive workers + batch auto-tune should self-optimize
 # - Verifier threshold 95%
 
@@ -22,8 +22,8 @@ services:
       - DIVERSE_METRIC_COUNT=100
       - BURST_SIZE=2000
       - BURST_INTERVAL_SEC=30
-      - TARGET_METRICS_PER_SEC=50000
-      - TARGET_DATAPOINTS_PER_SEC=100000
+      - TARGET_METRICS_PER_SEC=35000
+      - TARGET_DATAPOINTS_PER_SEC=70000
       - STATS_INTERVAL_SEC=10
       - ENABLE_SPIKE_SCENARIOS=true
       - SPIKE_MODE=realistic

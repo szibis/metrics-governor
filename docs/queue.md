@@ -455,6 +455,42 @@ stateDiagram-v2
 | `-queue-backoff-multiplier` | `2.0` | Delay multiplier per failure |
 | `-queue-max-retry-delay` | `5m` | Maximum backoff cap |
 
+## Graduated Spillover (Hybrid Mode)
+
+When using hybrid queue mode, the memory-to-disk spillover uses graduated thresholds with hysteresis to prevent oscillation:
+
+| Memory Queue Utilization | Behavior |
+|---|---|
+| < spillover threshold (default 80%) | Memory-only — normal operation |
+| threshold to threshold+10% | 50% of batches spill to disk (alternating) |
+| threshold+10% to 95% | All new batches go to disk |
+| > 95% | Spill + load shedding at queue level |
+| Recovery < threshold-10% | Resume memory-only (hysteresis gap) |
+
+The hysteresis gap prevents rapid mode switching that causes CPU spikes. For example, with the default 80% threshold, spillover activates at 80% but doesn't deactivate until queue drops below 70%.
+
+A token-bucket rate limiter caps disk push rate during spillover to prevent IOPS cascades. This limits the positive feedback loop where CPU saturation → memory queue fills → disk serialization adds more CPU.
+
+### Spillover Tuning
+
+| Parameter | Config Key | Default |
+|---|---|---|
+| Spillover threshold | `queue.hybrid_spillover_pct` | 80% (observable: 90%) |
+| Hysteresis recovery | — | threshold - 10% (fixed) |
+
+**When to raise**: Ample memory, want to avoid disk I/O. Set to 90% if memory queue handles bursts.
+
+**When to lower**: Fast disk (NVMe), want early spillover. Set to 60-70%.
+
+### Conditional Meta Sync
+
+FastQueue metadata syncs use a dirty flag — if no writes occurred since the last sync, the fsync is skipped entirely. This eliminates idle IOPS while preserving durability during active writes. Profiles set different sync intervals based on durability requirements (safety: 1s, observable: 5s).
+
+### Monitoring
+
+- `metrics_governor_spillover_active` — gauge: 1 when spillover is active
+- `metrics_governor_queue_memory_bytes` / `metrics_governor_queue_memory_max_bytes` — memory queue utilization
+
 ## Queue Sizing
 
 ### Percentage-Based (Recommended)

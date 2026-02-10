@@ -317,3 +317,75 @@ func TestMemLeak_Collector_HighCardinalityGrowth(t *testing.T) {
 			heapAfterGrowth/1024, heapAfterReset/1024)
 	}
 }
+
+// TestRace_ProcessFull_ReducedLockScope_8Workers stress-tests the reduced lock scope
+// optimization with 8 concurrent goroutines processing batches. The key invariant:
+// all counters must be consistent after all goroutines finish (no lost updates).
+func TestRace_ProcessFull_ReducedLockScope_8Workers(t *testing.T) {
+	c := NewCollector([]string{"service"}, StatsLevelFull)
+
+	const workers = 8
+	const iterationsPerWorker = 200
+	const datapointsPerBatch = 5
+
+	var wg sync.WaitGroup
+	wg.Add(workers)
+
+	for w := 0; w < workers; w++ {
+		go func(workerID int) {
+			defer wg.Done()
+			for i := 0; i < iterationsPerWorker; i++ {
+				rm := makeRaceResourceMetrics(
+					fmt.Sprintf("svc_%d", workerID),
+					"shared_metric",
+					datapointsPerBatch,
+				)
+				c.Process([]*metricspb.ResourceMetrics{rm})
+			}
+		}(w)
+	}
+
+	wg.Wait()
+
+	dp, metrics, _ := c.GetGlobalStats()
+	expectedDP := uint64(workers * iterationsPerWorker * datapointsPerBatch)
+	if dp != expectedDP {
+		t.Errorf("expected %d datapoints, got %d (lost updates?)", expectedDP, dp)
+	}
+	if metrics != 1 {
+		t.Errorf("expected 1 unique metric, got %d", metrics)
+	}
+}
+
+// TestRace_SyncPool_ConcurrentGetPut stress-tests the attrsPool with 16 goroutines
+// getting and putting maps concurrently. Verifies no stale data leaks between uses.
+func TestRace_SyncPool_ConcurrentGetPut(t *testing.T) {
+	const goroutines = 16
+	const iterations = 1000
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for g := 0; g < goroutines; g++ {
+		go func(id int) {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				m := getPooledMap()
+
+				// The map must be empty (cleared before return to pool)
+				if len(m) != 0 {
+					t.Errorf("goroutine %d: got non-empty pooled map with %d entries", id, len(m))
+					return
+				}
+
+				// Use the map
+				m[fmt.Sprintf("key_%d_%d", id, i)] = "value"
+
+				// Return to pool
+				putPooledMap(m)
+			}
+		}(g)
+	}
+
+	wg.Wait()
+}
