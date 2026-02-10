@@ -84,8 +84,10 @@ type ProfileConfig struct {
 	StringInterning     *bool
 
 	// FastQueue
-	QueueInmemoryBlocks   *int
-	QueueMetaSyncInterval *time.Duration
+	QueueInmemoryBlocks      *int
+	QueueMetaSyncInterval    *time.Duration
+	QueueHybridSpilloverPct  *int // Spillover threshold % (default 80, higher = later spillover)
+	QueueHybridHysteresisPct *int // Recovery threshold % (default spillover-10)
 
 	// Memory
 	MemoryLimitRatio    *float64
@@ -456,8 +458,10 @@ func observableProfile() *ProfileConfig { //nolint:dupl // declarative config �
 		StringInterning:     boolPtr(true),
 
 		// FastQueue — more headroom before spillover + relaxed sync for observability
-		QueueInmemoryBlocks:   intPtr(2048),
-		QueueMetaSyncInterval: durPtr(5 * time.Second),
+		QueueInmemoryBlocks:      intPtr(2048),
+		QueueMetaSyncInterval:    durPtr(5 * time.Second),
+		QueueHybridSpilloverPct:  intPtr(90), // Higher threshold: full stats overhead means less headroom
+		QueueHybridHysteresisPct: intPtr(80), // 10% gap prevents oscillation
 
 		// Memory ratios
 		MemoryLimitRatio:    float64Ptr(0.82),
@@ -545,8 +549,10 @@ func resilientProfile() *ProfileConfig { //nolint:dupl // declarative config —
 		StringInterning:     boolPtr(true),
 
 		// FastQueue — balance durability + IOPS
-		QueueInmemoryBlocks:   intPtr(1024),
-		QueueMetaSyncInterval: durPtr(3 * time.Second),
+		QueueInmemoryBlocks:      intPtr(1024),
+		QueueMetaSyncInterval:    durPtr(3 * time.Second),
+		QueueHybridSpilloverPct:  intPtr(85), // Moderate: basic stats, lower overhead
+		QueueHybridHysteresisPct: intPtr(75), // 10% gap prevents oscillation
 
 		// Memory ratios
 		MemoryLimitRatio:    float64Ptr(0.82),
@@ -632,8 +638,10 @@ func performanceProfile() *ProfileConfig {
 		StringInterning:     boolPtr(true),
 
 		// FastQueue large — throughput > durability
-		QueueInmemoryBlocks:   intPtr(4096),
-		QueueMetaSyncInterval: durPtr(2 * time.Second),
+		QueueInmemoryBlocks:      intPtr(4096),
+		QueueMetaSyncInterval:    durPtr(2 * time.Second),
+		QueueHybridSpilloverPct:  intPtr(90), // High: pipeline split handles CPU pressure
+		QueueHybridHysteresisPct: intPtr(80), // 10% gap prevents oscillation
 
 		// More headroom for disk I/O
 		MemoryLimitRatio:    float64Ptr(0.80),
@@ -809,6 +817,12 @@ func ApplyProfile(cfg *Config, profile ProfileName, explicitFields map[string]bo
 	}
 	if p.QueueMetaSyncInterval != nil {
 		set("queue-meta-sync", func() { cfg.QueueMetaSyncInterval = *p.QueueMetaSyncInterval })
+	}
+	if p.QueueHybridSpilloverPct != nil {
+		set("queue-hybrid-spillover-pct", func() { cfg.QueueHybridSpilloverPct = *p.QueueHybridSpilloverPct })
+	}
+	if p.QueueHybridHysteresisPct != nil {
+		set("queue-hybrid-hysteresis-pct", func() { cfg.QueueHybridHysteresisPct = *p.QueueHybridHysteresisPct })
 	}
 
 	// Memory
@@ -1024,6 +1038,14 @@ func collectProfileParams(p *ProfileConfig) []profileParam {
 	if p.QueueInmemoryBlocks != nil {
 		v := fmt.Sprintf("%d", *p.QueueInmemoryBlocks)
 		params = append(params, profileParam{"queue.inmemory_blocks", v, "In-memory channel size"})
+	}
+	if p.QueueHybridSpilloverPct != nil {
+		v := fmt.Sprintf("%d%%", *p.QueueHybridSpilloverPct)
+		params = append(params, profileParam{"queue.hybrid_spillover_pct", v, "Spillover threshold"})
+	}
+	if p.QueueHybridHysteresisPct != nil {
+		v := fmt.Sprintf("%d%%", *p.QueueHybridHysteresisPct)
+		params = append(params, profileParam{"queue.hybrid_hysteresis_pct", v, "Recovery threshold"})
 	}
 	if p.MemoryLimitRatio != nil {
 		v := fmt.Sprintf("%.2f", *p.MemoryLimitRatio)

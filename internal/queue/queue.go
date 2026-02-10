@@ -136,6 +136,12 @@ type Config struct {
 	// Compression is the block compression type (default: "snappy").
 	Compression string
 
+	// MemoryMaxBytes is the max bytes for the in-memory batch queue (hybrid/memory modes).
+	// When > 0, this is used instead of MaxBytes for the MemoryBatchQueue so that
+	// the memory queue uses a memory-appropriate limit rather than the disk queue budget.
+	// Derived from GOMEMLIMIT × QueueMemoryPercent in main.go.
+	MemoryMaxBytes int64
+
 	// Queue mode settings (used by QueuedExporter to select push/pop path)
 	// Mode is the queue operating mode: "memory", "disk", or "hybrid".
 	Mode QueueMode

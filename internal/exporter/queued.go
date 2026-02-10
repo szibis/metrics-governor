@@ -268,9 +268,18 @@ func NewQueued(exporter Exporter, queueCfg queue.Config) (*QueuedExporter, error
 	// Create memory batch queue (needed for memory and hybrid modes)
 	var memQ *queue.MemoryBatchQueue
 	if queueMode == queue.QueueModeMemory || queueMode == queue.QueueModeHybrid {
+		// Use MemoryMaxBytes (derived from GOMEMLIMIT × QueueMemoryPercent) for the
+		// in-memory queue, not MaxBytes which is the disk queue budget (e.g., 8 GB).
+		// Without this, byte-based utilization in a 1 GB container would never trigger
+		// spillover because activeBytes/8GB ≈ 0%, making count-based spillover the
+		// only trigger and preventing graduated spillover from working correctly.
+		memMaxBytes := queueCfg.MemoryMaxBytes
+		if memMaxBytes <= 0 {
+			memMaxBytes = queueCfg.MaxBytes // fallback to disk budget if not set
+		}
 		memQ = queue.NewMemoryBatchQueue(queue.MemoryBatchQueueConfig{
 			MaxSize:      queueCfg.MaxSize,
-			MaxBytes:     queueCfg.MaxBytes,
+			MaxBytes:     memMaxBytes,
 			FullBehavior: queueCfg.FullBehavior,
 			BlockTimeout: queueCfg.BlockTimeout,
 		})

@@ -247,6 +247,7 @@ func main() {
 				Path:                       cfg.QueuePath,
 				MaxSize:                    cfg.QueueMaxSize,
 				MaxBytes:                   cfg.QueueMaxBytes,
+				MemoryMaxBytes:             cfg.QueueMemoryMaxBytes,
 				RetryInterval:              cfg.QueueRetryInterval,
 				MaxRetryDelay:              cfg.QueueMaxRetryDelay,
 				FullBehavior:               queue.FullBehavior(cfg.QueueFullBehavior),
@@ -301,9 +302,11 @@ func main() {
 			queueCfg := queue.Config{
 				Mode:                       queue.QueueMode(cfg.QueueMode),
 				HybridSpilloverPct:         cfg.QueueHybridSpilloverPct,
+				HybridHysteresisPct:        cfg.QueueHybridHysteresisPct,
 				Path:                       cfg.QueuePath,
 				MaxSize:                    cfg.QueueMaxSize,
 				MaxBytes:                   cfg.QueueMaxBytes,
+				MemoryMaxBytes:             cfg.QueueMemoryMaxBytes,
 				RetryInterval:              cfg.QueueRetryInterval,
 				MaxRetryDelay:              cfg.QueueMaxRetryDelay,
 				FullBehavior:               queue.FullBehavior(cfg.QueueFullBehavior),
@@ -529,14 +532,25 @@ func main() {
 		bufOpts = append(bufOpts, buffer.WithMaxBufferBytes(memorySizing.BufferMaxBytes))
 	}
 
-	// Apply derived queue byte capacity from GOMEMLIMIT percentage
+	// Apply derived queue byte capacity from GOMEMLIMIT percentage.
+	// MemoryMaxBytes is used for the in-memory batch queue (hybrid/memory modes),
+	// while QueueMaxBytes is the disk queue budget. In hybrid mode these MUST differ:
+	// the memory queue needs a memory-appropriate limit (e.g., 100 MB in a 1 GB container),
+	// not the disk budget (e.g., 8 GB). Without this separation, byte-based utilization
+	// in the memory queue is always ~0%, preventing graduated spillover from working.
 	if memorySizing.QueueMaxBytes > 0 {
-		cfg.QueueMaxBytes = memorySizing.QueueMaxBytes
+		cfg.QueueMemoryMaxBytes = memorySizing.QueueMaxBytes
+		// Only override disk MaxBytes if no explicit profile/config value was set,
+		// or if the derived value is smaller (memory constraint takes precedence)
+		if cfg.QueueMaxBytes == 0 || memorySizing.QueueMaxBytes < cfg.QueueMaxBytes {
+			cfg.QueueMaxBytes = memorySizing.QueueMaxBytes
+		}
 		cfg.PRWQueueMaxBytes = memorySizing.QueueMaxBytes
 		logging.Info("percentage-based queue sizing", logging.F(
 			"memory_limit_bytes", memorySizing.MemoryLimit,
 			"queue_percent", cfg.QueueMemoryPercent,
-			"queue_max_bytes", memorySizing.QueueMaxBytes,
+			"queue_memory_max_bytes", cfg.QueueMemoryMaxBytes,
+			"queue_disk_max_bytes", cfg.QueueMaxBytes,
 		))
 	}
 

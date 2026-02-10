@@ -117,6 +117,7 @@ type Config struct {
 	QueuePath              string
 	QueueMaxSize           int
 	QueueMaxBytes          int64
+	QueueMemoryMaxBytes    int64 // Max bytes for in-memory batch queue (derived from GOMEMLIMIT × QueueMemoryPercent)
 	QueueRetryInterval     time.Duration
 	QueueMaxRetryDelay     time.Duration
 	QueueFullBehavior      string
@@ -139,7 +140,8 @@ type Config struct {
 	QueueCircuitBreakerResetTimeout time.Duration // Time to wait before half-open (default: 30s)
 
 	// Hybrid queue settings
-	QueueHybridSpilloverPct int // Percentage of max before spilling to disk in hybrid mode (default: 80)
+	QueueHybridSpilloverPct  int // Percentage of max before spilling to disk in hybrid mode (default: 80)
+	QueueHybridHysteresisPct int // Recovery threshold below which spillover stops (default: spillover-10)
 
 	// Pipeline health / load shedding
 	LoadSheddingThreshold float64 // Pipeline health score above which receivers reject (0.0-1.0, default: 0.85)
