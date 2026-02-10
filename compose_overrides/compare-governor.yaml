@@ -1,0 +1,80 @@
+# Performance comparison: metrics-governor (minimal profile) — DIRECT connection
+# Usage:
+#   15k dps:  docker compose -f docker-compose.yaml -f compose_overrides/compare-governor.yaml up -d
+#   50k dps:  TARGET_DPS=50000 TARGET_MPS=25000 PROXY_MEM=1G PROXY_CPU=2 GEN_MEM=2G VM_MEM=2G docker compose ...
+#   100k dps: TARGET_DPS=100000 TARGET_MPS=50000 PROXY_MEM=2G PROXY_CPU=4 GEN_MEM=2G VM_MEM=2G docker compose ...
+#
+# Pipeline: generator --OTLP HTTP--> governor --OTLP HTTP--> VictoriaMetrics
+# Governor runs in minimal profile — pure proxy, no stats, no limits
+
+services:
+  # OTel Collector disabled — generator sends directly to governor
+  otel-collector:
+    image: alpine:3.21
+    entrypoint: ["sh", "-c", "sleep infinity"]
+    command: []
+    volumes: []
+    deploy:
+      resources:
+        limits:
+          memory: 16M
+          cpus: "0.01"
+
+  metrics-generator:
+    environment:
+      - OTLP_ENDPOINT=metrics-governor:4318
+      - OTLP_PROTOCOL=http
+      - METRICS_INTERVAL=${GEN_INTERVAL:-500ms}
+      - SERVICES=payment-api,order-api
+      - ENVIRONMENTS=prod
+      - ENABLE_EDGE_CASES=false
+      - ENABLE_HIGH_CARDINALITY=true
+      - ENABLE_BURST_TRAFFIC=false
+      - ENABLE_DIVERSE_METRICS=true
+      - HIGH_CARDINALITY_COUNT=${HIGH_CARD:-20}
+      - DIVERSE_METRIC_COUNT=${DIVERSE_COUNT:-30}
+      - TARGET_METRICS_PER_SEC=${TARGET_MPS:-7500}
+      - TARGET_DATAPOINTS_PER_SEC=${TARGET_DPS:-15000}
+      - STATS_INTERVAL_SEC=10
+      - ENABLE_SPIKE_SCENARIOS=false
+    deploy:
+      resources:
+        limits:
+          memory: ${GEN_MEM:-1G}
+          cpus: "${GEN_CPU:-1}"
+
+  metrics-governor:
+    command:
+      - "--profile=minimal"
+      - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
+      - "-exporter-protocol=http"
+      - "-exporter-insecure=true"
+    deploy:
+      resources:
+        limits:
+          memory: ${PROXY_MEM:-512M}
+          cpus: "${PROXY_CPU:-1}"
+
+  victoriametrics:
+    deploy:
+      resources:
+        limits:
+          memory: ${VM_MEM:-1G}
+          cpus: "${VM_CPU:-2}"
+
+  verifier:
+    environment:
+      - CHECK_INTERVAL=15s
+      - PASS_THRESHOLD=90.0
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+  grafana:
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"

@@ -1055,7 +1055,7 @@ func initMemoryLimit(ratio float64, gogc int) {
 
 // autoSetGOGC sets GOGC to the profile-specific value when not explicitly set.
 // Lower GOGC means more frequent GC but tighter memory usage. Profile defaults:
-// minimal=100, balanced=75, safety/observable=50, performance=25.
+// minimal/balanced/resilient=50, safety/observable=50, performance=25.
 // Users can override via GOGC env var.
 func autoSetGOGC(gogc int) {
 	if os.Getenv("GOGC") != "" {

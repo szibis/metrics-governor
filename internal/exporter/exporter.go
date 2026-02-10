@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,6 +26,12 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
+
+// marshalBufPool pools byte slices for proto.MarshalAppend to avoid per-export allocation.
+var marshalBufPool = sync.Pool{New: func() any {
+	b := make([]byte, 0, 64*1024)
+	return &b
+}}
 
 // ErrorType represents a category of export error for metrics.
 type ErrorType string
@@ -448,33 +455,59 @@ func classifyGRPCError(err error) ErrorType {
 
 // exportHTTP exports metrics via HTTP.
 func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error {
+	// Marshal into pooled buffer to avoid per-export allocation.
+	bp := marshalBufPool.Get().(*[]byte)
 	marshalStart := time.Now()
-	body, err := proto.Marshal(req)
+	marshaledBody, err := proto.MarshalOptions{}.MarshalAppend((*bp)[:0], req)
 	pipeline.Record("serialize", pipeline.Since(marshalStart))
 	if err != nil {
+		*bp = marshaledBody[:0]
+		marshalBufPool.Put(bp)
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
-	pipeline.RecordBytes("serialize", len(body))
+	pipeline.RecordBytes("serialize", len(marshaledBody))
 
 	// Track uncompressed size and datapoints
-	uncompressedSize := len(body)
+	uncompressedSize := len(marshaledBody)
 	datapoints := countDatapoints(req)
 	compressionLabel := "none"
 
+	// sendBody holds the final bytes to send. It may point to the marshal buffer
+	// (no compression) or to a compression output buffer.
+	sendBody := marshaledBody
+	var compBuf *bytes.Buffer // non-nil when compression is used
+
 	// Apply compression if configured
 	if e.compression.Type != compression.TypeNone && e.compression.Type != "" {
+		compBuf = compression.GetBuffer()
 		compressStart := time.Now()
-		body, err = compression.Compress(body, e.compression)
-		pipeline.Record("compress", pipeline.Since(compressStart))
-		if err != nil {
+		if err := compression.CompressToBuf(compBuf, marshaledBody, e.compression); err != nil {
+			compression.ReleaseBuffer(compBuf)
+			*bp = marshaledBody[:0]
+			marshalBufPool.Put(bp)
 			return fmt.Errorf("failed to compress request: %w", err)
 		}
-		pipeline.RecordBytes("compress", len(body))
+		pipeline.Record("compress", pipeline.Since(compressStart))
+		pipeline.RecordBytes("compress", compBuf.Len())
 		compressionLabel = string(e.compression.Type)
+
+		// Marshal buffer consumed by compression — return it now.
+		*bp = marshaledBody[:0]
+		marshalBufPool.Put(bp)
+		bp = nil
+
+		sendBody = compBuf.Bytes()
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.httpEndpoint, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.httpEndpoint, bytes.NewReader(sendBody))
 	if err != nil {
+		if compBuf != nil {
+			compression.ReleaseBuffer(compBuf)
+		}
+		if bp != nil {
+			*bp = marshaledBody[:0]
+			marshalBufPool.Put(bp)
+		}
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -490,6 +523,16 @@ func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportM
 	httpStart := time.Now()
 	resp, err := e.httpClient.Do(httpReq)
 	pipeline.Record("export_http", pipeline.Since(httpStart))
+
+	// Release buffers after HTTP send completes — bytes.NewReader has consumed them.
+	if compBuf != nil {
+		compression.ReleaseBuffer(compBuf)
+	}
+	if bp != nil {
+		*bp = marshaledBody[:0]
+		marshalBufPool.Put(bp)
+	}
+
 	if err != nil {
 		errType := classifyError(err)
 		recordExportError(errType)
@@ -515,7 +558,7 @@ func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportM
 	_, _ = io.Copy(io.Discard, resp.Body)
 
 	// Track exported bytes and datapoints
-	otlpExportBytesTotal.WithLabelValues(compressionLabel).Add(float64(len(body)))
+	otlpExportBytesTotal.WithLabelValues(compressionLabel).Add(float64(len(sendBody)))
 	if compressionLabel != "none" {
 		// Also track uncompressed for comparison
 		otlpExportBytesTotal.WithLabelValues("uncompressed").Add(float64(uncompressedSize))
@@ -545,25 +588,30 @@ func (e *OTLPExporter) ExportData(ctx context.Context, data []byte) error {
 // This eliminates the double-serialization: queue stores proto bytes, and we send
 // those bytes directly after compression instead of unmarshal→remarshal.
 func (e *OTLPExporter) exportHTTPData(ctx context.Context, data []byte) error {
-	body := data
-	uncompressedSize := len(body)
+	sendBody := data
+	uncompressedSize := len(data)
 	compressionLabel := "none"
+	var compBuf *bytes.Buffer
 
-	// Apply compression if configured
+	// Apply compression if configured — use pooled buffer to avoid copy.
 	if e.compression.Type != compression.TypeNone && e.compression.Type != "" {
+		compBuf = compression.GetBuffer()
 		compressStart := time.Now()
-		var err error
-		body, err = compression.Compress(body, e.compression)
-		pipeline.Record("compress", pipeline.Since(compressStart))
-		if err != nil {
+		if err := compression.CompressToBuf(compBuf, data, e.compression); err != nil {
+			compression.ReleaseBuffer(compBuf)
 			return fmt.Errorf("failed to compress request: %w", err)
 		}
-		pipeline.RecordBytes("compress", len(body))
+		pipeline.Record("compress", pipeline.Since(compressStart))
+		pipeline.RecordBytes("compress", compBuf.Len())
 		compressionLabel = string(e.compression.Type)
+		sendBody = compBuf.Bytes()
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.httpEndpoint, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.httpEndpoint, bytes.NewReader(sendBody))
 	if err != nil {
+		if compBuf != nil {
+			compression.ReleaseBuffer(compBuf)
+		}
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -579,6 +627,12 @@ func (e *OTLPExporter) exportHTTPData(ctx context.Context, data []byte) error {
 	httpStart := time.Now()
 	resp, err := e.httpClient.Do(httpReq)
 	pipeline.Record("export_http", pipeline.Since(httpStart))
+
+	// Release compression buffer after HTTP send.
+	if compBuf != nil {
+		compression.ReleaseBuffer(compBuf)
+	}
+
 	if err != nil {
 		errType := classifyError(err)
 		recordExportError(errType)
@@ -604,7 +658,7 @@ func (e *OTLPExporter) exportHTTPData(ctx context.Context, data []byte) error {
 	_, _ = io.Copy(io.Discard, resp.Body)
 
 	// Track exported bytes
-	otlpExportBytesTotal.WithLabelValues(compressionLabel).Add(float64(len(body)))
+	otlpExportBytesTotal.WithLabelValues(compressionLabel).Add(float64(len(sendBody)))
 	if compressionLabel != "none" {
 		otlpExportBytesTotal.WithLabelValues("uncompressed").Add(float64(uncompressedSize))
 	}
@@ -615,6 +669,7 @@ func (e *OTLPExporter) exportHTTPData(ctx context.Context, data []byte) error {
 
 // CompressData compresses raw proto bytes using the exporter's compression config.
 // Returns the compressed data, content encoding string, and any error.
+// Note: the returned slice is owned by the caller (safe copy from pooled buffer).
 func (e *OTLPExporter) CompressData(data []byte) ([]byte, string, error) {
 	if e.compression.Type == compression.TypeNone || e.compression.Type == "" {
 		return data, "", nil

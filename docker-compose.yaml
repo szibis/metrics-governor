@@ -90,7 +90,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G   # Moderate memory for default testing
+          memory: 1G   # Moderate memory for default testing
     command:
       - "--storageDataPath=/victoria-metrics-data"
       - "--httpListenAddr=:8428"
@@ -100,9 +100,10 @@ services:
       - "--maxInsertRequestSize=128MB"
       - "--opentelemetry.maxRequestSize=128MB"
       - "--opentelemetry.convertMetricNamesToPrometheus"
-      - "--memory.allowedPercent=80"
-      - "--search.maxUniqueTimeseries=1000000"
-      - "--search.maxConcurrentRequests=32"
+      - "--memory.allowedPercent=60"
+      - "--cacheExpireDuration=10m"
+      - "--search.maxUniqueTimeseries=500000"
+      - "--search.maxConcurrentRequests=16"
       - "--search.maxQueryDuration=10s"
       - "--search.logSlowQueryDuration=5s"
     volumes:
@@ -118,6 +119,7 @@ services:
       - "9091:9091"   # Prometheus metrics
     environment:
       - OTLP_ENDPOINT=otel-collector:4317
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta
       - METRICS_INTERVAL=500ms        # Moderate interval
       - SERVICES=payment-api,order-api,inventory-api,user-api
       - ENVIRONMENTS=prod,staging,dev

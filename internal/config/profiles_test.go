@@ -396,8 +396,8 @@ func TestApplyProfile_Observable(t *testing.T) {
 		t.Errorf("BloomPersistenceEnabled = %v, want true", cfg.BloomPersistenceEnabled)
 	}
 	// Memory ratios
-	if cfg.MemoryLimitRatio != 0.82 {
-		t.Errorf("MemoryLimitRatio = %f, want 0.82", cfg.MemoryLimitRatio)
+	if cfg.MemoryLimitRatio != 0.80 {
+		t.Errorf("MemoryLimitRatio = %f, want 0.80", cfg.MemoryLimitRatio)
 	}
 	if cfg.LimitsDryRun != false {
 		t.Errorf("LimitsDryRun = %v, want false", cfg.LimitsDryRun)
@@ -940,8 +940,8 @@ func TestApplyProfile_MemoryFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.MemoryLimitRatio != 0.90 {
-		t.Errorf("MemoryLimitRatio = %f, want 0.90", cfg.MemoryLimitRatio)
+	if cfg.MemoryLimitRatio != 0.80 {
+		t.Errorf("MemoryLimitRatio = %f, want 0.80", cfg.MemoryLimitRatio)
 	}
 	if cfg.BufferMemoryPercent != 0.15 {
 		t.Errorf("BufferMemoryPercent = %f, want 0.15", cfg.BufferMemoryPercent)
@@ -1299,11 +1299,11 @@ func TestAllProfiles_GOGCValues(t *testing.T) {
 		name ProfileName
 		gogc int
 	}{
-		{ProfileMinimal, 100},
-		{ProfileBalanced, 75},
+		{ProfileMinimal, 50},
+		{ProfileBalanced, 50},
 		{ProfileSafety, 50},
 		{ProfileObservable, 50},
-		{ProfileResilient, 75},
+		{ProfileResilient, 50},
 		{ProfilePerformance, 25},
 	}
 	for _, tc := range expected {

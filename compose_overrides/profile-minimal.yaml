@@ -6,8 +6,17 @@
 # - Generator sends ~10k dps (profile's max throughput)
 # - Should run stable without OOM or CPU throttling
 # - Verifier threshold 90% (some loss expected under pressure)
+#
+# Total resource budget: 3.5 CPU, 2.75 GB memory
 
 services:
+  otel-collector:
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1"
+
   metrics-generator:
     environment:
       - OTLP_ENDPOINT=otel-collector:4317
@@ -24,6 +33,11 @@ services:
       - TARGET_DATAPOINTS_PER_SEC=10000
       - STATS_INTERVAL_SEC=15
       - ENABLE_SPIKE_SCENARIOS=false
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
 
   metrics-governor:
     command:
@@ -43,7 +57,20 @@ services:
       resources:
         limits:
           memory: 1G
+          cpus: "1"
 
   verifier:
     environment:
       - PASS_THRESHOLD=90.0
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+  grafana:
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
