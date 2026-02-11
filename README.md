@@ -37,13 +37,15 @@
 
 > **Two native pipelines. Zero conversion. Zero allocation.** OTLP stays OTLP. PRW stays PRW. Each protocol runs its own receive-process-export path with full feature parity, no conversion overhead, and zero-allocation serialization via [vtprotobuf](https://github.com/planetscale/vtprotobuf).
 
-### What's New in v0.44
+### What's New in v1.0
 
-- **vtprotobuf integration** — Zero-allocation protobuf marshal/unmarshal via [PlanetScale vtprotobuf](https://github.com/planetscale/vtprotobuf) with `sync.Pool` message reuse across all OTLP pipelines. Measured **<1% CPU** at 100k dps and **~60 MiB** base memory.
-- **Updated profile resource targets** — All 6 profiles re-tuned from measured 3-way comparison tests (governor vs otel-collector vs vmagent) at 15k/50k/100k dps.
+- **v1.0 stable release** — All 15 deprecated CLI flags, legacy sampling metrics, and backward-compatibility shims removed. Clean, unified API surface with the processing engine handling all operations.
+- **vtprotobuf integration** (v0.44) — Zero-allocation protobuf marshal/unmarshal via [PlanetScale vtprotobuf](https://github.com/planetscale/vtprotobuf) with `sync.Pool` message reuse across all OTLP pipelines. Measured **<1% CPU** at 100k dps and **~60 MiB** base memory.
 - **sync.Pool memory optimizations** (v0.43) — Pool-based allocation reuse for buffer operations, reducing GC pressure under sustained load.
 - **Pipeline stability improvements** (v0.42) — Predictable pipeline behavior under backpressure with improved queue drain ordering.
 - **3,100+ tests** — Comprehensive test coverage including vtprotobuf integration, race detector, and parity tests across all packages.
+
+> Migrating from v0.x? All deprecated flags have replacements — see [DEPRECATIONS.md](DEPRECATIONS.md) for the full migration table.
 
 ### Universal Governance for Mixed Environments
 
@@ -137,15 +139,6 @@ Each pipeline runs independently: **Receive** → **Process** → **Limit** → 
 
 ---
 
-## Supported Backends
-
-| Protocol | Backends |
-|----------|----------|
-| **OTLP** | OpenTelemetry Collector, Grafana Mimir, Cortex, VictoriaMetrics, ClickHouse, Grafana Cloud |
-| **PRW** | Prometheus, VictoriaMetrics, Grafana Mimir, Cortex, Thanos Receive, Amazon Managed Prometheus, GCP Managed Prometheus, Grafana Cloud |
-
----
-
 ## Features
 
 ### Receive — Dual Native Protocols
@@ -157,6 +150,13 @@ Each pipeline runs independently: **Receive** → **Process** → **Limit** → 
 | **PRW 1.0/2.0** | `:9091` | Auto-detect version, native histograms, VictoriaMetrics mode, exemplars |
 
 Backpressure built in: capacity-bounded buffers return `429` / `ResourceExhausted` when full. [Docs](docs/receiving.md)
+
+**Supported backends:**
+
+| Protocol | Backends |
+|----------|----------|
+| **OTLP** | OpenTelemetry Collector, Grafana Mimir, Cortex, VictoriaMetrics, ClickHouse, Grafana Cloud |
+| **PRW** | Prometheus, VictoriaMetrics, Grafana Mimir, Cortex, Thanos Receive, Amazon Managed Prometheus, GCP Managed Prometheus, Grafana Cloud |
 
 ### Process — Unified Rules Engine
 
@@ -351,6 +351,7 @@ Plan your deployment in seconds. The **interactive Playground** estimates CPU, m
 | 🚨 | [**Alerting**](docs/alerting.md) | 13 alerts with runbooks, dead rule detection |
 | 📊 | [**Dashboards**](docs/dashboards.md) | Grafana operations and development dashboards |
 | 🏭 | [**Production Guide**](docs/production-guide.md) | Sizing, HPA/VPA, DaemonSet, bare metal |
+| 🔧 | [**Stability Tuning**](docs/stability-guide.md) | Graduated spillover, load shedding, drain ordering, backpressure tuning |
 | 🏥 | [**Health**](docs/health.md) | Kubernetes liveness and readiness probes |
 | 🔄 | [**Dynamic Reload**](docs/reload.md) | Hot-reload via SIGHUP with ConfigMap sidecar |
 | 🔐 | [**TLS**](docs/tls.md) | Server/client TLS, mTLS |
@@ -361,6 +362,8 @@ Plan your deployment in seconds. The **interactive Playground** estimates CPU, m
 | 🖥️ | [**Playground**](docs/playground.md) | Interactive deployment planner |
 | 🧪 | [**Testing**](docs/testing.md) | Test environment, Docker Compose |
 | 🛠️ | [**Development**](docs/development.md) | Building, contributing |
+| 📜 | [**Changelog**](CHANGELOG.md) | Release history with breaking changes |
+| ⚠️ | [**Deprecations**](DEPRECATIONS.md) | Deprecation lifecycle, migration table |
 
 ---
 
