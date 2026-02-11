@@ -15,12 +15,17 @@ import (
 	"github.com/szibis/metrics-governor/internal/buffer"
 	"github.com/szibis/metrics-governor/internal/compression"
 	"github.com/szibis/metrics-governor/internal/logging"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
 	"github.com/szibis/metrics-governor/internal/pipeline"
 	tlspkg "github.com/szibis/metrics-governor/internal/tls"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 )
+
+// exportReqPool uses vtprotobuf's built-in sync.Pool with ResetVT (clears fields
+// but preserves slice capacities). After warmup, UnmarshalVT into a pooled request
+// reuses existing memory — near-zero allocations for the message structure.
+//
+// Legacy exportReqPool replaced by colmetricspb.ExportMetricsServiceRequestFromVTPool().
 
 // HTTPServerConfig holds HTTP server timeout settings.
 type HTTPServerConfig struct {
@@ -215,21 +220,22 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 		}
 	}()
 
-	var exportReq colmetricspb.ExportMetricsServiceRequest
+	exportReq := colmetricspb.ExportMetricsServiceRequestFromVTPool()
+	defer exportReq.ReturnToVTPool() // ResetVT preserves slice capacities for reuse
 
 	contentType := req.Header.Get("Content-Type")
 	isJSON := false
 	unmarshalStart := time.Now()
 	switch contentType {
 	case "application/x-protobuf", "application/protobuf":
-		if err := proto.Unmarshal(body, &exportReq); err != nil {
+		if err := exportReq.UnmarshalVT(body); err != nil {
 			IncrementReceiverError("decode")
 			http.Error(w, "Failed to unmarshal protobuf", http.StatusBadRequest)
 			return
 		}
 	case "application/json":
 		isJSON = true
-		if err := protojson.Unmarshal(body, &exportReq); err != nil {
+		if err := protojson.Unmarshal(body, exportReq); err != nil {
 			IncrementReceiverError("decode")
 			http.Error(w, "Failed to unmarshal JSON", http.StatusBadRequest)
 			return
@@ -251,6 +257,9 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "buffer add failed", http.StatusInternalServerError)
 		return
 	}
+	// Detach ResourceMetrics from pooled request: buffer now owns these
+	// pointers, and ResetVT would otherwise clear them on pool return.
+	exportReq.ResourceMetrics = nil
 
 	// Return response in the same format as the request
 	resp := &colmetricspb.ExportMetricsServiceResponse{}
@@ -264,7 +273,7 @@ func (r *HTTPReceiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(respBytes)
 	} else {
-		respBytes, err := proto.Marshal(resp)
+		respBytes, err := resp.MarshalVT()
 		if err != nil {
 			http.Error(w, "Failed to marshal response", http.StatusInternalServerError)
 			return

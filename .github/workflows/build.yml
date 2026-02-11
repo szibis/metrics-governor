@@ -193,7 +193,7 @@ jobs:
       - name: Check coverage threshold
         run: |
           COVERAGE="${{ steps.coverage.outputs.coverage }}"
-          THRESHOLD=85
+          THRESHOLD=90
           echo "Coverage: $COVERAGE%"
           echo "Required threshold: $THRESHOLD%"
           if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
@@ -592,8 +592,8 @@ jobs:
             DELTA_STR="N/A"
           fi
 
-          # Determine coverage badge color and threshold status (85% required)
-          THRESHOLD=85
+          # Determine coverage badge color and threshold status (90% required)
+          THRESHOLD=90
           if (( $(echo "$UNIT_COVERAGE >= $THRESHOLD" | bc -l) )); then
             COV_STATUS="🟢"
             THRESHOLD_STATUS="✅ Passed"

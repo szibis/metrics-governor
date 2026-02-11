@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	commonpb "github.com/szibis/metrics-governor/internal/otlpvt/commonpb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 	"github.com/szibis/metrics-governor/internal/queue"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
 
 func TestShardedExporter_Export_WithEndpoints(t *testing.T) {

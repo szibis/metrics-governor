@@ -14,15 +14,16 @@
 [![Security](https://img.shields.io/github/actions/workflow/status/szibis/metrics-governor/security-scan.yml?style=for-the-badge&logo=shieldsdotio&logoColor=white&label=Security)](https://github.com/szibis/metrics-governor/actions/workflows/security-scan.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/szibis/metrics-governor/codeql.yml?style=for-the-badge&logo=github&logoColor=white&label=CodeQL)](https://github.com/szibis/metrics-governor/actions/workflows/codeql.yml)
 
-[![Tests](https://img.shields.io/badge/Tests-2700+-success?style=for-the-badge&logo=testinglibrary&logoColor=white)](docs/testing.md#test-coverage-by-component)
+[![Tests](https://img.shields.io/badge/Tests-3100+-success?style=for-the-badge&logo=testinglibrary&logoColor=white)](docs/testing.md#test-coverage-by-component)
 [![Coverage](https://img.shields.io/badge/Coverage-90%25-brightgreen?style=for-the-badge&logo=codecov&logoColor=white)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
 [![Race Detector](https://img.shields.io/badge/Race_Detector-passing-success?style=for-the-badge&logo=go&logoColor=white)](docs/testing.md)
-[![Go Lines](https://img.shields.io/badge/Go_Code-139k_lines-informational?style=for-the-badge&logo=go&logoColor=white)](.)
-[![Docs](https://img.shields.io/badge/Docs-29_guides-8A2BE2?style=for-the-badge&logo=readthedocs&logoColor=white)](docs/)
+[![Go Lines](https://img.shields.io/badge/Go_Code-169k_lines-informational?style=for-the-badge&logo=go&logoColor=white)](.)
+[![Docs](https://img.shields.io/badge/Docs-30_guides-8A2BE2?style=for-the-badge&logo=readthedocs&logoColor=white)](docs/)
 [![Benchmarks](https://img.shields.io/badge/Benchmarks-5_Matrix_Tests-success?style=for-the-badge&logo=speedtest&logoColor=white)](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml)
 
 [![OTLP](https://img.shields.io/badge/OTLP-gRPC_%7C_HTTP-4a90d9?style=for-the-badge&logo=opentelemetry&logoColor=white)](docs/receiving.md)
 [![PRW](https://img.shields.io/badge/PRW-1.0_%7C_2.0-e8833a?style=for-the-badge&logo=prometheus&logoColor=white)](docs/receiving.md#prometheus-remote-write-receiver)
+[![vtprotobuf](https://img.shields.io/badge/vtprotobuf-Zero_Alloc-00ADD8?style=for-the-badge&logo=go&logoColor=white)](docs/performance.md)
 [![Alerts](https://img.shields.io/badge/Alerts-13_Rules_%2B_Runbooks-dc3545?style=for-the-badge&logo=prometheus&logoColor=white)](docs/alerting.md)
 [![Helm Chart](https://img.shields.io/badge/Helm-Chart_Included-0F1689?style=for-the-badge&logo=helm&logoColor=white)](helm/metrics-governor/)
 [![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F46800?style=for-the-badge&logo=grafana&logoColor=white)](dashboards/)
@@ -34,7 +35,15 @@
 
 **metrics-governor** is a high-performance metrics governance proxy for **OTLP** and **Prometheus Remote Write**. Drop it between your apps and your backend to control cardinality, transform metrics in-flight, and scale horizontally — with zero data loss.
 
-> **Two native pipelines. Zero conversion.** OTLP stays OTLP. PRW stays PRW. Each protocol runs its own receive-process-export path with full feature parity and no conversion overhead.
+> **Two native pipelines. Zero conversion. Zero allocation.** OTLP stays OTLP. PRW stays PRW. Each protocol runs its own receive-process-export path with full feature parity, no conversion overhead, and zero-allocation serialization via [vtprotobuf](https://github.com/planetscale/vtprotobuf).
+
+### What's New in v0.44
+
+- **vtprotobuf integration** — Zero-allocation protobuf marshal/unmarshal via [PlanetScale vtprotobuf](https://github.com/planetscale/vtprotobuf) with `sync.Pool` message reuse across all OTLP pipelines. Measured **<1% CPU** at 100k dps and **~60 MiB** base memory.
+- **Updated profile resource targets** — All 6 profiles re-tuned from measured 3-way comparison tests (governor vs otel-collector vs vmagent) at 15k/50k/100k dps.
+- **sync.Pool memory optimizations** (v0.43) — Pool-based allocation reuse for buffer operations, reducing GC pressure under sustained load.
+- **Pipeline stability improvements** (v0.42) — Predictable pipeline behavior under backpressure with improved queue drain ordering.
+- **3,100+ tests** — Comprehensive test coverage including vtprotobuf integration, race detector, and parity tests across all packages.
 
 ### Universal Governance for Mixed Environments
 
@@ -143,8 +152,8 @@ Each pipeline runs independently: **Receive** → **Process** → **Limit** → 
 
 | Protocol | Ports | Capabilities |
 |----------|-------|-------------|
-| **OTLP gRPC** | `:4317` | Full `ExportMetricsService`, TLS/mTLS, bearer token, gzip/zstd |
-| **OTLP HTTP** | `:4318` | Protobuf + JSON, gzip/zstd/snappy decompression, content negotiation |
+| **OTLP gRPC** | `:4317` | Full `ExportMetricsService`, TLS/mTLS, bearer token, gzip/zstd, vtprotobuf zero-alloc unmarshal |
+| **OTLP HTTP** | `:4318` | Protobuf + JSON, gzip/zstd/snappy decompression, content negotiation, vtprotobuf pool reuse |
 | **PRW 1.0/2.0** | `:9091` | Auto-detect version, native histograms, VictoriaMetrics mode, exemplars |
 
 Backpressure built in: capacity-bounded buffers return `429` / `ResourceExhausted` when full. [Docs](docs/receiving.md)
@@ -175,6 +184,7 @@ Six actions in a single ordered pipeline — first match wins:
 
 | Optimization | Impact | How |
 |-------------|--------|-----|
+| **[vtprotobuf](docs/performance.md)** | **Zero-allocation marshal/unmarshal** | PlanetScale vtprotobuf with `sync.Pool` message reuse — near-zero GC pressure |
 | **[Pipeline Split](docs/exporting.md)** | **+60-76% throughput** | CPU-bound preparers (NumCPU) compress, I/O-bound senders (NumCPU x 2) send HTTP |
 | **[AIMD Batch Tuning](docs/exporting.md)** | Auto-discovers optimal batch size | +25% after 10 successes, -50% on failure, HTTP 413 ceiling discovery |
 | **[Adaptive Worker Scaling](docs/exporting.md)** | 1 to NumCPU x 4 workers | EWMA latency tracking, scale up on queue depth, halve on 30s idle |
@@ -210,7 +220,7 @@ Six actions in a single ordered pipeline — first match wins:
 ### Deploy — Production Ready from Day One
 
 - **[Helm Chart](helm/metrics-governor/)** — Full production chart with probes, ConfigMap sidecar, HPA-ready, alert rules integrated
-- **[Profiles](docs/profiles.md)** — 6 presets (`minimal`, `balanced`, `safety`, `observable`, `resilient`, `performance`) — one flag to set 30+ parameters
+- **[Profiles](docs/profiles.md)** — 6 presets (`minimal`, `balanced`, `safety`, `observable`, `resilient`, `performance`) — one flag to set 30+ parameters, tuned from measured vtprotobuf benchmarks
 - **[Hot Reload](docs/reload.md)** — SIGHUP reloads limits and processing rules without restart; ConfigMap sidecar for Kubernetes
 - **[Interactive Playground](https://szibis.github.io/metrics-governor/)** — Browser tool estimates resources, generates Helm/YAML/limits configs, recommends cloud storage classes
 - **[TLS/mTLS + Auth](docs/tls.md)** — Full TLS, mutual TLS, bearer token, basic auth, custom headers
@@ -223,6 +233,9 @@ Six actions in a single ordered pipeline — first match wins:
 | Metric | Value |
 |--------|-------|
 | Throughput (4-core, OTLP→HTTP) | **~500k datapoints/sec** with pipeline split + async send |
+| vtprotobuf marshal/unmarshal | **Zero allocations** — `sync.Pool` message reuse, near-zero GC pressure |
+| Measured CPU @ 100k dps | **<1% average** (minimal profile, vtprotobuf) |
+| Measured memory @ 15k dps | **~60 MiB** base overhead (1 CPU, 512 MB container) |
 | Pipeline split improvement | **+60-76%** vs unified workers |
 | Cardinality memory (Bloom) | **1.2 MB** per 1M series (98% less than maps) |
 | String interning | **76%** fewer allocations |

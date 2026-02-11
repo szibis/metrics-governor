@@ -10,9 +10,9 @@ import (
 	"github.com/szibis/metrics-governor/internal/sampling"
 	"github.com/szibis/metrics-governor/internal/stats"
 
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
-	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
+	commonpb "github.com/szibis/metrics-governor/internal/otlpvt/commonpb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
+	resourcepb "github.com/szibis/metrics-governor/internal/otlpvt/resourcepb"
 )
 
 func makeSamplingRM(name string, dpCount int, labels map[string]string) *metricspb.ResourceMetrics {

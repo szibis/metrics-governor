@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
-	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	commonpb "github.com/szibis/metrics-governor/internal/otlpvt/commonpb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
+	resourcepb "github.com/szibis/metrics-governor/internal/otlpvt/resourcepb"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/szibis/metrics-governor/internal/buffer"
@@ -39,6 +39,7 @@ func BenchmarkGRPCReceiver_Export(b *testing.B) {
 	r := NewGRPC(":0", buf)
 	req := createBenchmarkExportRequest(100, 10)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = r.Export(context.Background(), req)
@@ -55,6 +56,7 @@ func BenchmarkGRPCReceiver_Export_Concurrent(b *testing.B) {
 	r := NewGRPC(":0", buf)
 	req := createBenchmarkExportRequest(100, 10)
 
+	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			_, _ = r.Export(context.Background(), req)
@@ -88,6 +90,7 @@ func BenchmarkGRPCReceiver_Export_Scale(b *testing.B) {
 			r := NewGRPC(":0", buf)
 			req := createBenchmarkExportRequest(scale.metrics, scale.datapoints)
 
+			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				_, _ = r.Export(context.Background(), req)
@@ -107,6 +110,7 @@ func BenchmarkHTTPReceiver_HandleMetrics(b *testing.B) {
 	exportReq := createBenchmarkExportRequest(100, 10)
 	body, _ := proto.Marshal(exportReq)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		req := httptest.NewRequest(http.MethodPost, "/v1/metrics", bytes.NewReader(body))
@@ -127,6 +131,7 @@ func BenchmarkHTTPReceiver_HandleMetrics_Concurrent(b *testing.B) {
 	exportReq := createBenchmarkExportRequest(100, 10)
 	body, _ := proto.Marshal(exportReq)
 
+	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			req := httptest.NewRequest(http.MethodPost, "/v1/metrics", bytes.NewReader(body))
@@ -163,6 +168,7 @@ func BenchmarkHTTPReceiver_HandleMetrics_Scale(b *testing.B) {
 			exportReq := createBenchmarkExportRequest(scale.metrics, scale.datapoints)
 			body, _ := proto.Marshal(exportReq)
 
+			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				req := httptest.NewRequest(http.MethodPost, "/v1/metrics", bytes.NewReader(body))
@@ -194,6 +200,7 @@ func BenchmarkProtobuf_Unmarshal(b *testing.B) {
 			exportReq := createBenchmarkExportRequest(size.metrics, size.datapoints)
 			body, _ := proto.Marshal(exportReq)
 
+			b.ReportAllocs()
 			b.SetBytes(int64(len(body)))
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {

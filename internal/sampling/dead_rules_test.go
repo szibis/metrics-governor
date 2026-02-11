@@ -8,8 +8,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
-	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
+	resourcepb "github.com/szibis/metrics-governor/internal/otlpvt/resourcepb"
 )
 
 // getGaugeScalarValue reads the current value of a plain Gauge (non-Vec).

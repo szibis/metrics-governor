@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/compression"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
 )
 
 // ---------------------------------------------------------------------------

@@ -14,8 +14,8 @@ import (
 	"github.com/szibis/metrics-governor/internal/cardinality"
 	"github.com/szibis/metrics-governor/internal/intern"
 	"github.com/szibis/metrics-governor/internal/logging"
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	commonpb "github.com/szibis/metrics-governor/internal/otlpvt/commonpb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 )
 
 var (

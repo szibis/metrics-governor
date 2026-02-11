@@ -7,9 +7,8 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
-	"google.golang.org/protobuf/proto"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 )
 
 // ExportBatch is a zero-serialization batch that flows through the memory queue.
@@ -40,7 +39,7 @@ func NewExportBatch(req *colmetricspb.ExportMetricsServiceRequest) *ExportBatch 
 	return &ExportBatch{
 		ResourceMetrics: req.ResourceMetrics,
 		Timestamp:       time.Now(),
-		EstimatedBytes:  proto.Size(req),
+		EstimatedBytes:  req.SizeVT(),
 		request:         req,
 	}
 }

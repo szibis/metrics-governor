@@ -7,10 +7,12 @@ import (
 	"testing"
 	"time"
 
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
-	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	commonpb "github.com/szibis/metrics-governor/internal/otlpvt/commonpb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
+	resourcepb "github.com/szibis/metrics-governor/internal/otlpvt/resourcepb"
+
+	"google.golang.org/protobuf/proto"
 
 	"github.com/szibis/metrics-governor/internal/stats"
 )
@@ -46,6 +48,7 @@ func BenchmarkBuffer_Add(b *testing.B) {
 
 	metrics := createBenchmarkResourceMetrics(100, 10)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		buf.Add(metrics)
@@ -64,6 +67,7 @@ func BenchmarkBuffer_AddWithStats(b *testing.B) {
 
 	metrics := createBenchmarkResourceMetrics(100, 10)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		buf.Add(metrics)
@@ -81,6 +85,7 @@ func BenchmarkBuffer_ConcurrentAdd(b *testing.B) {
 
 	metrics := createBenchmarkResourceMetrics(100, 10)
 
+	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			buf.Add(metrics)
@@ -100,6 +105,7 @@ func BenchmarkBuffer_HighThroughput(b *testing.B) {
 
 	metrics := createBenchmarkResourceMetrics(10, 10)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		buf.Add(metrics)
@@ -136,6 +142,7 @@ func BenchmarkBuffer_Scale(b *testing.B) {
 
 			metrics := createBenchmarkResourceMetrics(scale.metrics, scale.datapoints)
 
+			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				buf.Add(metrics)
@@ -156,6 +163,7 @@ func BenchmarkBuffer_FlushThroughput(b *testing.B) {
 
 	metrics := createBenchmarkResourceMetrics(10, 10)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		buf.Add(metrics)
@@ -178,6 +186,7 @@ func BenchmarkFlush(b *testing.B) {
 			// Pre-create metrics matching the batch size (10 datapoints per metric)
 			metrics := createBenchmarkResourceMetrics(batchSize, 10)
 
+			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				// Add metrics directly (no Start loop needed since we call flush manually)
@@ -203,6 +212,7 @@ func BenchmarkFlush_WithStats(b *testing.B) {
 
 			metrics := createBenchmarkResourceMetrics(batchSize, 10)
 
+			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				buf.mu.Lock()
@@ -226,6 +236,7 @@ func BenchmarkFlush_NoStats(b *testing.B) {
 
 			metrics := createBenchmarkResourceMetrics(batchSize, 10)
 
+			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				buf.mu.Lock()
@@ -278,4 +289,234 @@ func createBenchmarkResourceMetrics(numMetrics, datapointsPerMetric int) []*metr
 			},
 		},
 	}
+}
+
+// createMixedResourceMetrics creates ResourceMetrics with gauge, sum, and histogram
+// metric types for testing cached size accuracy across different metric kinds.
+func createMixedResourceMetrics() []*metricspb.ResourceMetrics {
+	now := uint64(time.Now().UnixNano())
+	attrs := []*commonpb.KeyValue{
+		{Key: "service", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "test-svc"}}},
+	}
+
+	gaugeMetric := &metricspb.Metric{
+		Name: "test_gauge",
+		Data: &metricspb.Metric_Gauge{
+			Gauge: &metricspb.Gauge{
+				DataPoints: []*metricspb.NumberDataPoint{
+					{TimeUnixNano: now, Value: &metricspb.NumberDataPoint_AsDouble{AsDouble: 42.0}, Attributes: attrs},
+				},
+			},
+		},
+	}
+
+	sumMetric := &metricspb.Metric{
+		Name: "test_sum",
+		Data: &metricspb.Metric_Sum{
+			Sum: &metricspb.Sum{
+				AggregationTemporality: metricspb.AggregationTemporality_AGGREGATION_TEMPORALITY_CUMULATIVE,
+				IsMonotonic:            true,
+				DataPoints: []*metricspb.NumberDataPoint{
+					{TimeUnixNano: now, Value: &metricspb.NumberDataPoint_AsInt{AsInt: 100}, Attributes: attrs},
+					{TimeUnixNano: now, Value: &metricspb.NumberDataPoint_AsInt{AsInt: 200}, Attributes: attrs},
+				},
+			},
+		},
+	}
+
+	histMetric := &metricspb.Metric{
+		Name: "test_histogram",
+		Data: &metricspb.Metric_Histogram{
+			Histogram: &metricspb.Histogram{
+				AggregationTemporality: metricspb.AggregationTemporality_AGGREGATION_TEMPORALITY_CUMULATIVE,
+				DataPoints: []*metricspb.HistogramDataPoint{
+					{
+						TimeUnixNano:   now,
+						Count:          10,
+						Sum:            func() *float64 { v := 55.5; return &v }(),
+						BucketCounts:   []uint64{1, 2, 3, 4},
+						ExplicitBounds: []float64{1.0, 5.0, 10.0},
+						Attributes:     attrs,
+					},
+				},
+			},
+		},
+	}
+
+	return []*metricspb.ResourceMetrics{
+		{
+			Resource: &resourcepb.Resource{
+				Attributes: []*commonpb.KeyValue{
+					{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "gauge-svc"}}},
+				},
+			},
+			ScopeMetrics: []*metricspb.ScopeMetrics{{Metrics: []*metricspb.Metric{gaugeMetric}}},
+		},
+		{
+			Resource: &resourcepb.Resource{
+				Attributes: []*commonpb.KeyValue{
+					{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "sum-svc"}}},
+				},
+			},
+			ScopeMetrics: []*metricspb.ScopeMetrics{{Metrics: []*metricspb.Metric{sumMetric}}},
+		},
+		{
+			Resource: &resourcepb.Resource{
+				Attributes: []*commonpb.KeyValue{
+					{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "hist-svc"}}},
+				},
+			},
+			ScopeMetrics: []*metricspb.ScopeMetrics{{Metrics: []*metricspb.Metric{histMetric}}},
+		},
+	}
+}
+
+// TestBuffer_CachedSize_Accuracy verifies that cached sizes in metricSizes
+// match proto.Size(rm) for each buffered entry.
+func TestBuffer_CachedSize_Accuracy(t *testing.T) {
+	exp := &noopExporter{}
+	buf := New(1000, 100, time.Hour, exp, nil, nil, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go buf.Start(ctx)
+
+	mixed := createMixedResourceMetrics()
+	if err := buf.Add(mixed); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	// Also add some standard gauge-only metrics
+	gaugeOnly := createBenchmarkResourceMetrics(5, 3)
+	if err := buf.Add(gaugeOnly); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	buf.mu.Lock()
+	defer buf.mu.Unlock()
+
+	if len(buf.metrics) != len(buf.metricSizes) {
+		t.Fatalf("length mismatch: metrics=%d metricSizes=%d", len(buf.metrics), len(buf.metricSizes))
+	}
+
+	for i, rm := range buf.metrics {
+		expected := proto.Size(rm)
+		if buf.metricSizes[i] != expected {
+			t.Errorf("metricSizes[%d] = %d, want %d (proto.Size)", i, buf.metricSizes[i], expected)
+		}
+	}
+}
+
+// TestBuffer_CachedSize_SurvivesFlush verifies sizes are reset on flush
+// and new entries after flush have correct cached sizes.
+func TestBuffer_CachedSize_SurvivesFlush(t *testing.T) {
+	exp := &noopExporter{}
+	buf := New(1000, 100, time.Hour, exp, nil, nil, nil)
+
+	// Add entries before flush (do not start the background loop;
+	// we call flush manually to keep the test deterministic)
+	pre := createBenchmarkResourceMetrics(3, 5)
+	if err := buf.Add(pre); err != nil {
+		t.Fatalf("Add (pre-flush) failed: %v", err)
+	}
+
+	// Verify pre-flush state
+	buf.mu.Lock()
+	preFlushedLen := len(buf.metrics)
+	preFlushedSizesLen := len(buf.metricSizes)
+	buf.mu.Unlock()
+
+	if preFlushedLen == 0 {
+		t.Fatal("expected metrics in buffer before flush")
+	}
+	if preFlushedLen != preFlushedSizesLen {
+		t.Fatalf("pre-flush length mismatch: metrics=%d metricSizes=%d", preFlushedLen, preFlushedSizesLen)
+	}
+
+	// Flush clears the buffer
+	buf.flush(context.Background())
+
+	buf.mu.Lock()
+	afterFlushLen := len(buf.metrics)
+	afterFlushSizesLen := len(buf.metricSizes)
+	buf.mu.Unlock()
+
+	if afterFlushLen != 0 {
+		t.Fatalf("expected 0 metrics after flush, got %d", afterFlushLen)
+	}
+	if afterFlushSizesLen != 0 {
+		t.Fatalf("expected 0 metricSizes after flush, got %d", afterFlushSizesLen)
+	}
+
+	// Add new entries after flush
+	post := createMixedResourceMetrics()
+	if err := buf.Add(post); err != nil {
+		t.Fatalf("Add (post-flush) failed: %v", err)
+	}
+
+	buf.mu.Lock()
+	defer buf.mu.Unlock()
+
+	if len(buf.metrics) != len(buf.metricSizes) {
+		t.Fatalf("post-flush length mismatch: metrics=%d metricSizes=%d", len(buf.metrics), len(buf.metricSizes))
+	}
+
+	for i, rm := range buf.metrics {
+		expected := proto.Size(rm)
+		if buf.metricSizes[i] != expected {
+			t.Errorf("post-flush metricSizes[%d] = %d, want %d", i, buf.metricSizes[i], expected)
+		}
+	}
+}
+
+// BenchmarkBuffer_EstimateSize_Cached_vs_Uncached measures the benefit of cached sizes
+// by comparing buffer with cached sizes vs computing proto.Size per entry on the fly.
+func BenchmarkBuffer_EstimateSize_Cached_vs_Uncached(b *testing.B) {
+	// Pre-fill a buffer with a realistic number of entries
+	const numEntries = 500
+	entries := createBenchmarkResourceMetrics(numEntries, 10)
+
+	b.Run("cached", func(b *testing.B) {
+		exp := &noopExporter{}
+		buf := New(numEntries*2, numEntries, time.Hour, exp, nil, nil, nil)
+
+		// Populate the buffer so metricSizes is filled
+		if err := buf.Add(entries); err != nil {
+			b.Fatalf("Add failed: %v", err)
+		}
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			buf.mu.Lock()
+			total := 0
+			for _, s := range buf.metricSizes {
+				total += s
+			}
+			buf.mu.Unlock()
+			_ = total
+		}
+	})
+
+	b.Run("uncached", func(b *testing.B) {
+		exp := &noopExporter{}
+		buf := New(numEntries*2, numEntries, time.Hour, exp, nil, nil, nil)
+
+		// Populate the buffer
+		if err := buf.Add(entries); err != nil {
+			b.Fatalf("Add failed: %v", err)
+		}
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			buf.mu.Lock()
+			total := 0
+			for _, rm := range buf.metrics {
+				total += proto.Size(rm)
+			}
+			buf.mu.Unlock()
+			_ = total
+		}
+	})
 }

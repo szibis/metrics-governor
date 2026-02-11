@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 )
 
 // TestStatsLevel_BasicMode verifies basic level tracks dp counts but not cardinality.

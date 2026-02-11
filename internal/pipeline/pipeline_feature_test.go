@@ -11,9 +11,9 @@ import (
 	"github.com/szibis/metrics-governor/internal/sampling"
 	"github.com/szibis/metrics-governor/internal/tenant"
 
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
-	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
+	commonpb "github.com/szibis/metrics-governor/internal/otlpvt/commonpb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
+	resourcepb "github.com/szibis/metrics-governor/internal/otlpvt/resourcepb"
 )
 
 // makeGaugeRMWithLabels creates a ResourceMetrics with gauge datapoints that have

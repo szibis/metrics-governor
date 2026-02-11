@@ -12,7 +12,10 @@ import (
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/compression"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 	"github.com/szibis/metrics-governor/internal/prw"
+	"google.golang.org/protobuf/proto"
 )
 
 // raceMockPRWBuffer is a thread-safe mock PRWBuffer for race condition testing.
@@ -163,6 +166,73 @@ func TestRace_MockPRWBuffer_ConcurrentAdd(t *testing.T) {
 	}
 }
 
+// --- HTTP receiver pool race tests ---
+
+func TestRace_HTTPReceiver_PooledUnmarshal(t *testing.T) {
+	buf := newTestBuffer()
+	r := NewHTTP(":0", buf)
+
+	// 8 goroutines sending concurrent HTTP requests through the pooled unmarshal path
+	const goroutines = 8
+	const requestsPerGoroutine = 100
+
+	var wg sync.WaitGroup
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for i := 0; i < requestsPerGoroutine; i++ {
+				exportReq := &colmetricspb.ExportMetricsServiceRequest{
+					ResourceMetrics: []*metricspb.ResourceMetrics{{
+						ScopeMetrics: []*metricspb.ScopeMetrics{{
+							Metrics: []*metricspb.Metric{{Name: fmt.Sprintf("race_metric_%d_%d", id, i)}},
+						}},
+					}},
+				}
+				body, _ := proto.Marshal(exportReq)
+				httpReq := httptest.NewRequest(http.MethodPost, "/v1/metrics", bytes.NewReader(body))
+				httpReq.Header.Set("Content-Type", "application/x-protobuf")
+				rec := httptest.NewRecorder()
+				r.handleMetrics(rec, httpReq)
+				if rec.Code != http.StatusOK {
+					t.Errorf("goroutine %d iter %d: expected 200, got %d", id, i, rec.Code)
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+}
+
+func TestRace_GRPCReceiver_PooledExport(t *testing.T) {
+	buf := newTestBuffer()
+	r := NewGRPC(":0", buf)
+
+	// 8 goroutines calling Export concurrently
+	const goroutines = 8
+	const exportsPerGoroutine = 100
+
+	var wg sync.WaitGroup
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for i := 0; i < exportsPerGoroutine; i++ {
+				req := &colmetricspb.ExportMetricsServiceRequest{
+					ResourceMetrics: []*metricspb.ResourceMetrics{{
+						ScopeMetrics: []*metricspb.ScopeMetrics{{
+							Metrics: []*metricspb.Metric{{Name: fmt.Sprintf("grpc_race_%d_%d", id, i)}},
+						}},
+					}},
+				}
+				if _, err := r.Export(context.Background(), req); err != nil {
+					t.Errorf("goroutine %d iter %d: Export failed: %v", id, i, err)
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+}
+
 // --- Memory leak tests ---
 
 func TestMemLeak_PRWReceiver_RequestCycles(t *testing.T) {
@@ -214,6 +284,59 @@ func TestMemLeak_PRWReceiver_RequestCycles(t *testing.T) {
 	const maxGrowthBytes = 20 * 1024 * 1024 // 20MB threshold
 	if heapAfter > heapBefore+maxGrowthBytes {
 		t.Errorf("Possible memory leak: heap grew from %dKB to %dKB after %d request cycles",
+			heapBefore/1024, heapAfter/1024, cycles)
+	}
+}
+
+func TestMemLeak_HTTPReceiver_PooledRequests(t *testing.T) {
+	buf := newTestBuffer()
+	r := NewHTTP(":0", buf)
+
+	exportReq := &colmetricspb.ExportMetricsServiceRequest{
+		ResourceMetrics: []*metricspb.ResourceMetrics{{
+			ScopeMetrics: []*metricspb.ScopeMetrics{{
+				Metrics: []*metricspb.Metric{{Name: "leak_test_metric"}},
+			}},
+		}},
+	}
+	body, _ := proto.Marshal(exportReq)
+
+	// Warm up pool
+	for i := 0; i < 50; i++ {
+		httpReq := httptest.NewRequest(http.MethodPost, "/v1/metrics", bytes.NewReader(body))
+		httpReq.Header.Set("Content-Type", "application/x-protobuf")
+		rec := httptest.NewRecorder()
+		r.handleMetrics(rec, httpReq)
+	}
+
+	runtime.GC()
+	runtime.GC()
+
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	heapBefore := m.HeapInuse
+
+	const cycles = 500
+	for i := 0; i < cycles; i++ {
+		httpReq := httptest.NewRequest(http.MethodPost, "/v1/metrics", bytes.NewReader(body))
+		httpReq.Header.Set("Content-Type", "application/x-protobuf")
+		rec := httptest.NewRecorder()
+		r.handleMetrics(rec, httpReq)
+	}
+
+	runtime.GC()
+	runtime.GC()
+	time.Sleep(10 * time.Millisecond)
+
+	runtime.ReadMemStats(&m)
+	heapAfter := m.HeapInuse
+
+	t.Logf("HTTPReceiver pooled requests: heap_before=%dKB, heap_after=%dKB, requests=%d",
+		heapBefore/1024, heapAfter/1024, cycles)
+
+	const maxGrowthBytes = 20 * 1024 * 1024 // 20MB threshold
+	if heapAfter > heapBefore+maxGrowthBytes {
+		t.Errorf("Possible memory leak in pooled receiver: heap grew from %dKB to %dKB after %d request cycles",
 			heapBefore/1024, heapAfter/1024, cycles)
 	}
 }

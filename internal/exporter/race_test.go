@@ -7,6 +7,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 )
 
 // --- Race condition tests ---
@@ -213,6 +216,45 @@ func TestRace_CircuitBreaker_OpenCloseTransitions(t *testing.T) {
 				cb.RecordSuccess()
 			}
 		}(i)
+	}
+
+	wg.Wait()
+}
+
+// --- Export pool race tests ---
+
+func TestRace_ExportReqPool_ConcurrentMarshal(t *testing.T) {
+	const goroutines = 8
+	const iterations = 100
+
+	var wg sync.WaitGroup
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				req := colmetricspb.ExportMetricsServiceRequestFromVTPool()
+
+				// Simulate unmarshal by directly setting fields
+				req.ResourceMetrics = []*metricspb.ResourceMetrics{{
+					ScopeMetrics: []*metricspb.ScopeMetrics{{
+						Metrics: []*metricspb.Metric{{Name: fmt.Sprintf("race_%d_%d", id, i)}},
+					}},
+				}}
+
+				// Marshal like the export path would
+				data, err := req.MarshalVT()
+				if err != nil {
+					t.Errorf("goroutine %d iter %d: marshal failed: %v", id, i, err)
+				}
+				if len(data) == 0 {
+					t.Errorf("goroutine %d iter %d: empty marshal result", id, i)
+				}
+
+				req.ReturnToVTPool()
+				runtime.Gosched()
+			}
+		}(g)
 	}
 
 	wg.Wait()

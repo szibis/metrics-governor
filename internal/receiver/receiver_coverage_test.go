@@ -11,9 +11,9 @@ import (
 	"github.com/szibis/metrics-governor/internal/auth"
 	"github.com/szibis/metrics-governor/internal/buffer"
 	"github.com/szibis/metrics-governor/internal/compression"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 	tlspkg "github.com/szibis/metrics-governor/internal/tls"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	"google.golang.org/grpc/stats"
 	"google.golang.org/protobuf/proto"
 )

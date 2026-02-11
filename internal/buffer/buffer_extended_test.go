@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/exporter"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 )
 
 func TestCountDatapoints_Gauge(t *testing.T) {

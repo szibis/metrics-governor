@@ -4,6 +4,11 @@
 #   50k dps:  TARGET_DPS=50000 TARGET_MPS=25000 PROXY_MEM=1G PROXY_CPU=2 GEN_MEM=2G VM_MEM=2G docker compose ...
 #   100k dps: TARGET_DPS=100000 TARGET_MPS=50000 PROXY_MEM=2G PROXY_CPU=4 GEN_MEM=2G VM_MEM=2G docker compose ...
 #
+# Measured results (v0.43+, vtprotobuf):
+#   15k dps (1 CPU, 512M):  ~60-77 MiB, <1% CPU avg
+#   50k dps (2 CPU, 1G):    ~124 MiB, <1% CPU avg
+#   100k dps (4 CPU, 2G):   ~242 MiB, <1% CPU avg
+#
 # Pipeline: generator --OTLP HTTP--> governor --OTLP HTTP--> VictoriaMetrics
 # Governor runs in minimal profile — pure proxy, no stats, no limits
 

@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 )
 
 // populateBenchEnforcer creates an enforcer with n groups having random datapoint

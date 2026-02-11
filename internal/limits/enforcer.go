@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/cardinality"
+	commonpb "github.com/szibis/metrics-governor/internal/otlpvt/commonpb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 	"github.com/szibis/metrics-governor/internal/ruleactivity"
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
 
 // groupStats tracks statistics for a specific label combination (group).

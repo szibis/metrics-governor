@@ -25,6 +25,7 @@ import (
 	"github.com/szibis/metrics-governor/internal/health"
 	"github.com/szibis/metrics-governor/internal/limits"
 	"github.com/szibis/metrics-governor/internal/logging"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 	"github.com/szibis/metrics-governor/internal/pipeline"
 	"github.com/szibis/metrics-governor/internal/prw"
 	"github.com/szibis/metrics-governor/internal/queue"
@@ -34,7 +35,6 @@ import (
 	"github.com/szibis/metrics-governor/internal/stats"
 	"github.com/szibis/metrics-governor/internal/telemetry"
 	"github.com/szibis/metrics-governor/internal/tenant"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
 
 // metricsRecorder is a minimal http.ResponseWriter that writes to an io.Writer

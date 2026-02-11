@@ -55,7 +55,7 @@ func main() {
 	}
 
 	estimation := map[string]any{
-		"dps_per_core":                100000,
+		"dps_per_core":                150000,
 		"compression_ratio":           0.3,
 		"base_overhead_bytes":         52428800, // 50 MB
 		"pvc_headroom_factor":         1.2,

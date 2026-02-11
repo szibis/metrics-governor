@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/buffer"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 	"github.com/szibis/metrics-governor/internal/pipeline"
 	"github.com/szibis/metrics-governor/internal/stats"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
 
 // --- Stability test mocks ---

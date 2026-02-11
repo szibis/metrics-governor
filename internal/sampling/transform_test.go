@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	commonpb "github.com/szibis/metrics-governor/internal/otlpvt/commonpb"
 )
 
 func makeTransformAttrs(pairs ...string) []*commonpb.KeyValue {

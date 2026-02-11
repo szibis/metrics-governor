@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 	"github.com/szibis/metrics-governor/internal/queue"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
 
 // mockExporter is a test exporter that can be configured to fail or succeed.

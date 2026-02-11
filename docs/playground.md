@@ -20,7 +20,7 @@ Enter your expected throughput (datapoints/sec), metric count, cardinality, and 
 
 | Estimate | Formula |
 |----------|---------|
-| CPU cores | `dps / 100,000` (configurable via `dps_per_core`) |
+| CPU cores | `dps / 150,000` (configurable via `dps_per_core`) |
 | Memory | Tracker memory + buffer memory + 50 MB base overhead + queue (if memory mode) |
 | Disk (PVC) | `queue_max_size * 1.2` (20% headroom) |
 | Write IOPS | `ceil(dps / batch_size)` |
@@ -114,7 +114,7 @@ All magic numbers are defined in the `estimation` section of config-meta:
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `dps_per_core` | 100,000 | Datapoints per second per CPU core |
+| `dps_per_core` | 150,000 | Datapoints per second per CPU core |
 | `compression_ratio` | 0.3 | Queue disk compression ratio (30%) |
 | `base_overhead_bytes` | 50 MB | Go runtime + base process overhead |
 | `pvc_headroom_factor` | 1.2 | PVC size = queue size * 1.2 |

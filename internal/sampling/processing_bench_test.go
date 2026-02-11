@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 )
 
 // makeBenchBatch creates a batch of ResourceMetrics with the given number of

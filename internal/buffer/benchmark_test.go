@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/exporter"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
 	"github.com/szibis/metrics-governor/internal/queue"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 )
 
 // aqBenchExporter is a no-op exporter for always-queue benchmarks.

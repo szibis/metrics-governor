@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 	"github.com/szibis/metrics-governor/internal/prw"
 	"github.com/szibis/metrics-governor/internal/queue"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
 
 // TestParity_PersistentQueue verifies both OTLP and PRW use disk-backed queues.

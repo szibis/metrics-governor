@@ -14,20 +14,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/szibis/metrics-governor/internal/auth"
 	"github.com/szibis/metrics-governor/internal/compression"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 	"github.com/szibis/metrics-governor/internal/pipeline"
 	tlspkg "github.com/szibis/metrics-governor/internal/tls"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
-// marshalBufPool pools byte slices for proto.MarshalAppend to avoid per-export allocation.
+// marshalBufPool pools byte slices for MarshalToVT to avoid per-export allocation.
 var marshalBufPool = sync.Pool{New: func() any {
 	b := make([]byte, 0, 64*1024)
 	return &b
@@ -393,7 +392,7 @@ func (e *OTLPExporter) Export(ctx context.Context, req *colmetricspb.ExportMetri
 // exportGRPC exports metrics via gRPC.
 func (e *OTLPExporter) exportGRPC(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error {
 	// Estimate size for metrics tracking (gRPC handles compression internally)
-	size := proto.Size(req)
+	size := req.SizeVT()
 	datapoints := countDatapoints(req)
 
 	otlpExportRequestsTotal.Inc()
@@ -455,16 +454,23 @@ func classifyGRPCError(err error) ErrorType {
 
 // exportHTTP exports metrics via HTTP.
 func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error {
-	// Marshal into pooled buffer to avoid per-export allocation.
+	// Marshal into pooled buffer using vtprotobuf's reflection-free MarshalToVT.
 	bp := marshalBufPool.Get().(*[]byte)
 	marshalStart := time.Now()
-	marshaledBody, err := proto.MarshalOptions{}.MarshalAppend((*bp)[:0], req)
+	size := req.SizeVT()
+	if cap(*bp) < size {
+		*bp = make([]byte, size)
+	} else {
+		*bp = (*bp)[:size]
+	}
+	n, err := req.MarshalToVT(*bp)
 	pipeline.Record("serialize", pipeline.Since(marshalStart))
 	if err != nil {
-		*bp = marshaledBody[:0]
+		*bp = (*bp)[:0]
 		marshalBufPool.Put(bp)
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
+	marshaledBody := (*bp)[:n]
 	pipeline.RecordBytes("serialize", len(marshaledBody))
 
 	// Track uncompressed size and datapoints
@@ -574,12 +580,16 @@ func (e *OTLPExporter) exportHTTP(ctx context.Context, req *colmetricspb.ExportM
 // For gRPC protocol, this falls back to unmarshal + standard export.
 func (e *OTLPExporter) ExportData(ctx context.Context, data []byte) error {
 	if e.protocol == ProtocolGRPC {
-		// gRPC requires the Go struct; fall back to unmarshal + export
-		var req colmetricspb.ExportMetricsServiceRequest
-		if err := proto.Unmarshal(data, &req); err != nil {
+		// gRPC requires the Go struct; fall back to unmarshal + export.
+		// vtprotobuf pool: ResetVT preserves slice capacities for near-zero allocs after warmup.
+		req := colmetricspb.ExportMetricsServiceRequestFromVTPool()
+		if err := req.UnmarshalVT(data); err != nil {
+			req.ReturnToVTPool()
 			return fmt.Errorf("failed to unmarshal for gRPC export: %w", err)
 		}
-		return e.exportGRPC(ctx, &req)
+		err := e.exportGRPC(ctx, req)
+		req.ReturnToVTPool()
+		return err
 	}
 	return e.exportHTTPData(ctx, data)
 }

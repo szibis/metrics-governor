@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
-	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	commonpb "github.com/szibis/metrics-governor/internal/otlpvt/commonpb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
+	resourcepb "github.com/szibis/metrics-governor/internal/otlpvt/resourcepb"
 )
 
 // BenchmarkQueue_Push benchmarks pushing to the queue
@@ -38,6 +38,7 @@ func BenchmarkQueue_Push(b *testing.B) {
 
 	req := createBenchmarkRequest(10, 10)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = q.Push(req)
@@ -69,6 +70,7 @@ func BenchmarkQueue_PushPop(b *testing.B) {
 
 	req := createBenchmarkRequest(10, 10)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = q.Push(req)
@@ -105,6 +107,7 @@ func BenchmarkQueue_Peek(b *testing.B) {
 		_ = q.Push(req)
 	}
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = q.Peek()
@@ -140,6 +143,7 @@ func BenchmarkQueue_LenSize(b *testing.B) {
 		_ = q.Push(req)
 	}
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = q.Len()
@@ -185,6 +189,7 @@ func BenchmarkQueue_Push_PayloadSizes(b *testing.B) {
 
 			req := createBenchmarkRequest(size.metrics, size.datapoints)
 
+			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				_ = q.Push(req)
@@ -223,6 +228,7 @@ func BenchmarkQueue_DropOldest(b *testing.B) {
 		_ = q.Push(req)
 	}
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = q.Push(req) // This will drop oldest
@@ -254,11 +260,148 @@ func BenchmarkQueue_Concurrent(b *testing.B) {
 
 	req := createBenchmarkRequest(10, 10)
 
+	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			_ = q.Push(req)
 		}
 	})
+}
+
+// BenchmarkQueue_Pop_UnmarshalVT benchmarks the queue pop path which uses UnmarshalVT.
+func BenchmarkQueue_Pop_UnmarshalVT(b *testing.B) {
+	tmpDir, err := os.MkdirTemp("", "queue-bench-*")
+	if err != nil {
+		b.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := Config{
+		Path:          filepath.Join(tmpDir, "queue"),
+		MaxSize:       100000,
+		MaxBytes:      1073741824,
+		FullBehavior:  DropOldest,
+		RetryInterval: 5 * time.Second,
+		MaxRetryDelay: 5 * time.Minute,
+	}
+
+	q, err := New(cfg)
+	if err != nil {
+		b.Fatalf("Failed to create queue: %v", err)
+	}
+	defer q.Close()
+
+	sizes := []struct {
+		name       string
+		metrics    int
+		datapoints int
+	}{
+		{"small_10x10", 10, 10},
+		{"medium_50x50", 50, 50},
+		{"large_100x100", 100, 100},
+	}
+
+	for _, size := range sizes {
+		b.Run(size.name, func(b *testing.B) {
+			req := createBenchmarkRequest(size.metrics, size.datapoints)
+			// Pre-fill queue
+			for i := 0; i < b.N+100; i++ {
+				_ = q.Push(req)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				entry, _ := q.Pop()
+				if entry != nil {
+					_, _ = entry.GetRequest() // Uses UnmarshalVT internally
+				}
+			}
+		})
+	}
+}
+
+// TestQueue_VTProto_MarshalUnmarshal_RoundTrip verifies data integrity through
+// the disk queue's MarshalVT (Push) → UnmarshalVT (Pop/GetRequest) cycle.
+func TestQueue_VTProto_MarshalUnmarshal_RoundTrip(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "queue-vt-roundtrip-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := Config{
+		Path:          filepath.Join(tmpDir, "queue"),
+		MaxSize:       1000,
+		MaxBytes:      1073741824,
+		FullBehavior:  DropOldest,
+		RetryInterval: 5 * time.Second,
+		MaxRetryDelay: 5 * time.Minute,
+	}
+
+	q, err := New(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create queue: %v", err)
+	}
+	defer q.Close()
+
+	// Push with various payload sizes
+	payloads := []struct {
+		name    string
+		metrics int
+	}{
+		{"single", 1},
+		{"small", 10},
+		{"medium", 100},
+	}
+
+	for _, p := range payloads {
+		t.Run(p.name, func(t *testing.T) {
+			original := createBenchmarkRequest(p.metrics, 5)
+
+			if err := q.Push(original); err != nil {
+				t.Fatalf("Push failed: %v", err)
+			}
+
+			entry, err := q.Pop()
+			if err != nil {
+				t.Fatalf("Pop failed: %v", err)
+			}
+			if entry == nil {
+				t.Fatal("Pop returned nil")
+			}
+
+			restored, err := entry.GetRequest()
+			if err != nil {
+				t.Fatalf("GetRequest failed: %v", err)
+			}
+
+			// Verify structural equality
+			if len(restored.ResourceMetrics) != len(original.ResourceMetrics) {
+				t.Fatalf("ResourceMetrics count: got %d, want %d",
+					len(restored.ResourceMetrics), len(original.ResourceMetrics))
+			}
+			for i, rm := range restored.ResourceMetrics {
+				origRM := original.ResourceMetrics[i]
+				if len(rm.ScopeMetrics) != len(origRM.ScopeMetrics) {
+					t.Fatalf("ScopeMetrics[%d] count: got %d, want %d",
+						i, len(rm.ScopeMetrics), len(origRM.ScopeMetrics))
+				}
+				for j, sm := range rm.ScopeMetrics {
+					origSM := origRM.ScopeMetrics[j]
+					if len(sm.Metrics) != len(origSM.Metrics) {
+						t.Fatalf("Metrics[%d][%d] count: got %d, want %d",
+							i, j, len(sm.Metrics), len(origSM.Metrics))
+					}
+					for k, m := range sm.Metrics {
+						if m.Name != origSM.Metrics[k].Name {
+							t.Errorf("Metric name: got %q, want %q", m.Name, origSM.Metrics[k].Name)
+						}
+					}
+				}
+			}
+		})
+	}
 }
 
 // Helper functions

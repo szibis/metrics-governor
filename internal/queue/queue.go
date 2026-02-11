@@ -9,8 +9,7 @@ import (
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/compression"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	"google.golang.org/protobuf/proto"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
 )
 
 // randomID generates a random 16-byte hex string for internal queue entry IDs.
@@ -293,7 +292,7 @@ func New(cfg Config) (*SendQueue, error) {
 
 // Push adds a new request to the queue.
 func (q *SendQueue) Push(req *colmetricspb.ExportMetricsServiceRequest) error {
-	data, err := proto.Marshal(req)
+	data, err := req.MarshalVT()
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -554,7 +553,7 @@ func (q *SendQueue) Close() error {
 // GetRequest deserializes the data to an ExportMetricsServiceRequest.
 func (e *QueueEntry) GetRequest() (*colmetricspb.ExportMetricsServiceRequest, error) {
 	var req colmetricspb.ExportMetricsServiceRequest
-	if err := proto.Unmarshal(e.Data, &req); err != nil {
+	if err := req.UnmarshalVT(e.Data); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal request: %w", err)
 	}
 	return &req, nil
