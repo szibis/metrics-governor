@@ -232,132 +232,13 @@ func (r *DeprecationRegistry) DumpDeprecations() string {
 	}
 
 	b.WriteString("\nUse --strict-deprecations to fail startup on removed params.\n")
-	b.WriteString("Use --parallelism, --memory-budget-percent, --export-timeout, --resilience-level instead.\n")
+	b.WriteString("All v0.x deprecations were removed in v1.0.0. No active deprecations.\n")
 
 	return b.String()
 }
 
-// DefaultDeprecations returns the initial set of deprecation entries for v0.30.
+// DefaultDeprecations returns the active deprecation entries.
+// All v0.x deprecations were removed in v1.0.0.
 func DefaultDeprecations() []DeprecationEntry {
-	return []DeprecationEntry{
-		// Parallelism consolidation
-		{
-			OldName:      "queue-workers",
-			NewName:      "parallelism",
-			Message:      "Use --parallelism to set all worker counts from a single value.",
-			AnnouncedIn:  "0.30.0",
-			DeprecatedIn: "0.31.0",
-			RemovedIn:    "1.0.0",
-		},
-		{
-			OldName:      "export-concurrency",
-			NewName:      "parallelism",
-			Message:      "Use --parallelism to set all worker counts from a single value.",
-			AnnouncedIn:  "0.30.0",
-			DeprecatedIn: "0.31.0",
-			RemovedIn:    "1.0.0",
-		},
-
-		// Memory budget consolidation
-		{
-			OldName:      "buffer-memory-percent",
-			NewName:      "memory-budget-percent",
-			Message:      "Use --memory-budget-percent for unified memory allocation.",
-			AnnouncedIn:  "0.30.0",
-			DeprecatedIn: "0.31.0",
-			RemovedIn:    "1.0.0",
-		},
-		{
-			OldName:      "queue-memory-percent",
-			NewName:      "memory-budget-percent",
-			Message:      "Use --memory-budget-percent for unified memory allocation.",
-			AnnouncedIn:  "0.30.0",
-			DeprecatedIn: "0.31.0",
-			RemovedIn:    "1.0.0",
-		},
-
-		// Timeout cascade consolidation
-		{
-			OldName:      "queue-direct-export-timeout",
-			NewName:      "export-timeout",
-			Message:      "Use --export-timeout as base for all timeout values.",
-			AnnouncedIn:  "0.30.0",
-			DeprecatedIn: "0.31.0",
-			RemovedIn:    "1.0.0",
-		},
-		{
-			OldName:      "queue-retry-timeout",
-			NewName:      "export-timeout",
-			Message:      "Use --export-timeout as base for all timeout values.",
-			AnnouncedIn:  "0.30.0",
-			DeprecatedIn: "0.31.0",
-			RemovedIn:    "1.0.0",
-		},
-		{
-			OldName:      "queue-drain-timeout",
-			NewName:      "export-timeout",
-			Message:      "Use --export-timeout as base for all timeout values.",
-			AnnouncedIn:  "0.30.0",
-			DeprecatedIn: "0.31.0",
-			RemovedIn:    "1.0.0",
-		},
-		{
-			OldName:      "queue-drain-entry-timeout",
-			NewName:      "export-timeout",
-			Message:      "Use --export-timeout as base for all timeout values.",
-			AnnouncedIn:  "0.30.0",
-			DeprecatedIn: "0.31.0",
-			RemovedIn:    "1.0.0",
-		},
-		{
-			OldName:      "queue-close-timeout",
-			NewName:      "export-timeout",
-			Message:      "Use --export-timeout as base for all timeout values.",
-			AnnouncedIn:  "0.30.0",
-			DeprecatedIn: "0.31.0",
-			RemovedIn:    "1.0.0",
-		},
-
-		// Resilience level consolidation
-		{
-			OldName:      "queue-backoff-multiplier",
-			NewName:      "resilience-level",
-			Message:      "Use --resilience-level (low/medium/high) to set all resilience params.",
-			AnnouncedIn:  "0.30.0",
-			DeprecatedIn: "0.31.0",
-			RemovedIn:    "1.0.0",
-		},
-		{
-			OldName:      "queue-circuit-breaker-enabled",
-			NewName:      "resilience-level",
-			Message:      "Use --resilience-level (low/medium/high) to set all resilience params.",
-			AnnouncedIn:  "0.30.0",
-			DeprecatedIn: "0.31.0",
-			RemovedIn:    "1.0.0",
-		},
-		{
-			OldName:      "queue-circuit-breaker-threshold",
-			NewName:      "resilience-level",
-			Message:      "Use --resilience-level (low/medium/high) to set all resilience params.",
-			AnnouncedIn:  "0.30.0",
-			DeprecatedIn: "0.31.0",
-			RemovedIn:    "1.0.0",
-		},
-		{
-			OldName:      "queue-batch-drain-size",
-			NewName:      "resilience-level",
-			Message:      "Use --resilience-level (low/medium/high) to set all resilience params.",
-			AnnouncedIn:  "0.30.0",
-			DeprecatedIn: "0.31.0",
-			RemovedIn:    "1.0.0",
-		},
-		{
-			OldName:      "queue-burst-drain-size",
-			NewName:      "resilience-level",
-			Message:      "Use --resilience-level (low/medium/high) to set all resilience params.",
-			AnnouncedIn:  "0.30.0",
-			DeprecatedIn: "0.31.0",
-			RemovedIn:    "1.0.0",
-		},
-	}
+	return []DeprecationEntry{}
 }

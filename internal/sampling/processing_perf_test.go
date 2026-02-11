@@ -48,7 +48,7 @@ func TestPerf_SampleThroughput(t *testing.T) {
 		DefaultRate: 0.5,
 		Strategy:    StrategyHead,
 	}
-	legacySampler, err := New(legacyCfg)
+	legacySampler, err := newFromLegacy(legacyCfg)
 	if err != nil {
 		t.Fatal(err)
 	}

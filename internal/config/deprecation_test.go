@@ -465,61 +465,18 @@ func TestDumpDeprecationsEmpty(t *testing.T) {
 
 func TestDefaultDeprecations(t *testing.T) {
 	entries := DefaultDeprecations()
-	if len(entries) != 14 {
-		t.Errorf("DefaultDeprecations() returned %d entries, want 14", len(entries))
-	}
-
-	// Verify all entries have required fields populated
-	for i, e := range entries {
-		if e.OldName == "" {
-			t.Errorf("entry[%d] has empty OldName", i)
-		}
-		if e.NewName == "" {
-			t.Errorf("entry[%d] (%s) has empty NewName", i, e.OldName)
-		}
-		if e.Message == "" {
-			t.Errorf("entry[%d] (%s) has empty Message", i, e.OldName)
-		}
-		if e.AnnouncedIn == "" {
-			t.Errorf("entry[%d] (%s) has empty AnnouncedIn", i, e.OldName)
-		}
-		if e.DeprecatedIn == "" {
-			t.Errorf("entry[%d] (%s) has empty DeprecatedIn", i, e.OldName)
-		}
-		if e.RemovedIn == "" {
-			t.Errorf("entry[%d] (%s) has empty RemovedIn", i, e.OldName)
-		}
+	// All v0.x deprecations were removed in v1.0.0; no active entries remain.
+	if len(entries) != 0 {
+		t.Errorf("DefaultDeprecations() returned %d entries, want 0", len(entries))
 	}
 }
 
 func TestDefaultDeprecationsKnownEntries(t *testing.T) {
+	// All v0.x deprecation entries were removed in v1.0.0.
+	// Verify the slice is empty (no known entries to check).
 	entries := DefaultDeprecations()
-	oldNames := make(map[string]bool)
-	for _, e := range entries {
-		oldNames[e.OldName] = true
-	}
-
-	expected := []string{
-		"queue-workers",
-		"export-concurrency",
-		"buffer-memory-percent",
-		"queue-memory-percent",
-		"queue-direct-export-timeout",
-		"queue-retry-timeout",
-		"queue-drain-timeout",
-		"queue-drain-entry-timeout",
-		"queue-close-timeout",
-		"queue-backoff-multiplier",
-		"queue-circuit-breaker-enabled",
-		"queue-circuit-breaker-threshold",
-		"queue-batch-drain-size",
-		"queue-burst-drain-size",
-	}
-
-	for _, name := range expected {
-		if !oldNames[name] {
-			t.Errorf("DefaultDeprecations() missing expected entry %q", name)
-		}
+	if len(entries) != 0 {
+		t.Errorf("DefaultDeprecations() should return empty slice, got %d entries", len(entries))
 	}
 }
 

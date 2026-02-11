@@ -348,9 +348,9 @@ rules:
 	}
 
 	// Build old sampler.
-	oldSampler, err := New(oldCfg)
+	oldSampler, err := newFromLegacy(oldCfg)
 	if err != nil {
-		t.Fatalf("New(old) failed: %v", err)
+		t.Fatalf("newFromLegacy(old) failed: %v", err)
 	}
 
 	// Build new sampler from converted config.

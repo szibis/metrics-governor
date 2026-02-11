@@ -241,20 +241,6 @@ processing:
     staleness_interval: 10m
     rules: []
 
-# -- Sampling configuration (DEPRECATED: use processing instead)
-# Kept for backward compatibility. If processing.enabled is true,
-# sampling is ignored.
-sampling:
-  # -- Enable metric sampling
-  enabled: false
-  # -- Use existing ConfigMap for sampling
-  existingConfigMap: ""
-  # -- Sampling configuration content
-  config: |
-    default_rate: 1.0
-    strategy: head
-    rules: []
-
 # -- Multi-tenancy configuration
 tenancy:
   # -- Enable multi-tenancy support

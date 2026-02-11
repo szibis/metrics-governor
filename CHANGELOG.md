@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.0.0] - 2026-02-11
+
+### BREAKING CHANGES
+
+- Removed deprecated CLI flag `--sampling-config` (use `--processing-config`)
+- Removed deprecated CLI flags: `--queue-workers`, `--export-concurrency` (use `--parallelism`)
+- Removed deprecated CLI flags: `--buffer-memory-percent`, `--queue-memory-percent` (use `--memory-budget-percent`)
+- Removed deprecated CLI flags: `--queue-direct-export-timeout`, `--queue-retry-timeout`, `--queue-drain-timeout`, `--queue-drain-entry-timeout`, `--queue-close-timeout` (use `--export-timeout`)
+- Removed deprecated CLI flags: `--queue-backoff-multiplier`, `--queue-circuit-breaker-enabled`, `--queue-circuit-breaker-threshold`, `--queue-batch-drain-size`, `--queue-burst-drain-size` (use `--resilience-level`)
+- Removed deprecated Prometheus metrics: `metrics_governor_sampling_*`, `metrics_governor_downsampling_*` (use `metrics_governor_processing_*`)
+- Removed deprecated Helm `sampling:` section (use `processing:`)
+- Removed legacy sampling code path — processing engine handles all operations (sample, downsample, aggregate, transform, classify, drop)
+
+
 ## [0.44.0] - 2026-02-11
 
 ### Added

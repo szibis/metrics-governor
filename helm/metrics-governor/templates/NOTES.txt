@@ -69,14 +69,6 @@ Processing rules are ENABLED.
 {{- else }}
   Config: {{ include "metrics-governor.processingConfigMapName" . }}
 {{- end }}
-{{- else if .Values.sampling.enabled }}
-
-Metric sampling is ENABLED (deprecated: use processing.enabled instead).
-{{- if .Values.sampling.existingConfigMap }}
-  Config: Using existing ConfigMap '{{ .Values.sampling.existingConfigMap }}'
-{{- else }}
-  Config: {{ include "metrics-governor.samplingConfigMapName" . }}
-{{- end }}
 {{- else }}
 
 Processing rules are DISABLED.

@@ -430,13 +430,8 @@ func main() {
 	}
 
 	// Create sampler/processor (if configured)
-	// Processing config takes precedence; --sampling-config is a deprecated alias.
 	var sampler *sampling.Sampler
 	processingConfigPath := cfg.ProcessingConfig
-	if processingConfigPath == "" && cfg.SamplingConfig != "" {
-		processingConfigPath = cfg.SamplingConfig
-		logging.Warn("--sampling-config is deprecated, use --processing-config instead", logging.F("path", cfg.SamplingConfig))
-	}
 	if processingConfigPath != "" {
 		procCfg, err := sampling.LoadProcessingFile(processingConfigPath)
 		if err != nil {

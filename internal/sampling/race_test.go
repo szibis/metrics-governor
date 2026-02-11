@@ -42,7 +42,7 @@ func makeRaceRM(name string, dpCount int) []*metricspb.ResourceMetrics {
 // TestRace_Sampling_ConcurrentSample verifies that concurrent Sample calls
 // do not trigger the race detector.
 func TestRace_Sampling_ConcurrentSample(t *testing.T) {
-	s, err := New(FileConfig{
+	s, err := newFromLegacy(FileConfig{
 		DefaultRate: 0.5,
 		Strategy:    StrategyHead,
 	})
@@ -68,7 +68,7 @@ func TestRace_Sampling_ConcurrentSample(t *testing.T) {
 // TestRace_Sampling_SampleWithReload verifies that concurrent Sample and
 // ReloadConfig calls do not race on the RWMutex-protected state.
 func TestRace_Sampling_SampleWithReload(t *testing.T) {
-	s, err := New(FileConfig{
+	s, err := newFromLegacy(FileConfig{
 		DefaultRate: 0.5,
 		Strategy:    StrategyHead,
 	})
@@ -107,7 +107,7 @@ func TestRace_Sampling_SampleWithReload(t *testing.T) {
 					},
 				},
 			}
-			if err := s.ReloadConfig(newCfg); err != nil {
+			if err := reloadFromLegacy(s, newCfg); err != nil {
 				t.Errorf("ReloadConfig: %v", err)
 			}
 		}

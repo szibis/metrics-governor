@@ -47,7 +47,7 @@ func makeLeakRM(name string, dpCount int) []*metricspb.ResourceMetrics {
 func TestLeakCheck_Sampler(t *testing.T) {
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 
-	s, err := New(FileConfig{
+	s, err := newFromLegacy(FileConfig{
 		DefaultRate: 0.5,
 		Strategy:    StrategyHead,
 	})
@@ -64,7 +64,7 @@ func TestLeakCheck_Sampler(t *testing.T) {
 // TestMemLeak_Sampler_ReloadCycles verifies that repeated Sample + ReloadConfig
 // cycles do not cause unbounded heap growth.
 func TestMemLeak_Sampler_ReloadCycles(t *testing.T) {
-	s, err := New(FileConfig{
+	s, err := newFromLegacy(FileConfig{
 		DefaultRate: 0.5,
 		Strategy:    StrategyHead,
 	})
@@ -89,7 +89,7 @@ func TestMemLeak_Sampler_ReloadCycles(t *testing.T) {
 			DefaultRate: float64(c%10) / 10.0,
 			Strategy:    StrategyHead,
 		}
-		if err := s.ReloadConfig(newCfg); err != nil {
+		if err := reloadFromLegacy(s, newCfg); err != nil {
 			t.Fatalf("ReloadConfig cycle %d: %v", c, err)
 		}
 	}
