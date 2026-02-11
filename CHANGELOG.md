@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0] - 2026-02-11
 
+### Added
+
+- feat!: remove all v0.x deprecations for v1.0.0 release (#184)
+
+
+## [1.0.0] - 2026-02-11
+
 ### BREAKING CHANGES
 
 - Removed deprecated CLI flag `--sampling-config` (use `--processing-config`)
