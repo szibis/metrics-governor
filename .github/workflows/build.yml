@@ -181,7 +181,9 @@ jobs:
         id: unit_tests
         continue-on-error: true
         run: |
-          go test -v -race -coverprofile=coverage-unit.out -covermode=atomic ./internal/... 2>&1 | tee unit-test-output.txt
+          # Exclude generated protobuf packages (no test files, 0% coverage expected)
+          TEST_PKGS=$(go list ./internal/... | grep -v '/otlpvt/[a-z]' | tr '\n' ' ')
+          go test -v -race -coverprofile=coverage-unit.out -covermode=atomic $TEST_PKGS 2>&1 | tee unit-test-output.txt
 
       - name: Extract coverage percentage
         id: coverage
