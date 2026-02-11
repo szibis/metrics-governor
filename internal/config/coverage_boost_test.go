@@ -525,35 +525,11 @@ func TestParseFlagsQueueResilience(t *testing.T) {
 
 	os.Args = []string{
 		"test",
-		"-queue-batch-drain-size", "20",
-		"-queue-burst-drain-size", "200",
-		"-queue-retry-timeout", "3s",
-		"-queue-close-timeout", "45s",
-		"-queue-drain-timeout", "20s",
-		"-queue-drain-entry-timeout", "2s",
 		"-exporter-dial-timeout", "15s",
 	}
 
 	cfg := ParseFlags()
 
-	if cfg.QueueBatchDrainSize != 20 {
-		t.Errorf("expected QueueBatchDrainSize 20, got %d", cfg.QueueBatchDrainSize)
-	}
-	if cfg.QueueBurstDrainSize != 200 {
-		t.Errorf("expected QueueBurstDrainSize 200, got %d", cfg.QueueBurstDrainSize)
-	}
-	if cfg.QueueRetryTimeout != 3*time.Second {
-		t.Errorf("expected QueueRetryTimeout 3s, got %v", cfg.QueueRetryTimeout)
-	}
-	if cfg.QueueCloseTimeout != 45*time.Second {
-		t.Errorf("expected QueueCloseTimeout 45s, got %v", cfg.QueueCloseTimeout)
-	}
-	if cfg.QueueDrainTimeout != 20*time.Second {
-		t.Errorf("expected QueueDrainTimeout 20s, got %v", cfg.QueueDrainTimeout)
-	}
-	if cfg.QueueDrainEntryTimeout != 2*time.Second {
-		t.Errorf("expected QueueDrainEntryTimeout 2s, got %v", cfg.QueueDrainEntryTimeout)
-	}
 	if cfg.ExporterDialTimeout != 15*time.Second {
 		t.Errorf("expected ExporterDialTimeout 15s, got %v", cfg.ExporterDialTimeout)
 	}
@@ -714,16 +690,12 @@ func TestParseFlagsRelabelAndSampling(t *testing.T) {
 	os.Args = []string{
 		"test",
 		"-relabel-config", "/etc/relabel.yaml",
-		"-sampling-config", "/etc/sampling.yaml",
 	}
 
 	cfg := ParseFlags()
 
 	if cfg.RelabelConfig != "/etc/relabel.yaml" {
 		t.Errorf("expected RelabelConfig '/etc/relabel.yaml', got %q", cfg.RelabelConfig)
-	}
-	if cfg.SamplingConfig != "/etc/sampling.yaml" {
-		t.Errorf("expected SamplingConfig '/etc/sampling.yaml', got %q", cfg.SamplingConfig)
 	}
 }
 

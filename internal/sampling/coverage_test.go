@@ -16,7 +16,7 @@ import (
 
 func TestSampleSummaryDataPoints_KeepAll(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 1.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func TestSampleSummaryDataPoints_KeepAll(t *testing.T) {
 
 func TestSampleSummaryDataPoints_DropAll(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 0.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestSampleSummaryDataPoints_RuleMatch(t *testing.T) {
 			{Name: "keep-sli", Match: map[string]string{"__name__": "sli_.*"}, Rate: 1.0},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestSampleSummaryDataPoints_RuleMatch(t *testing.T) {
 
 func TestSampleSummaryDataPoints_EmptySlice(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 1.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestSampleSummaryDataPoints_EmptySlice(t *testing.T) {
 
 func TestSampleExpHistDataPoints_KeepAll(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 1.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestSampleExpHistDataPoints_KeepAll(t *testing.T) {
 
 func TestSampleExpHistDataPoints_DropAll(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 0.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestSampleExpHistDataPoints_RuleMatch(t *testing.T) {
 			{Name: "keep-http", Match: map[string]string{"__name__": "http_.*"}, Rate: 1.0},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestSampleExpHistDataPoints_RuleMatch(t *testing.T) {
 
 func TestSampleExpHistDataPoints_EmptySlice(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 1.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +216,7 @@ rules:
 		t.Fatal(err)
 	}
 
-	cfg, err := LoadFile(path)
+	cfg, err := loadFileConfig(path)
 	if err != nil {
 		t.Fatalf("LoadFile failed: %v", err)
 	}
@@ -235,7 +235,7 @@ rules:
 }
 
 func TestLoadFile_NonExistentFile(t *testing.T) {
-	_, err := LoadFile("/nonexistent/path/does_not_exist.yaml")
+	_, err := loadFileConfig("/nonexistent/path/does_not_exist.yaml")
 	if err == nil {
 		t.Error("expected error for non-existent file")
 	}
@@ -248,7 +248,7 @@ func TestLoadFile_InvalidYAML(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := LoadFile(path)
+	_, err := loadFileConfig(path)
 	if err == nil {
 		t.Error("expected error for invalid YAML")
 	}
@@ -384,7 +384,7 @@ func TestSampleMetric_SummaryWithRule(t *testing.T) {
 			{Name: "drop-debug", Match: map[string]string{"__name__": "debug_.*"}, Rate: 0.0},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +405,7 @@ func TestSampleMetric_ExponentialHistogramWithRule(t *testing.T) {
 			{Name: "drop-debug", Match: map[string]string{"__name__": "debug_.*"}, Rate: 0.0},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +426,7 @@ func TestSampleMetric_HistogramKeepAndDrop(t *testing.T) {
 			{Name: "drop-internal", Match: map[string]string{"__name__": "internal_.*"}, Rate: 0.0},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +450,7 @@ func TestSampleMetric_HistogramKeepAndDrop(t *testing.T) {
 
 func TestSampleMetric_NilDataFields(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 1.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -770,7 +770,7 @@ func TestReloadProcessingConfig_WithDeadScanner(t *testing.T) {
 
 func TestSampleHistogramDataPoints_KeepAll(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 1.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -794,52 +794,6 @@ func TestSampleHistogramDataPoints_KeepAll(t *testing.T) {
 	histDPs := result[0].ScopeMetrics[0].Metrics[0].Data.(*metricspb.Metric_Histogram).Histogram.DataPoints
 	if len(histDPs) != 2 {
 		t.Errorf("expected 2 histogram datapoints, got %d", len(histDPs))
-	}
-}
-
-// ---------------------------------------------------------------------------
-// 17. resolveRateFromRule — unnamed rule and nil rule paths (77.8%)
-// ---------------------------------------------------------------------------
-
-func TestResolveRateFromRule_UnnamedRule(t *testing.T) {
-	rule := &Rule{Rate: 0.5, Strategy: StrategyProbabilistic}
-	rate, strategy, name := resolveRateFromRule(rule, 1.0, StrategyHead)
-	if rate != 0.5 {
-		t.Errorf("expected rate 0.5, got %f", rate)
-	}
-	if strategy != StrategyProbabilistic {
-		t.Errorf("expected strategy probabilistic, got %s", strategy)
-	}
-	if name != "unnamed" {
-		t.Errorf("expected name 'unnamed', got %q", name)
-	}
-}
-
-func TestResolveRateFromRule_NilRule(t *testing.T) {
-	rate, strategy, name := resolveRateFromRule(nil, 0.75, StrategyProbabilistic)
-	if rate != 0.75 {
-		t.Errorf("expected default rate 0.75, got %f", rate)
-	}
-	if strategy != StrategyProbabilistic {
-		t.Errorf("expected default strategy probabilistic, got %s", strategy)
-	}
-	if name != "default" {
-		t.Errorf("expected name 'default', got %q", name)
-	}
-}
-
-func TestResolveRateFromRule_EmptyStrategy(t *testing.T) {
-	rule := &Rule{Name: "test-rule", Rate: 0.8}
-	rate, strategy, name := resolveRateFromRule(rule, 1.0, StrategyProbabilistic)
-	if rate != 0.8 {
-		t.Errorf("expected rate 0.8, got %f", rate)
-	}
-	// Empty strategy on rule should fall through to default strategy.
-	if strategy != StrategyProbabilistic {
-		t.Errorf("expected default strategy probabilistic, got %s", strategy)
-	}
-	if name != "test-rule" {
-		t.Errorf("expected name 'test-rule', got %q", name)
 	}
 }
 
@@ -1134,9 +1088,9 @@ func TestValidateClassifyRule_NilClassify(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestParse_InvalidYAML(t *testing.T) {
-	_, err := Parse([]byte(":::invalid yaml"))
+	_, err := parseFileConfig([]byte(":::invalid yaml"))
 	if err == nil {
-		t.Error("expected error for invalid YAML input to Parse()")
+		t.Error("expected error for invalid YAML input to parseFileConfig()")
 	}
 }
 
@@ -1266,7 +1220,7 @@ func TestSampleMetric_DownsampleLTTB(t *testing.T) {
 			},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1304,7 +1258,7 @@ func TestSampleMetric_DownsampleAdaptive(t *testing.T) {
 			},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1335,7 +1289,7 @@ func TestCompileRules_DownsampleMissingConfig(t *testing.T) {
 			},
 		},
 	}
-	_, err := New(cfg)
+	_, err := newFromLegacy(cfg)
 	if err == nil {
 		t.Error("expected error for downsample strategy without downsample config")
 	}

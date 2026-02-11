@@ -209,13 +209,17 @@ func TestDataIntegrity_Pipeline_RelabelDrop(t *testing.T) {
 // drops all metrics, and rate=1.0 keeps all.
 func TestDataIntegrity_Pipeline_SamplingReduction(t *testing.T) {
 	// Rate=1.0 — keep all
-	cfg := sampling.FileConfig{
-		DefaultRate: 1.0,
-		Strategy:    sampling.StrategyHead,
-	}
-	s, err := sampling.New(cfg)
+	s, err := sampling.NewFromProcessing(sampling.ProcessingConfig{
+		Rules: []sampling.ProcessingRule{{
+			Name:   "default",
+			Input:  ".*",
+			Action: sampling.ActionSample,
+			Rate:   1.0,
+			Method: "head",
+		}},
+	})
 	if err != nil {
-		t.Fatalf("sampling.New: %v", err)
+		t.Fatalf("sampling.NewFromProcessing: %v", err)
 	}
 
 	var metrics []*metricspb.ResourceMetrics
@@ -232,10 +236,17 @@ func TestDataIntegrity_Pipeline_SamplingReduction(t *testing.T) {
 	}
 
 	// Rate=0 — drop all
-	cfg.DefaultRate = 0.0
-	s2, err := sampling.New(cfg)
+	s2, err := sampling.NewFromProcessing(sampling.ProcessingConfig{
+		Rules: []sampling.ProcessingRule{{
+			Name:   "default",
+			Input:  ".*",
+			Action: sampling.ActionSample,
+			Rate:   0.0,
+			Method: "head",
+		}},
+	})
 	if err != nil {
-		t.Fatalf("sampling.New: %v", err)
+		t.Fatalf("sampling.NewFromProcessing: %v", err)
 	}
 
 	exp2 := runPipeline(t, metrics, buffer.WithSampler(s2))
@@ -322,12 +333,17 @@ func TestDataIntegrity_Pipeline_FullPipeline_AllFeatures(t *testing.T) {
 	}
 
 	// Sampler: rate=1.0 keep all
-	s, err := sampling.New(sampling.FileConfig{
-		DefaultRate: 1.0,
-		Strategy:    sampling.StrategyHead,
+	s, err := sampling.NewFromProcessing(sampling.ProcessingConfig{
+		Rules: []sampling.ProcessingRule{{
+			Name:   "default",
+			Input:  ".*",
+			Action: sampling.ActionSample,
+			Rate:   1.0,
+			Method: "head",
+		}},
 	})
 	if err != nil {
-		t.Fatalf("sampling.New: %v", err)
+		t.Fatalf("sampling.NewFromProcessing: %v", err)
 	}
 
 	// Tenant: enabled but no quotas (passthrough)
@@ -381,12 +397,17 @@ func TestDataIntegrity_Pipeline_FullPipeline_CascadingDrops(t *testing.T) {
 
 	// Sampler: rate=1.0 (keep all surviving after relabel)
 	// Using rate=1.0 to make the test deterministic
-	s, err := sampling.New(sampling.FileConfig{
-		DefaultRate: 1.0,
-		Strategy:    sampling.StrategyHead,
+	s, err := sampling.NewFromProcessing(sampling.ProcessingConfig{
+		Rules: []sampling.ProcessingRule{{
+			Name:   "default",
+			Input:  ".*",
+			Action: sampling.ActionSample,
+			Rate:   1.0,
+			Method: "head",
+		}},
 	})
 	if err != nil {
-		t.Fatalf("sampling.New: %v", err)
+		t.Fatalf("sampling.NewFromProcessing: %v", err)
 	}
 
 	// Tenant: quota of 30 per tenant (default tenant)

@@ -108,7 +108,6 @@ type Config struct {
 
 	// Processing/sampling settings
 	ProcessingConfig string // Unified processing rules config (--processing-config)
-	SamplingConfig   string // Deprecated: use ProcessingConfig. Kept for backward compat.
 
 	// Queue settings
 	QueueMode              string // "memory", "disk", or "hybrid" — controls serialization behavior
@@ -493,7 +492,6 @@ func ParseFlags() *Config {
 
 	// Processing/sampling flags
 	flag.StringVar(&cfg.ProcessingConfig, "processing-config", "", "Path to processing rules configuration YAML file")
-	flag.StringVar(&cfg.SamplingConfig, "sampling-config", "", "Deprecated: use --processing-config. Path to sampling configuration YAML file")
 
 	// Queue flags
 	flag.StringVar(&cfg.QueueMode, "queue-mode", "memory", "Queue mode: memory (zero-serialization), disk (persistent), or hybrid (memory L1 + disk L2)")
@@ -518,19 +516,13 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.QueueCompression, "queue-compression", "snappy", "Queue block compression: none, snappy")
 	// Backoff flags
 	flag.BoolVar(&cfg.QueueBackoffEnabled, "queue-backoff-enabled", true, "Enable exponential backoff for retries")
-	flag.Float64Var(&cfg.QueueBackoffMultiplier, "queue-backoff-multiplier", 2.0, "Backoff delay multiplier on each failure")
 	// Circuit breaker flags
-	flag.BoolVar(&cfg.QueueCircuitBreakerEnabled, "queue-circuit-breaker-enabled", true, "Enable circuit breaker pattern for retries")
-	flag.IntVar(&cfg.QueueCircuitBreakerThreshold, "queue-circuit-breaker-threshold", 5, "Consecutive failures before opening circuit")
 	flag.DurationVar(&cfg.QueueCircuitBreakerResetTimeout, "queue-circuit-breaker-reset-timeout", 30*time.Second, "Time to wait before half-open state")
 	// Worker pool flags
 	flag.BoolVar(&cfg.QueueAlwaysQueue, "queue-always-queue", true, "Always route data through queue (workers pull and export)")
-	flag.IntVar(&cfg.QueueWorkers, "queue-workers", 0, "Queue worker goroutine count (0 = NumCPU)")
 
 	// Memory limit flags
 	flag.Float64Var(&cfg.MemoryLimitRatio, "memory-limit-ratio", 0.85, "Ratio of container memory to use for GOMEMLIMIT (0.0-1.0)")
-	flag.Float64Var(&cfg.BufferMemoryPercent, "buffer-memory-percent", 0.10, "Buffer capacity as % of detected memory limit (0.0-1.0)")
-	flag.Float64Var(&cfg.QueueMemoryPercent, "queue-memory-percent", 0.10, "Queue in-memory capacity as % of detected memory limit (0.0-1.0)")
 
 	// Sharding flags
 	flag.BoolVar(&cfg.ShardingEnabled, "sharding-enabled", false, "Enable consistent sharding")
@@ -591,7 +583,6 @@ func ParseFlags() *Config {
 	flag.BoolVar(&cfg.PRWLimitsDryRun, "prw-limits-dry-run", true, "PRW limits dry run mode")
 
 	// Performance tuning flags
-	flag.IntVar(&cfg.ExportConcurrency, "export-concurrency", 0, "Concurrency limit for parallel exports (0 = NumCPU * 4)")
 	flag.BoolVar(&cfg.StringInterning, "string-interning", true, "Enable string interning for label deduplication")
 	flag.IntVar(&cfg.InternMaxValueLength, "intern-max-value-length", 64, "Max length for value interning (longer values not interned)")
 
@@ -636,15 +627,6 @@ func ParseFlags() *Config {
 	flag.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", 30*time.Second, "Graceful shutdown timeout (should be less than K8s terminationGracePeriodSeconds)")
 
 	flag.BoolVar(&cfg.PprofEnabled, "pprof-enabled", false, "Enable /debug/pprof/ endpoints on stats server (for debugging only)")
-
-	// Queue resilience flags
-	flag.DurationVar(&cfg.QueueDirectExportTimeout, "queue-direct-export-timeout", 5*time.Second, "Max time for direct (non-retry) export before failing and queuing; prevents slow destinations from blocking flush goroutines (0=disabled)")
-	flag.IntVar(&cfg.QueueBatchDrainSize, "queue-batch-drain-size", 10, "Entries processed per retry tick")
-	flag.IntVar(&cfg.QueueBurstDrainSize, "queue-burst-drain-size", 100, "Entries drained in burst on recovery")
-	flag.DurationVar(&cfg.QueueRetryTimeout, "queue-retry-timeout", 10*time.Second, "Per-retry export timeout")
-	flag.DurationVar(&cfg.QueueCloseTimeout, "queue-close-timeout", 60*time.Second, "Close() wait for retry loop to finish")
-	flag.DurationVar(&cfg.QueueDrainTimeout, "queue-drain-timeout", 30*time.Second, "Overall drain queue timeout on shutdown")
-	flag.DurationVar(&cfg.QueueDrainEntryTimeout, "queue-drain-entry-timeout", 5*time.Second, "Per-entry timeout during drain")
 
 	// Exporter transport flags
 	flag.DurationVar(&cfg.ExporterDialTimeout, "exporter-dial-timeout", 30*time.Second, "TCP connection setup timeout for exporter")
@@ -873,8 +855,6 @@ func applyFlagOverrides(cfg *Config) {
 			cfg.RelabelConfig = f.Value.String()
 		case "processing-config":
 			cfg.ProcessingConfig = f.Value.String()
-		case "sampling-config":
-			cfg.SamplingConfig = f.Value.String()
 		case "queue-mode":
 			cfg.QueueMode = f.Value.String()
 		case "queue-enabled":
@@ -955,20 +935,6 @@ func applyFlagOverrides(cfg *Config) {
 			cfg.QueueCompression = f.Value.String()
 		case "queue-backoff-enabled":
 			cfg.QueueBackoffEnabled = f.Value.String() == "true"
-		case "queue-backoff-multiplier":
-			if v, ok := f.Value.(flag.Getter); ok {
-				if fv, ok := v.Get().(float64); ok {
-					cfg.QueueBackoffMultiplier = fv
-				}
-			}
-		case "queue-circuit-breaker-enabled":
-			cfg.QueueCircuitBreakerEnabled = f.Value.String() == "true"
-		case "queue-circuit-breaker-threshold":
-			if v, ok := f.Value.(flag.Getter); ok {
-				if i, ok := v.Get().(int); ok {
-					cfg.QueueCircuitBreakerThreshold = i
-				}
-			}
 		case "queue-circuit-breaker-reset-timeout":
 			if d, err := time.ParseDuration(f.Value.String()); err == nil {
 				cfg.QueueCircuitBreakerResetTimeout = d
@@ -979,24 +945,8 @@ func applyFlagOverrides(cfg *Config) {
 					cfg.MemoryLimitRatio = fv
 				}
 			}
-		case "buffer-memory-percent":
-			if v, ok := f.Value.(flag.Getter); ok {
-				if fv, ok := v.Get().(float64); ok {
-					cfg.BufferMemoryPercent = fv
-				}
-			}
-		case "queue-memory-percent":
-			if v, ok := f.Value.(flag.Getter); ok {
-				if fv, ok := v.Get().(float64); ok {
-					cfg.QueueMemoryPercent = fv
-				}
-			}
 		case "queue-always-queue":
 			cfg.QueueAlwaysQueue = f.Value.String() == "true"
-		case "queue-workers":
-			if i, err := strconv.Atoi(f.Value.String()); err == nil {
-				cfg.QueueWorkers = i
-			}
 		case "buffer-full-policy":
 			cfg.BufferFullPolicy = f.Value.String()
 		case "sharding-enabled":
@@ -1127,12 +1077,6 @@ func applyFlagOverrides(cfg *Config) {
 			cfg.PRWLimitsConfig = f.Value.String()
 		case "prw-limits-dry-run":
 			cfg.PRWLimitsDryRun = f.Value.String() == "true"
-		case "export-concurrency":
-			if v, ok := f.Value.(flag.Getter); ok {
-				if i, ok := v.Get().(int); ok {
-					cfg.ExportConcurrency = i
-				}
-			}
 		case "string-interning":
 			cfg.StringInterning = f.Value.String() == "true"
 		case "intern-max-value-length":
@@ -1241,38 +1185,6 @@ func applyFlagOverrides(cfg *Config) {
 			cfg.TenancyStripSource = f.Value.String() == "true"
 		case "tenancy-config":
 			cfg.TenancyConfigFile = f.Value.String()
-		case "queue-batch-drain-size":
-			if v, ok := f.Value.(flag.Getter); ok {
-				if i, ok := v.Get().(int); ok {
-					cfg.QueueBatchDrainSize = i
-				}
-			}
-		case "queue-burst-drain-size":
-			if v, ok := f.Value.(flag.Getter); ok {
-				if i, ok := v.Get().(int); ok {
-					cfg.QueueBurstDrainSize = i
-				}
-			}
-		case "queue-retry-timeout":
-			if d, err := time.ParseDuration(f.Value.String()); err == nil {
-				cfg.QueueRetryTimeout = d
-			}
-		case "queue-close-timeout":
-			if d, err := time.ParseDuration(f.Value.String()); err == nil {
-				cfg.QueueCloseTimeout = d
-			}
-		case "queue-drain-timeout":
-			if d, err := time.ParseDuration(f.Value.String()); err == nil {
-				cfg.QueueDrainTimeout = d
-			}
-		case "queue-direct-export-timeout":
-			if d, err := time.ParseDuration(f.Value.String()); err == nil {
-				cfg.QueueDirectExportTimeout = d
-			}
-		case "queue-drain-entry-timeout":
-			if d, err := time.ParseDuration(f.Value.String()); err == nil {
-				cfg.QueueDrainEntryTimeout = d
-			}
 		case "exporter-dial-timeout":
 			if d, err := time.ParseDuration(f.Value.String()); err == nil {
 				cfg.ExporterDialTimeout = d
@@ -1846,7 +1758,6 @@ OPTIONS:
 
     Processing:
         -processing-config <path>        Path to processing rules configuration YAML file
-        -sampling-config <path>          Deprecated: use --processing-config
 
     Cardinality Tracking:
         -cardinality-mode <mode>         Tracking mode: bloom, exact, or hybrid (auto Bloom→HLL) (default: bloom)
@@ -1890,9 +1801,6 @@ OPTIONS:
 
     Queue Resilience (Backoff & Circuit Breaker):
         -queue-backoff-enabled           Enable exponential backoff for retries (default: true)
-        -queue-backoff-multiplier <n>    Backoff delay multiplier on each failure (default: 2.0)
-        -queue-circuit-breaker-enabled   Enable circuit breaker pattern (default: true)
-        -queue-circuit-breaker-threshold <n>      Consecutive failures before opening circuit (default: 10)
         -queue-circuit-breaker-reset-timeout <dur> Time to wait before half-open state (default: 30s)
 
     Memory:
@@ -1909,8 +1817,6 @@ OPTIONS:
         -sharding-fallback-on-empty      Use static endpoint if no DNS results (default: true)
 
     Performance:
-        -export-concurrency <n>          Concurrent export workers (default: NumCPU * 4)
-                                         Controls parallel batch exports within each flush cycle.
         -string-interning                Enable string interning for label deduplication (default: true)
 
     General:
@@ -2050,7 +1956,6 @@ func DefaultConfig() *Config {
 		RuleCacheMaxSize:                10000,
 		RelabelConfig:                   "",
 		ProcessingConfig:                "",
-		SamplingConfig:                  "",
 		QueueMode:                       "memory",
 		QueueType:                       "memory",
 		QueueEnabled:                    true,

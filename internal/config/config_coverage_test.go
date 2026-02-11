@@ -171,16 +171,12 @@ func TestParseFlagsPerformance(t *testing.T) {
 
 	os.Args = []string{
 		"test",
-		"-export-concurrency", "16",
 		"-string-interning",
 		"-intern-max-value-length", "512",
 	}
 
 	cfg := ParseFlags()
 
-	if cfg.ExportConcurrency != 16 {
-		t.Errorf("expected ExportConcurrency 16, got %d", cfg.ExportConcurrency)
-	}
 	if !cfg.StringInterning {
 		t.Error("expected StringInterning true")
 	}
@@ -304,16 +300,12 @@ func TestParseFlagsQueueBackoff(t *testing.T) {
 	os.Args = []string{
 		"test",
 		"-queue-backoff-enabled",
-		"-queue-backoff-multiplier", "3.0",
 	}
 
 	cfg := ParseFlags()
 
 	if !cfg.QueueBackoffEnabled {
 		t.Error("expected QueueBackoffEnabled true")
-	}
-	if cfg.QueueBackoffMultiplier != 3.0 {
-		t.Errorf("expected QueueBackoffMultiplier 3.0, got %f", cfg.QueueBackoffMultiplier)
 	}
 }
 
@@ -325,19 +317,11 @@ func TestParseFlagsQueueCircuitBreaker(t *testing.T) {
 
 	os.Args = []string{
 		"test",
-		"-queue-circuit-breaker-enabled",
-		"-queue-circuit-breaker-threshold", "20",
 		"-queue-circuit-breaker-reset-timeout", "45s",
 	}
 
 	cfg := ParseFlags()
 
-	if !cfg.QueueCircuitBreakerEnabled {
-		t.Error("expected QueueCircuitBreakerEnabled true")
-	}
-	if cfg.QueueCircuitBreakerThreshold != 20 {
-		t.Errorf("expected QueueCircuitBreakerThreshold 20, got %d", cfg.QueueCircuitBreakerThreshold)
-	}
 	if cfg.QueueCircuitBreakerResetTimeout != 45*time.Second {
 		t.Errorf("expected QueueCircuitBreakerResetTimeout 45s, got %v", cfg.QueueCircuitBreakerResetTimeout)
 	}

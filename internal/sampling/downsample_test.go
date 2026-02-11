@@ -642,7 +642,7 @@ func TestSamplerWithDownsampleAvg(t *testing.T) {
 			},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -687,7 +687,7 @@ func TestSamplerWithDownsampleSDT(t *testing.T) {
 			},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -726,7 +726,7 @@ func TestSamplerWithDownsamplePassthrough(t *testing.T) {
 			},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -759,7 +759,7 @@ func TestSamplerDownsampleReloadClearsState(t *testing.T) {
 			},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -773,7 +773,7 @@ func TestSamplerDownsampleReloadClearsState(t *testing.T) {
 	}
 
 	// Reload clears downsample state.
-	if err := s.ReloadConfig(cfg); err != nil {
+	if err := reloadFromLegacy(s, cfg); err != nil {
 		t.Fatal(err)
 	}
 	if s.dsEngine.seriesCount() != 0 {

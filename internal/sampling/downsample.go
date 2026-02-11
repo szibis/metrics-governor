@@ -9,34 +9,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	commonpb "github.com/szibis/metrics-governor/internal/otlpvt/commonpb"
 	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 )
-
-// Prometheus metrics for downsampling.
-var (
-	downsamplingInputTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "metrics_governor_downsampling_input_total",
-		Help: "Total datapoints ingested by downsampling",
-	}, []string{"rule", "method"})
-
-	downsamplingOutputTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "metrics_governor_downsampling_output_total",
-		Help: "Total datapoints emitted by downsampling",
-	}, []string{"rule", "method"})
-
-	downsamplingActiveSeries = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "metrics_governor_downsampling_active_series",
-		Help: "Number of active series being downsampled",
-	})
-)
-
-func init() {
-	prometheus.MustRegister(downsamplingInputTotal)
-	prometheus.MustRegister(downsamplingOutputTotal)
-	prometheus.MustRegister(downsamplingActiveSeries)
-}
 
 // DownsampleMethod identifies a downsampling algorithm.
 type DownsampleMethod string
@@ -676,7 +651,6 @@ func (de *downsampleEngine) seriesCount() int {
 
 func (de *downsampleEngine) cleanupAll(staleDuration time.Duration) {
 	now := time.Now()
-	totalSeries := 0
 	for i := range de.shards {
 		shard := &de.shards[i]
 		shard.mu.Lock()
@@ -686,10 +660,8 @@ func (de *downsampleEngine) cleanupAll(staleDuration time.Duration) {
 				delete(shard.lastSeen, key)
 			}
 		}
-		totalSeries += len(shard.series)
 		shard.mu.Unlock()
 	}
-	downsamplingActiveSeries.Set(float64(totalSeries))
 }
 
 // ---------------------------------------------------------------------------

@@ -57,7 +57,7 @@ rules:
       __name__: "debug_.*"
     rate: 0.01
 `)
-	cfg, err := Parse(data)
+	cfg, err := parseFileConfig(data)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -86,11 +86,11 @@ rules:
       __name__: "[invalid"
     rate: 0.5
 `)
-	cfg, err := Parse(data)
+	cfg, err := parseFileConfig(data)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
-	_, err = New(cfg)
+	_, err = newFromLegacy(cfg)
 	if err == nil {
 		t.Error("expected error for invalid regex")
 	}
@@ -104,11 +104,11 @@ rules:
       __name__: "test"
     rate: 1.5
 `)
-	cfg, err := Parse(data)
+	cfg, err := parseFileConfig(data)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
-	_, err = New(cfg)
+	_, err = newFromLegacy(cfg)
 	if err == nil {
 		t.Error("expected error for rate > 1.0")
 	}
@@ -116,7 +116,7 @@ rules:
 
 func TestKeepAllByDefault(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 1.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestKeepAllByDefault(t *testing.T) {
 
 func TestDropAll(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 0.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestRuleMatchKeepsAll(t *testing.T) {
 			},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestRuleMatchByLabel(t *testing.T) {
 			},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestMultipleMatchConditions(t *testing.T) {
 			},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestFirstMatchWins(t *testing.T) {
 			},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestFirstMatchWins(t *testing.T) {
 
 func TestEmptyInput(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 0.5}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +293,7 @@ func TestEmptyInput(t *testing.T) {
 
 func TestReloadConfig(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 1.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestReloadConfig(t *testing.T) {
 	}
 
 	// Reload to drop all
-	err = s.ReloadConfig(FileConfig{DefaultRate: 0.0})
+	err = reloadFromLegacy(s, FileConfig{DefaultRate: 0.0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,12 +322,12 @@ func TestReloadConfig(t *testing.T) {
 
 func TestReloadConfig_InvalidRegex(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 1.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = s.ReloadConfig(FileConfig{
+	err = reloadFromLegacy(s, FileConfig{
 		Rules: []Rule{
 			{Match: map[string]string{"__name__": "[invalid"}, Rate: 0.5},
 		},
@@ -347,7 +347,7 @@ func TestReloadConfig_InvalidRegex(t *testing.T) {
 
 func TestOpsCounter(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 0.5, Strategy: StrategyProbabilistic}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +366,7 @@ func TestOpsCounter(t *testing.T) {
 func TestDefaultRateClamping(t *testing.T) {
 	// Negative rate should clamp to 0.0 (drop all)
 	cfg := FileConfig{DefaultRate: -0.5}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +382,7 @@ func TestDefaultRateClamping(t *testing.T) {
 func TestDefaultRateAboveOne(t *testing.T) {
 	// Rate > 1.0 should clamp to 1.0
 	cfg := FileConfig{DefaultRate: 2.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +397,7 @@ func TestDefaultRateAboveOne(t *testing.T) {
 
 func TestSumMetricType(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 0.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,7 +421,7 @@ func TestSumMetricType(t *testing.T) {
 
 func TestHistogramMetricType(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 0.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,7 +448,7 @@ func TestProbabilisticStrategy(t *testing.T) {
 		DefaultRate: 0.5,
 		Strategy:    StrategyProbabilistic,
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +474,7 @@ func TestProbabilisticStrategy(t *testing.T) {
 
 func TestNilMetric(t *testing.T) {
 	cfg := FileConfig{DefaultRate: 1.0}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,7 +495,7 @@ func BenchmarkSample(b *testing.B) {
 			{Name: "debug", Match: map[string]string{"__name__": "debug_.*"}, Rate: 0.01},
 		},
 	}
-	s, err := New(cfg)
+	s, err := newFromLegacy(cfg)
 	if err != nil {
 		b.Fatal(err)
 	}

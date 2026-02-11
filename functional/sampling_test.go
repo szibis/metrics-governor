@@ -52,12 +52,17 @@ func makeSamplingRM(name string, dpCount int, labels map[string]string) *metrics
 // through a real buffer pipeline.
 func TestFunctional_Sampling_HeadStrategy(t *testing.T) {
 	// rate=1.0 should keep everything
-	s, err := sampling.New(sampling.FileConfig{
-		DefaultRate: 1.0,
-		Strategy:    sampling.StrategyHead,
+	s, err := sampling.NewFromProcessing(sampling.ProcessingConfig{
+		Rules: []sampling.ProcessingRule{{
+			Name:   "default",
+			Input:  ".*",
+			Action: sampling.ActionSample,
+			Rate:   1.0,
+			Method: "head",
+		}},
 	})
 	if err != nil {
-		t.Fatalf("sampling.New: %v", err)
+		t.Fatalf("sampling.NewFromProcessing: %v", err)
 	}
 
 	exp := &bufferMockExporter{}
@@ -87,20 +92,26 @@ func TestFunctional_Sampling_HeadStrategy(t *testing.T) {
 // are applied correctly through a real buffer pipeline.
 func TestFunctional_Sampling_RuleMatch(t *testing.T) {
 	// Default rate=1.0, but debug metrics get rate=0
-	s, err := sampling.New(sampling.FileConfig{
-		DefaultRate: 1.0,
-		Strategy:    sampling.StrategyHead,
-		Rules: []sampling.Rule{
+	s, err := sampling.NewFromProcessing(sampling.ProcessingConfig{
+		Rules: []sampling.ProcessingRule{
 			{
-				Name:     "drop-debug",
-				Match:    map[string]string{"__name__": "debug_.*"},
-				Rate:     0.0,
-				Strategy: sampling.StrategyHead,
+				Name:   "drop-debug",
+				Input:  "debug_.*",
+				Action: sampling.ActionSample,
+				Rate:   0.0,
+				Method: "head",
+			},
+			{
+				Name:   "default",
+				Input:  ".*",
+				Action: sampling.ActionSample,
+				Rate:   1.0,
+				Method: "head",
 			},
 		},
 	})
 	if err != nil {
-		t.Fatalf("sampling.New: %v", err)
+		t.Fatalf("sampling.NewFromProcessing: %v", err)
 	}
 
 	exp := &bufferMockExporter{}
@@ -132,12 +143,17 @@ func TestFunctional_Sampling_RuleMatch(t *testing.T) {
 // TestFunctional_Sampling_HighVolume pushes 1000 metrics through sampling
 // with rate=1.0 and verifies all arrive.
 func TestFunctional_Sampling_HighVolume(t *testing.T) {
-	s, err := sampling.New(sampling.FileConfig{
-		DefaultRate: 1.0,
-		Strategy:    sampling.StrategyHead,
+	s, err := sampling.NewFromProcessing(sampling.ProcessingConfig{
+		Rules: []sampling.ProcessingRule{{
+			Name:   "default",
+			Input:  ".*",
+			Action: sampling.ActionSample,
+			Rate:   1.0,
+			Method: "head",
+		}},
 	})
 	if err != nil {
-		t.Fatalf("sampling.New: %v", err)
+		t.Fatalf("sampling.NewFromProcessing: %v", err)
 	}
 
 	exp := &bufferMockExporter{}
