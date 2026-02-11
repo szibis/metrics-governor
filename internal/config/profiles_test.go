@@ -1180,13 +1180,13 @@ func TestAllProfiles_MetaSyncIntervals_Appropriate(t *testing.T) {
 	}
 }
 
-func TestObservableProfile_MaxThroughput_80k(t *testing.T) {
+func TestObservableProfile_MaxThroughput_100k(t *testing.T) {
 	p, err := GetProfile(ProfileObservable)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if p.MaxThroughput != "~80k dps" {
-		t.Errorf("observable MaxThroughput = %q, want %q", p.MaxThroughput, "~80k dps")
+	if p.MaxThroughput != "~100k dps" {
+		t.Errorf("observable MaxThroughput = %q, want %q", p.MaxThroughput, "~100k dps")
 	}
 }
 

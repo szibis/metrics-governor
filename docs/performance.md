@@ -1264,11 +1264,11 @@ memory:
 
 | Throughput | Recommended Memory | GOMEMLIMIT | Queue Disk |
 |------------|:-----------------:|:----------:|:----------:|
-| < 1M dps/min | 512 MB | 460 MB | 1 GB |
-| 1-5M dps/min | 1 GB | 900 MB | 5 GB |
-| 5-20M dps/min | 2 GB | 1.7 GB | 10 GB |
-| 20-100M dps/min | 4 GB | 3.4 GB | 20 GB |
-| 100M+ dps/min | 8 GB | 6.8 GB | 50 GB |
+| < 1M dps/min | 256 MB | 230 MB | 1 GB |
+| 1-5M dps/min | 512 MB | 460 MB | 5 GB |
+| 5-20M dps/min | 1 GB | 900 MB | 10 GB |
+| 20-100M dps/min | 2 GB | 1.7 GB | 20 GB |
+| 100M+ dps/min | 4 GB | 3.4 GB | 50 GB |
 
 ### Persistent Queue Tuning
 
@@ -1384,8 +1384,8 @@ metrics-governor exposes three main performance axes that let you trade between 
 | `--queue-max-bytes` | 512MB | 256MB | 128MB |
 | `--stats-level` | `full` | `basic` | `none` |
 | Pipeline fusion | enabled | enabled | enabled |
-| Expected CPU (100k dps) | ~150% | ~60-80% | ~40-50% |
-| Expected memory | ~1.2 GB | ~700 MB | ~500 MB |
+| Expected CPU (100k dps) | ~120% | ~40-60% | ~25-35% |
+| Expected memory | ~1 GB | ~500 MB | ~350 MB |
 | Durability | Full crash recovery | No persistence | No persistence |
 | Visibility | Full cardinality tracking | Per-metric counts | Global totals only |
 
@@ -1445,10 +1445,10 @@ Each profile sets `GOGC` to balance GC overhead vs memory usage. Lower GOGC = mo
 
 | Profile | GOGC | Rationale |
 |---|---|---|
-| minimal | 100 | Default GC — low allocation rate |
-| balanced | 75 | Slightly more aggressive — moderate allocation |
+| minimal | 50 | Tighter GC for stable memory in containers |
+| balanced | 50 | Tighter GC for stable memory and predictable CPU |
 | safety / observable | 50 | Aggressive — high allocation (full stats) |
-| resilient | 75 | Moderate — balanced throughput vs memory |
+| resilient | 50 | Tighter GC for stable memory and predictable CPU |
 | performance | 25 | Very aggressive — maximize memory reuse |
 
 Override with the `GOGC` environment variable: `GOGC=100 ./metrics-governor --profile observable`.

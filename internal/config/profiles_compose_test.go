@@ -187,9 +187,12 @@ func TestParseMaxThroughputDPS(t *testing.T) {
 		want  int
 	}{
 		{"~10k dps", 10000},
+		{"~15k dps", 15000},
 		{"~80k dps", 80000},
 		{"~100k dps", 100000},
+		{"~120k dps", 120000},
 		{"~150k dps", 150000},
+		{"~200k dps", 200000},
 		{"~500k+ dps", 500000},
 	}
 	for _, tt := range tests {

@@ -237,9 +237,9 @@ func minimalProfile() *ProfileConfig {
 
 		// Resource targets
 		TargetCPU:     "0.25-0.5 cores",
-		TargetMemory:  "128-256 MB",
+		TargetMemory:  "64-256 MB",
 		DiskRequired:  false,
-		MaxThroughput: "~10k dps",
+		MaxThroughput: "~15k dps",
 	}
 }
 
@@ -325,9 +325,9 @@ func balancedProfile() *ProfileConfig { //nolint:dupl // declarative config — 
 
 		// Resource targets
 		TargetCPU:     "1-2 cores",
-		TargetMemory:  "256-512 MB",
+		TargetMemory:  "128-512 MB",
 		DiskRequired:  false,
-		MaxThroughput: "~100k dps",
+		MaxThroughput: "~150k dps",
 	}
 }
 
@@ -412,10 +412,10 @@ func safetyProfile() *ProfileConfig { //nolint:dupl // declarative config — ea
 		GOGC:                  intPtr(50),       // High allocation (full stats), aggressive GC
 
 		// Resource targets — honest: full stats (~35% CPU) + disk queue + zstd
-		TargetCPU:     "1.25-2.0 cores",
-		TargetMemory:  "320-768 MB",
+		TargetCPU:     "1.0-2.0 cores",
+		TargetMemory:  "256-768 MB",
 		DiskRequired:  true,
-		MaxThroughput: "~100k dps",
+		MaxThroughput: "~120k dps",
 	}
 }
 
@@ -504,9 +504,9 @@ func observableProfile() *ProfileConfig { //nolint:dupl // declarative config �
 
 		// Resource targets — honest: full stats (~35% CPU) + zstd (~10%) + hybrid queue
 		TargetCPU:     "1.0-1.75 cores",
-		TargetMemory:  "300-640 MB",
+		TargetMemory:  "256-640 MB",
 		DiskRequired:  true,
-		MaxThroughput: "~80k dps",
+		MaxThroughput: "~100k dps",
 	}
 }
 
@@ -595,9 +595,9 @@ func resilientProfile() *ProfileConfig { //nolint:dupl // declarative config —
 
 		// Resource targets
 		TargetCPU:     "0.5-1 cores",
-		TargetMemory:  "240-512 MB",
+		TargetMemory:  "192-512 MB",
 		DiskRequired:  true,
-		MaxThroughput: "~150k dps",
+		MaxThroughput: "~200k dps",
 	}
 }
 
@@ -684,7 +684,7 @@ func performanceProfile() *ProfileConfig {
 
 		// Resource targets
 		TargetCPU:     "2-4 cores",
-		TargetMemory:  "512 MB - 2 GB",
+		TargetMemory:  "256 MB - 2 GB",
 		DiskRequired:  true,
 		MaxThroughput: "~500k+ dps",
 	}
@@ -697,7 +697,7 @@ func (p *ProfileConfig) Prerequisites() []ProfilePrerequisite {
 		return nil
 	case ProfileBalanced:
 		return []ProfilePrerequisite{
-			{Type: "memory", Description: "At least 512 MB memory for adaptive tuning overhead", Severity: "recommended"},
+			{Type: "memory", Description: "At least 256 MB memory for adaptive tuning overhead", Severity: "recommended"},
 		}
 	case ProfileSafety:
 		return []ProfilePrerequisite{
@@ -707,7 +707,7 @@ func (p *ProfileConfig) Prerequisites() []ProfilePrerequisite {
 	case ProfileObservable:
 		return []ProfilePrerequisite{
 			{Type: "disk", Description: "Persistent disk (PVC) for hybrid queue spillover", Severity: "required"},
-			{Type: "memory", Description: "At least 640 MB memory for full stats", Severity: "recommended"},
+			{Type: "memory", Description: "At least 512 MB memory for full stats", Severity: "recommended"},
 		}
 	case ProfileResilient:
 		return []ProfilePrerequisite{
