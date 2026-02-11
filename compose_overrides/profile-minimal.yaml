@@ -3,7 +3,7 @@
 #
 # Tests the minimal profile at its resource ceiling:
 # - 0.5 CPU, 256 MB memory, NO disk queue
-# - Generator sends ~10k dps (profile's max throughput)
+# - Generator sends ~10k dps (well within profile's ~15k max throughput)
 # - Should run stable without OOM or CPU throttling
 # - Verifier threshold 90% (some loss expected under pressure)
 #

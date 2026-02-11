@@ -4,8 +4,8 @@ import (
 	"regexp"
 	"testing"
 
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	commonpb "github.com/szibis/metrics-governor/internal/otlpvt/commonpb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 )
 
 // makeTestAttrs creates a slice of KeyValue attributes from alternating key-value pairs.

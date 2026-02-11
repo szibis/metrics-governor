@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	colmetrics "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	colmetrics "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 
 	"github.com/szibis/metrics-governor/internal/exporter"
 	"github.com/szibis/metrics-governor/internal/queue"

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 )
 
 // --- Race condition tests ---

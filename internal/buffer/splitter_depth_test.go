@@ -3,7 +3,7 @@ package buffer
 import (
 	"testing"
 
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 	"google.golang.org/protobuf/proto"
 )
 

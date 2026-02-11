@@ -7,6 +7,7 @@ require (
 	github.com/axiomhq/hyperloglog v0.2.6
 	github.com/bits-and-blooms/bloom/v3 v3.7.1
 	github.com/klauspost/compress v1.18.4
+	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	go.opentelemetry.io/contrib/bridges/prometheus v0.65.0

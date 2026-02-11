@@ -10,11 +10,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/szibis/metrics-governor/internal/exporter"
 	"github.com/szibis/metrics-governor/internal/logging"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 	"github.com/szibis/metrics-governor/internal/pipeline"
 	"github.com/szibis/metrics-governor/internal/queue"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
-	"google.golang.org/protobuf/proto"
 )
 
 // ErrBufferFull is returned when the buffer's byte capacity is exceeded
@@ -248,6 +247,7 @@ func WithBufferFullPolicy(p queue.FullBehavior) BufferOption {
 type MetricsBuffer struct {
 	mu              sync.Mutex
 	metrics         []*metricspb.ResourceMetrics
+	metricSizes     []int // cached proto.Size per entry, parallel to metrics
 	maxSize         int
 	maxBatchSize    int
 	maxBatchBytes   int
@@ -276,6 +276,7 @@ type MetricsBuffer struct {
 func New(maxSize, maxBatchSize int, flushInterval time.Duration, exp Exporter, stats StatsCollector, limits LimitsEnforcer, logAggregator LogAggregator, opts ...BufferOption) *MetricsBuffer {
 	buf := &MetricsBuffer{
 		metrics:       make([]*metricspb.ResourceMetrics, 0, maxSize),
+		metricSizes:   make([]int, 0, maxSize),
 		maxSize:       maxSize,
 		maxBatchSize:  maxBatchSize,
 		flushInterval: flushInterval,
@@ -333,8 +334,14 @@ func (b *MetricsBuffer) AddAggregated(resourceMetrics []*metricspb.ResourceMetri
 		return
 	}
 
-	// Check buffer byte capacity before adding.
-	incomingBytes := int64(estimateResourceMetricsSize(resourceMetrics))
+	// Compute per-element sizes once — used for capacity check, byte tracking, and eviction cache.
+	sizes := make([]int, len(resourceMetrics))
+	incomingBytes := int64(0)
+	for i, rm := range resourceMetrics {
+		s := rm.SizeVT()
+		sizes[i] = s
+		incomingBytes += int64(s)
+	}
 	if b.maxBufferBytes > 0 {
 		if err := b.enforceCapacity(incomingBytes); err != nil {
 			return // Silently drop — aggregate output is best-effort.
@@ -343,6 +350,7 @@ func (b *MetricsBuffer) AddAggregated(resourceMetrics []*metricspb.ResourceMetri
 
 	b.mu.Lock()
 	b.metrics = append(b.metrics, resourceMetrics...)
+	b.metricSizes = append(b.metricSizes, sizes...)
 	bufferSize := len(b.metrics)
 	b.mu.Unlock()
 
@@ -410,8 +418,14 @@ func (b *MetricsBuffer) addInternal(resourceMetrics []*metricspb.ResourceMetrics
 		return nil
 	}
 
-	// Check buffer byte capacity before adding
-	incomingBytes := int64(estimateResourceMetricsSize(resourceMetrics))
+	// Compute per-element sizes once — used for capacity check, byte tracking, and eviction cache.
+	sizes := make([]int, len(resourceMetrics))
+	incomingBytes := int64(0)
+	for i, rm := range resourceMetrics {
+		s := rm.SizeVT()
+		sizes[i] = s
+		incomingBytes += int64(s)
+	}
 	if b.maxBufferBytes > 0 {
 		if err := b.enforceCapacity(incomingBytes); err != nil {
 			return err
@@ -420,6 +434,7 @@ func (b *MetricsBuffer) addInternal(resourceMetrics []*metricspb.ResourceMetrics
 
 	b.mu.Lock()
 	b.metrics = append(b.metrics, resourceMetrics...)
+	b.metricSizes = append(b.metricSizes, sizes...)
 	bufferSize := len(b.metrics)
 	b.mu.Unlock()
 
@@ -487,8 +502,9 @@ func (b *MetricsBuffer) evictOldest(incomingBytes int64) {
 	evictCount := 0
 
 	for evicted < needed && len(b.metrics) > 0 {
-		entrySize := int64(proto.Size(b.metrics[0]))
+		entrySize := int64(b.metricSizes[0]) // use cached size, no proto.Size walk
 		b.metrics = b.metrics[1:]
+		b.metricSizes = b.metricSizes[1:]
 		evicted += entrySize
 		evictCount++
 	}
@@ -564,6 +580,7 @@ func (b *MetricsBuffer) flush(ctx context.Context) {
 	// Take metrics from buffer
 	toSend := b.metrics
 	b.metrics = make([]*metricspb.ResourceMetrics, 0, b.maxSize)
+	b.metricSizes = b.metricSizes[:0] // reset parallel sizes slice, reuse backing array
 	b.mu.Unlock()
 
 	// Reset byte tracking — data is now in toSend, no longer in buffer
@@ -755,7 +772,7 @@ func countDatapoints(resourceMetrics []*metricspb.ResourceMetrics) int {
 func estimateResourceMetricsSize(resourceMetrics []*metricspb.ResourceMetrics) int {
 	size := 0
 	for _, rm := range resourceMetrics {
-		size += proto.Size(rm)
+		size += rm.SizeVT()
 	}
 	return size
 }

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"time"
 
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 )
 
 // TenantProcessor detects tenants and applies per-tenant quotas.

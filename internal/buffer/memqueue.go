@@ -5,8 +5,7 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	"google.golang.org/protobuf/proto"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
 )
 
 var (
@@ -66,7 +65,7 @@ func NewMemoryQueue(maxSize int, maxBytes int64) *MemoryQueue {
 // oldest entries are evicted to make room. Returns error only if the single
 // entry exceeds maxBytes.
 func (q *MemoryQueue) Push(req *colmetricspb.ExportMetricsServiceRequest) error {
-	entrySize := int64(proto.Size(req))
+	entrySize := int64(req.SizeVT())
 
 	if entrySize > q.maxBytes {
 		return fmt.Errorf("entry size %d exceeds max queue bytes %d", entrySize, q.maxBytes)
@@ -107,7 +106,7 @@ func (q *MemoryQueue) Pop() *colmetricspb.ExportMetricsServiceRequest {
 	entry := q.entries[0]
 	q.entries[0] = nil // allow GC to collect the entry
 	q.entries = q.entries[1:]
-	q.bytes -= int64(proto.Size(entry))
+	q.bytes -= int64(entry.SizeVT())
 	if q.bytes < 0 {
 		q.bytes = 0
 	}
@@ -143,7 +142,7 @@ func (q *MemoryQueue) evictOldest() {
 	evicted := q.entries[0]
 	q.entries[0] = nil // allow GC to collect the entry
 	q.entries = q.entries[1:]
-	q.bytes -= int64(proto.Size(evicted))
+	q.bytes -= int64(evicted.SizeVT())
 	if q.bytes < 0 {
 		q.bytes = 0
 	}

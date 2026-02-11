@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 )
 
 // TestConsistency_StatsLevel_BasicCountsMatchFull processes the same batch through

@@ -3,7 +3,7 @@ package tenant
 import (
 	"sync"
 
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 )
 
 // Pipeline combines tenant detection and quota enforcement into a single

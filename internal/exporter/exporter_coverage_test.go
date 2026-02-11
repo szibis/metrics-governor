@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/compression"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

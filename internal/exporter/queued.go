@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/logging"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
 	"github.com/szibis/metrics-governor/internal/pipeline"
 	"github.com/szibis/metrics-governor/internal/queue"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"golang.org/x/sync/semaphore"
 )
 

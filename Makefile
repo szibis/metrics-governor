@@ -5,7 +5,7 @@ LDFLAGS=-ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/
 
 BUILD_DIR=bin
 
-.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all test-helm test-stability test-stability-stress bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all bench-stability bench-profile-budget bench-handoff bench-contention bench-hotpath bench-full-stability lint lint-dockerfile lint-yaml lint-helm lint-all validate-playground generate-config-meta ship ship-dry-run tag compose-up compose-down compose-light compose-stable compose-perf compose-queue compose-persistence compose-sharding compose-logs
+.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all test-helm test-stability test-stability-stress test-pool test-memory-regression bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all bench-stability bench-profile-budget bench-handoff bench-contention bench-hotpath bench-full-stability bench-proto bench-pool-regression lint lint-dockerfile lint-yaml lint-helm lint-all validate-playground generate-config-meta ship ship-dry-run tag compose-up compose-down compose-light compose-stable compose-perf compose-queue compose-persistence compose-sharding compose-logs
 
 all: darwin-arm64 linux-arm64 linux-amd64
 
@@ -125,6 +125,22 @@ bench-full-stability:
 	@echo "Running full stability + regression benchmark suite..."
 	$(MAKE) bench-stability bench-profile-budget bench-handoff bench-contention bench-hotpath
 
+bench-proto:
+	@echo "Running protobuf-specific benchmarks..."
+	go test -bench='VTProto|Unmarshal|Marshal|SizeVT' -benchmem ./internal/...
+
+bench-pool-regression:
+	@echo "Running pool regression benchmarks..."
+	go test -bench='Pool|Pooled' -benchmem ./internal/...
+
+test-pool:
+	@echo "Running pool correctness tests..."
+	go test -race -run='Pool|pool' -count=3 ./internal/...
+
+test-memory-regression:
+	@echo "Running memory regression tests..."
+	go test -race -run='MemoryRegression' -count=1 ./internal/...
+
 test-stability:
 	@echo "Running stability unit tests..."
 	go test -run='Spillover|LoadShed|Degrad|Cascade|Hysteresis|Health|PipelineHealth' -race -count=1 ./internal/...
@@ -173,6 +189,25 @@ lint-helm:
 
 lint-all: lint lint-dockerfile lint-yaml lint-helm validate-playground
 	@echo "All lints passed!"
+
+generate-proto:
+	@echo "Generating OTLP protobuf + vtprotobuf code..."
+	@command -v protoc >/dev/null 2>&1 || { echo "protoc not installed"; exit 1; }
+	@command -v protoc-gen-go >/dev/null 2>&1 || { echo "protoc-gen-go not installed. Install with: go install google.golang.org/protobuf/cmd/protoc-gen-go@latest"; exit 1; }
+	@command -v protoc-gen-go-vtproto >/dev/null 2>&1 || { echo "protoc-gen-go-vtproto not installed. Install with: go install github.com/planetscale/vtprotobuf/cmd/protoc-gen-go-vtproto@latest"; exit 1; }
+	protoc \
+		--proto_path=proto \
+		--go_out=. --go_opt=module=github.com/szibis/metrics-governor \
+		--go-grpc_out=. --go-grpc_opt=module=github.com/szibis/metrics-governor \
+		--go-vtproto_out=. --go-vtproto_opt=module=github.com/szibis/metrics-governor \
+		--go-vtproto_opt=features=marshal+unmarshal+size+pool+clone \
+		--go-vtproto_opt=pool=github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb.ExportMetricsServiceRequest \
+		--go-vtproto_opt=pool=github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb.ExportMetricsServiceResponse \
+		proto/opentelemetry/proto/common/v1/common.proto \
+		proto/opentelemetry/proto/resource/v1/resource.proto \
+		proto/opentelemetry/proto/metrics/v1/metrics.proto \
+		proto/opentelemetry/proto/collector/metrics/v1/metrics_service.proto
+	@echo "Generated OTLP vtprotobuf code in internal/otlpvt/"
 
 generate-config-meta:
 	@echo "Generating config-meta from Go defaults + storage-specs.json..."
@@ -317,6 +352,10 @@ help:
 	@echo "  bench-contention - Run concurrent contention benchmarks"
 	@echo "  bench-hotpath    - Run hot path regression benchmarks"
 	@echo "  bench-full-stability - Run full stability benchmark suite"
+	@echo "  bench-proto      - Run protobuf-specific benchmarks"
+	@echo "  bench-pool-regression - Run pool regression benchmarks"
+	@echo "  test-pool        - Run pool correctness tests (with -race, count=3)"
+	@echo "  test-memory-regression - Run memory regression tests"
 	@echo "  lint             - Run go vet"
 	@echo "  lint-dockerfile  - Lint Dockerfiles with hadolint"
 	@echo "  lint-yaml        - Lint YAML files with yamllint"

@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/szibis/metrics-governor/internal/auth"
+	colmetricspb "github.com/szibis/metrics-governor/internal/otlpvt/colmetricspb"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 	"github.com/szibis/metrics-governor/internal/prw"
 	"github.com/szibis/metrics-governor/internal/queue"
 	"github.com/szibis/metrics-governor/internal/sharding"
-	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	"google.golang.org/protobuf/proto"
 )
 

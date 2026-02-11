@@ -3,7 +3,7 @@ package sampling
 import (
 	"strings"
 
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	commonpb "github.com/szibis/metrics-governor/internal/otlpvt/commonpb"
 )
 
 // applyClassify applies the classify action to a datapoint's attributes.

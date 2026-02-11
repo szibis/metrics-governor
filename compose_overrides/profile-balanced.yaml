@@ -1,9 +1,9 @@
 # Balanced profile stress test - push to resource limits with adaptive features
 # Usage: docker compose -f docker-compose.yaml -f compose_overrides/profile-balanced.yaml up -d
 #
-# Tests the balanced profile with adaptive workers + batch auto-tune:
+# Tests the balanced profile with adaptive workers + batch auto-tune (vtprotobuf):
 # - 2 CPU, 1 GB memory, memory queue
-# - Generator sends ~15k dps with moderate cardinality
+# - Generator sends ~15k dps with moderate cardinality (profile max ~150k dps)
 # - Verifier threshold 90%
 #
 # Total resource budget: 7 CPU, 4 GB memory (fits Docker Desktop with 8 GB)

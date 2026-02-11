@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	commonpb "github.com/szibis/metrics-governor/internal/otlpvt/commonpb"
 )
 
 // labelInterpolationRe matches ${label_name} patterns for interpolation.

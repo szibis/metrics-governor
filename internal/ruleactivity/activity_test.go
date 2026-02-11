@@ -1,6 +1,9 @@
 package ruleactivity
 
 import (
+	"bytes"
+	"log"
+	"strings"
 	"testing"
 	"time"
 )
@@ -135,5 +138,58 @@ func TestActivity_EvaluateAndTransition_DeadToAlive(t *testing.T) {
 	}
 	if direction != "alive" {
 		t.Errorf("expected direction 'alive', got %q", direction)
+	}
+}
+
+func TestLogTransition_NoTransition(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(nil)
+
+	LogTransition("limits", "test-rule", false, false, 5*time.Minute)
+
+	if buf.Len() != 0 {
+		t.Errorf("expected no log output, got %q", buf.String())
+	}
+}
+
+func TestLogTransition_Dead(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(nil)
+
+	LogTransition("limits", "test-rule", true, true, 5*time.Minute)
+
+	out := buf.String()
+	if !strings.Contains(out, "[WARN]") {
+		t.Errorf("expected WARN log, got %q", out)
+	}
+	if !strings.Contains(out, "test-rule") {
+		t.Errorf("expected rule name in log, got %q", out)
+	}
+	if !strings.Contains(out, "appears dead") {
+		t.Errorf("expected 'appears dead' in log, got %q", out)
+	}
+	if !strings.Contains(out, "5m0s") {
+		t.Errorf("expected threshold in log, got %q", out)
+	}
+}
+
+func TestLogTransition_Alive(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(nil)
+
+	LogTransition("processing", "revived-rule", false, true, time.Minute)
+
+	out := buf.String()
+	if !strings.Contains(out, "[INFO]") {
+		t.Errorf("expected INFO log, got %q", out)
+	}
+	if !strings.Contains(out, "revived-rule") {
+		t.Errorf("expected rule name in log, got %q", out)
+	}
+	if !strings.Contains(out, "alive again") {
+		t.Errorf("expected 'alive again' in log, got %q", out)
 	}
 }

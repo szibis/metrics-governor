@@ -2,8 +2,7 @@ package buffer
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
-	"google.golang.org/protobuf/proto"
+	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 )
 
 var (
@@ -55,11 +54,11 @@ func splitByBytes(batch []*metricspb.ResourceMetrics, maxBytes int) [][]*metrics
 		return [][]*metricspb.ResourceMetrics{batch}
 	}
 
-	// Pre-compute sizes once — avoids redundant proto.Size during recursion.
+	// Pre-compute sizes once — avoids redundant SizeVT during recursion.
 	sizes := make([]int, len(batch))
 	total := 0
 	for i, rm := range batch {
-		sizes[i] = proto.Size(rm)
+		sizes[i] = rm.SizeVT()
 		total += sizes[i]
 	}
 
@@ -110,7 +109,7 @@ func splitByBytesWithDepth(batch []*metricspb.ResourceMetrics, maxBytes int, dep
 	}
 	sizes := make([]int, len(batch))
 	for i, rm := range batch {
-		sizes[i] = proto.Size(rm)
+		sizes[i] = rm.SizeVT()
 	}
 	return splitWithCachedSizes(batch, sizes, maxBytes, depth)
 }
@@ -119,7 +118,7 @@ func splitByBytesWithDepth(batch []*metricspb.ResourceMetrics, maxBytes int, dep
 func estimateBatchSize(batch []*metricspb.ResourceMetrics) int {
 	size := 0
 	for _, rm := range batch {
-		size += proto.Size(rm)
+		size += rm.SizeVT()
 	}
 	return size
 }

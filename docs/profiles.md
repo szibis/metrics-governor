@@ -35,8 +35,8 @@ exporter:
 
 ### `minimal` — Development & Testing
 
-**Resource target:** 0.25–0.5 CPU, 128–256 MB RAM, no disk
-**Max throughput:** ~10k dps
+**Resource target:** 0.25–0.5 CPU, 64–256 MB RAM, no disk
+**Max throughput:** ~15k dps
 
 Best for: local development, CI testing, non-critical metrics, sidecar mode.
 
@@ -55,8 +55,8 @@ Best for: local development, CI testing, non-critical metrics, sidecar mode.
 
 ### `balanced` — Production Default
 
-**Resource target:** 1–2 CPU, 256–512 MB RAM, no disk required
-**Max throughput:** ~100k dps
+**Resource target:** 1–2 CPU, 128–512 MB RAM, no disk required
+**Max throughput:** ~150k dps
 
 Best for: production infrastructure monitoring, medium cardinality.
 
@@ -72,12 +72,12 @@ Best for: production infrastructure monitoring, medium cardinality.
 | Stats | Basic | Per-metric counts |
 
 **Prerequisites:**
-- Recommended: 512+ MB memory for adaptive tuning overhead
+- Recommended: 256+ MB memory for adaptive tuning overhead
 
 ### `safety` — Maximum Data Safety + Cost Efficiency
 
-**Resource target:** 1–1.5 CPU, 320–768 MB RAM, **disk required** (8 GB PVC)
-**Max throughput:** ~100k dps | **Cost efficiency:** High
+**Resource target:** 1–2 CPU, 256–768 MB RAM, **disk required** (8 GB PVC)
+**Max throughput:** ~120k dps | **Cost efficiency:** High
 
 Best for: regulated environments, financial metrics, data you cannot afford to lose, cost optimization.
 
@@ -101,8 +101,8 @@ Best for: regulated environments, financial metrics, data you cannot afford to l
 
 ### `observable` — Full Observability + Cost Efficiency
 
-**Resource target:** 0.75–1.25 CPU, 300–640 MB RAM, **disk required** (8 GB PVC)
-**Max throughput:** ~120k dps | **Cost efficiency:** High
+**Resource target:** 1–1.75 CPU, 256–640 MB RAM, **disk required** (8 GB PVC)
+**Max throughput:** ~100k dps | **Cost efficiency:** High
 
 Best for: teams that need per-metric cost tracking with hybrid queue durability.
 
@@ -120,14 +120,14 @@ Best for: teams that need per-metric cost tracking with hybrid queue durability.
 
 **Prerequisites:**
 - **Required:** PersistentVolumeClaim for hybrid queue spillover (8+ GB recommended)
-- Recommended: 640+ MB memory for full stats
+- Recommended: 512+ MB memory for full stats
 
 **Cost efficiency:** Full per-metric stats reveal exactly where storage costs come from. Hybrid queue avoids duplicate sends to paid backends during spikes. Zstd reduces network egress. Reject policy ensures no silent drops that trigger re-sends.
 
 ### `resilient` — Durable + Fast
 
-**Resource target:** 0.5–1 CPU, 240–512 MB RAM, **disk required** (12 GB PVC)
-**Max throughput:** ~150k dps | **Cost efficiency:** Medium
+**Resource target:** 0.5–1 CPU, 192–512 MB RAM, **disk required** (12 GB PVC)
+**Max throughput:** ~200k dps | **Cost efficiency:** Medium
 
 Best for: production workloads that need disk spillover without the overhead of full stats.
 
@@ -149,7 +149,7 @@ Best for: production workloads that need disk spillover without the overhead of 
 
 ### `performance` — High Throughput
 
-**Resource target:** 2–4 CPU, 512 MB–2 GB RAM, **disk required** (12 GB PVC)
+**Resource target:** 2–4 CPU, 256 MB–2 GB RAM, **disk required** (12 GB PVC)
 **Max throughput:** ~500k+ dps | **Cost efficiency:** Low
 
 Best for: IoT, high-volume telemetry, APM at scale.
@@ -267,12 +267,12 @@ Reference workload: **100,000 datapoints/sec**, **10,000 unique metric names**, 
 
 | Profile | CPU (request) | CPU (limit) | Memory (request) | Memory (limit) | Disk (PVC) | Max throughput |
 |---------|-------------|-------------|-----------------|---------------|------------|---------------|
-| `minimal` | 0.25 | 0.5 | 64 MB | 256 MB | — | ~10k dps |
-| `balanced` | 0.5 | 1.0 | 256 MB | 512 MB | — | ~100k dps |
-| `safety` | 1.0 | 1.5 | 320 MB | 768 MB | 8 GB | ~100k dps |
-| `observable` | 0.75 | 1.25 | 300 MB | 640 MB | 8 GB | ~120k dps |
-| `resilient` | 0.5 | 1.0 | 240 MB | 512 MB | 12 GB | ~150k dps |
-| `performance` | 1.0 | 2.0 | 480 MB | 1 GB | 12 GB | ~500k+ dps |
+| `minimal` | 0.1 | 0.5 | 64 MB | 256 MB | — | ~15k dps |
+| `balanced` | 0.5 | 1.0 | 128 MB | 512 MB | — | ~150k dps |
+| `safety` | 0.75 | 2.0 | 256 MB | 768 MB | 8 GB | ~120k dps |
+| `observable` | 0.5 | 1.75 | 256 MB | 640 MB | 8 GB | ~100k dps |
+| `resilient` | 0.5 | 1.0 | 192 MB | 512 MB | 12 GB | ~200k dps |
+| `performance` | 1.0 | 2.0 | 256 MB | 2 GB | 12 GB | ~500k+ dps |
 
 *CPU request = 50–60% of limit (Burstable QoS). Memory request = actual working set. Memory limit = 2x working set headroom. Disk = 1 hour outage buffer at reference workload.*
 
@@ -343,7 +343,7 @@ Each profile includes tuned stability parameters that control how the proxy beha
 
 | Setting | minimal | balanced | safety | observable | resilient | performance |
 |---|---|---|---|---|---|---|
-| GOGC | 100 | 75 | 50 | 50 | 75 | 25 |
+| GOGC | 50 | 50 | 50 | 50 | 50 | 25 |
 | Load shedding threshold | 0.80 | 0.85 | 0.90 | 0.85 | 0.90 | 0.95 |
 | Spillover threshold | — | — | — | 90% | 80% | 80% |
 | Stats degradation | auto | auto | auto | auto | auto | auto |
