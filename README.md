@@ -18,7 +18,7 @@
 [![Coverage](https://img.shields.io/badge/Coverage-90%25-brightgreen?style=for-the-badge&logo=codecov&logoColor=white)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
 [![Race Detector](https://img.shields.io/badge/Race_Detector-passing-success?style=for-the-badge&logo=go&logoColor=white)](docs/testing.md)
 [![Go Lines](https://img.shields.io/badge/Go_Code-169k_lines-informational?style=for-the-badge&logo=go&logoColor=white)](.)
-[![Docs](https://img.shields.io/badge/Docs-30_guides-8A2BE2?style=for-the-badge&logo=readthedocs&logoColor=white)](docs/)
+[![Docs](https://img.shields.io/badge/Docs-31_guides-8A2BE2?style=for-the-badge&logo=readthedocs&logoColor=white)](docs/)
 [![Benchmarks](https://img.shields.io/badge/Benchmarks-5_Matrix_Tests-success?style=for-the-badge&logo=speedtest&logoColor=white)](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml)
 
 [![OTLP](https://img.shields.io/badge/OTLP-gRPC_%7C_HTTP-4a90d9?style=for-the-badge&logo=opentelemetry&logoColor=white)](docs/receiving.md)
@@ -67,7 +67,7 @@ Whether you're running **legacy Prometheus Remote Write**, migrating to **modern
 | **Unpredictable costs** from runaway services | [Per-group tracking](docs/limits.md) with configurable limits, dry-run mode, and ownership labels for team routing |
 | **Need team/severity labels** derived from business values | [Transform rules](docs/processing-rules.md) mangle labels — build `severity`, `team`, `env` from product metric names and label values |
 | **Elastic-style data reshaping** before storage | [Classify + Transform](docs/processing-rules.md) chain: classify metrics into categories, then transform labels to match your storage schema |
-| **Storage explosion** from a single noisy tenant | [Adaptive tenant limits](docs/limits.md) intelligently throttle per-tenant cardinality — protect storage without blanket-dropping good data |
+| **Storage explosion** from a single noisy tenant | [Multi-tenancy](docs/tenant.md) with per-tenant quotas and [adaptive limits](docs/limits.md) — detect tenants, enforce budgets, protect storage without blanket-dropping good data |
 | **Stale rules** pile up unnoticed | [Dead rule detection](docs/processing-rules.md#dead-rule-detection) tracks last-match time for every rule, with alerts for stale cleanup |
 | **No team accountability** for metric costs | [Rule ownership labels](docs/processing-rules.md) attach `team`, `slack_channel`, `pagerduty_service` to any rule for alert routing |
 | **All-or-nothing** enforcement kills good data | [Tiered escalation](docs/limits.md) with graduated responses: log → sample → strip labels → drop |
@@ -340,6 +340,7 @@ Plan your deployment in seconds. The **interactive Playground** estimates CPU, m
 | 🔄 | [**Processing Rules**](docs/processing-rules.md) | Sample, downsample, aggregate, transform, classify, drop, dead rule detection |
 | 🏗️ | [**Two-Tier Architecture**](docs/two-tier-architecture.md) | DaemonSet edge + StatefulSet gateway pattern |
 | 🎯 | [**Limits**](docs/limits.md) | Adaptive limiting, tiered escalation, per-label limits, rule ownership |
+| 👥 | [**Multi-Tenancy**](docs/tenant.md) | Tenant detection (header/label/attribute), per-tenant quotas, priority-based enforcement |
 | 🔀 | [**Sharding**](docs/sharding.md) | Consistent hashing, K8s DNS discovery |
 | 📊 | [**Statistics**](docs/statistics.md) | Per-metric tracking, three stats levels |
 | ⚡ | [**Export Pipeline**](docs/exporting.md) | Pipeline split, batch tuning, adaptive scaling |

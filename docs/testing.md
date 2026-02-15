@@ -253,6 +253,9 @@ go test -bench=. -benchmem ./internal/buffer/...
 
 # Compare against baseline
 make bench-compare
+
+# Native compression benchmarks (requires Rust toolchain)
+make test-native
 ```
 
 ## Running Tests

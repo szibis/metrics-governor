@@ -99,6 +99,8 @@ stats:
     - service
     - env
     - cluster
+  cardinality_threshold: 100
+  max_label_combinations: 5000
 
 limits:
   dry_run: false
@@ -172,6 +174,12 @@ limits:
 	if len(cfg.Stats.Labels) != 3 {
 		t.Errorf("expected 3 labels, got %d", len(cfg.Stats.Labels))
 	}
+	if cfg.Stats.CardinalityThreshold != 100 {
+		t.Errorf("expected cardinality_threshold 100, got %d", cfg.Stats.CardinalityThreshold)
+	}
+	if cfg.Stats.MaxLabelCombinations != 5000 {
+		t.Errorf("expected max_label_combinations 5000, got %d", cfg.Stats.MaxLabelCombinations)
+	}
 
 	// Verify limits settings
 	if *cfg.Limits.DryRun != false {
@@ -243,6 +251,8 @@ stats:
   labels:
     - service
     - env
+  cardinality_threshold: 50
+  max_label_combinations: 2000
 limits:
   dry_run: false
 `
@@ -279,6 +289,12 @@ limits:
 	}
 	if cfg.StatsLabels != "service,env" {
 		t.Errorf("expected StatsLabels 'service,env', got %s", cfg.StatsLabels)
+	}
+	if cfg.StatsCardinalityThreshold != 50 {
+		t.Errorf("expected StatsCardinalityThreshold 50, got %d", cfg.StatsCardinalityThreshold)
+	}
+	if cfg.StatsMaxLabelCombinations != 2000 {
+		t.Errorf("expected StatsMaxLabelCombinations 2000, got %d", cfg.StatsMaxLabelCombinations)
 	}
 	if cfg.LimitsDryRun != false {
 		t.Errorf("expected LimitsDryRun false, got %v", cfg.LimitsDryRun)
@@ -939,6 +955,72 @@ buffer:
 	}
 	if int64(cfg.Buffer.MaxBatchBytes) != 8*1048576 {
 		t.Errorf("MaxBatchBytes = %d, want %d", cfg.Buffer.MaxBatchBytes, 8*1048576)
+	}
+}
+
+func TestParseYAMLStatsCardinalityFields(t *testing.T) {
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+stats:
+  address: ":9090"
+  cardinality_threshold: 200
+  max_label_combinations: 10000
+`
+	cfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	if cfg.Stats.CardinalityThreshold != 200 {
+		t.Errorf("expected cardinality_threshold 200, got %d", cfg.Stats.CardinalityThreshold)
+	}
+	if cfg.Stats.MaxLabelCombinations != 10000 {
+		t.Errorf("expected max_label_combinations 10000, got %d", cfg.Stats.MaxLabelCombinations)
+	}
+}
+
+func TestParseYAMLStatsCardinalityFieldsZero(t *testing.T) {
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+stats:
+  cardinality_threshold: 0
+  max_label_combinations: 0
+`
+	cfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	if cfg.Stats.CardinalityThreshold != 0 {
+		t.Errorf("expected cardinality_threshold 0, got %d", cfg.Stats.CardinalityThreshold)
+	}
+	if cfg.Stats.MaxLabelCombinations != 0 {
+		t.Errorf("expected max_label_combinations 0, got %d", cfg.Stats.MaxLabelCombinations)
+	}
+}
+
+func TestToConfigStatsCardinalityFields(t *testing.T) {
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+stats:
+  cardinality_threshold: 75
+  max_label_combinations: 3000
+`
+	yamlCfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	cfg := yamlCfg.ToConfig()
+
+	if cfg.StatsCardinalityThreshold != 75 {
+		t.Errorf("expected StatsCardinalityThreshold 75, got %d", cfg.StatsCardinalityThreshold)
+	}
+	if cfg.StatsMaxLabelCombinations != 3000 {
+		t.Errorf("expected StatsMaxLabelCombinations 3000, got %d", cfg.StatsMaxLabelCombinations)
 	}
 }
 

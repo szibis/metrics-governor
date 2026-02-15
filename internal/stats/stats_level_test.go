@@ -176,7 +176,7 @@ func TestStatsLevel_BasicResetCardinality(t *testing.T) {
 	})
 	c.Process([]*metricspb.ResourceMetrics{rm})
 
-	if c.totalMetrics != 1 {
+	if c.totalMetrics.Load() != 1 {
 		t.Fatal("expected 1 metric before reset")
 	}
 
@@ -188,8 +188,8 @@ func TestStatsLevel_BasicResetCardinality(t *testing.T) {
 	if mLen != 0 {
 		t.Errorf("expected metricStats cleared after reset, got %d", mLen)
 	}
-	if c.totalMetrics != 0 {
-		t.Errorf("expected totalMetrics=0 after reset, got %d", c.totalMetrics)
+	if c.totalMetrics.Load() != 0 {
+		t.Errorf("expected totalMetrics=0 after reset, got %d", c.totalMetrics.Load())
 	}
 }
 

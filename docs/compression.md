@@ -23,6 +23,15 @@
   - [Reset() Safety and Cross-Contamination Prevention](#reset-safety-and-cross-contamination-prevention)
   - [Pool Metrics](#pool-metrics)
   - [Configuration](#configuration)
+- [Zstd EncodeAll Optimization](#zstd-encodeall-optimization)
+- [Native Compression (Optional, Build-Tag Gated)](#native-compression-optional-build-tag-gated)
+  - [Algorithm Coverage](#algorithm-coverage)
+  - [Building with Native Compression](#building-with-native-compression)
+  - [How It Works](#how-it-works-1)
+  - [Cross-Compatibility](#cross-compatibility)
+  - [Docker Images](#docker-images)
+- [Compression Decision Matrix](#compression-decision-matrix)
+  - [Stability Impact](#stability-impact)
 
 metrics-governor supports compression for HTTP exporters and automatic decompression for HTTP receivers. Compression can significantly reduce network bandwidth, especially for high-volume metrics.
 
@@ -217,6 +226,87 @@ Each encoder is explicitly `Reset()` before being returned to the pool. This ens
 ### Configuration
 
 Encoder pooling is always enabled and requires no configuration. The pool is managed by Go's `sync.Pool`, which automatically sizes itself based on GC pressure and usage patterns.
+
+## Zstd EncodeAll Optimization
+
+The zstd codec uses the `EncodeAll`/`DecodeAll` single-shot API instead of the streaming `Write`/`Close` API. This eliminates goroutine coordination overhead in the klauspost library and enables pooled destination buffers for zero-allocation hot paths.
+
+| Path | Before | After | Improvement |
+|------|-------:|------:|------------:|
+| Compress 100KB | 22,900 ns/op | 15,059 ns/op | **1.52x faster** |
+| Decompress 100KB | 62,674 ns/op (20 allocs) | 36,611 ns/op (0 allocs) | **1.71x faster, zero allocs** |
+| Roundtrip 100KB | 85,574 ns/op | 51,670 ns/op | **1.66x faster** |
+
+This applies to all four zstd code paths: `Compress()`, `Decompress()`, `CompressToBuf()`, and `DecompressToBuf()`. The optimization is always enabled — no configuration required.
+
+**Implementation details:**
+- Pooled `[]byte` destination buffers (`sync.Pool`) for both compress and decompress
+- Cap gate at 4MB prevents retaining oversized buffers from outlier payloads
+- `WithEncoderConcurrency(1)` avoids allocating GOMAXPROCS internal compressors
+- Result is copied to an owned `[]byte` before returning the pool buffer
+
+---
+
+## Native Compression (Optional, Build-Tag Gated)
+
+For deployments where gzip/zlib/deflate compression is a CPU bottleneck, metrics-governor supports an optional Rust FFI backend that provides ~1.6x faster gzip/zlib/deflate through native C libraries (flate2 with zlib-ng).
+
+### Algorithm Coverage
+
+| Algorithm | Native FFI? | Why |
+|-----------|:-----------:|-----|
+| **Gzip** | Yes | ~1.6x faster than Go stdlib/klauspost |
+| **Zlib** | Yes | ~1.6x faster than Go stdlib |
+| **Deflate** | Yes | ~1.6x faster than Go stdlib |
+| **Zstd** | No | klauspost pure Go is faster than C libzstd via CGO on ARM64 |
+| **Snappy/S2** | No | S2 already outperforms all known Snappy implementations |
+
+### Building with Native Compression
+
+```bash
+# Build the Rust FFI library
+make rust-build
+
+# Build Go with native compression
+make build-native
+
+# Run tests with native compression
+make test-native
+
+# Docker image with native compression
+make docker-native
+```
+
+**Requirements:**
+- Rust toolchain (1.85+)
+- C compiler (gcc/musl-dev for Alpine)
+- CGO enabled
+
+### How It Works
+
+Native compression is gated behind the `native_compress` build tag:
+
+```
+//go:build cgo && native_compress  → Rust FFI path
+//go:build !cgo || !native_compress → Pure Go fallback (default)
+```
+
+When the native build tag is present, `Compress()`/`Decompress()` dispatch gzip, zlib, and deflate to the Rust FFI. Zstd and snappy always use pure Go regardless of the build tag.
+
+When the build tag is absent (default `CGO_ENABLED=0` build), all algorithms use pure Go. The fallback is automatic — no configuration changes needed.
+
+### Cross-Compatibility
+
+Native and pure Go implementations produce interoperable output. Data compressed with native FFI can be decompressed by pure Go, and vice versa. This is verified by cross-compatibility tests (`TestCrossCompat_NativeCompressGoDecompress`, `TestCrossCompat_GoCompressNativeDecompress`).
+
+### Docker Images
+
+| Image | Build | Compression |
+|-------|-------|-------------|
+| `metrics-governor:latest` | `Dockerfile` (default) | Pure Go |
+| `metrics-governor:native` | `Dockerfile.native` | Rust FFI for gzip/zlib/deflate |
+
+---
 
 ## Compression Decision Matrix
 

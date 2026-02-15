@@ -1,0 +1,5 @@
+load	proxy	cpu_avg	cpu_max	mem_avg_pct	mem_max_pct	ingestion	datapoints_recv	datapoints_sent	export_errors
+50k	governor-minimal	3.36	9.39	29.4	41.0	100.00%	0	0	0
+50k	governor-balanced	3.65	10.41	35.4	46.1	99.42%	9779666	9722763	0
+50k	otel-collector	5.44	7.24	17.8	21.9	100.00%	0	0	0
+50k	vmagent	3.47	4.60	7.2	7.4	0.00%	0	0	0

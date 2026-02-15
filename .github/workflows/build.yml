@@ -379,6 +379,12 @@ jobs:
       - name: Lint Dockerfile
         run: hadolint Dockerfile --failure-threshold warning
 
+      - name: Lint Dockerfile.native
+        run: |
+          if [ -f Dockerfile.native ]; then
+            hadolint Dockerfile.native --failure-threshold warning
+          fi
+
       - name: Lint test Dockerfile
         run: hadolint test/Dockerfile.generator --failure-threshold warning
 

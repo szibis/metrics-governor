@@ -378,6 +378,12 @@ func main() {
 	statsLevel := stats.StatsLevel(cfg.StatsLevel)
 	if statsLevel != stats.StatsLevelNone {
 		statsCollector = stats.NewCollector(trackLabels, statsLevel)
+		if cfg.StatsCardinalityThreshold > 0 {
+			statsCollector.SetStatsCardinalityThreshold(cfg.StatsCardinalityThreshold)
+		}
+		if cfg.StatsMaxLabelCombinations > 0 {
+			statsCollector.SetStatsMaxLabelCombinations(cfg.StatsMaxLabelCombinations)
+		}
 	}
 	logging.Info("stats level configured", logging.F("level", cfg.StatsLevel))
 
@@ -1000,12 +1006,25 @@ func runValidate(args []string) {
 	}
 }
 
+// initMemoryLimit configures Go's two memory management knobs:
+//
+//   - GOMEMLIMIT: hard memory ceiling (prevents OOM kills).
+//     Auto-detected from container cgroup limits (Docker/K8s) × ratio.
+//     Example: 1 GiB container × 0.85 ratio = 870 MiB hard limit.
+//
+//   - GOGC: garbage collection frequency within that ceiling.
+//     Controls the CPU vs memory tradeoff — higher GOGC = less CPU spent on GC
+//     but more memory used between collections. Safe because GOMEMLIMIT prevents
+//     memory from ever exceeding the hard limit.
+//
+// Together: GOMEMLIMIT keeps memory safe, GOGC tunes the performance tradeoff.
+// Users can override both via environment variables: GOMEMLIMIT=1GiB, GOGC=200.
 func initMemoryLimit(ratio float64, gogc int) {
 	// Check if GOMEMLIMIT is already set via environment
 	if os.Getenv("GOMEMLIMIT") != "" {
 		// User explicitly set GOMEMLIMIT, respect their choice
 		limit := debug.SetMemoryLimit(-1) // Get current limit without changing
-		logging.Info("using explicit GOMEMLIMIT from environment", logging.F(
+		logging.Info("using explicit GOMEMLIMIT from environment (hard memory ceiling)", logging.F(
 			"limit_bytes", limit,
 			"limit_mb", limit/(1024*1024),
 		))
@@ -1015,7 +1034,7 @@ func initMemoryLimit(ratio float64, gogc int) {
 
 	// Validate and apply defaults for ratio
 	if ratio <= 0 || ratio > 1.0 {
-		ratio = 0.85 // Default to 85%
+		ratio = 0.85 // Default to 85% of container memory
 	}
 
 	// Auto-detect container memory limit (cgroups v1 and v2)
@@ -1028,37 +1047,50 @@ func initMemoryLimit(ratio float64, gogc int) {
 	)
 
 	if err != nil {
-		logging.Warn("failed to auto-detect memory limit", logging.F(
+		logging.Warn("failed to auto-detect memory limit for GOMEMLIMIT", logging.F(
 			"error", err.Error(),
 		))
 		return
 	}
 
 	if limit == 0 {
-		logging.Info("no memory limit detected, GOMEMLIMIT not set")
+		logging.Info("no container memory limit detected, GOMEMLIMIT not set (no OOM protection)")
 		return
 	}
 
-	logging.Info("auto-detected memory limit and set GOMEMLIMIT", logging.F(
+	logging.Info("GOMEMLIMIT set: hard memory ceiling to prevent OOM kills", logging.F(
 		"limit_bytes", limit,
 		"limit_mb", limit/(1024*1024),
-		"ratio", ratio,
+		"container_ratio", ratio,
 		"source", "cgroup/system",
 	))
 	autoSetGOGC(gogc)
 }
 
-// autoSetGOGC sets GOGC to the profile-specific value when not explicitly set.
-// Lower GOGC means more frequent GC but tighter memory usage. Profile defaults:
-// minimal/balanced/resilient=50, safety/observable=50, performance=25.
-// Users can override via GOGC env var.
+// autoSetGOGC configures Go's garbage collection frequency.
+//
+// GOGC controls how often GC runs: it triggers when the heap grows by GOGC% over
+// the previous size. The default Go value is 100 (GC when heap doubles).
+//
+//	GOGC=100  → GC runs when heap doubles    (more CPU on GC, tighter memory)
+//	GOGC=200  → GC runs when heap triples    (balanced — default for most profiles)
+//	GOGC=400  → GC runs when heap grows 5x   (minimal GC CPU, more memory headroom)
+//
+// This is safe because GOMEMLIMIT provides a hard memory ceiling regardless of GOGC.
+// Without GOMEMLIMIT, high GOGC would risk OOM; with it, GOGC purely controls the
+// CPU-vs-latency tradeoff.
+//
+// Profile defaults: minimal=100, balanced/safety/observable/resilient=200, performance=400.
+// Users can override via GOGC env var (e.g., GOGC=300).
 func autoSetGOGC(gogc int) {
 	if os.Getenv("GOGC") != "" {
 		return
 	}
 	if gogc <= 0 {
-		gogc = 50 // fallback default
+		gogc = 200 // fallback — safe because GOMEMLIMIT bounds memory
 	}
 	debug.SetGCPercent(gogc)
-	logging.Info("GOGC auto-set from profile", logging.F("gogc", gogc))
+	logging.Info("GOGC set: garbage collection frequency (higher=less CPU, more memory between GC cycles)", logging.F(
+		"gogc", gogc,
+	))
 }

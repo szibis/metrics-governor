@@ -4,3 +4,6 @@
 test/verifier/verifier
 coverage.out
 test/benchmark-results/*.txt
+*.test
+rust/compress-ffi/target/
+.serena/

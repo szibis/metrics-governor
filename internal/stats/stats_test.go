@@ -499,17 +499,16 @@ func TestExtractAttributes(t *testing.T) {
 	}
 }
 
-func TestMergeAttrs(t *testing.T) {
+func TestBuildSeriesKeyDualBytes_OverridePriority(t *testing.T) {
 	a := map[string]string{"key1": "val1"}
 	b := map[string]string{"key1": "override", "key2": "val2"}
 
-	result := mergeAttrs(a, b)
+	result := string(buildSeriesKeyDualBytes(a, b))
 
-	if result["key1"] != "override" {
-		t.Errorf("expected key1='override', got '%s'", result["key1"])
-	}
-	if result["key2"] != "val2" {
-		t.Errorf("expected key2='val2', got '%s'", result["key2"])
+	// dp attrs (b) override resource attrs (a), keys sorted
+	expected := "key1=override,key2=val2"
+	if result != expected {
+		t.Errorf("expected %q, got %q", expected, result)
 	}
 }
 
