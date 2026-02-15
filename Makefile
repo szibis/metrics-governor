@@ -5,7 +5,7 @@ LDFLAGS=-ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/
 
 BUILD_DIR=bin
 
-.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all test-helm test-stability test-stability-stress test-pool test-memory-regression bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all bench-stability bench-profile-budget bench-handoff bench-contention bench-hotpath bench-full-stability bench-proto bench-pool-regression pgo-profile pgo-build lint lint-dockerfile lint-yaml lint-helm lint-all validate-playground generate-config-meta ship ship-dry-run tag compose-up compose-down compose-light compose-stable compose-perf compose-queue compose-persistence compose-sharding compose-logs compose-compare compose-compare-quick
+.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all test-helm test-stability test-stability-stress test-pool test-memory-regression bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all bench-stability bench-profile-budget bench-handoff bench-contention bench-hotpath bench-full-stability bench-proto bench-pool-regression pgo-profile pgo-build lint lint-dockerfile lint-yaml lint-helm lint-all validate-playground generate-config-meta ship ship-dry-run tag compose-up compose-down compose-light compose-stable compose-perf compose-queue compose-persistence compose-sharding compose-logs compose-compare compose-compare-quick rust-build rust-test rust-clean build-native test-native bench-native bench-native-compare docker-native
 
 all: darwin-arm64 linux-arm64 linux-amd64
 
@@ -331,6 +331,47 @@ compose-compare-quick:
 	@echo "Running quick comparison (60s warmup, 120s sampling)..."
 	./test/compare/run.sh --warmup 60 --duration 120
 
+# Rust FFI targets (for native compression)
+rust-build:
+	@echo "Building Rust FFI compression library..."
+	cd rust/compress-ffi && cargo build --release
+	@echo "Rust library built: rust/compress-ffi/target/release/libcompress_ffi.a"
+
+rust-test:
+	@echo "Running Rust FFI unit tests..."
+	cd rust/compress-ffi && cargo test
+	@echo "Rust tests passed."
+
+rust-clean:
+	@echo "Cleaning Rust build artifacts..."
+	cd rust/compress-ffi && cargo clean
+
+# Native compression (Rust FFI) build targets
+build-native: rust-build
+	@mkdir -p $(BUILD_DIR)
+	@echo "Building with native compression (CGO + Rust FFI)..."
+	CGO_ENABLED=1 go build -tags native_compress $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-native ./cmd/metrics-governor
+	@echo "Native binary: $(BUILD_DIR)/$(BINARY_NAME)-native"
+
+test-native: rust-build
+	@echo "Running tests with native compression..."
+	CGO_ENABLED=1 go test -tags native_compress -race -count=1 ./internal/compression/...
+	@echo "Native compression tests passed."
+
+bench-native: rust-build
+	@echo "Running native compression benchmarks..."
+	CGO_ENABLED=1 go test -tags native_compress -bench='Compress|Decompress|RoundTrip' -benchmem ./internal/compression/...
+
+bench-native-compare: rust-build
+	@echo "Comparing native vs pure Go compression benchmarks..."
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 go test -bench='Compress|Decompress|RoundTrip' -benchmem -count=3 ./internal/compression/... > $(BUILD_DIR)/bench-purego.txt
+	CGO_ENABLED=1 go test -tags native_compress -bench='Compress|Decompress|RoundTrip' -benchmem -count=3 ./internal/compression/... > $(BUILD_DIR)/bench-native.txt
+	@echo "Results saved. Compare with: benchstat $(BUILD_DIR)/bench-purego.txt $(BUILD_DIR)/bench-native.txt"
+
+docker-native:
+	docker build -f Dockerfile.native -t $(BINARY_NAME):$(VERSION)-native -t $(BINARY_NAME):latest-native .
+
 compose-status:
 	@echo "=== Container Status ==="
 	docker compose ps
@@ -394,6 +435,16 @@ help:
 	@echo "  ship-dry-run VERSION=X.Y.Z MESSAGE='...' - Preview release changes"
 	@echo "  tag VERSION=vX.Y.Z - Create a git tag (deprecated)"
 	@echo "  clean            - Remove build artifacts"
+	@echo ""
+	@echo "Native Compression (Rust FFI):"
+	@echo "  rust-build       - Build Rust FFI static library"
+	@echo "  rust-test        - Run Rust FFI unit tests (cargo test)"
+	@echo "  rust-clean       - Clean Rust build artifacts"
+	@echo "  build-native     - Build binary with native compression (CGO + Rust FFI)"
+	@echo "  test-native      - Run compression tests with native FFI enabled"
+	@echo "  bench-native     - Run native compression benchmarks"
+	@echo "  bench-native-compare - Compare native vs pure Go benchmarks"
+	@echo "  docker-native    - Build Docker image with native compression"
 	@echo ""
 	@echo "Docker Compose Test Environment:"
 	@echo "  compose-up       - Start test environment (moderate load)"
