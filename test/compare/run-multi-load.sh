@@ -34,9 +34,11 @@ LOADS[100k]="100000 50000 2G 4 4G 4 4G"
 LOAD_LEVELS=${LOAD_LEVELS:-"50k 100k"}
 
 # Tests to run at each load level
-TESTS=("compare-governor-balanced" "compare-otel")
-LABELS=("governor-balanced" "otel-collector")
-PROXY_CONTAINERS=("metrics-governor" "otel-collector")
+TESTS=("compare-governor" "compare-governor-balanced" "compare-otel" "compare-vmagent")
+LABELS=("governor-minimal" "governor-balanced" "otel-collector" "vmagent")
+# Use full container names to avoid matching other containers with project name prefix
+# Docker Compose names: <project>-<service>-<replica>, e.g. metrics-governor-metrics-governor-1
+PROXY_CONTAINERS=("metrics-governor-metrics-governor" "metrics-governor-metrics-governor" "metrics-governor-otel-collector" "metrics-governor-vmagent")
 
 mkdir -p "$RESULTS_DIR"
 
@@ -53,7 +55,7 @@ echo "  Multi-Load Performance Comparison"
 echo "================================================================"
 echo "  Warmup: ${WARMUP}s | Sampling: ${DURATION}s | Interval: ${INTERVAL}s"
 echo "  Load levels: ${LOAD_LEVELS}"
-echo "  Proxies: governor-balanced, otel-collector"
+echo "  Proxies: governor-minimal, governor-balanced, otel-collector, vmagent"
 echo "================================================================"
 
 # Summary file for all load levels
@@ -83,7 +85,7 @@ for load_key in $LOAD_LEVELS; do
         TARGET_DPS="$DPS" TARGET_MPS="$MPS" \
             PROXY_MEM="$PMEM" PROXY_CPU="$PCPU" \
             GEN_MEM="$GMEM" GEN_CPU="$GCPU" VM_MEM="$VMEM" \
-            docker compose -f docker-compose.yaml -f "compose_overrides/${test}.yaml" up -d 2>&1 | tail -1
+            docker compose -f docker-compose.yaml -f "compose_overrides/${test}.yaml" up -d --build 2>&1 | tail -1
 
         echo "[$(date +%H:%M:%S)] Warming up (${WARMUP}s)..."
         sleep "$WARMUP"

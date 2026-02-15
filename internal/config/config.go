@@ -146,10 +146,16 @@ type Config struct {
 
 	// Pipeline health / load shedding
 	LoadSheddingThreshold float64 // Pipeline health score above which receivers reject (0.0-1.0, default: 0.85)
-	GOGC                  int     // GC target percentage (0 = use profile default, default: 50)
+
+	// Go runtime memory tuning — these two settings work together:
+	//   GOMEMLIMIT (via MemoryLimitRatio) = hard memory ceiling, prevents OOM kills
+	//   GOGC = GC frequency within that ceiling, trades CPU for memory headroom
+	// Higher GOGC = fewer GC cycles = less CPU, but more memory used between collections.
+	// GOMEMLIMIT ensures memory never exceeds the limit regardless of GOGC value.
+	GOGC int // GC frequency: 100=GC when heap doubles, 200=triples, 400=5x (0=profile default)
 
 	// Memory limit settings
-	MemoryLimitRatio    float64 // Ratio of container memory to use for GOMEMLIMIT (default: 0.85)
+	MemoryLimitRatio    float64 // Fraction of container memory for Go's hard limit (default: 0.85 = 85%)
 	BufferMemoryPercent float64 // Buffer capacity as % of detected memory limit (default: 0.10)
 	QueueMemoryPercent  float64 // Queue in-memory capacity as % of detected memory limit (default: 0.10)
 
@@ -526,7 +532,7 @@ func ParseFlags() *Config {
 	flag.BoolVar(&cfg.QueueAlwaysQueue, "queue-always-queue", true, "Always route data through queue (workers pull and export)")
 
 	// Memory limit flags
-	flag.Float64Var(&cfg.MemoryLimitRatio, "memory-limit-ratio", 0.85, "Ratio of container memory to use for GOMEMLIMIT (0.0-1.0)")
+	flag.Float64Var(&cfg.MemoryLimitRatio, "memory-limit-ratio", 0.85, "Fraction of container memory for Go's hard limit, prevents OOM kills (0.0-1.0)")
 
 	// Sharding flags
 	flag.BoolVar(&cfg.ShardingEnabled, "sharding-enabled", false, "Enable consistent sharding")
@@ -1807,9 +1813,14 @@ OPTIONS:
         -queue-backoff-enabled           Enable exponential backoff for retries (default: true)
         -queue-circuit-breaker-reset-timeout <dur> Time to wait before half-open state (default: 30s)
 
-    Memory:
-        -memory-limit-ratio <ratio>      Ratio of container memory for GOMEMLIMIT (0.0-1.0) (default: 0.9)
-                                         Auto-detects container limits via cgroups (Docker/K8s)
+    Memory Tuning:
+        -memory-limit-ratio <ratio>      Fraction of container memory for GOMEMLIMIT (0.0-1.0) (default: 0.85)
+                                         Auto-detects container limits via cgroups (Docker/K8s).
+                                         GOMEMLIMIT is Go's hard memory ceiling — prevents OOM kills.
+                                         GOGC (set per profile) controls GC frequency within that ceiling:
+                                           higher = less CPU but more memory between collections.
+                                         Together: GOMEMLIMIT keeps you safe, GOGC tunes the CPU/memory tradeoff.
+                                         Override GOGC via env var: GOGC=200 (default per profile)
 
     Sharding (Consistent Hash Distribution):
         -sharding-enabled                Enable consistent sharding (default: false)

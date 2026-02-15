@@ -1524,23 +1524,38 @@ The following table summarizes the CPU overhead of recently added limits feature
 
 ## Stability & Memory Tuning
 
-### Per-Profile GOGC
+### GOGC and GOMEMLIMIT — How They Work Together
 
-Each profile sets `GOGC` to balance GC overhead vs memory usage. Lower GOGC = more GC cycles but lower peak heap:
+Go has two memory tuning knobs that work as a team:
 
-| Profile | GOGC | Rationale |
-|---|---|---|
-| minimal | 50 | Tighter GC for stable memory in containers |
-| balanced | 50 | Tighter GC for stable memory and predictable CPU |
-| safety / observable | 50 | Aggressive — high allocation (full stats) |
-| resilient | 50 | Tighter GC for stable memory and predictable CPU |
-| performance | 25 | Very aggressive — maximize memory reuse |
+- **GOMEMLIMIT** = hard memory ceiling — "never use more than X bytes" (prevents OOM kills)
+- **GOGC** = GC frequency — "how full can the heap get before GC runs" (trades CPU for memory headroom)
 
-Override with the `GOGC` environment variable: `GOGC=100 ./metrics-governor --profile observable`.
+When GOMEMLIMIT is set, GOGC becomes purely a **CPU-vs-latency tradeoff**: higher GOGC = fewer GC pauses = less CPU spent on garbage collection. GOMEMLIMIT ensures memory never exceeds the container limit regardless of GOGC value.
 
-### GOMEMLIMIT
+**Example**: In a 1 GiB container with `memory_limit_ratio=0.85`:
+- GOMEMLIMIT is set to 870 MiB (hard ceiling)
+- With GOGC=200, GC triggers when the heap triples (e.g., 200 MiB → 600 MiB)
+- If heap approaches 870 MiB, GC runs aggressively regardless of GOGC to stay under the limit
 
-Auto-configured from container memory limits (or system memory on bare metal). Uses `memory_limit_ratio` (default 0.85) to set the soft limit, leaving headroom for transient spikes and kernel buffers. When GOMEMLIMIT is approached, the GC runs more aggressively, and stats degradation may activate to shed memory.
+#### Per-Profile GOGC
+
+| Profile | GOGC | GC Triggers When Heap... | CPU Impact |
+|---|:---:|---|---|
+| minimal | 100 | Doubles (2x) | Moderate — balanced for small containers |
+| balanced | 200 | Triples (3x) | Low — ~45% less GC CPU than GOGC=50 |
+| safety | 200 | Triples (3x) | Low |
+| observable | 200 | Triples (3x) | Low |
+| resilient | 200 | Triples (3x) | Low |
+| performance | 400 | Grows 5x | Minimal — maximum throughput, safe with GOMEMLIMIT |
+
+Override with the `GOGC` environment variable: `GOGC=300 ./metrics-governor --profile balanced`.
+
+**Why not GOGC=50 (the old default)?** CPU profiling at 50k dps showed GC consumed **44.5% of CPU** with GOGC=50 — the single largest CPU consumer. Since GOMEMLIMIT already prevents OOM, this GC frequency was pure waste. Raising GOGC to 200 cut governor CPU by ~45% at 50k dps.
+
+#### GOMEMLIMIT Auto-Detection
+
+Auto-configured from container memory limits via cgroups (Docker/K8s) or system memory on bare metal. Uses `memory_limit_ratio` (default 0.85) to set the ceiling, leaving 15% headroom for goroutine stacks, CGO allocations, and kernel buffers. When heap approaches GOMEMLIMIT, GC runs more aggressively regardless of GOGC, and stats degradation may activate to shed memory.
 
 ### Pipeline Health & Load Shedding
 

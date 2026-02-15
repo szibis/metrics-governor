@@ -1,0 +1,40 @@
+verifier-1  | 2026/02/15 22:39:10   Batches sent:           35
+verifier-1  | 2026/02/15 22:39:10   Queue size:             0
+verifier-1  | 2026/02/15 22:39:10   Dropped total:          0
+verifier-1  | 2026/02/15 22:39:10   Export errors:          0
+verifier-1  | 2026/02/15 22:39:10 
+verifier-1  | 2026/02/15 22:39:10 VERIFICATION:
+verifier-1  | 2026/02/15 22:39:10   Ingestion rate:         99.36%
+verifier-1  | 2026/02/15 22:39:10   Pass threshold:         90.00%
+verifier-1  | 2026/02/15 22:39:10   Status:                 PASS
+verifier-1  | 2026/02/15 22:39:10   Message:                Ingestion rate 99.36% meets threshold 90.00%
+verifier-1  | 2026/02/15 22:39:10 ========================================
+verifier-1  | 2026/02/15 22:39:10 Running verification: 11/12 checks passed (91.7%)
+verifier-1  | 2026/02/15 22:39:10 
+verifier-1  | 2026/02/15 22:39:25 ========================================
+verifier-1  | 2026/02/15 22:39:25   VERIFICATION RESULT - PASS
+verifier-1  | 2026/02/15 22:39:25 ========================================
+verifier-1  | 2026/02/15 22:39:25 Timestamp: 2026-02-15T22:39:25Z
+verifier-1  | 2026/02/15 22:39:25 
+verifier-1  | 2026/02/15 22:39:25 VICTORIAMETRICS:
+verifier-1  | 2026/02/15 22:39:25   Total time series:      92608
+verifier-1  | 2026/02/15 22:39:25   Unique metric names:    10
+verifier-1  | 2026/02/15 22:39:25   High cardinality TS:    26080
+verifier-1  | 2026/02/15 22:39:25   Verification counter:   1830
+verifier-1  | 2026/02/15 22:39:25 
+verifier-1  | 2026/02/15 22:39:25 METRICS-GOVERNOR:
+verifier-1  | 2026/02/15 22:39:25   Datapoints received:    9779666
+verifier-1  | 2026/02/15 22:39:25   Datapoints sent:        9722763
+verifier-1  | 2026/02/15 22:39:25   Batches sent:           38
+verifier-1  | 2026/02/15 22:39:25   Queue size:             0
+verifier-1  | 2026/02/15 22:39:25   Dropped total:          0
+verifier-1  | 2026/02/15 22:39:25   Export errors:          0
+verifier-1  | 2026/02/15 22:39:25 
+verifier-1  | 2026/02/15 22:39:25 VERIFICATION:
+verifier-1  | 2026/02/15 22:39:25   Ingestion rate:         99.42%
+verifier-1  | 2026/02/15 22:39:25   Pass threshold:         90.00%
+verifier-1  | 2026/02/15 22:39:25   Status:                 PASS
+verifier-1  | 2026/02/15 22:39:25   Message:                Ingestion rate 99.42% meets threshold 90.00%
+verifier-1  | 2026/02/15 22:39:25 ========================================
+verifier-1  | 2026/02/15 22:39:25 Running verification: 12/13 checks passed (92.3%)
+verifier-1  | 2026/02/15 22:39:25 

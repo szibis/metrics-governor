@@ -42,7 +42,9 @@ done
 TESTS=("compare-governor" "compare-governor-balanced" "compare-otel" "compare-vmagent")
 LABELS=("governor-minimal" "governor-balanced" "otel-collector" "vmagent")
 # Which container is the "proxy under test" for each test
-PROXY_CONTAINERS=("metrics-governor" "metrics-governor" "otel-collector" "vmagent")
+# Use full container names to avoid matching other containers with project name prefix
+# Docker Compose names: <project>-<service>-<replica>, e.g. metrics-governor-metrics-governor-1
+PROXY_CONTAINERS=("metrics-governor-metrics-governor" "metrics-governor-metrics-governor" "metrics-governor-otel-collector" "metrics-governor-vmagent")
 
 mkdir -p "$RESULTS_DIR"
 SUMMARY="$RESULTS_DIR/summary.tsv"
