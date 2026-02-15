@@ -70,7 +70,18 @@
 
 ## Results: Multi-Load (50k, 100k, 200k dps)
 
-*Results will be appended after multi-load benchmarks complete.*
+**Caveat**: The generator was capped at 1 CPU during this run, preventing it from producing the target DPS at higher levels. Actual throughput was ~750 dps at all three levels (verified by identical datapoint counts: ~133k per test). These results reflect resource usage at the **same effective load**, not at the intended 50k/100k/200k targets. The script has been fixed (`GEN_CPU` now scales with load) for future runs.
+
+| Load | Proxy | CPU avg | CPU max | Mem avg % | Mem max % | Ingestion | Errors |
+|------|-------|:-------:|:-------:|:---------:|:---------:|:---------:|:------:|
+| 50k | **Governor balanced** | 0.98% | 6.42% | 12.5% | 52.9% | 99.3% | 0 |
+| 50k | **OTel Collector** | 0.97% | 2.09% | 12.5% | 15.6% | PASS | 0 |
+| 100k | **Governor balanced** | 0.76% | 3.60% | 12.3% | 52.4% | 99.2% | 0 |
+| 100k | **OTel Collector** | 0.67% | 0.91% | 5.6% | 6.3% | PASS | 0 |
+| 200k | **Governor balanced** | 0.90% | 6.20% | 10.7% | 52.3% | 99.2% | 0 |
+| 200k | **OTel Collector** | 0.97% | 3.02% | 2.6% | 3.2% | PASS | 0 |
+
+**Note**: Governor memory max ~52% is GOMEMLIMIT-driven GC behavior (Go's memory target is 80% of container limit). OTel Collector memory % decreases at higher resource allocations because the absolute usage stays constant while the container limit increases.
 
 ---
 

@@ -1,0 +1,7 @@
+load	proxy	cpu_avg	cpu_max	mem_avg_pct	mem_max_pct	ingestion	datapoints_recv	datapoints_sent	export_errors
+50k	governor-balanced	0.98	6.42	12.5	52.9	N/A	0	0	0
+50k	otel-collector	0.97	2.09	12.5	15.6	N/A	0	0	0
+100k	governor-balanced	0.76	3.60	12.3	52.4	N/A	0	0	0
+100k	otel-collector	0.67	0.91	5.6	6.3	N/A	0	0	0
+200k	governor-balanced	0.90	6.20	10.7	52.3	N/A	0	0	0
+200k	otel-collector	0.97	3.02	2.6	3.2	N/A	0	0	0

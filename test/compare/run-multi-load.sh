@@ -24,11 +24,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Load configurations: DPS MPS PROXY_MEM PROXY_CPU GEN_MEM VM_MEM
+# Load configurations: DPS MPS PROXY_MEM PROXY_CPU GEN_MEM GEN_CPU VM_MEM
 declare -A LOADS
-LOADS[50k]="50000 25000 1G 2 2G 2G"
-LOADS[100k]="100000 50000 2G 4 2G 2G"
-LOADS[200k]="200000 100000 4G 8 4G 4G"
+LOADS[50k]="50000 25000 1G 2 2G 2 2G"
+LOADS[100k]="100000 50000 2G 4 2G 4 2G"
+LOADS[200k]="200000 100000 4G 8 4G 8 4G"
 
 # Tests to run at each load level
 TESTS=("compare-governor-balanced" "compare-otel")
@@ -58,7 +58,7 @@ MULTI_SUMMARY="$RESULTS_DIR/multi-load-summary.tsv"
 echo -e "load\tproxy\tcpu_avg\tcpu_max\tmem_avg_pct\tmem_max_pct\tingestion\tdatapoints_recv\tdatapoints_sent\texport_errors" > "$MULTI_SUMMARY"
 
 for load_key in 50k 100k 200k; do
-    read -r DPS MPS PMEM PCPU GMEM VMEM <<< "${LOADS[$load_key]}"
+    read -r DPS MPS PMEM PCPU GMEM GCPU VMEM <<< "${LOADS[$load_key]}"
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
@@ -79,7 +79,7 @@ for load_key in 50k 100k 200k; do
         echo "[$(date +%H:%M:%S)] Starting stack..."
         TARGET_DPS="$DPS" TARGET_MPS="$MPS" \
             PROXY_MEM="$PMEM" PROXY_CPU="$PCPU" \
-            GEN_MEM="$GMEM" VM_MEM="$VMEM" \
+            GEN_MEM="$GMEM" GEN_CPU="$GCPU" VM_MEM="$VMEM" \
             docker compose -f docker-compose.yaml -f "compose_overrides/${test}.yaml" up -d 2>&1 | tail -1
 
         echo "[$(date +%H:%M:%S)] Warming up (${WARMUP}s)..."
@@ -109,7 +109,8 @@ for load_key in 50k 100k 200k; do
 
         # Get verifier results
         VERIFIER_FILE="$RESULTS_DIR/${label}-${load_key}-verifier.log"
-        docker logs metrics-governor-verifier-1 --tail 40 2>&1 > "$VERIFIER_FILE"
+        # Use compose logs to get the verifier output regardless of container name prefix
+        docker compose -f docker-compose.yaml -f "compose_overrides/${test}.yaml" logs verifier --tail 40 2>&1 > "$VERIFIER_FILE"
 
         # Extract metrics
         ingestion=$(grep -o 'Ingestion rate:.*%' "$VERIFIER_FILE" | tail -1 | grep -o '[0-9.]*%' || echo "N/A")
