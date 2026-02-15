@@ -94,9 +94,11 @@ type Config struct {
 	BufferFullPolicy string // Buffer full policy: "reject", "drop_oldest", "block" (default: "reject")
 
 	// Stats settings
-	StatsAddr   string
-	StatsLabels string
-	StatsLevel  string // "none", "basic", or "full" — controls stats collection overhead
+	StatsAddr                  string
+	StatsLabels                string
+	StatsLevel                 string // "none", "basic", or "full" — controls stats collection overhead
+	StatsCardinalityThreshold  int    // Only create Bloom trackers for metrics with > N datapoints (0 = track all)
+	StatsMaxLabelCombinations  int    // Max label combination entries in full mode (0 = unlimited)
 
 	// Limits settings
 	LimitsConfig     string
@@ -481,6 +483,8 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.StatsAddr, "stats-addr", ":9090", "Stats/metrics HTTP endpoint address")
 	flag.StringVar(&cfg.StatsLabels, "stats-labels", "", "Comma-separated labels to track for grouping (e.g., service,env,cluster)")
 	flag.StringVar(&cfg.StatsLevel, "stats-level", "basic", "Stats collection level: none (disabled), basic (per-metric counts), or full (cardinality tracking)")
+	flag.IntVar(&cfg.StatsCardinalityThreshold, "stats-cardinality-threshold", 0, "Only create Bloom trackers for metrics with > N datapoints per cycle (0 = track all)")
+	flag.IntVar(&cfg.StatsMaxLabelCombinations, "stats-max-label-combinations", 0, "Max label combination entries in full mode (0 = unlimited)")
 
 	// Limits flags
 	flag.StringVar(&cfg.LimitsConfig, "limits-config", "", "Path to limits configuration YAML file")
@@ -1951,6 +1955,8 @@ func DefaultConfig() *Config {
 		StatsAddr:                       ":9090",
 		StatsLabels:                     "",
 		StatsLevel:                      "basic",
+		StatsCardinalityThreshold:       0,
+		StatsMaxLabelCombinations:       0,
 		LimitsConfig:                    "",
 		LimitsDryRun:                    true,
 		RuleCacheMaxSize:                10000,
@@ -2136,6 +2142,12 @@ func (c *Config) Validate() error {
 	validStatsLevels := map[string]bool{"none": true, "basic": true, "full": true}
 	if !validStatsLevels[c.StatsLevel] {
 		errs = append(errs, fmt.Sprintf("stats-level must be 'none', 'basic', or 'full', got %q", c.StatsLevel))
+	}
+	if c.StatsCardinalityThreshold < 0 {
+		errs = append(errs, fmt.Sprintf("stats-cardinality-threshold must be >= 0, got %d", c.StatsCardinalityThreshold))
+	}
+	if c.StatsMaxLabelCombinations < 0 {
+		errs = append(errs, fmt.Sprintf("stats-max-label-combinations must be >= 0, got %d", c.StatsMaxLabelCombinations))
 	}
 
 	// Queue validation

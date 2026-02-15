@@ -15,6 +15,25 @@ make docker
 
 Binaries are output to `bin/` directory.
 
+### Profile-Guided Optimization (PGO)
+
+PGO uses CPU profiles from benchmarks to guide the compiler's optimization decisions, yielding 2-7% throughput improvement:
+
+```bash
+# Step 1: Generate PGO profile from representative benchmarks
+make pgo-profile
+# Creates default.pgo in the project root (~5-10 MB)
+
+# Step 2: Build with PGO
+make pgo-build
+# Output: bin/metrics-governor (PGO-optimized)
+
+# Docker: PGO is used automatically when default.pgo exists in the build context
+docker build -t metrics-governor:latest .
+```
+
+The `default.pgo` file should be regenerated periodically (e.g., after significant code changes) and committed to the repository so CI builds also benefit.
+
 ## Running Tests
 
 ```bash

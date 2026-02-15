@@ -332,20 +332,22 @@ func (e *PRWExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 	}
 	pipeline.RecordBytes("serialize", len(body))
 
-	// Compress the body
+	// Compress the body using pooled buffer to avoid intermediate copy
+	compBuf := compression.GetBuffer()
 	compressStart := time.Now()
-	compressedBody, err := compression.Compress(body, compression.Config{
+	if err := compression.CompressToBuf(compBuf, body, compression.Config{
 		Type: e.compression,
-	})
-	pipeline.Record("compress", pipeline.Since(compressStart))
-	if err != nil {
+	}); err != nil {
+		compression.ReleaseBuffer(compBuf)
 		return fmt.Errorf("failed to compress PRW request: %w", err)
 	}
-	pipeline.RecordBytes("compress", len(compressedBody))
+	pipeline.Record("compress", pipeline.Since(compressStart))
+	pipeline.RecordBytes("compress", compBuf.Len())
 
 	// Create HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.endpoint, bytes.NewReader(compressedBody))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.endpoint, bytes.NewReader(compBuf.Bytes()))
 	if err != nil {
+		compression.ReleaseBuffer(compBuf)
 		return fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
@@ -367,7 +369,9 @@ func (e *PRWExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 	httpStart := time.Now()
 	resp, err := e.httpClient.Do(httpReq)
 	pipeline.Record("export_http", pipeline.Since(httpStart))
-	pipeline.RecordBytes("export_http", len(compressedBody))
+	compressedLen := compBuf.Len()
+	compression.ReleaseBuffer(compBuf)
+	pipeline.RecordBytes("export_http", compressedLen)
 	if err != nil {
 		errType := classifyError(err)
 		prwExportErrorsTotal.WithLabelValues(string(errType)).Inc()
@@ -418,7 +422,7 @@ func (e *PRWExporter) Export(ctx context.Context, req *prw.WriteRequest) error {
 	// Track successful export metrics
 	prwExportTimeseriesTotal.Add(float64(timeseriesCount))
 	prwExportSamplesTotal.Add(float64(samplesCount))
-	prwExportBytesTotal.WithLabelValues(string(e.compression)).Add(float64(len(compressedBody)))
+	prwExportBytesTotal.WithLabelValues(string(e.compression)).Add(float64(compressedLen))
 
 	return nil
 }
@@ -439,20 +443,22 @@ func (e *PRWExporter) ExportData(ctx context.Context, data []byte) error {
 
 	body := data
 
-	// Compress the body
+	// Compress the body using pooled buffer to avoid intermediate copy
+	compBuf := compression.GetBuffer()
 	compressStart := time.Now()
-	compressedBody, err := compression.Compress(body, compression.Config{
+	if err := compression.CompressToBuf(compBuf, body, compression.Config{
 		Type: e.compression,
-	})
-	pipeline.Record("compress", pipeline.Since(compressStart))
-	if err != nil {
+	}); err != nil {
+		compression.ReleaseBuffer(compBuf)
 		return fmt.Errorf("failed to compress PRW request: %w", err)
 	}
-	pipeline.RecordBytes("compress", len(compressedBody))
+	pipeline.Record("compress", pipeline.Since(compressStart))
+	pipeline.RecordBytes("compress", compBuf.Len())
 
 	// Create HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.endpoint, bytes.NewReader(compressedBody))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.endpoint, bytes.NewReader(compBuf.Bytes()))
 	if err != nil {
+		compression.ReleaseBuffer(compBuf)
 		return fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
@@ -474,7 +480,9 @@ func (e *PRWExporter) ExportData(ctx context.Context, data []byte) error {
 	httpStart := time.Now()
 	resp, err := e.httpClient.Do(httpReq)
 	pipeline.Record("export_http", pipeline.Since(httpStart))
-	pipeline.RecordBytes("export_http", len(compressedBody))
+	compressedLen := compBuf.Len()
+	compression.ReleaseBuffer(compBuf)
+	pipeline.RecordBytes("export_http", compressedLen)
 	if err != nil {
 		errType := classifyError(err)
 		prwExportErrorsTotal.WithLabelValues(string(errType)).Inc()
@@ -513,7 +521,7 @@ func (e *PRWExporter) ExportData(ctx context.Context, data []byte) error {
 	}
 
 	// Track successful export — bytes only (timeseries/samples counted at push time)
-	prwExportBytesTotal.WithLabelValues(string(e.compression)).Add(float64(len(compressedBody)))
+	prwExportBytesTotal.WithLabelValues(string(e.compression)).Add(float64(compressedLen))
 
 	return nil
 }

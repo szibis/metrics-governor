@@ -378,6 +378,12 @@ func main() {
 	statsLevel := stats.StatsLevel(cfg.StatsLevel)
 	if statsLevel != stats.StatsLevelNone {
 		statsCollector = stats.NewCollector(trackLabels, statsLevel)
+		if cfg.StatsCardinalityThreshold > 0 {
+			statsCollector.SetStatsCardinalityThreshold(cfg.StatsCardinalityThreshold)
+		}
+		if cfg.StatsMaxLabelCombinations > 0 {
+			statsCollector.SetStatsMaxLabelCombinations(cfg.StatsMaxLabelCombinations)
+		}
 	}
 	logging.Info("stats level configured", logging.F("level", cfg.StatsLevel))
 

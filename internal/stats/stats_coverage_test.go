@@ -93,10 +93,8 @@ func TestResetCardinalityPreservesDatapoints(t *testing.T) {
 
 	c.ResetCardinality()
 
-	c.mu.RLock()
-	received := c.datapointsReceived
-	sent := c.datapointsSent
-	c.mu.RUnlock()
+	received := c.datapointsReceived.Load()
+	sent := c.datapointsSent.Load()
 
 	if received != 100 {
 		t.Errorf("Expected received=100, got %d", received)
@@ -120,7 +118,7 @@ func TestResetCardinalityLargeMetricMap(t *testing.T) {
 			cardinality: cardinality.NewTrackerFromGlobal(),
 		}
 	}
-	c.totalMetrics = uint64(len(c.metricStats))
+	c.totalMetrics.Store(uint64(len(c.metricStats)))
 	c.mu.Unlock()
 
 	if len(c.metricStats) <= 10000 {
@@ -135,8 +133,8 @@ func TestResetCardinalityLargeMetricMap(t *testing.T) {
 	if len(c.metricStats) != 0 {
 		t.Errorf("expected metric stats map to be cleared after eviction, got %d entries", len(c.metricStats))
 	}
-	if c.totalMetrics != 0 {
-		t.Errorf("expected totalMetrics reset to 0, got %d", c.totalMetrics)
+	if c.totalMetrics.Load() != 0 {
+		t.Errorf("expected totalMetrics reset to 0, got %d", c.totalMetrics.Load())
 	}
 }
 
@@ -183,7 +181,7 @@ func TestResetCardinalityBothMapsLarge(t *testing.T) {
 			cardinality: cardinality.NewTrackerFromGlobal(),
 		}
 	}
-	c.totalMetrics = uint64(len(c.metricStats))
+	c.totalMetrics.Store(uint64(len(c.metricStats)))
 	for i := 0; i < 5001; i++ {
 		key := fmt.Sprintf("service=svc_%d", i)
 		c.labelStats[key] = &LabelStats{
@@ -248,11 +246,8 @@ func TestSetOTLPBufferSize(t *testing.T) {
 
 	c.SetOTLPBufferSize(1000)
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if c.otlpBufferSize != 1000 {
-		t.Errorf("Expected buffer size 1000, got %d", c.otlpBufferSize)
+	if c.otlpBufferSize.Load() != 1000 {
+		t.Errorf("Expected buffer size 1000, got %d", c.otlpBufferSize.Load())
 	}
 }
 
@@ -262,11 +257,8 @@ func TestSetPRWBufferSize(t *testing.T) {
 
 	c.SetPRWBufferSize(2000)
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if c.prwBufferSize != 2000 {
-		t.Errorf("Expected PRW buffer size 2000, got %d", c.prwBufferSize)
+	if c.prwBufferSize.Load() != 2000 {
+		t.Errorf("Expected PRW buffer size 2000, got %d", c.prwBufferSize.Load())
 	}
 }
 
@@ -594,8 +586,8 @@ func TestUpdateLabelStats_NoTrackedLabelsInAttrs(t *testing.T) {
 	}
 
 	// But the metric datapoints should still be counted
-	if c.totalDatapoints != 2 {
-		t.Errorf("expected 2 total datapoints, got %d", c.totalDatapoints)
+	if c.totalDatapoints.Load() != 2 {
+		t.Errorf("expected 2 total datapoints, got %d", c.totalDatapoints.Load())
 	}
 }
 

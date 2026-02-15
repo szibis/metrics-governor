@@ -5,7 +5,7 @@ LDFLAGS=-ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/
 
 BUILD_DIR=bin
 
-.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all test-helm test-stability test-stability-stress test-pool test-memory-regression bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all bench-stability bench-profile-budget bench-handoff bench-contention bench-hotpath bench-full-stability bench-proto bench-pool-regression lint lint-dockerfile lint-yaml lint-helm lint-all validate-playground generate-config-meta ship ship-dry-run tag compose-up compose-down compose-light compose-stable compose-perf compose-queue compose-persistence compose-sharding compose-logs
+.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all test-helm test-stability test-stability-stress test-pool test-memory-regression bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all bench-stability bench-profile-budget bench-handoff bench-contention bench-hotpath bench-full-stability bench-proto bench-pool-regression pgo-profile pgo-build lint lint-dockerfile lint-yaml lint-helm lint-all validate-playground generate-config-meta ship ship-dry-run tag compose-up compose-down compose-light compose-stable compose-perf compose-queue compose-persistence compose-sharding compose-logs compose-compare compose-compare-quick
 
 all: darwin-arm64 linux-arm64 linux-amd64
 
@@ -132,6 +132,21 @@ bench-proto:
 bench-pool-regression:
 	@echo "Running pool regression benchmarks..."
 	go test -bench='Pool|Pooled' -benchmem ./internal/...
+
+pgo-profile:
+	@echo "Generating PGO profile from representative benchmarks..."
+	@mkdir -p $(BUILD_DIR)
+	go test -bench='EndToEnd|ProcessFull|BufferToExport|Compress|Decompress|RoundTrip' \
+		-cpuprofile=$(BUILD_DIR)/cpu.pprof -benchtime=10s ./internal/...
+	@cp $(BUILD_DIR)/cpu.pprof default.pgo
+	@echo "PGO profile saved to default.pgo ($(shell wc -c < default.pgo 2>/dev/null || echo 0) bytes)"
+
+pgo-build:
+	@if [ ! -f default.pgo ]; then echo "No default.pgo found. Run 'make pgo-profile' first."; exit 1; fi
+	@mkdir -p $(BUILD_DIR)
+	@echo "Building with PGO (profile: default.pgo)..."
+	go build -pgo=default.pgo $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/metrics-governor
+	@echo "PGO-optimized binary: $(BUILD_DIR)/$(BINARY_NAME)"
 
 test-pool:
 	@echo "Running pool correctness tests..."
@@ -307,6 +322,15 @@ compose-sharding:
 compose-logs:
 	docker compose logs -f
 
+compose-compare:
+	@echo "Running three-way performance comparison (governor vs otel-collector vs vmagent)..."
+	@echo "This takes ~10-15 minutes. Results: test/compare/results/"
+	./test/compare/run.sh
+
+compose-compare-quick:
+	@echo "Running quick comparison (60s warmup, 120s sampling)..."
+	./test/compare/run.sh --warmup 60 --duration 120
+
 compose-status:
 	@echo "=== Container Status ==="
 	docker compose ps
@@ -354,6 +378,8 @@ help:
 	@echo "  bench-full-stability - Run full stability benchmark suite"
 	@echo "  bench-proto      - Run protobuf-specific benchmarks"
 	@echo "  bench-pool-regression - Run pool regression benchmarks"
+	@echo "  pgo-profile      - Generate PGO profile from representative benchmarks"
+	@echo "  pgo-build        - Build with PGO optimization (requires default.pgo)"
 	@echo "  test-pool        - Run pool correctness tests (with -race, count=3)"
 	@echo "  test-memory-regression - Run memory regression tests"
 	@echo "  lint             - Run go vet"
@@ -379,6 +405,8 @@ help:
 	@echo "  compose-persistence - Start PERSISTENCE test (bloom filter)"
 	@echo "  compose-sharding - Start SHARDING test (multi-endpoint)"
 	@echo "  compose-logs     - Follow logs from all containers"
+	@echo "  compose-compare  - Run three-way performance comparison (~15 min)"
+	@echo "  compose-compare-quick - Run quick comparison (~5 min)"
 	@echo "  compose-status   - Show container and metrics status"
 	@echo ""
 	@echo "  help             - Show this help"

@@ -361,3 +361,98 @@ func createMetricsWithManyDatapoints(numMetrics, datapointsPerMetric int) []*met
 		},
 	}
 }
+
+// BenchmarkBuildSeriesKeyDualBytes benchmarks the dual-map key builder.
+func BenchmarkBuildSeriesKeyDualBytes(b *testing.B) {
+	sizes := []struct {
+		name string
+		n    int
+	}{
+		{"small_5", 5},
+		{"medium_20", 20},
+		{"large_50", 50},
+	}
+
+	for _, s := range sizes {
+		half := s.n / 2
+		overlap := half / 2
+
+		resAttrs := make(map[string]string, half)
+		dpAttrs := make(map[string]string, half)
+
+		// Shared keys (overlap between res and dp)
+		for i := 0; i < overlap; i++ {
+			key := fmt.Sprintf("shared_key_%03d", i)
+			resAttrs[key] = fmt.Sprintf("res_val_%03d", i)
+			dpAttrs[key] = fmt.Sprintf("dp_val_%03d", i)
+		}
+		// Resource-only keys
+		for i := overlap; i < half; i++ {
+			resAttrs[fmt.Sprintf("res_key_%03d", i)] = fmt.Sprintf("res_val_%03d", i)
+		}
+		// Datapoint-only keys
+		for i := overlap; i < half; i++ {
+			dpAttrs[fmt.Sprintf("dp_key_%03d", i)] = fmt.Sprintf("dp_val_%03d", i)
+		}
+
+		b.Run(s.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = buildSeriesKeyDualBytes(resAttrs, dpAttrs)
+			}
+		})
+	}
+}
+
+// BenchmarkBuildLabelKeyDual benchmarks the dual-map label key builder.
+func BenchmarkBuildLabelKeyDual(b *testing.B) {
+	collector := NewCollector([]string{"service", "env", "region", "cluster"}, StatsLevelFull)
+
+	resAttrs := map[string]string{
+		"service": "test-svc",
+		"env":     "prod",
+	}
+	dpAttrs := map[string]string{
+		"region":  "us-east-1",
+		"cluster": "main",
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = collector.buildLabelKeyDual(resAttrs, dpAttrs)
+	}
+}
+
+// BenchmarkAtomicCounters_RecordParallel benchmarks Record* methods under contention.
+func BenchmarkAtomicCounters_RecordParallel(b *testing.B) {
+	collector := NewCollector([]string{"service"}, StatsLevelFull)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			collector.RecordReceived(10)
+			collector.RecordExport(8)
+			if i%5 == 0 {
+				collector.RecordExportError()
+			}
+			i++
+		}
+	})
+}
+
+// BenchmarkProcessFull_DualMap_NoMergeAlloc benchmarks end-to-end processFull
+// allocation count with dual-map optimization active.
+func BenchmarkProcessFull_DualMap_NoMergeAlloc(b *testing.B) {
+	collector := NewCollector([]string{"service", "env"}, StatsLevelFull)
+	// 100 metrics x 100 dp = 10k datapoints
+	metrics := createBenchmarkMetrics(100, 100)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		collector.processFull(metrics)
+	}
+}
