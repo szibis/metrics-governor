@@ -25,10 +25,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Load configurations: DPS MPS PROXY_MEM PROXY_CPU GEN_MEM GEN_CPU VM_MEM
+# Generator auto-scales to TARGET_DPS via load_filler_datapoints metric
 declare -A LOADS
 LOADS[50k]="50000 25000 1G 2 2G 2 2G"
-LOADS[100k]="100000 50000 2G 4 2G 4 2G"
-LOADS[200k]="200000 100000 4G 8 4G 8 4G"
+LOADS[100k]="100000 50000 2G 4 4G 4 4G"
+
+# Load levels to run (override with LOAD_LEVELS env var, e.g. "50k 100k 200k")
+LOAD_LEVELS=${LOAD_LEVELS:-"50k 100k"}
 
 # Tests to run at each load level
 TESTS=("compare-governor-balanced" "compare-otel")
@@ -49,7 +52,7 @@ echo "================================================================"
 echo "  Multi-Load Performance Comparison"
 echo "================================================================"
 echo "  Warmup: ${WARMUP}s | Sampling: ${DURATION}s | Interval: ${INTERVAL}s"
-echo "  Load levels: 50k, 100k, 200k dps"
+echo "  Load levels: ${LOAD_LEVELS}"
 echo "  Proxies: governor-balanced, otel-collector"
 echo "================================================================"
 
@@ -57,7 +60,7 @@ echo "================================================================"
 MULTI_SUMMARY="$RESULTS_DIR/multi-load-summary.tsv"
 echo -e "load\tproxy\tcpu_avg\tcpu_max\tmem_avg_pct\tmem_max_pct\tingestion\tdatapoints_recv\tdatapoints_sent\texport_errors" > "$MULTI_SUMMARY"
 
-for load_key in 50k 100k 200k; do
+for load_key in $LOAD_LEVELS; do
     read -r DPS MPS PMEM PCPU GMEM GCPU VMEM <<< "${LOADS[$load_key]}"
 
     echo ""

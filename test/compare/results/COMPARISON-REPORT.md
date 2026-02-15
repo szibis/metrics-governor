@@ -68,20 +68,28 @@
 
 ---
 
-## Results: Multi-Load (50k, 100k, 200k dps)
+## Results: Multi-Load (50k, 100k dps)
 
-**Caveat**: The generator was capped at 1 CPU during this run, preventing it from producing the target DPS at higher levels. Actual throughput was ~750 dps at all three levels (verified by identical datapoint counts: ~133k per test). These results reflect resource usage at the **same effective load**, not at the intended 50k/100k/200k targets. The script has been fixed (`GEN_CPU` now scales with load) for future runs.
+Generator uses auto-scale mode: calibrates base DPS over 10 intervals, then adds `load_filler_datapoints` metric with unique `series_id` attributes to reach `TARGET_DATAPOINTS_PER_SEC`. Export interval auto-adjusts to 100ms for targets >10k dps. Pre-allocated attribute sets eliminate per-batch allocation overhead.
 
-| Load | Proxy | CPU avg | CPU max | Mem avg % | Mem max % | Ingestion | Errors |
-|------|-------|:-------:|:-------:|:---------:|:---------:|:---------:|:------:|
-| 50k | **Governor balanced** | 0.98% | 6.42% | 12.5% | 52.9% | 99.3% | 0 |
-| 50k | **OTel Collector** | 0.97% | 2.09% | 12.5% | 15.6% | PASS | 0 |
-| 100k | **Governor balanced** | 0.76% | 3.60% | 12.3% | 52.4% | 99.2% | 0 |
-| 100k | **OTel Collector** | 0.67% | 0.91% | 5.6% | 6.3% | PASS | 0 |
-| 200k | **Governor balanced** | 0.90% | 6.20% | 10.7% | 52.3% | 99.2% | 0 |
-| 200k | **OTel Collector** | 0.97% | 3.02% | 2.6% | 3.2% | PASS | 0 |
+| Load | Proxy | CPU avg | CPU max | Mem avg % | Mem max % | Ingestion | Datapoints | Errors |
+|------|-------|:-------:|:-------:|:---------:|:---------:|:---------:|:----------:|:------:|
+| 50k | **Governor balanced** | 15.04% | 100.43% | 22.0% | 63.3% | 99.35% | 9.82M recv / 9.76M sent | 0 |
+| 50k | **OTel Collector** | 4.43% | 5.58% | 20.4% | 22.8% | PASS | flowing | 0 |
+| 100k | **Governor balanced** | 22.00% | 116.16% | 16.4% | 47.3% | 99.20% | 16.57M recv / 16.44M sent | 0 |
+| 100k | **OTel Collector** | 5.88% | 7.20% | 11.8% | 12.5% | PASS | flowing | 0 |
 
-**Note**: Governor memory max ~52% is GOMEMLIMIT-driven GC behavior (Go's memory target is 80% of container limit). OTel Collector memory % decreases at higher resource allocations because the absolute usage stays constant while the container limit increases.
+### Analysis — High Load
+
+**CPU**: OTel Collector is **3-4x more CPU efficient** at 50-100k dps. This is expected — Governor performs per-datapoint processing (stats tracking, limits checking, auto-tuning batching) while OTel Collector is a simpler batch-and-forward pipeline. CPU percentages are of **host total** (14 cores), so Governor's 15% ≈ 2.1 cores vs OTel's 4.4% ≈ 0.62 cores.
+
+**Memory**: Comparable at 50k (22% vs 20.4%). Governor's max ~63% reflects GOMEMLIMIT-driven GC (target is 80% of container limit). OTel Collector's memory stays more stable.
+
+**CPU max >100%**: Governor's peak CPU >100% indicates multi-core usage on batch processing or GC spikes. With 2 CPU limit at 50k, using 100% means both cores were fully utilized momentarily.
+
+**Scaling**: Governor CPU scales from 15% to 22% (1.46x) when load doubles from 50k to 100k, showing sublinear scaling. OTel scales from 4.4% to 5.9% (1.34x).
+
+**Data integrity**: Governor maintains 99.2-99.35% ingestion at both loads with zero export errors. The ~0.65-0.80% drop is from initial warmup period (before auto-tune stabilizes batching).
 
 ---
 

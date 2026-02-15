@@ -243,6 +243,21 @@ func main() {
 		log.Fatalf("Invalid interval: %v", err)
 	}
 
+	// Auto-scale: will be used after calibration
+	autoScaleDPS := targetDatapointsPerSec > 0
+	calibrationIterations := 10 // Measure base DPS over this many intervals
+	fillPerInterval := 0
+	var fillerAttrSets []metric.MeasurementOption // Pre-allocated for zero per-batch allocation
+
+	// Auto-adjust interval for high-throughput targets to keep per-batch work manageable
+	// At 500ms with 50k dp/s target, each batch needs 25k filler datapoints (>250ms generation time)
+	// At 100ms with 50k dp/s target, each batch needs 5k filler datapoints (~50ms generation time)
+	if autoScaleDPS && targetDatapointsPerSec > 10000 && interval > 100*time.Millisecond {
+		interval = 100 * time.Millisecond
+		log.Printf("AUTO-SCALE: Reduced interval to %s for %d dp/s target (faster export = less per-batch work)",
+			interval, targetDatapointsPerSec)
+	}
+
 	services := strings.Split(servicesStr, ",")
 	environments := strings.Split(environmentsStr, ",")
 
@@ -289,7 +304,6 @@ func main() {
 
 	// Suppress unused variable warnings
 	_ = targetMetricsPerSec
-	_ = targetDatapointsPerSec
 
 	ctx := context.Background()
 	stats.StartTime = time.Now()
@@ -403,6 +417,16 @@ func main() {
 	// Verification metrics - these help track what was sent
 	verificationCounter, _ := meter.Int64Counter("generator_verification_counter",
 		metric.WithDescription("Counter for verifying data delivery"))
+
+	// Load filler metric - used for auto-scaling to target DPS
+	// Each unique series_id attribute creates 1 exported datapoint per interval (delta temporality)
+	var loadFillerMetric metric.Int64Counter
+	if autoScaleDPS {
+		loadFillerMetric, _ = meter.Int64Counter("load_filler_datapoints",
+			metric.WithDescription("Synthetic datapoints for load scaling to target DPS"))
+		log.Printf("AUTO-SCALE: Targeting %d dp/s, will calibrate after %d intervals",
+			targetDatapointsPerSec, calibrationIterations)
+	}
 
 	// Diverse metrics - many unique metric names for testing VM storage
 	// Infrastructure metrics (CPU, memory, disk, network)
@@ -897,6 +921,39 @@ func main() {
 					}
 				}
 				batchMetrics += int64(len(diverseHistograms))
+			}
+
+			// Auto-scale: generate filler datapoints to hit target DPS
+			// Each unique series_id creates exactly 1 exported datapoint per delta interval
+			if autoScaleDPS {
+				if iteration == calibrationIterations {
+					// Calibration complete: measure base DPS and calculate filler needed
+					elapsed := time.Since(stats.StartTime).Seconds()
+					if elapsed > 0 {
+						baseDPS := float64(stats.TotalDatapointsSent.Load()) / elapsed
+						fillDPS := float64(targetDatapointsPerSec) - baseDPS
+						if fillDPS > 0 {
+							fillPerInterval = int(fillDPS * interval.Seconds())
+							// Pre-allocate attribute sets for all filler datapoints (avoids per-batch allocs)
+							fillerAttrSets = make([]metric.MeasurementOption, fillPerInterval)
+							for i := range fillerAttrSets {
+								fillerAttrSets[i] = metric.WithAttributes(attribute.Int("series_id", i))
+							}
+							log.Printf("AUTO-SCALE: Base DPS=%.0f, adding %d filler dp/interval (%.0fms) to reach %d dp/s",
+								baseDPS, fillPerInterval, float64(interval.Milliseconds()), targetDatapointsPerSec)
+						} else {
+							log.Printf("AUTO-SCALE: Base DPS=%.0f already meets target %d dp/s, no filler needed",
+								baseDPS, targetDatapointsPerSec)
+						}
+					}
+				}
+				if iteration > calibrationIterations && fillPerInterval > 0 {
+					for i := 0; i < fillPerInterval; i++ {
+						loadFillerMetric.Add(ctx, 1, fillerAttrSets[i])
+						batchDatapoints++
+					}
+					batchMetrics++
+				}
 			}
 
 			// Verification counter - increment with known value
