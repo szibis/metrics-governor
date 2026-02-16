@@ -200,6 +200,83 @@ func TestDeriveMemorySizing_QueueBytesCorrect(t *testing.T) {
 	}
 }
 
+// --- Memory optimization: tests for reduced balanced profile percents ---
+
+func TestDeriveMemorySizing_1GB_BalancedProfile(t *testing.T) {
+	// Balanced profile uses 0.07 buffer + 0.05 queue (reduced from 0.10 + 0.10)
+	// GOMEMLIMIT = 1GB × 0.80 = ~850MB
+	const gomemlimit int64 = 850 * 1024 * 1024 // 891,289,600 bytes
+	s := DeriveMemorySizing(gomemlimit, 0.07, 0.05)
+
+	expectedBuffer := deriveExpected(gomemlimit, 0.07) // ~60 MB
+	if s.BufferMaxBytes != expectedBuffer {
+		t.Errorf("BufferMaxBytes = %d, want %d (~60MB)", s.BufferMaxBytes, expectedBuffer)
+	}
+
+	expectedQueue := deriveExpected(gomemlimit, 0.05) // ~42 MB
+	if s.QueueMaxBytes != expectedQueue {
+		t.Errorf("QueueMaxBytes = %d, want %d (~42MB)", s.QueueMaxBytes, expectedQueue)
+	}
+
+	// Buffer + queue should use only 12% of GOMEMLIMIT
+	total := s.BufferMaxBytes + s.QueueMaxBytes
+	pct := float64(total) / float64(gomemlimit)
+	if pct > 0.13 {
+		t.Errorf("buffer+queue = %.1f%% of GOMEMLIMIT, want < 13%%", pct*100)
+	}
+}
+
+func TestDeriveMemorySizing_512MB_BalancedProfile(t *testing.T) {
+	// Small container: 512MB × 0.80 = ~410MB GOMEMLIMIT
+	const gomemlimit int64 = 410 * 1024 * 1024
+	s := DeriveMemorySizing(gomemlimit, 0.07, 0.05)
+
+	expectedBuffer := deriveExpected(gomemlimit, 0.07) // ~29 MB
+	if s.BufferMaxBytes != expectedBuffer {
+		t.Errorf("BufferMaxBytes = %d, want %d (~29MB)", s.BufferMaxBytes, expectedBuffer)
+	}
+
+	expectedQueue := deriveExpected(gomemlimit, 0.05) // ~20 MB
+	if s.QueueMaxBytes != expectedQueue {
+		t.Errorf("QueueMaxBytes = %d, want %d (~20MB)", s.QueueMaxBytes, expectedQueue)
+	}
+}
+
+func TestDeriveMemorySizing_2GB_BalancedProfile(t *testing.T) {
+	// Large container: 2GB × 0.80 = ~1700MB GOMEMLIMIT
+	const gomemlimit int64 = 1700 * 1024 * 1024
+	s := DeriveMemorySizing(gomemlimit, 0.07, 0.05)
+
+	expectedBuffer := deriveExpected(gomemlimit, 0.07) // ~119 MB
+	if s.BufferMaxBytes != expectedBuffer {
+		t.Errorf("BufferMaxBytes = %d, want %d (~119MB)", s.BufferMaxBytes, expectedBuffer)
+	}
+
+	expectedQueue := deriveExpected(gomemlimit, 0.05) // ~85 MB
+	if s.QueueMaxBytes != expectedQueue {
+		t.Errorf("QueueMaxBytes = %d, want %d (~85MB)", s.QueueMaxBytes, expectedQueue)
+	}
+}
+
+func TestDeriveMemorySizing_BufferPlusQueue_NeverExceeds15Percent(t *testing.T) {
+	// Property test: with balanced profile's 0.07 + 0.05 = 0.12, always < 0.15
+	for _, limit := range []int64{
+		256 * 1024 * 1024,  // 256MB
+		512 * 1024 * 1024,  // 512MB
+		850 * 1024 * 1024,  // ~1GB container
+		1700 * 1024 * 1024, // ~2GB container
+		4 * (1 << 30),      // 4GB
+	} {
+		s := DeriveMemorySizing(limit, 0.07, 0.05)
+		total := s.BufferMaxBytes + s.QueueMaxBytes
+		pct := float64(total) / float64(limit)
+		if pct > 0.15 {
+			t.Errorf("limit=%d: buffer(%d) + queue(%d) = %.1f%%, want < 15%%",
+				limit, s.BufferMaxBytes, s.QueueMaxBytes, pct*100)
+		}
+	}
+}
+
 // TestDeriveMemorySizing_QueueAndBufferIndependent verifies that buffer and
 // queue percentages produce independent values — changing one doesn't affect the other.
 func TestDeriveMemorySizing_QueueAndBufferIndependent(t *testing.T) {

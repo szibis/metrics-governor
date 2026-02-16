@@ -13402,12 +13402,205 @@
       ]
     },
     {
-      "collapsed": false,
+      "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
         "y": 331
+      },
+      "id": 650,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "GOMEMLIMIT (flat ceiling) vs current HeapAlloc (sawtooth). When HeapAlloc approaches GOMEMLIMIT, GC runs aggressively.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "fillOpacity": 10,
+                "lineWidth": 2
+              },
+              "unit": "bytes"
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "GOMEMLIMIT" },
+                "properties": [
+                  { "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } },
+                  { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }
+                ]
+              }
+            ]
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 332 },
+          "id": 651,
+          "options": {
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "title": "GOMEMLIMIT vs Heap Alloc",
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "metrics_governor_memory_budget_gomemlimit_bytes{job=~\".*metrics-governor.*\"}",
+              "legendFormat": "GOMEMLIMIT"
+            },
+            {
+              "expr": "metrics_governor_memory_heap_alloc_bytes{job=~\".*metrics-governor.*\"}",
+              "legendFormat": "HeapAlloc"
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "Current heap usage as fraction of GOMEMLIMIT. Green (<0.6), Yellow (0.6-0.8), Red (>0.8).",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.6 },
+                  { "color": "red", "value": 0.8 }
+                ]
+              },
+              "max": 1,
+              "min": 0,
+              "unit": "percentunit"
+            }
+          },
+          "gridPos": { "h": 8, "w": 6, "x": 12, "y": 332 },
+          "id": 652,
+          "options": {
+            "reduceOptions": {
+              "calcs": ["lastNotNull"]
+            },
+            "showThresholdMarkers": true,
+            "showThresholdLabels": false
+          },
+          "title": "Memory Utilization",
+          "type": "gauge",
+          "targets": [
+            {
+              "expr": "metrics_governor_memory_budget_utilization_ratio{job=~\".*metrics-governor.*\"}",
+              "legendFormat": "Utilization"
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "Memory budget allocation: buffer, queue, and remaining headroom.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "unit": "bytes"
+            }
+          },
+          "gridPos": { "h": 8, "w": 6, "x": 18, "y": 332 },
+          "id": 653,
+          "options": {
+            "displayMode": "gradient",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": ["lastNotNull"]
+            }
+          },
+          "title": "Budget Allocation",
+          "type": "bargauge",
+          "targets": [
+            {
+              "expr": "metrics_governor_memory_budget_buffer_bytes{job=~\".*metrics-governor.*\"}",
+              "legendFormat": "Buffer Budget"
+            },
+            {
+              "expr": "metrics_governor_memory_budget_queue_bytes{job=~\".*metrics-governor.*\"}",
+              "legendFormat": "Queue Budget"
+            },
+            {
+              "expr": "metrics_governor_memory_budget_gomemlimit_bytes{job=~\".*metrics-governor.*\"} - metrics_governor_memory_budget_buffer_bytes{job=~\".*metrics-governor.*\"} - metrics_governor_memory_budget_queue_bytes{job=~\".*metrics-governor.*\"}",
+              "legendFormat": "Remaining"
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "Actual buffer and queue usage vs their budgets. Shows how close each component is to its allocation limit.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "fillOpacity": 10,
+                "lineWidth": 2
+              },
+              "unit": "bytes"
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byRegexp", "options": ".*Budget.*" },
+                "properties": [
+                  { "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } }
+                ]
+              }
+            ]
+          },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 340 },
+          "id": 654,
+          "options": {
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "title": "Buffer & Queue vs Budget",
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "metrics_governor_buffer_bytes{job=~\".*metrics-governor.*\"}",
+              "legendFormat": "Buffer Actual"
+            },
+            {
+              "expr": "metrics_governor_memory_budget_buffer_bytes{job=~\".*metrics-governor.*\"}",
+              "legendFormat": "Buffer Budget"
+            },
+            {
+              "expr": "metrics_governor_queue_bytes{job=~\".*metrics-governor.*\"}",
+              "legendFormat": "Queue Actual"
+            },
+            {
+              "expr": "metrics_governor_memory_budget_queue_bytes{job=~\".*metrics-governor.*\"}",
+              "legendFormat": "Queue Budget"
+            }
+          ]
+        }
+      ],
+      "title": "Memory Budget",
+      "type": "row"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 349
       },
       "id": 600,
       "panels": [],

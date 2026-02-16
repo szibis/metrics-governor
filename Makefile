@@ -5,7 +5,7 @@ LDFLAGS=-ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/
 
 BUILD_DIR=bin
 
-.PHONY: all build clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all test-helm test-stability test-stability-stress test-pool test-memory-regression bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all bench-stability bench-profile-budget bench-handoff bench-contention bench-hotpath bench-full-stability bench-proto bench-pool-regression pgo-profile pgo-build lint lint-dockerfile lint-yaml lint-helm lint-all validate-playground generate-config-meta ship ship-dry-run tag compose-up compose-down compose-light compose-stable compose-perf compose-queue compose-persistence compose-sharding compose-logs compose-compare compose-compare-quick rust-build rust-test rust-clean build-native test-native bench-native bench-native-compare docker-native
+.PHONY: all build build-greenteagc clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all test-helm test-stability test-stability-stress test-pool test-memory-regression bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all bench-stability bench-profile-budget bench-handoff bench-contention bench-hotpath bench-full-stability bench-proto bench-pool-regression pgo-profile pgo-build lint lint-dockerfile lint-yaml lint-helm lint-all validate-playground generate-config-meta ship ship-dry-run tag compose-up compose-down compose-light compose-stable compose-perf compose-queue compose-persistence compose-sharding compose-logs compose-compare compose-compare-quick rust-build rust-test rust-clean build-native test-native bench-native bench-native-compare docker-native
 
 all: darwin-arm64 linux-arm64 linux-amd64
 
@@ -24,6 +24,10 @@ linux-arm64:
 linux-amd64:
 	@mkdir -p $(BUILD_DIR)
 	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/metrics-governor
+
+build-greenteagc:
+	@mkdir -p $(BUILD_DIR)
+	GOEXPERIMENT=greenteagc go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/metrics-governor
 
 docker:
 	docker build -t $(BINARY_NAME):$(VERSION) -t $(BINARY_NAME):latest .
@@ -386,6 +390,7 @@ help:
 	@echo "Available targets:"
 	@echo "  all              - Build all platforms (darwin-arm64, linux-arm64, linux-amd64)"
 	@echo "  build            - Build for current platform (output: bin/metrics-governor)"
+	@echo "  build-greenteagc - Build with GOEXPERIMENT=greenteagc (Go 1.25+ Green Tea GC)"
 	@echo "  darwin-arm64     - Build for macOS ARM64"
 	@echo "  linux-arm64      - Build for Linux ARM64"
 	@echo "  linux-amd64      - Build for Linux AMD64"

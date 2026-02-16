@@ -326,6 +326,97 @@ func TestRace_FastQueue_BufferedWriterConcurrent(t *testing.T) {
 	wg.Wait()
 }
 
+func TestRace_MemoryQueue_ConcurrentPushWithMaxBytes(t *testing.T) {
+	t.Parallel()
+
+	q := NewMemoryBatchQueue(MemoryBatchQueueConfig{
+		MaxSize:      5000,
+		MaxBytes:     44040192, // 42 MB
+		FullBehavior: DropOldest,
+	})
+	defer q.Close()
+
+	done := make(chan struct{})
+	time.AfterFunc(time.Second, func() { close(done) })
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for seq := 0; ; seq++ {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				batch := &ExportBatch{
+					Timestamp:      time.Now(),
+					EstimatedBytes: 1000,
+				}
+				q.PushBatch(batch)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+}
+
+func TestRace_MemoryQueue_ReducedBlocksConcurrent(t *testing.T) {
+	t.Parallel()
+
+	q := NewMemoryBatchQueue(MemoryBatchQueueConfig{
+		MaxSize:      256, // matches balanced QueueInmemoryBlocks
+		FullBehavior: DropOldest,
+	})
+	defer q.Close()
+
+	done := make(chan struct{})
+	time.AfterFunc(time.Second, func() { close(done) })
+
+	var wg sync.WaitGroup
+
+	// Pushers
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				batch := &ExportBatch{
+					Timestamp:      time.Now(),
+					EstimatedBytes: 500,
+				}
+				q.PushBatch(batch)
+			}
+		}(i)
+	}
+
+	// Poppers
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				q.PopBatch()
+				runtime.Gosched()
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
 // --- Memory leak tests ---
 
 func TestMemLeak_SendQueue_PushPopCycles(t *testing.T) {

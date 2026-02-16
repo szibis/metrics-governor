@@ -404,6 +404,212 @@ func TestQueue_VTProto_MarshalUnmarshal_RoundTrip(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Phase 8.12: Memory-optimization benchmarks for MemoryBatchQueue
+// These benchmarks compare the reduced balanced-profile settings (MaxSize=256)
+// against the original settings (MaxSize=1024) to quantify the throughput
+// impact of the QueueInmemoryBlocks reduction.
+// ---------------------------------------------------------------------------
+
+// BenchmarkMemoryQueue_Push_ReducedBlocks benchmarks PushBatch throughput
+// with MaxSize=256 (the new balanced profile value for QueueInmemoryBlocks).
+func BenchmarkMemoryQueue_Push_ReducedBlocks(b *testing.B) {
+	q := NewMemoryBatchQueue(MemoryBatchQueueConfig{
+		MaxSize:      256, // balanced profile: reduced from 1024
+		FullBehavior: DropOldest,
+	})
+	defer q.Close()
+
+	req := createBenchmarkRequest(10, 10)
+	batch := NewExportBatch(req)
+
+	// Drain in background to prevent queue from filling up
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				q.PopBatch()
+			}
+		}
+	}()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = q.PushBatch(batch)
+	}
+	b.StopTimer()
+	close(done)
+}
+
+// BenchmarkMemoryQueue_PushPop_ReducedBlocks benchmarks push+pop cycle
+// with MaxSize=256 (balanced profile) to measure round-trip latency.
+func BenchmarkMemoryQueue_PushPop_ReducedBlocks(b *testing.B) {
+	q := NewMemoryBatchQueue(MemoryBatchQueueConfig{
+		MaxSize:      256, // balanced profile: reduced from 1024
+		FullBehavior: DropOldest,
+	})
+	defer q.Close()
+
+	req := createBenchmarkRequest(10, 10)
+	batch := NewExportBatch(req)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = q.PushBatch(batch)
+		_, _ = q.PopBatch()
+	}
+}
+
+// BenchmarkMemoryQueue_Push_OriginalBlocks benchmarks PushBatch throughput
+// with MaxSize=1024 (the original balanced profile value) for comparison
+// against the reduced setting.
+func BenchmarkMemoryQueue_Push_OriginalBlocks(b *testing.B) {
+	q := NewMemoryBatchQueue(MemoryBatchQueueConfig{
+		MaxSize:      1024, // original balanced profile value
+		FullBehavior: DropOldest,
+	})
+	defer q.Close()
+
+	req := createBenchmarkRequest(10, 10)
+	batch := NewExportBatch(req)
+
+	// Drain in background to prevent queue from filling up
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				q.PopBatch()
+			}
+		}
+	}()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = q.PushBatch(batch)
+	}
+	b.StopTimer()
+	close(done)
+}
+
+// BenchmarkMemoryQueue_Push_PayloadSizes_ReducedBlocks benchmarks PushBatch
+// with MaxSize=256 across different payload sizes to verify the reduced queue
+// depth handles varying batch sizes without throughput degradation.
+func BenchmarkMemoryQueue_Push_PayloadSizes_ReducedBlocks(b *testing.B) {
+	sizes := []struct {
+		name       string
+		metrics    int
+		datapoints int
+	}{
+		{"tiny_1x1", 1, 1},
+		{"small_10x10", 10, 10},
+		{"medium_50x50", 50, 50},
+		{"large_100x100", 100, 100},
+	}
+
+	for _, size := range sizes {
+		b.Run(size.name, func(b *testing.B) {
+			q := NewMemoryBatchQueue(MemoryBatchQueueConfig{
+				MaxSize:      256,
+				FullBehavior: DropOldest,
+			})
+			defer q.Close()
+
+			req := createBenchmarkRequest(size.metrics, size.datapoints)
+			batch := NewExportBatch(req)
+
+			// Drain in background
+			done := make(chan struct{})
+			go func() {
+				for {
+					select {
+					case <-done:
+						return
+					default:
+						q.PopBatch()
+					}
+				}
+			}()
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = q.PushBatch(batch)
+			}
+			b.StopTimer()
+			close(done)
+		})
+	}
+}
+
+// BenchmarkMemoryQueue_DropOldest_ReducedBlocks benchmarks the drop_oldest
+// behavior when the queue (MaxSize=256) is saturated. This is the critical
+// path — with fewer blocks, drops happen sooner under sustained load.
+func BenchmarkMemoryQueue_DropOldest_ReducedBlocks(b *testing.B) {
+	q := NewMemoryBatchQueue(MemoryBatchQueueConfig{
+		MaxSize:      256,
+		FullBehavior: DropOldest,
+	})
+	defer q.Close()
+
+	req := createBenchmarkRequest(10, 10)
+	batch := NewExportBatch(req)
+
+	// Fill the queue completely
+	for i := 0; i < 256; i++ {
+		_ = q.PushBatch(batch)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = q.PushBatch(batch) // triggers drop_oldest on every push
+	}
+}
+
+// BenchmarkMemoryQueue_Concurrent_ReducedBlocks benchmarks concurrent
+// PushBatch with MaxSize=256. With a smaller channel buffer, contention
+// patterns may differ from the original 1024 setting.
+func BenchmarkMemoryQueue_Concurrent_ReducedBlocks(b *testing.B) {
+	q := NewMemoryBatchQueue(MemoryBatchQueueConfig{
+		MaxSize:      256,
+		FullBehavior: DropOldest,
+	})
+	defer q.Close()
+
+	req := createBenchmarkRequest(10, 10)
+	batch := NewExportBatch(req)
+
+	// Drain in background
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				q.PopBatch()
+			}
+		}
+	}()
+
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = q.PushBatch(batch)
+		}
+	})
+	close(done)
+}
+
 // Helper functions
 
 func createBenchmarkRequest(numMetrics, datapointsPerMetric int) *colmetricspb.ExportMetricsServiceRequest {

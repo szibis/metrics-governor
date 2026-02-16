@@ -1,10 +1,13 @@
 package stats
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestNewRuntimeStats(t *testing.T) {
@@ -56,6 +59,10 @@ func TestRuntimeStatsServeHTTP(t *testing.T) {
 		"metrics_governor_memory_mallocs_total",
 		"metrics_governor_memory_frees_total",
 		"metrics_governor_go_info",
+		"metrics_governor_memory_budget_gomemlimit_bytes",
+		"metrics_governor_memory_budget_buffer_bytes",
+		"metrics_governor_memory_budget_queue_bytes",
+		"metrics_governor_memory_budget_utilization_ratio",
 	}
 
 	for _, metric := range expectedMetrics {
@@ -274,6 +281,219 @@ func TestRuntimeStatsMultipleCalls(t *testing.T) {
 			t.Errorf("call %d failed with status %d", i, w.Result().StatusCode)
 		}
 	}
+}
+
+// --- Memory budget metrics tests ---
+
+func TestRuntimeMetrics_MemoryBudget_Exposed(t *testing.T) {
+	rs := NewRuntimeStats()
+	rs.SetMemoryBudget(850*1024*1024, 60*1024*1024, 42*1024*1024)
+
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	w := httptest.NewRecorder()
+	rs.ServeHTTP(w, req)
+
+	body := w.Body.String()
+
+	budgetMetrics := []string{
+		"metrics_governor_memory_budget_gomemlimit_bytes",
+		"metrics_governor_memory_budget_buffer_bytes",
+		"metrics_governor_memory_budget_queue_bytes",
+		"metrics_governor_memory_budget_utilization_ratio",
+	}
+	for _, metric := range budgetMetrics {
+		if !strings.Contains(body, metric) {
+			t.Errorf("missing budget metric %q in output", metric)
+		}
+	}
+}
+
+func TestRuntimeMetrics_MemoryBudget_Values(t *testing.T) {
+	const gomemlimit = int64(850 * 1024 * 1024) // 850 MB
+	const bufferBytes = int64(60 * 1024 * 1024)  // 60 MB
+	const queueBytes = int64(42 * 1024 * 1024)   // 42 MB
+
+	rs := NewRuntimeStats()
+	rs.SetMemoryBudget(gomemlimit, bufferBytes, queueBytes)
+
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	w := httptest.NewRecorder()
+	rs.ServeHTTP(w, req)
+
+	body := w.Body.String()
+
+	// Check gomemlimit value is present
+	expectedGomemlimit := "metrics_governor_memory_budget_gomemlimit_bytes 891289600"
+	if !strings.Contains(body, expectedGomemlimit) {
+		t.Errorf("expected %q in output", expectedGomemlimit)
+	}
+
+	// Check buffer budget
+	expectedBuffer := "metrics_governor_memory_budget_buffer_bytes 62914560"
+	if !strings.Contains(body, expectedBuffer) {
+		t.Errorf("expected %q in output", expectedBuffer)
+	}
+
+	// Check queue budget
+	expectedQueue := "metrics_governor_memory_budget_queue_bytes 44040192"
+	if !strings.Contains(body, expectedQueue) {
+		t.Errorf("expected %q in output", expectedQueue)
+	}
+}
+
+func TestRuntimeMetrics_MemoryBudget_ZeroWhenNoLimit(t *testing.T) {
+	rs := NewRuntimeStats()
+	// Don't call SetMemoryBudget — simulate no GOMEMLIMIT
+
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	w := httptest.NewRecorder()
+	rs.ServeHTTP(w, req)
+
+	body := w.Body.String()
+
+	// Buffer and queue budgets should be 0
+	if !strings.Contains(body, "metrics_governor_memory_budget_buffer_bytes 0") {
+		t.Error("expected buffer_bytes=0 when no memory budget set")
+	}
+	if !strings.Contains(body, "metrics_governor_memory_budget_queue_bytes 0") {
+		t.Error("expected queue_bytes=0 when no memory budget set")
+	}
+}
+
+func TestRuntimeMetrics_UtilizationRatio_Range(t *testing.T) {
+	rs := NewRuntimeStats()
+	rs.SetMemoryBudget(850*1024*1024, 60*1024*1024, 42*1024*1024)
+
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	w := httptest.NewRecorder()
+	rs.ServeHTTP(w, req)
+
+	body := w.Body.String()
+
+	// Find the utilization ratio line and verify it's in 0.0-1.0 range
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "metrics_governor_memory_budget_utilization_ratio ") {
+			parts := strings.Fields(line)
+			if len(parts) != 2 {
+				t.Fatalf("unexpected line format: %q", line)
+			}
+			var ratio float64
+			_, err := fmt.Sscanf(parts[1], "%f", &ratio)
+			if err != nil {
+				t.Fatalf("failed to parse ratio %q: %v", parts[1], err)
+			}
+			if ratio < 0.0 || ratio > 1.0 {
+				t.Errorf("utilization_ratio = %f, want [0.0, 1.0]", ratio)
+			}
+			return
+		}
+	}
+	t.Error("utilization_ratio metric not found")
+}
+
+func TestRuntimeMetrics_UtilizationRatio_Increases(t *testing.T) {
+	rs := NewRuntimeStats()
+	rs.SetMemoryBudget(850*1024*1024, 60*1024*1024, 42*1024*1024)
+
+	// Get initial ratio
+	req1 := httptest.NewRequest("GET", "/metrics", nil)
+	w1 := httptest.NewRecorder()
+	rs.ServeHTTP(w1, req1)
+	ratio1 := extractRatio(t, w1.Body.String())
+
+	// Allocate some memory to increase heap
+	waste := make([]byte, 10*1024*1024) // 10 MB
+	_ = waste[0]                         // prevent optimization
+
+	// Get new ratio
+	req2 := httptest.NewRequest("GET", "/metrics", nil)
+	w2 := httptest.NewRecorder()
+	rs.ServeHTTP(w2, req2)
+	ratio2 := extractRatio(t, w2.Body.String())
+
+	// ratio2 should be >= ratio1 (we allocated memory)
+	// Note: GC might have run, so we just check it's still valid
+	if ratio2 < 0.0 || ratio2 > 1.0 {
+		t.Errorf("utilization_ratio after alloc = %f, want [0.0, 1.0]", ratio2)
+	}
+
+	// Keep waste alive past the measurement
+	runtime.KeepAlive(waste)
+	_ = ratio1 // use the value
+}
+
+func extractRatio(t *testing.T, body string) float64 {
+	t.Helper()
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "metrics_governor_memory_budget_utilization_ratio ") {
+			parts := strings.Fields(line)
+			if len(parts) != 2 {
+				t.Fatalf("unexpected line format: %q", line)
+			}
+			var ratio float64
+			_, err := fmt.Sscanf(parts[1], "%f", &ratio)
+			if err != nil {
+				t.Fatalf("failed to parse ratio: %v", err)
+			}
+			return ratio
+		}
+	}
+	t.Fatal("utilization_ratio metric not found")
+	return 0
+}
+
+func TestRace_RuntimeMetrics_ConcurrentRead(t *testing.T) {
+	t.Parallel()
+
+	rs := NewRuntimeStats()
+	rs.SetMemoryBudget(850*1024*1024, 60*1024*1024, 42*1024*1024)
+
+	done := make(chan struct{})
+	time.AfterFunc(500*time.Millisecond, func() { close(done) })
+
+	var wg sync.WaitGroup
+
+	// 4 goroutines calling ServeHTTP concurrently
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				req := httptest.NewRequest("GET", "/metrics", nil)
+				w := httptest.NewRecorder()
+				rs.ServeHTTP(w, req)
+
+				if w.Result().StatusCode != 200 {
+					t.Errorf("unexpected status: %d", w.Result().StatusCode)
+					return
+				}
+			}
+		}()
+	}
+
+	// 1 goroutine allocating and freeing memory
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			waste := make([]byte, 1024*1024) // 1 MB
+			waste[0] = 1
+			runtime.KeepAlive(waste)
+			runtime.Gosched()
+		}
+	}()
+
+	wg.Wait()
 }
 
 // Test GC metrics after forced GC

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +15,12 @@ import (
 // RuntimeStats collects Go runtime and process metrics.
 type RuntimeStats struct {
 	startTime time.Time
+
+	// Memory budget values (set via SetMemoryBudget after construction).
+	// Zero values mean "not configured" and the metrics will report 0.
+	gomemlimitBytes int64
+	bufferBudget    int64
+	queueBudget     int64
 }
 
 // NewRuntimeStats creates a new runtime stats collector.
@@ -21,6 +28,15 @@ func NewRuntimeStats() *RuntimeStats {
 	return &RuntimeStats{
 		startTime: time.Now(),
 	}
+}
+
+// SetMemoryBudget configures memory budget values for observability metrics.
+// gomemlimit is the effective GOMEMLIMIT in bytes (0 = not set).
+// bufferBytes and queueBytes are the derived buffer and queue budgets.
+func (r *RuntimeStats) SetMemoryBudget(gomemlimit, bufferBytes, queueBytes int64) {
+	r.gomemlimitBytes = gomemlimit
+	r.bufferBudget = bufferBytes
+	r.queueBudget = queueBytes
 }
 
 // ServeHTTP writes runtime metrics in Prometheus format.
@@ -129,6 +145,9 @@ func (r *RuntimeStats) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprintf(w, "# TYPE metrics_governor_go_info gauge\n")
 	fmt.Fprintf(w, "metrics_governor_go_info{version=%q} 1\n", runtime.Version())
 
+	// Memory budget metrics — expose GOMEMLIMIT, buffer/queue budgets, and utilization ratio
+	r.writeMemoryBudgetMetrics(w, &m)
+
 	// OS-level process memory (Linux only — /proc/self/status)
 	r.writeProcessMemoryStatus(w)
 
@@ -140,6 +159,44 @@ func (r *RuntimeStats) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	// Process CPU time (Linux only)
 	r.writeProcessCPUMetrics(w)
+}
+
+// writeMemoryBudgetMetrics writes memory budget metrics for operational visibility.
+// These help operators understand memory allocation and utilization at a glance.
+func (r *RuntimeStats) writeMemoryBudgetMetrics(w http.ResponseWriter, m *runtime.MemStats) {
+	// GOMEMLIMIT — read the current value (does not change it)
+	gomemlimit := r.gomemlimitBytes
+	if gomemlimit == 0 {
+		// Try reading from runtime if not set via SetMemoryBudget
+		raw := debug.SetMemoryLimit(-1)
+		if raw > 0 && raw < 1<<62 { // Guard against math.MaxInt64 (unset)
+			gomemlimit = raw
+		}
+	}
+
+	fmt.Fprintf(w, "# HELP metrics_governor_memory_budget_gomemlimit_bytes Go memory limit (GOMEMLIMIT) in bytes\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_memory_budget_gomemlimit_bytes gauge\n")
+	fmt.Fprintf(w, "metrics_governor_memory_budget_gomemlimit_bytes %d\n", gomemlimit)
+
+	fmt.Fprintf(w, "# HELP metrics_governor_memory_budget_buffer_bytes Maximum bytes allocated for the buffer component\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_memory_budget_buffer_bytes gauge\n")
+	fmt.Fprintf(w, "metrics_governor_memory_budget_buffer_bytes %d\n", r.bufferBudget)
+
+	fmt.Fprintf(w, "# HELP metrics_governor_memory_budget_queue_bytes Maximum bytes allocated for the in-memory queue component\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_memory_budget_queue_bytes gauge\n")
+	fmt.Fprintf(w, "metrics_governor_memory_budget_queue_bytes %d\n", r.queueBudget)
+
+	// Utilization ratio: HeapAlloc / GOMEMLIMIT (0.0-1.0 range, 0 if no limit)
+	var ratio float64
+	if gomemlimit > 0 {
+		ratio = float64(m.HeapAlloc) / float64(gomemlimit)
+		if ratio > 1.0 {
+			ratio = 1.0 // Cap at 1.0 — heap can briefly exceed GOMEMLIMIT before GC kicks in
+		}
+	}
+	fmt.Fprintf(w, "# HELP metrics_governor_memory_budget_utilization_ratio Current heap usage as fraction of GOMEMLIMIT (0.0-1.0)\n")
+	fmt.Fprintf(w, "# TYPE metrics_governor_memory_budget_utilization_ratio gauge\n")
+	fmt.Fprintf(w, "metrics_governor_memory_budget_utilization_ratio %.4f\n", ratio)
 }
 
 // writePSIMetrics writes PSI (Pressure Stall Information) metrics if available.

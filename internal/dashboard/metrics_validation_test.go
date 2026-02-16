@@ -240,6 +240,11 @@ var knownMetrics = []string{
 	"metrics_governor_memory_stack_sys_bytes",
 	"metrics_governor_memory_mallocs_total",
 	"metrics_governor_memory_frees_total",
+	// Memory budget metrics (stats/runtime.go)
+	"metrics_governor_memory_budget_gomemlimit_bytes",
+	"metrics_governor_memory_budget_buffer_bytes",
+	"metrics_governor_memory_budget_queue_bytes",
+	"metrics_governor_memory_budget_utilization_ratio",
 
 	// GC metrics (stats/runtime.go)
 	"metrics_governor_gc_cycles_total",

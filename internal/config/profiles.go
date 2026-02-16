@@ -266,18 +266,18 @@ func balancedProfile() *ProfileConfig { //nolint:dupl // declarative config — 
 		QueueAdaptiveWorkersEnabled: boolPtr(true),
 		BufferBatchAutoTuneEnabled:  boolPtr(true),
 
-		// Standard buffer
-		BufferSize:       intPtr(5000),
+		// Standard buffer (reduced pre-alloc for lower memory footprint)
+		BufferSize:       intPtr(2000),
 		MaxBatchSize:     intPtr(500),
 		FlushInterval:    durPtr(5 * time.Second),
 		BufferFullPolicy: strPtr("reject"),
 
-		// Memory queue enabled
+		// Memory queue — in-memory only, no disk overhead
 		QueueMode:     strPtr("memory"),
 		QueueType:     strPtr("memory"),
 		QueueEnabled:  boolPtr(true),
 		QueueMaxSize:  intPtr(5000),
-		QueueMaxBytes: int64Ptr(268435456), // 256 MB
+		QueueMaxBytes: int64Ptr(268435456), // 256 MB memory cap
 
 		// Stats: basic per-metric counts
 		StatsLevel: strPtr("basic"),
@@ -287,14 +287,14 @@ func balancedProfile() *ProfileConfig { //nolint:dupl // declarative config — 
 		QueueCompression:    strPtr("snappy"),
 		StringInterning:     boolPtr(true),
 
-		// FastQueue standard
-		QueueInmemoryBlocks:   intPtr(1024),
+		// FastQueue — reduced in-memory blocks for lower memory footprint
+		QueueInmemoryBlocks:   intPtr(512),
 		QueueMetaSyncInterval: durPtr(1 * time.Second),
 
-		// Balanced memory ratio — 0.80 prevents GC sawtooth
+		// Reduced memory ratios — 0.80 prevents GC sawtooth
 		MemoryLimitRatio:    float64Ptr(0.80),
-		BufferMemoryPercent: float64Ptr(0.10),
-		QueueMemoryPercent:  float64Ptr(0.10),
+		BufferMemoryPercent: float64Ptr(0.07),
+		QueueMemoryPercent:  float64Ptr(0.05),
 
 		// Resilience on
 		QueueBackoffEnabled:             boolPtr(true),
@@ -316,16 +316,16 @@ func balancedProfile() *ProfileConfig { //nolint:dupl // declarative config — 
 		RuleCacheMaxSize:           intPtr(10000),
 		ReceiverMaxRequestBodySize: int64Ptr(16777216), // 16 MB
 
-		// Bloom persistence off (memory queue)
+		// Bloom persistence off (memory queue, no disk backend)
 		BloomPersistenceEnabled:   boolPtr(false),
 		BloomPersistenceMaxMemory: int64Ptr(134217728), // 128 MB
 
-		LoadSheddingThreshold: float64Ptr(0.85), // Memory-only queue, moderate buffer
-		GOGC:                  intPtr(200),      // GC when heap triples — ~45% less CPU vs GOGC=50, safe with GOMEMLIMIT
+		LoadSheddingThreshold: float64Ptr(0.85), // Memory queue, moderate buffer
+		GOGC:                  intPtr(100),       // GC when heap doubles — trades CPU for lower memory (greenteagc compensates)
 
 		// Resource targets
 		TargetCPU:     "1-2 cores",
-		TargetMemory:  "128-512 MB",
+		TargetMemory:  "64-256 MB",
 		DiskRequired:  false,
 		MaxThroughput: "~150k dps",
 	}
