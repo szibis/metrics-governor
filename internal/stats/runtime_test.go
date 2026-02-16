@@ -310,8 +310,8 @@ func TestRuntimeMetrics_MemoryBudget_Exposed(t *testing.T) {
 
 func TestRuntimeMetrics_MemoryBudget_Values(t *testing.T) {
 	const gomemlimit = int64(850 * 1024 * 1024) // 850 MB
-	const bufferBytes = int64(60 * 1024 * 1024)  // 60 MB
-	const queueBytes = int64(42 * 1024 * 1024)   // 42 MB
+	const bufferBytes = int64(60 * 1024 * 1024) // 60 MB
+	const queueBytes = int64(42 * 1024 * 1024)  // 42 MB
 
 	rs := NewRuntimeStats()
 	rs.SetMemoryBudget(gomemlimit, bufferBytes, queueBytes)
@@ -403,7 +403,7 @@ func TestRuntimeMetrics_UtilizationRatio_Increases(t *testing.T) {
 
 	// Allocate some memory to increase heap
 	waste := make([]byte, 10*1024*1024) // 10 MB
-	_ = waste[0]                         // prevent optimization
+	_ = waste[0]                        // prevent optimization
 
 	// Get new ratio
 	req2 := httptest.NewRequest("GET", "/metrics", nil)

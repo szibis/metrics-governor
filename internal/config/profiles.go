@@ -321,7 +321,7 @@ func balancedProfile() *ProfileConfig { //nolint:dupl // declarative config — 
 		BloomPersistenceMaxMemory: int64Ptr(134217728), // 128 MB
 
 		LoadSheddingThreshold: float64Ptr(0.85), // Memory queue, moderate buffer
-		GOGC:                  intPtr(100),       // GC when heap doubles — trades CPU for lower memory (greenteagc compensates)
+		GOGC:                  intPtr(100),      // GC when heap doubles — trades CPU for lower memory (greenteagc compensates)
 
 		// Resource targets
 		TargetCPU:     "1-2 cores",
