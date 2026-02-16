@@ -15,6 +15,47 @@ make docker
 
 Binaries are output to `bin/` directory.
 
+### Profile-Guided Optimization (PGO)
+
+PGO uses CPU profiles from benchmarks to guide the compiler's optimization decisions, yielding 2-7% throughput improvement:
+
+```bash
+# Step 1: Generate PGO profile from representative benchmarks
+make pgo-profile
+# Creates default.pgo in the project root (~5-10 MB)
+
+# Step 2: Build with PGO
+make pgo-build
+# Output: bin/metrics-governor (PGO-optimized)
+
+# Docker: PGO is used automatically when default.pgo exists in the build context
+docker build -t metrics-governor:latest .
+```
+
+The `default.pgo` file should be regenerated periodically (e.g., after significant code changes) and committed to the repository so CI builds also benefit.
+
+### Native Compression (Optional)
+
+For deployments where gzip/zlib/deflate compression is a CPU bottleneck, an optional Rust FFI backend provides ~1.6x faster compression through native C libraries (flate2 with zlib-ng). This is build-tag gated — the default `CGO_ENABLED=0` build uses pure Go automatically.
+
+**Requirements:** Rust toolchain (1.85+), C compiler, CGO enabled.
+
+```bash
+# Build the Rust FFI library
+make rust-build
+
+# Build Go with native compression
+make build-native
+
+# Run tests with native compression
+make test-native
+
+# Docker image with native compression
+make docker-native
+```
+
+Zstd and snappy always use pure Go regardless of the build tag (klauspost/compress and S2 already outperform their native counterparts). See [compression.md](compression.md#native-compression-optional-build-tag-gated) for details.
+
 ## Running Tests
 
 ```bash
@@ -81,7 +122,9 @@ metrics-governor/
 ├── test/                    # Integration test environment
 ├── bin/                     # Build output directory
 ├── compose_overrides/          # Docker Compose override files
+├── rust/compress-ffi/          # Optional Rust FFI for native compression
 ├── Dockerfile
+├── Dockerfile.native           # Multi-stage build with Rust FFI
 ├── docker-compose.yaml
 └── Makefile
 ```

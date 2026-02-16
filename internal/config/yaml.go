@@ -275,8 +275,10 @@ type BatchAutoTuneYAMLConfig struct {
 
 // StatsYAMLConfig holds stats configuration.
 type StatsYAMLConfig struct {
-	Address string   `yaml:"address"`
-	Labels  []string `yaml:"labels"`
+	Address              string   `yaml:"address"`
+	Labels               []string `yaml:"labels"`
+	CardinalityThreshold int      `yaml:"cardinality_threshold"`
+	MaxLabelCombinations int      `yaml:"max_label_combinations"`
 }
 
 // LimitsYAMLConfig holds limits configuration.
@@ -784,8 +786,10 @@ func (y *YAMLConfig) ToConfig() *Config {
 		BufferFullPolicy: y.Buffer.FullPolicy,
 
 		// Stats
-		StatsAddr:   y.Stats.Address,
-		StatsLabels: strings.Join(y.Stats.Labels, ","),
+		StatsAddr:                 y.Stats.Address,
+		StatsLabels:               strings.Join(y.Stats.Labels, ","),
+		StatsCardinalityThreshold: y.Stats.CardinalityThreshold,
+		StatsMaxLabelCombinations: y.Stats.MaxLabelCombinations,
 
 		// Limits
 		LimitsDryRun:         *y.Limits.DryRun,

@@ -122,7 +122,7 @@ type ProfileConfig struct {
 
 	// Stability
 	LoadSheddingThreshold *float64 // Pipeline health score threshold for load shedding (0.0-1.0)
-	GOGC                  *int     // GC target percentage (lower = more GC but tighter memory)
+	GOGC                  *int     // GC frequency: 100=every 2x heap, 200=every 3x, 400=every 5x (higher=less CPU)
 
 	// Resource targets (informational, not applied to config)
 	TargetCPU     string
@@ -233,7 +233,7 @@ func minimalProfile() *ProfileConfig {
 		BloomPersistenceMaxMemory: int64Ptr(33554432), // 32 MB
 
 		LoadSheddingThreshold: float64Ptr(0.80), // Small buffer, no queue fallback
-		GOGC:                  intPtr(50),       // Balanced: tighter memory band without excessive GC CPU
+		GOGC:                  intPtr(100),      // GC when heap doubles — moderate CPU/memory tradeoff for small footprint
 
 		// Resource targets
 		TargetCPU:     "0.25-0.5 cores",
@@ -321,7 +321,7 @@ func balancedProfile() *ProfileConfig { //nolint:dupl // declarative config — 
 		BloomPersistenceMaxMemory: int64Ptr(134217728), // 128 MB
 
 		LoadSheddingThreshold: float64Ptr(0.85), // Memory-only queue, moderate buffer
-		GOGC:                  intPtr(50),       // Tighter GC for stable memory and predictable CPU
+		GOGC:                  intPtr(200),      // GC when heap triples — ~45% less CPU vs GOGC=50, safe with GOMEMLIMIT
 
 		// Resource targets
 		TargetCPU:     "1-2 cores",
@@ -409,7 +409,7 @@ func safetyProfile() *ProfileConfig { //nolint:dupl // declarative config — ea
 		BloomPersistenceMaxMemory: int64Ptr(134217728), // 128 MB
 
 		LoadSheddingThreshold: float64Ptr(0.90), // Full disk persistence, high tolerance
-		GOGC:                  intPtr(50),       // High allocation (full stats), aggressive GC
+		GOGC:                  intPtr(200),      // GC when heap triples — ~45% less CPU vs GOGC=50, safe with GOMEMLIMIT
 
 		// Resource targets — honest: full stats (~35% CPU) + disk queue + zstd
 		TargetCPU:     "1.0-2.0 cores",
@@ -500,7 +500,7 @@ func observableProfile() *ProfileConfig { //nolint:dupl // declarative config �
 
 		// Load shedding
 		LoadSheddingThreshold: float64Ptr(0.85), // Hybrid queue but full stats overhead
-		GOGC:                  intPtr(50),       // High allocation (full stats), aggressive GC
+		GOGC:                  intPtr(200),      // GC when heap triples — ~45% less CPU vs GOGC=50, safe with GOMEMLIMIT
 
 		// Resource targets — honest: full stats (~35% CPU) + zstd (~10%) + hybrid queue
 		TargetCPU:     "1.0-1.75 cores",
@@ -591,7 +591,7 @@ func resilientProfile() *ProfileConfig { //nolint:dupl // declarative config —
 
 		// Load shedding
 		LoadSheddingThreshold: float64Ptr(0.90), // 12 GB queue buffer, high tolerance
-		GOGC:                  intPtr(50),       // Tighter GC for stable memory and predictable CPU
+		GOGC:                  intPtr(200),      // GC when heap triples — ~45% less CPU vs GOGC=50, safe with GOMEMLIMIT
 
 		// Resource targets
 		TargetCPU:     "0.5-1 cores",
@@ -680,7 +680,7 @@ func performanceProfile() *ProfileConfig {
 
 		// Load shedding
 		LoadSheddingThreshold: float64Ptr(0.95), // Maximum headroom, pipeline split
-		GOGC:                  intPtr(25),       // Very high allocation, maximize memory reuse
+		GOGC:                  intPtr(400),      // GC when heap grows 5x — minimum GC CPU for max throughput, safe with GOMEMLIMIT
 
 		// Resource targets
 		TargetCPU:     "2-4 cores",
@@ -1061,7 +1061,7 @@ func collectProfileParams(p *ProfileConfig) []profileParam {
 	}
 	if p.MemoryLimitRatio != nil {
 		v := fmt.Sprintf("%.2f", *p.MemoryLimitRatio)
-		params = append(params, profileParam{"memory.limit_ratio", v, "GOMEMLIMIT ratio"})
+		params = append(params, profileParam{"memory.limit_ratio", v, "Hard memory ceiling (fraction of container memory)"})
 	}
 	if p.ExporterPrewarmConnections != nil {
 		v := fmt.Sprintf("%t", *p.ExporterPrewarmConnections)
@@ -1113,7 +1113,7 @@ func collectGovernanceParams(p *ProfileConfig) []profileParam {
 	}
 	if p.GOGC != nil {
 		v := fmt.Sprintf("%d", *p.GOGC)
-		params = append(params, profileParam{"gogc", v, "GC aggressiveness"})
+		params = append(params, profileParam{"gogc", v, "GC frequency (higher=less CPU, more memory between cycles)"})
 	}
 
 	return params

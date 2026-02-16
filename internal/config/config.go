@@ -94,9 +94,11 @@ type Config struct {
 	BufferFullPolicy string // Buffer full policy: "reject", "drop_oldest", "block" (default: "reject")
 
 	// Stats settings
-	StatsAddr   string
-	StatsLabels string
-	StatsLevel  string // "none", "basic", or "full" — controls stats collection overhead
+	StatsAddr                 string
+	StatsLabels               string
+	StatsLevel                string // "none", "basic", or "full" — controls stats collection overhead
+	StatsCardinalityThreshold int    // Only create Bloom trackers for metrics with > N datapoints (0 = track all)
+	StatsMaxLabelCombinations int    // Max label combination entries in full mode (0 = unlimited)
 
 	// Limits settings
 	LimitsConfig     string
@@ -144,10 +146,16 @@ type Config struct {
 
 	// Pipeline health / load shedding
 	LoadSheddingThreshold float64 // Pipeline health score above which receivers reject (0.0-1.0, default: 0.85)
-	GOGC                  int     // GC target percentage (0 = use profile default, default: 50)
+
+	// Go runtime memory tuning — these two settings work together:
+	//   GOMEMLIMIT (via MemoryLimitRatio) = hard memory ceiling, prevents OOM kills
+	//   GOGC = GC frequency within that ceiling, trades CPU for memory headroom
+	// Higher GOGC = fewer GC cycles = less CPU, but more memory used between collections.
+	// GOMEMLIMIT ensures memory never exceeds the limit regardless of GOGC value.
+	GOGC int // GC frequency: 100=GC when heap doubles, 200=triples, 400=5x (0=profile default)
 
 	// Memory limit settings
-	MemoryLimitRatio    float64 // Ratio of container memory to use for GOMEMLIMIT (default: 0.85)
+	MemoryLimitRatio    float64 // Fraction of container memory for Go's hard limit (default: 0.85 = 85%)
 	BufferMemoryPercent float64 // Buffer capacity as % of detected memory limit (default: 0.10)
 	QueueMemoryPercent  float64 // Queue in-memory capacity as % of detected memory limit (default: 0.10)
 
@@ -481,6 +489,8 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.StatsAddr, "stats-addr", ":9090", "Stats/metrics HTTP endpoint address")
 	flag.StringVar(&cfg.StatsLabels, "stats-labels", "", "Comma-separated labels to track for grouping (e.g., service,env,cluster)")
 	flag.StringVar(&cfg.StatsLevel, "stats-level", "basic", "Stats collection level: none (disabled), basic (per-metric counts), or full (cardinality tracking)")
+	flag.IntVar(&cfg.StatsCardinalityThreshold, "stats-cardinality-threshold", 0, "Only create Bloom trackers for metrics with > N datapoints per cycle (0 = track all)")
+	flag.IntVar(&cfg.StatsMaxLabelCombinations, "stats-max-label-combinations", 0, "Max label combination entries in full mode (0 = unlimited)")
 
 	// Limits flags
 	flag.StringVar(&cfg.LimitsConfig, "limits-config", "", "Path to limits configuration YAML file")
@@ -522,7 +532,7 @@ func ParseFlags() *Config {
 	flag.BoolVar(&cfg.QueueAlwaysQueue, "queue-always-queue", true, "Always route data through queue (workers pull and export)")
 
 	// Memory limit flags
-	flag.Float64Var(&cfg.MemoryLimitRatio, "memory-limit-ratio", 0.85, "Ratio of container memory to use for GOMEMLIMIT (0.0-1.0)")
+	flag.Float64Var(&cfg.MemoryLimitRatio, "memory-limit-ratio", 0.85, "Fraction of container memory for Go's hard limit, prevents OOM kills (0.0-1.0)")
 
 	// Sharding flags
 	flag.BoolVar(&cfg.ShardingEnabled, "sharding-enabled", false, "Enable consistent sharding")
@@ -1803,9 +1813,14 @@ OPTIONS:
         -queue-backoff-enabled           Enable exponential backoff for retries (default: true)
         -queue-circuit-breaker-reset-timeout <dur> Time to wait before half-open state (default: 30s)
 
-    Memory:
-        -memory-limit-ratio <ratio>      Ratio of container memory for GOMEMLIMIT (0.0-1.0) (default: 0.9)
-                                         Auto-detects container limits via cgroups (Docker/K8s)
+    Memory Tuning:
+        -memory-limit-ratio <ratio>      Fraction of container memory for GOMEMLIMIT (0.0-1.0) (default: 0.85)
+                                         Auto-detects container limits via cgroups (Docker/K8s).
+                                         GOMEMLIMIT is Go's hard memory ceiling — prevents OOM kills.
+                                         GOGC (set per profile) controls GC frequency within that ceiling:
+                                           higher = less CPU but more memory between collections.
+                                         Together: GOMEMLIMIT keeps you safe, GOGC tunes the CPU/memory tradeoff.
+                                         Override GOGC via env var: GOGC=200 (default per profile)
 
     Sharding (Consistent Hash Distribution):
         -sharding-enabled                Enable consistent sharding (default: false)
@@ -1951,6 +1966,8 @@ func DefaultConfig() *Config {
 		StatsAddr:                       ":9090",
 		StatsLabels:                     "",
 		StatsLevel:                      "basic",
+		StatsCardinalityThreshold:       0,
+		StatsMaxLabelCombinations:       0,
 		LimitsConfig:                    "",
 		LimitsDryRun:                    true,
 		RuleCacheMaxSize:                10000,
@@ -2136,6 +2153,12 @@ func (c *Config) Validate() error {
 	validStatsLevels := map[string]bool{"none": true, "basic": true, "full": true}
 	if !validStatsLevels[c.StatsLevel] {
 		errs = append(errs, fmt.Sprintf("stats-level must be 'none', 'basic', or 'full', got %q", c.StatsLevel))
+	}
+	if c.StatsCardinalityThreshold < 0 {
+		errs = append(errs, fmt.Sprintf("stats-cardinality-threshold must be >= 0, got %d", c.StatsCardinalityThreshold))
+	}
+	if c.StatsMaxLabelCombinations < 0 {
+		errs = append(errs, fmt.Sprintf("stats-max-label-combinations must be >= 0, got %d", c.StatsMaxLabelCombinations))
 	}
 
 	// Queue validation

@@ -1,0 +1,62 @@
+# Dockerfile.native — builds metrics-governor with Rust FFI native compression.
+#
+# This produces a binary with ~1.6x faster gzip/zlib/deflate via Rust's flate2.
+# Zstd stays on Go's klauspost (already faster than C libzstd via CGO).
+# Snappy stays on Go's S2 (already optimal).
+#
+# Usage:
+#   docker build -f Dockerfile.native -t metrics-governor:native .
+#   docker build -f Dockerfile.native --build-arg VERSION=1.2.3 -t metrics-governor:1.2.3-native .
+
+# Stage 1: Build Rust FFI static library (musl target for Alpine compatibility)
+FROM rust:1.85-alpine AS rust-builder
+
+RUN apk add --no-cache musl-dev
+
+WORKDIR /build
+COPY rust/compress-ffi/ .
+RUN cargo build --release
+
+# Stage 2: Build Go binary with native compression enabled
+FROM golang:1.25.7-alpine AS go-builder
+
+WORKDIR /app
+
+# Install build dependencies for CGO + git for version info
+RUN apk add --no-cache git gcc musl-dev
+
+# Copy Rust static library from previous stage
+COPY --from=rust-builder /build/target/release/libcompress_ffi.a /usr/local/lib/
+
+# Copy go mod files and download dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source
+COPY . .
+
+# Symlink the Rust library to where CGO expects it (${SRCDIR}/../../rust/compress-ffi/target/release/)
+RUN mkdir -p /app/rust/compress-ffi/target/release && \
+    cp /usr/local/lib/libcompress_ffi.a /app/rust/compress-ffi/target/release/
+
+# Build with native compression enabled (uses PGO profile if available)
+ARG VERSION=dev
+RUN PGO_FLAG=""; \
+    if [ -f default.pgo ]; then PGO_FLAG="-pgo=default.pgo"; echo "Building with PGO profile"; fi; \
+    CGO_ENABLED=1 go build -tags native_compress $PGO_FLAG \
+    -ldflags "-s -w -X github.com/szibis/metrics-governor/internal/config.version=${VERSION}" \
+    -o metrics-governor ./cmd/metrics-governor
+
+# Stage 3: Minimal runtime image
+FROM alpine:3.23
+
+RUN apk add --no-cache ca-certificates
+
+WORKDIR /app
+
+COPY --from=go-builder /app/metrics-governor /app/metrics-governor
+
+# OTLP gRPC and HTTP ports
+EXPOSE 4317 4318
+
+ENTRYPOINT ["/app/metrics-governor"]

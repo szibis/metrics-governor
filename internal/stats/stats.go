@@ -92,6 +92,11 @@ func levelToString(l uint32) StatsLevel {
 }
 
 // Collector tracks cardinality and datapoints per metric and label combinations.
+//
+// Counter fields use atomic operations for lock-free updates from Record* methods.
+// Counter groups are separated by cache line padding (128 bytes for ARM64) to
+// prevent false sharing between goroutines writing to different counter groups.
+// The mu lock protects only metricStats/labelStats map mutations.
 type Collector struct {
 	mu sync.RWMutex
 
@@ -108,45 +113,57 @@ type Collector struct {
 	// Labels to track for grouping (e.g., service, env, cluster)
 	trackLabels []string
 
-	// Per-metric stats: metric_name -> MetricStats
+	// Per-metric stats: metric_name -> MetricStats (protected by mu)
 	metricStats map[string]*MetricStats
 
-	// Per-label-combination stats: "label1=val1,label2=val2" -> LabelStats
+	// Per-label-combination stats: "label1=val1,label2=val2" -> LabelStats (protected by mu)
 	labelStats map[string]*LabelStats
 
-	// Global counters
-	totalDatapoints uint64
-	totalMetrics    uint64
+	// Config knobs for full-mode tuning
+	statsCardinalityThreshold int // Only create Bloom trackers for metrics with > N datapoints (0 = track all)
+	statsMaxLabelCombinations int // Max label combo entries (0 = unlimited)
 
-	// OTLP Export counters
-	datapointsReceived uint64
-	datapointsSent     uint64
-	batchesSent        uint64
-	exportErrors       uint64
+	// --- Group 1: Global counters (processFull goroutine) ---
+	totalDatapoints atomic.Uint64
+	totalMetrics    atomic.Uint64
+	_pad1           [128]byte //nolint:unused // cache-line padding to prevent false sharing
 
-	// PRW counters
-	prwDatapointsReceived uint64
-	prwTimeseriesReceived uint64
-	prwDatapointsSent     uint64
-	prwTimeseriesSent     uint64
-	prwBatchesSent        uint64
-	prwExportErrors       uint64
+	// --- Group 2: OTLP pipeline counters (exporter goroutine) ---
+	datapointsReceived atomic.Uint64
+	datapointsSent     atomic.Uint64
+	batchesSent        atomic.Uint64
+	exportErrors       atomic.Uint64
+	_pad2              [128]byte //nolint:unused // cache-line padding to prevent false sharing
 
-	// PRW byte counters
-	prwBytesReceivedUncompressed uint64 // Uncompressed bytes received (after decompression)
-	prwBytesReceivedCompressed   uint64 // Compressed bytes received (on wire)
-	prwBytesSentUncompressed     uint64 // Uncompressed bytes sent (before compression)
-	prwBytesSentCompressed       uint64 // Compressed bytes sent (on wire)
+	// --- Group 3: PRW receiver counters (PRW receiver goroutines) ---
+	prwDatapointsReceived atomic.Uint64
+	prwTimeseriesReceived atomic.Uint64
+	_pad3                 [128]byte //nolint:unused // cache-line padding to prevent false sharing
 
-	// OTLP byte counters
-	otlpBytesReceivedUncompressed uint64 // Uncompressed OTLP bytes received
-	otlpBytesReceivedCompressed   uint64 // Compressed OTLP bytes received (on wire)
-	otlpBytesSentUncompressed     uint64 // Uncompressed OTLP bytes sent
-	otlpBytesSentCompressed       uint64 // Compressed OTLP bytes sent (on wire)
+	// --- Group 4: PRW exporter counters (PRW exporter goroutine) ---
+	prwDatapointsSent atomic.Uint64
+	prwTimeseriesSent atomic.Uint64
+	prwBatchesSent    atomic.Uint64
+	prwExportErrors   atomic.Uint64
+	_pad4             [128]byte //nolint:unused // cache-line padding to prevent false sharing
 
-	// Buffer size tracking (updated externally)
-	prwBufferSize  int64 // Current PRW buffer size (timeseries count)
-	otlpBufferSize int64 // Current OTLP buffer size (resource metrics count)
+	// --- Group 5: OTLP byte counters (decompression goroutine) ---
+	otlpBytesReceivedUncompressed atomic.Uint64
+	otlpBytesReceivedCompressed   atomic.Uint64
+	otlpBytesSentUncompressed     atomic.Uint64
+	otlpBytesSentCompressed       atomic.Uint64
+	_pad5                         [128]byte //nolint:unused // cache-line padding to prevent false sharing
+
+	// --- Group 6: PRW byte counters (PRW decompression goroutine) ---
+	prwBytesReceivedUncompressed atomic.Uint64
+	prwBytesReceivedCompressed   atomic.Uint64
+	prwBytesSentUncompressed     atomic.Uint64
+	prwBytesSentCompressed       atomic.Uint64
+	_pad6                        [128]byte //nolint:unused // cache-line padding to prevent false sharing
+
+	// --- Group 7: Buffer sizes (infrequent updates) ---
+	prwBufferSize  atomic.Int64
+	otlpBufferSize atomic.Int64
 }
 
 // MetricStats holds stats for a single metric name.
@@ -181,6 +198,22 @@ func NewCollector(trackLabels []string, level StatsLevel) *Collector {
 	c.effectiveLevel.Store(levelFromString(level))
 	statsLevelCurrent.Set(statsLevelToNum(level))
 	return c
+}
+
+// SetStatsCardinalityThreshold sets the minimum datapoint count before creating a Bloom tracker.
+// Metrics below the threshold get datapoint counting only. 0 = track all (default).
+func (c *Collector) SetStatsCardinalityThreshold(threshold int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.statsCardinalityThreshold = threshold
+}
+
+// SetStatsMaxLabelCombinations sets the maximum number of label combination entries.
+// When exceeded, no new LabelStats entries are created. 0 = unlimited (default).
+func (c *Collector) SetStatsMaxLabelCombinations(max int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.statsMaxLabelCombinations = max
 }
 
 // Level returns the current effective stats collection level.
@@ -246,13 +279,13 @@ func (c *Collector) processBasic(resourceMetrics []*metricspb.ResourceMetrics) {
 		for _, sm := range rm.ScopeMetrics {
 			for _, m := range sm.Metrics {
 				datapoints := c.countDatapoints(m)
-				c.totalDatapoints += uint64(datapoints)
+				c.totalDatapoints.Add(uint64(datapoints))
 
 				ms, ok := c.metricStats[m.Name]
 				if !ok {
 					ms = &MetricStats{Name: m.Name}
 					c.metricStats[m.Name] = ms
-					c.totalMetrics++
+					c.totalMetrics.Add(1)
 				}
 				ms.Datapoints += uint64(datapoints)
 			}
@@ -284,12 +317,28 @@ type precomputedDatapoint struct {
 	labelKey  string
 }
 
+// precompSlicePool pools []precomputedDatapoint slices to reduce per-processFull allocations.
+var precompSlicePool = sync.Pool{New: func() any {
+	s := make([]precomputedDatapoint, 0, 1024)
+	return &s
+}}
+
+// concatBufPool pools []byte buffers used for label key + series key concatenation in Bloom filter Add.
+var concatBufPool = sync.Pool{New: func() any {
+	b := make([]byte, 0, 512)
+	return &b
+}}
+
 // processFull runs the full cardinality tracking with Bloom filters and per-label stats.
-// Optimized: extracts attributes once per datapoint (not twice), computes keys outside lock.
+//
+// Optimization summary:
+//   - Phase 1 uses dual-map key building (no mergeAttrs allocation)
+//   - Series keys built directly as []byte via pooled buffers (no string→[]byte copy)
+//   - Phase 2 uses per-metric lock scope (cardinality Add() outside collector lock)
+//   - Pooled concat buffers for label+series key Bloom filter entries
 func (c *Collector) processFull(resourceMetrics []*metricspb.ResourceMetrics) {
-	// Phase 1: Pre-compute all attribute extraction, merging, and key building
-	// outside the lock. This is the expensive CPU work that doesn't need
-	// exclusive access to the collector's maps.
+	// Phase 1: Pre-compute all attribute extraction and key building
+	// outside the lock. Uses dual-map approach — no mergeAttrs allocation.
 	type metricBatch struct {
 		name       string
 		datapoints int
@@ -297,6 +346,10 @@ func (c *Collector) processFull(resourceMetrics []*metricspb.ResourceMetrics) {
 	}
 
 	var batches []metricBatch
+	hasLabelTracking := len(c.trackLabels) > 0
+
+	// Get a pooled precomp slice for reuse across metrics
+	precompPooled := precompSlicePool.Get().(*[]precomputedDatapoint)
 
 	for _, rm := range resourceMetrics {
 		resourceAttrs := extractAttributes(rm.Resource.GetAttributes())
@@ -310,74 +363,138 @@ func (c *Collector) processFull(resourceMetrics []*metricspb.ResourceMetrics) {
 				}
 
 				dpAttrs := extractAllDatapointAttrs(m)
-				precomp := make([]precomputedDatapoint, len(dpAttrs))
 
-				for i, dpAttr := range dpAttrs {
-					// Merge resource + datapoint attrs into a single map (extract once)
-					merged := mergeAttrs(resourceAttrs, dpAttr)
-					seriesKey := buildSeriesKey(merged)
+				// Reuse pooled slice, growing as needed
+				precomp := (*precompPooled)[:0]
+				if cap(precomp) < len(dpAttrs) {
+					precomp = make([]precomputedDatapoint, 0, len(dpAttrs))
+				}
+
+				for _, dpAttr := range dpAttrs {
+					// Build series key directly as []byte from dual maps (no merge, no string conversion)
+					seriesKey := buildSeriesKeyDualBytes(resourceAttrs, dpAttr)
 
 					var labelKey string
-					if len(c.trackLabels) > 0 {
-						labelKey = c.buildLabelKeyFromAttrs(merged)
+					if hasLabelTracking {
+						labelKey = c.buildLabelKeyDual(resourceAttrs, dpAttr)
 					}
 
-					precomp[i] = precomputedDatapoint{
-						seriesKey: []byte(seriesKey),
+					precomp = append(precomp, precomputedDatapoint{
+						seriesKey: seriesKey,
 						labelKey:  labelKey,
-					}
+					})
 
-					// Return the datapoint attrs map to pool (merged is not pooled — short-lived)
 					putPooledMap(dpAttr)
 				}
+
+				// Copy precomp to owned slice (so pooled slice can be reused for next metric)
+				owned := make([]precomputedDatapoint, len(precomp))
+				copy(owned, precomp)
 
 				batches = append(batches, metricBatch{
 					name:       m.Name,
 					datapoints: dpCount,
-					precomp:    precomp,
+					precomp:    owned,
 				})
 			}
 		}
 	}
 
-	// Phase 2: Hold lock only for counter updates and Bloom filter mutations.
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	// Return pooled precomp slice
+	if cap(*precompPooled) <= 4096 {
+		*precompPooled = (*precompPooled)[:0]
+		precompSlicePool.Put(precompPooled)
+	}
+
+	// Phase 2: Per-metric lock scope — hold lock only for map operations,
+	// release between metrics so cardinality Add() runs outside lock.
+	concatBufp := concatBufPool.Get().(*[]byte)
+	concatBuf := *concatBufp
 
 	for _, batch := range batches {
-		c.totalDatapoints += uint64(batch.datapoints)
+		c.totalDatapoints.Add(uint64(batch.datapoints))
 
+		// Short lock: get-or-create MetricStats entry, update datapoint counter
+		c.mu.Lock()
 		ms, ok := c.metricStats[batch.name]
 		if !ok {
+			tracker := cardinality.NewTrackerFromGlobal()
+			// Apply cardinality threshold: skip Bloom tracker for low-volume metrics
+			if c.statsCardinalityThreshold > 0 && batch.datapoints < c.statsCardinalityThreshold {
+				tracker = nil
+			}
 			ms = &MetricStats{
 				Name:        batch.name,
-				cardinality: cardinality.NewTrackerFromGlobal(),
+				cardinality: tracker,
 			}
 			c.metricStats[batch.name] = ms
-			c.totalMetrics++
+			c.totalMetrics.Add(1)
 		}
 		ms.Datapoints += uint64(batch.datapoints)
+		c.mu.Unlock()
 
-		for _, pc := range batch.precomp {
-			// Cardinality tracking (Bloom filter Add)
-			if ms.cardinality != nil {
+		// Cardinality updates with tracker's own lock (no Collector lock needed).
+		// Bloom filter Add() hashes immediately and does not retain the input bytes.
+		if ms.cardinality != nil {
+			prefixBytes := []byte(batch.name + "|")
+			for _, pc := range batch.precomp {
 				ms.cardinality.Add(pc.seriesKey)
-			}
 
-			// Per-label stats
-			if pc.labelKey != "" {
-				ls, ok := c.labelStats[pc.labelKey]
-				if !ok {
-					ls = &LabelStats{
-						Labels:      pc.labelKey,
-						cardinality: cardinality.NewTrackerFromGlobal(),
+				// Per-label stats (if this datapoint has label tracking)
+				if pc.labelKey != "" {
+					c.mu.Lock()
+					ls, ok := c.labelStats[pc.labelKey]
+					if !ok {
+						// Apply label combination cap
+						if c.statsMaxLabelCombinations > 0 && len(c.labelStats) >= c.statsMaxLabelCombinations {
+							c.mu.Unlock()
+							continue
+						}
+						ls = &LabelStats{
+							Labels:      pc.labelKey,
+							cardinality: cardinality.NewTrackerFromGlobal(),
+						}
+						c.labelStats[pc.labelKey] = ls
 					}
-					c.labelStats[pc.labelKey] = ls
+					ls.Datapoints++
+					c.mu.Unlock()
+
+					// Bloom filter Add for label cardinality (outside lock)
+					concatBuf = concatBuf[:0]
+					concatBuf = append(concatBuf, prefixBytes...)
+					concatBuf = append(concatBuf, pc.seriesKey...)
+					ls.cardinality.Add(concatBuf)
 				}
-				ls.Datapoints++
-				ls.cardinality.Add(append([]byte(batch.name+"|"), pc.seriesKey...))
+			}
+		} else {
+			// No cardinality tracker, but still need label stats
+			if hasLabelTracking {
+				c.mu.Lock()
+				for _, pc := range batch.precomp {
+					if pc.labelKey != "" {
+						ls, ok := c.labelStats[pc.labelKey]
+						if !ok {
+							if c.statsMaxLabelCombinations > 0 && len(c.labelStats) >= c.statsMaxLabelCombinations {
+								continue
+							}
+							ls = &LabelStats{
+								Labels:      pc.labelKey,
+								cardinality: cardinality.NewTrackerFromGlobal(),
+							}
+							c.labelStats[pc.labelKey] = ls
+						}
+						ls.Datapoints++
+					}
+				}
+				c.mu.Unlock()
 			}
 		}
+	}
+
+	// Return concat buffer to pool
+	if cap(concatBuf) <= 4096 {
+		*concatBufp = concatBuf
+		concatBufPool.Put(concatBufp)
 	}
 }
 
@@ -437,9 +554,34 @@ func extractAttributesPooled(attrs []*commonpb.KeyValue) map[string]string {
 // which is immutable after construction.
 func (c *Collector) buildLabelKeyFromAttrs(attrs map[string]string) string {
 	var sb strings.Builder
+	sb.Grow(len(c.trackLabels) * 24)
 	first := true
 	for _, label := range c.trackLabels {
 		if val, ok := attrs[label]; ok {
+			if !first {
+				sb.WriteByte(',')
+			}
+			sb.WriteString(label)
+			sb.WriteByte('=')
+			sb.WriteString(val)
+			first = false
+		}
+	}
+	return sb.String()
+}
+
+// buildLabelKeyDual builds a label combination key from two maps (resource + dp attrs).
+// dp attrs take priority over resource attrs. Reads only c.trackLabels (immutable).
+func (c *Collector) buildLabelKeyDual(resAttrs, dpAttrs map[string]string) string {
+	var sb strings.Builder
+	sb.Grow(len(c.trackLabels) * 24)
+	first := true
+	for _, label := range c.trackLabels {
+		val, ok := dpAttrs[label]
+		if !ok {
+			val, ok = resAttrs[label]
+		}
+		if ok {
 			if !first {
 				sb.WriteByte(',')
 			}
@@ -471,139 +613,123 @@ func (c *Collector) countDatapoints(m *metricspb.Metric) int {
 
 // GetGlobalStats returns global statistics.
 // At basic level, totalCardinality is always 0 (no Bloom filters allocated).
+// Counter snapshots are best-effort (no cross-field consistency guarantee).
 func (c *Collector) GetGlobalStats() (datapoints uint64, uniqueMetrics uint64, totalCardinality int64) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	datapoints = c.totalDatapoints
-	uniqueMetrics = c.totalMetrics
+	datapoints = c.totalDatapoints.Load()
+	uniqueMetrics = c.totalMetrics.Load()
 
 	if c.level == StatsLevelFull {
+		c.mu.RLock()
 		for _, ms := range c.metricStats {
 			if ms.cardinality != nil {
 				totalCardinality += ms.cardinality.Count()
 			}
 		}
+		c.mu.RUnlock()
 	}
 	return
 }
 
 // RecordReceived records datapoints received (before any filtering).
+// Lock-free: uses atomic counter.
 func (c *Collector) RecordReceived(count int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.datapointsReceived += uint64(count)
+	c.datapointsReceived.Add(uint64(count))
 }
 
 // RecordExport records a successful batch export.
+// Lock-free: uses atomic counters.
 func (c *Collector) RecordExport(datapointCount int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.batchesSent++
-	c.datapointsSent += uint64(datapointCount)
+	c.batchesSent.Add(1)
+	c.datapointsSent.Add(uint64(datapointCount))
 }
 
 // RecordExportError records a failed export attempt.
+// Lock-free: uses atomic counter.
 func (c *Collector) RecordExportError() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.exportErrors++
+	c.exportErrors.Add(1)
 }
 
 // PRW Stats methods - implements prw.PRWStatsCollector interface
 
 // RecordPRWReceived records PRW datapoints and timeseries received.
+// Lock-free: uses atomic counters.
 func (c *Collector) RecordPRWReceived(datapointCount, timeseriesCount int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.prwDatapointsReceived += uint64(datapointCount)
-	c.prwTimeseriesReceived += uint64(timeseriesCount)
+	c.prwDatapointsReceived.Add(uint64(datapointCount))
+	c.prwTimeseriesReceived.Add(uint64(timeseriesCount))
 }
 
 // RecordPRWExport records a successful PRW export.
+// Lock-free: uses atomic counters.
 func (c *Collector) RecordPRWExport(datapointCount, timeseriesCount int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.prwBatchesSent++
-	c.prwDatapointsSent += uint64(datapointCount)
-	c.prwTimeseriesSent += uint64(timeseriesCount)
+	c.prwBatchesSent.Add(1)
+	c.prwDatapointsSent.Add(uint64(datapointCount))
+	c.prwTimeseriesSent.Add(uint64(timeseriesCount))
 }
 
 // RecordPRWExportError records a failed PRW export attempt.
+// Lock-free: uses atomic counter.
 func (c *Collector) RecordPRWExportError() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.prwExportErrors++
+	c.prwExportErrors.Add(1)
 }
 
 // RecordPRWBytesReceived records uncompressed bytes received.
+// Lock-free: uses atomic counter.
 func (c *Collector) RecordPRWBytesReceived(bytes int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.prwBytesReceivedUncompressed += uint64(bytes)
+	c.prwBytesReceivedUncompressed.Add(uint64(bytes))
 }
 
 // RecordPRWBytesReceivedCompressed records compressed bytes received (on wire).
+// Lock-free: uses atomic counter.
 func (c *Collector) RecordPRWBytesReceivedCompressed(bytes int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.prwBytesReceivedCompressed += uint64(bytes)
+	c.prwBytesReceivedCompressed.Add(uint64(bytes))
 }
 
 // RecordPRWBytesSent records uncompressed bytes sent.
+// Lock-free: uses atomic counter.
 func (c *Collector) RecordPRWBytesSent(bytes int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.prwBytesSentUncompressed += uint64(bytes)
+	c.prwBytesSentUncompressed.Add(uint64(bytes))
 }
 
 // RecordPRWBytesSentCompressed records compressed bytes sent (on wire).
+// Lock-free: uses atomic counter.
 func (c *Collector) RecordPRWBytesSentCompressed(bytes int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.prwBytesSentCompressed += uint64(bytes)
+	c.prwBytesSentCompressed.Add(uint64(bytes))
 }
 
 // RecordOTLPBytesReceived records uncompressed OTLP bytes received.
+// Lock-free: uses atomic counter.
 func (c *Collector) RecordOTLPBytesReceived(bytes int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.otlpBytesReceivedUncompressed += uint64(bytes)
+	c.otlpBytesReceivedUncompressed.Add(uint64(bytes))
 }
 
 // RecordOTLPBytesReceivedCompressed records compressed OTLP bytes received (on wire).
+// Lock-free: uses atomic counter.
 func (c *Collector) RecordOTLPBytesReceivedCompressed(bytes int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.otlpBytesReceivedCompressed += uint64(bytes)
+	c.otlpBytesReceivedCompressed.Add(uint64(bytes))
 }
 
 // RecordOTLPBytesSent records uncompressed OTLP bytes sent.
+// Lock-free: uses atomic counter.
 func (c *Collector) RecordOTLPBytesSent(bytes int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.otlpBytesSentUncompressed += uint64(bytes)
+	c.otlpBytesSentUncompressed.Add(uint64(bytes))
 }
 
 // RecordOTLPBytesSentCompressed records compressed OTLP bytes sent (on wire).
+// Lock-free: uses atomic counter.
 func (c *Collector) RecordOTLPBytesSentCompressed(bytes int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.otlpBytesSentCompressed += uint64(bytes)
+	c.otlpBytesSentCompressed.Add(uint64(bytes))
 }
 
 // SetPRWBufferSize sets the current PRW buffer size.
+// Lock-free: uses atomic store.
 func (c *Collector) SetPRWBufferSize(size int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.prwBufferSize = int64(size)
+	c.prwBufferSize.Store(int64(size))
 }
 
 // SetOTLPBufferSize sets the current OTLP buffer size.
+// Lock-free: uses atomic store.
 func (c *Collector) SetOTLPBufferSize(size int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.otlpBufferSize = int64(size)
+	c.otlpBufferSize.Store(int64(size))
 }
 
 // StartPeriodicLogging starts logging global stats every interval.
@@ -644,7 +770,7 @@ func (c *Collector) ResetCardinality() {
 	prevLabels := len(c.labelStats)
 
 	c.metricStats = make(map[string]*MetricStats)
-	c.totalMetrics = 0
+	c.totalMetrics.Store(0)
 
 	if c.level == StatsLevelFull {
 		c.labelStats = make(map[string]*LabelStats)
@@ -697,86 +823,115 @@ func parseLabelKey(key string) map[string]string {
 }
 
 // ServeHTTP implements http.Handler for Prometheus metrics endpoint.
+// Atomic counter snapshots are best-effort (no cross-field consistency guarantee).
+// The mu.RLock is only held while iterating metricStats/labelStats maps.
 func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+
+	// Snapshot atomic counters outside any lock
+	totalDatapoints := c.totalDatapoints.Load()
+	totalMetrics := c.totalMetrics.Load()
+	dpReceived := c.datapointsReceived.Load()
+	dpSent := c.datapointsSent.Load()
+	bSent := c.batchesSent.Load()
+	expErrors := c.exportErrors.Load()
+
+	prwDpRecv := c.prwDatapointsReceived.Load()
+	prwTsRecv := c.prwTimeseriesReceived.Load()
+	prwDpSent := c.prwDatapointsSent.Load()
+	prwTsSent := c.prwTimeseriesSent.Load()
+	prwBSent := c.prwBatchesSent.Load()
+	prwExpErr := c.prwExportErrors.Load()
+
+	prwBytesRecvUncomp := c.prwBytesReceivedUncompressed.Load()
+	prwBytesRecvComp := c.prwBytesReceivedCompressed.Load()
+	prwBytesSentUncomp := c.prwBytesSentUncompressed.Load()
+	prwBytesSentComp := c.prwBytesSentCompressed.Load()
+
+	otlpBytesRecvUncomp := c.otlpBytesReceivedUncompressed.Load()
+	otlpBytesRecvComp := c.otlpBytesReceivedCompressed.Load()
+	otlpBytesSentUncomp := c.otlpBytesSentUncompressed.Load()
+	otlpBytesSentComp := c.otlpBytesSentCompressed.Load()
+
+	prwBufSize := c.prwBufferSize.Load()
+	otlpBufSize := c.otlpBufferSize.Load()
 
 	// Global stats
 	fmt.Fprintf(w, "# HELP metrics_governor_datapoints_total Total number of datapoints processed\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_datapoints_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_datapoints_total %d\n", c.totalDatapoints)
+	fmt.Fprintf(w, "metrics_governor_datapoints_total %d\n", totalDatapoints)
 
 	fmt.Fprintf(w, "# HELP metrics_governor_metrics_total Total number of unique metric names\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_metrics_total gauge\n")
-	fmt.Fprintf(w, "metrics_governor_metrics_total %d\n", c.totalMetrics)
+	fmt.Fprintf(w, "metrics_governor_metrics_total %d\n", totalMetrics)
 
 	// Export stats
 	fmt.Fprintf(w, "# HELP metrics_governor_datapoints_received_total Total number of datapoints received (before filtering)\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_datapoints_received_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_datapoints_received_total %d\n", c.datapointsReceived)
+	fmt.Fprintf(w, "metrics_governor_datapoints_received_total %d\n", dpReceived)
 
 	fmt.Fprintf(w, "# HELP metrics_governor_datapoints_sent_total Total number of datapoints sent to backend\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_datapoints_sent_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_datapoints_sent_total %d\n", c.datapointsSent)
+	fmt.Fprintf(w, "metrics_governor_datapoints_sent_total %d\n", dpSent)
 
 	fmt.Fprintf(w, "# HELP metrics_governor_batches_sent_total Total number of batches exported\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_batches_sent_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_batches_sent_total %d\n", c.batchesSent)
+	fmt.Fprintf(w, "metrics_governor_batches_sent_total %d\n", bSent)
 
 	fmt.Fprintf(w, "# HELP metrics_governor_export_errors_total Total number of export errors\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_export_errors_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_export_errors_total %d\n", c.exportErrors)
+	fmt.Fprintf(w, "metrics_governor_export_errors_total %d\n", expErrors)
 
 	// PRW stats
 	fmt.Fprintf(w, "# HELP metrics_governor_prw_datapoints_received_total Total PRW datapoints received\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_prw_datapoints_received_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_prw_datapoints_received_total %d\n", c.prwDatapointsReceived)
+	fmt.Fprintf(w, "metrics_governor_prw_datapoints_received_total %d\n", prwDpRecv)
 
 	fmt.Fprintf(w, "# HELP metrics_governor_prw_timeseries_received_total Total PRW timeseries received\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_prw_timeseries_received_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_prw_timeseries_received_total %d\n", c.prwTimeseriesReceived)
+	fmt.Fprintf(w, "metrics_governor_prw_timeseries_received_total %d\n", prwTsRecv)
 
 	fmt.Fprintf(w, "# HELP metrics_governor_prw_datapoints_sent_total Total PRW datapoints sent to backend\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_prw_datapoints_sent_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_prw_datapoints_sent_total %d\n", c.prwDatapointsSent)
+	fmt.Fprintf(w, "metrics_governor_prw_datapoints_sent_total %d\n", prwDpSent)
 
 	fmt.Fprintf(w, "# HELP metrics_governor_prw_timeseries_sent_total Total PRW timeseries sent to backend\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_prw_timeseries_sent_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_prw_timeseries_sent_total %d\n", c.prwTimeseriesSent)
+	fmt.Fprintf(w, "metrics_governor_prw_timeseries_sent_total %d\n", prwTsSent)
 
 	fmt.Fprintf(w, "# HELP metrics_governor_prw_batches_sent_total Total PRW batches exported\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_prw_batches_sent_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_prw_batches_sent_total %d\n", c.prwBatchesSent)
+	fmt.Fprintf(w, "metrics_governor_prw_batches_sent_total %d\n", prwBSent)
 
 	fmt.Fprintf(w, "# HELP metrics_governor_prw_export_errors_total Total PRW export errors\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_prw_export_errors_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_prw_export_errors_total %d\n", c.prwExportErrors)
+	fmt.Fprintf(w, "metrics_governor_prw_export_errors_total %d\n", prwExpErr)
 
 	// PRW byte stats with compression labels
 	fmt.Fprintf(w, "# HELP metrics_governor_prw_bytes_total Total PRW bytes by direction and compression state\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_prw_bytes_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"} %d\n", c.prwBytesReceivedUncompressed)
-	fmt.Fprintf(w, "metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"} %d\n", c.prwBytesReceivedCompressed)
-	fmt.Fprintf(w, "metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"} %d\n", c.prwBytesSentUncompressed)
-	fmt.Fprintf(w, "metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"} %d\n", c.prwBytesSentCompressed)
+	fmt.Fprintf(w, "metrics_governor_prw_bytes_total{direction=\"in\",compression=\"uncompressed\"} %d\n", prwBytesRecvUncomp)
+	fmt.Fprintf(w, "metrics_governor_prw_bytes_total{direction=\"in\",compression=\"compressed\"} %d\n", prwBytesRecvComp)
+	fmt.Fprintf(w, "metrics_governor_prw_bytes_total{direction=\"out\",compression=\"uncompressed\"} %d\n", prwBytesSentUncomp)
+	fmt.Fprintf(w, "metrics_governor_prw_bytes_total{direction=\"out\",compression=\"compressed\"} %d\n", prwBytesSentComp)
 
 	// OTLP byte stats with compression labels
 	fmt.Fprintf(w, "# HELP metrics_governor_otlp_bytes_total Total OTLP bytes by direction and compression state\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_otlp_bytes_total counter\n")
-	fmt.Fprintf(w, "metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"} %d\n", c.otlpBytesReceivedUncompressed)
-	fmt.Fprintf(w, "metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"} %d\n", c.otlpBytesReceivedCompressed)
-	fmt.Fprintf(w, "metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"} %d\n", c.otlpBytesSentUncompressed)
-	fmt.Fprintf(w, "metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"} %d\n", c.otlpBytesSentCompressed)
+	fmt.Fprintf(w, "metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"uncompressed\"} %d\n", otlpBytesRecvUncomp)
+	fmt.Fprintf(w, "metrics_governor_otlp_bytes_total{direction=\"in\",compression=\"compressed\"} %d\n", otlpBytesRecvComp)
+	fmt.Fprintf(w, "metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"uncompressed\"} %d\n", otlpBytesSentUncomp)
+	fmt.Fprintf(w, "metrics_governor_otlp_bytes_total{direction=\"out\",compression=\"compressed\"} %d\n", otlpBytesSentComp)
 
 	// Buffer size stats
 	fmt.Fprintf(w, "# HELP metrics_governor_buffer_size Current buffer size by protocol\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_buffer_size gauge\n")
-	fmt.Fprintf(w, "metrics_governor_buffer_size{protocol=\"prw\"} %d\n", c.prwBufferSize)
-	fmt.Fprintf(w, "metrics_governor_buffer_size{protocol=\"otlp\"} %d\n", c.otlpBufferSize)
+	fmt.Fprintf(w, "metrics_governor_buffer_size{protocol=\"prw\"} %d\n", prwBufSize)
+	fmt.Fprintf(w, "metrics_governor_buffer_size{protocol=\"otlp\"} %d\n", otlpBufSize)
 
-	// Per-metric stats (available at basic and full levels)
+	// Per-metric stats (available at basic and full levels) — needs map lock
+	c.mu.RLock()
+
 	fmt.Fprintf(w, "# HELP metrics_governor_metric_datapoints_total Datapoints per metric name\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_metric_datapoints_total counter\n")
 	for name, ms := range c.metricStats {
@@ -865,6 +1020,8 @@ func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "metrics_governor_serieskey_pool_discards_total %d\n", seriesKeyPoolDiscards.Load())
 	}
 
+	c.mu.RUnlock()
+
 	// Emit stats level gauge so dashboards/alerts can detect the mode
 	fmt.Fprintf(w, "# HELP metrics_governor_stats_level Current stats collection level (1=active)\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_stats_level gauge\n")
@@ -911,19 +1068,14 @@ func extractAttributes(attrs []*commonpb.KeyValue) map[string]string {
 	return result
 }
 
-func mergeAttrs(a, b map[string]string) map[string]string {
-	result := make(map[string]string)
-	for k, v := range a {
-		result[k] = v
-	}
-	for k, v := range b {
-		result[k] = v
-	}
-	return result
-}
-
-// keysPool pools []string slices used for sorting attribute keys in buildSeriesKey.
+// keysPool pools []string slices used for sorting attribute keys in series key building.
 var keysPool = sync.Pool{New: func() any { s := make([]string, 0, 16); return &s }}
+
+// keyBufPool pools []byte buffers used for building series keys directly as []byte.
+var keyBufPool = sync.Pool{New: func() any {
+	b := make([]byte, 0, 256)
+	return &b
+}}
 
 var (
 	seriesKeyPoolGets     atomic.Int64
@@ -931,6 +1083,8 @@ var (
 	seriesKeyPoolDiscards atomic.Int64
 )
 
+// buildSeriesKey builds a series key string from a single attribute map.
+// Retained for backward compatibility (tests, basic-mode callers).
 func buildSeriesKey(attrs map[string]string) string {
 	if len(attrs) == 0 {
 		return ""
@@ -946,8 +1100,7 @@ func buildSeriesKey(attrs map[string]string) string {
 	sort.Strings(keys)
 
 	var sb strings.Builder
-	// Estimate capacity: average key=value is ~20 chars + comma
-	sb.Grow(len(keys) * 21)
+	sb.Grow(len(keys) * 32)
 	for i, k := range keys {
 		if i > 0 {
 			sb.WriteByte(',')
@@ -966,4 +1119,66 @@ func buildSeriesKey(attrs map[string]string) string {
 	}
 
 	return sb.String()
+}
+
+// buildSeriesKeyDualBytes builds a series key directly as []byte from two attribute maps.
+// dp attrs take priority over resource attrs (same semantics as mergeAttrs + buildSeriesKey).
+// Returns an owned []byte — the caller owns the result.
+//
+// This eliminates both the mergeAttrs map allocation and the string→[]byte conversion
+// that previously occurred in processFull.
+func buildSeriesKeyDualBytes(resAttrs, dpAttrs map[string]string) []byte {
+	if len(resAttrs) == 0 && len(dpAttrs) == 0 {
+		return nil
+	}
+
+	// Collect unique keys (dp overrides resource)
+	kp := keysPool.Get().(*[]string)
+	seriesKeyPoolGets.Add(1)
+	keys := (*kp)[:0]
+
+	for k := range resAttrs {
+		keys = append(keys, k)
+	}
+	for k := range dpAttrs {
+		if _, exists := resAttrs[k]; !exists {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+
+	// Build key into pooled byte buffer
+	bp := keyBufPool.Get().(*[]byte)
+	buf := (*bp)[:0]
+	for i, k := range keys {
+		if i > 0 {
+			buf = append(buf, ',')
+		}
+		buf = append(buf, k...)
+		buf = append(buf, '=')
+		if v, ok := dpAttrs[k]; ok {
+			buf = append(buf, v...) // dp attrs take priority
+		} else {
+			buf = append(buf, resAttrs[k]...)
+		}
+	}
+
+	// Copy to owned []byte with exact size (buffer returns to pool)
+	result := make([]byte, len(buf))
+	copy(result, buf)
+
+	// Return pooled buffers
+	if cap(*bp) <= 4096 {
+		*bp = buf
+		keyBufPool.Put(bp)
+	}
+	if cap(keys) > 64 {
+		seriesKeyPoolDiscards.Add(1)
+	} else {
+		*kp = keys
+		keysPool.Put(kp)
+		seriesKeyPoolPuts.Add(1)
+	}
+
+	return result
 }

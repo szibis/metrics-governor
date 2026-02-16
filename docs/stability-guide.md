@@ -133,27 +133,32 @@ The `Degrade()` method uses a lock-free atomic CAS loop, so it's safe to call fr
 
 ## Per-Profile GOGC Tuning
 
-### How It Works
+### How GOGC and GOMEMLIMIT Work Together
 
-Each profile sets `GOGC` (Go's GC target percentage) to balance GC overhead vs memory usage:
+The governor uses two Go runtime knobs for memory management:
 
-| Profile | GOGC | Effect |
-|---|---|---|
-| minimal | 100 | Default GC — low allocation rate, no tuning needed |
-| balanced | 75 | Slightly more aggressive — moderate allocation rate |
-| safety | 50 | Aggressive — high allocation (full stats), tighter memory |
-| observable | 50 | Aggressive — same rationale as safety |
-| resilient | 75 | Moderate — balanced throughput vs memory |
-| performance | 25 | Very aggressive — maximize memory reuse at cost of GC CPU |
+- **GOMEMLIMIT** = hard memory ceiling (prevents OOM kills). Auto-configured from container memory via cgroups at 85% of the limit.
+- **GOGC** = GC frequency within that ceiling (trades CPU for memory headroom). Higher GOGC = fewer GC cycles = less CPU.
 
-Lower GOGC = more GC cycles but lower peak heap. This works alongside `GOMEMLIMIT` (auto-configured from container memory) to prevent OOM kills.
+When GOMEMLIMIT is set, GOGC becomes purely a CPU-vs-latency tradeoff. GOMEMLIMIT ensures memory never exceeds the container limit regardless of GOGC value.
+
+| Profile | GOGC | GC Triggers When Heap... | CPU Impact |
+|---|---|---|---|
+| minimal | 100 | Doubles (2x) | Moderate — Go default, suitable for small containers |
+| balanced | 200 | Triples (3x) | Low — ~45% less GC CPU than GOGC=50 |
+| safety | 200 | Triples (3x) | Same as balanced |
+| observable | 200 | Triples (3x) | Same as balanced |
+| resilient | 200 | Triples (3x) | Same as balanced |
+| performance | 400 | Grows 5x | Minimal — least GC CPU, most memory headroom |
+
+**Why these values?** CPU profiling at 50k dps showed GC consumed 44.5% of CPU with GOGC=50. Since GOMEMLIMIT already prevents OOM, that GC frequency was pure waste. Raising GOGC to 200 cut governor CPU by ~45%.
 
 ### Override
 
 Set the `GOGC` environment variable to override the profile default:
 
 ```bash
-GOGC=100 ./metrics-governor --profile observable
+GOGC=300 ./metrics-governor --profile balanced
 ```
 
 The environment variable takes precedence — the profile value is only used when `GOGC` is not set.

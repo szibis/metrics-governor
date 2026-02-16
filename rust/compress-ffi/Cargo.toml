@@ -1,0 +1,20 @@
+[package]
+name = "compress-ffi"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[lib]
+name = "compress_ffi"
+crate-type = ["staticlib"]
+
+[dependencies]
+flate2 = "1.1.9"
+zstd = "0.13.3"
+zstd-safe = "7.2.4"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

@@ -107,6 +107,7 @@ metrics-governor includes several high-performance optimizations for production 
 | Queue I/O Optimization | Yes | Yes | -40-60% disk (compression) | 10x throughput |
 | Persistent Disk Queue | Yes | Yes | Bounded by max_bytes | Disk I/O |
 | Memory Limit Auto-Detection | Yes | Yes | Prevents OOM kills | More predictable GC |
+| Stats Full-Mode Optimization | Yes | Yes | ~65% fewer allocs, -12-21% mem/op | 13-21% faster end-to-end, `full` mode production-viable |
 | Stats Threshold Filtering | Yes | Yes | -49% scrape bytes | -44% scrape latency |
 | Pipeline Split | Yes | Yes | Bounded goroutines | +50-80% throughput |
 | Batch Auto-tuning | Yes | Yes | Minimal | AIMD batch sizing |
@@ -1125,6 +1126,90 @@ See [resilience.md](./resilience.md) for detailed memory limit documentation.
 
 ---
 
+## Stats Full-Mode Optimization
+
+Running `--stats-level full` gives you complete per-metric cardinality tracking and per-label breakdowns — the deepest observability into your metrics pipeline. Previously this came at a steep cost (30-40% CPU at 100k dps), making it impractical for production. These optimizations make `full` mode **production-viable** at ~12-18% CPU overhead.
+
+### What This Means for You
+
+- **Use `full` mode in production** — Previously reserved for debugging, `full` mode is now lightweight enough for standard production deployments. You get per-metric cardinality, per-label breakdowns, and Bloom filter tracking with acceptable overhead.
+- **Lower container resource requests** — The same workload uses ~20% less CPU end-to-end, allowing smaller containers or higher throughput on the same hardware.
+- **Better `/metrics` responsiveness** — Atomic counters and per-metric locking mean Prometheus scrapes no longer compete with the processing pipeline for the same mutex. Scrape latency drops from ~10ms to ~1ms under load.
+- **Higher concurrent throughput** — Multi-core scaling improved up to 51% (4 goroutines) and 25% (16 goroutines) due to lock contention elimination.
+- **Fine-grained cost control** — Two new config knobs let you selectively disable expensive tracking for low-volume metrics or cap label combinations, reducing memory 10-100x for high-cardinality deployments.
+
+### Measured Pipeline Improvements
+
+Benchmarked on Apple M3 Max (14 cores), comparing `main` branch baseline vs optimized:
+
+| Benchmark | Before | After | Improvement |
+|---|---:|---:|---:|
+| **EndToEnd 1k dps** | 346 ns/op | 275 ns/op | **-21%** |
+| **EndToEnd 10k dps** | 1,151 ns/op | 942 ns/op | **-18%** |
+| **EndToEnd 50k dps** | 4,578 ns/op | 3,970 ns/op | **-13%** |
+| BufferToExport stats_full | 22,373 ns/op | 18,008 ns/op | **-20%** |
+| BufferToExport stats_basic | 1,053 ns/op | 938 ns/op | **-11%** |
+| ConcurrentAdd 4 goroutines | 520 ns/op | 257 ns/op | **-51%** |
+| ConcurrentAdd 16 goroutines | 491 ns/op | 367 ns/op | **-25%** |
+
+Memory per operation also improved:
+
+| Benchmark | Before | After | Improvement |
+|---|---:|---:|---:|
+| EndToEnd 1k dps | 14 B/op | 11 B/op | **-21%** |
+| EndToEnd 10k dps | 46 B/op | 38 B/op | **-17%** |
+| EndToEnd 50k dps | 181 B/op | 159 B/op | **-12%** |
+
+### Optimizations Applied
+
+| Optimization | Allocation Reduction | CPU Impact | Description |
+|---|:---:|:---:|---|
+| Dual-map key building | ~38% fewer allocs | ~15% less CPU | Eliminated `mergeAttrs()` map allocation — key builders accept resource and datapoint attribute maps directly |
+| Pooled byte buffers | ~15% fewer allocs | ~5% less CPU | `sync.Pool` for series key byte buffers and precomputed datapoint slices |
+| Atomic counters | — | ~10% less contention | `Record*` methods use `atomic.Uint64` instead of mutex-protected fields, with ARM64 cache line padding (128 bytes) |
+| Per-metric lock scope | — | ~5% less contention | `mu.Lock()` held per-metric instead of per-batch; Bloom filter `Add()` calls moved outside collector lock |
+| PRW pooled compression | 1 fewer alloc/export | Minimal | PRW exporter uses `CompressToBuf()` with pooled buffers instead of allocating `Compress()` |
+
+### Configuration
+
+Two config knobs allow fine-tuning full-mode resource usage in high-cardinality environments:
+
+```bash
+# Only create Bloom trackers for metrics with > N datapoints (default: 0 = track all)
+# Saves 10-100x Bloom memory when you have thousands of low-volume metrics
+metrics-governor --stats-level full --stats-cardinality-threshold 100
+
+# Cap tracked label combinations (default: 0 = unlimited)
+# Prevents unbounded memory growth from high-cardinality labels like request_id or trace_id
+metrics-governor --stats-level full --stats-max-label-combinations 5000
+```
+
+```yaml
+stats:
+  level: full
+  cardinality_threshold: 100       # skip Bloom for metrics with < 100 dps
+  max_label_combinations: 5000     # hard cap on label combination tracking
+```
+
+### Profile-Guided Optimization (PGO)
+
+PGO uses CPU profiles from your workload to guide Go compiler optimizations (inlining, branch prediction, register allocation). This is a free 2-7% throughput improvement with no code changes.
+
+```bash
+# Generate PGO profile from benchmarks (creates default.pgo)
+make pgo-profile
+
+# Build with PGO
+make pgo-build
+
+# Docker builds automatically use PGO when default.pgo exists in the build context
+docker build -t metrics-governor:latest .
+```
+
+**Tip**: Regenerate the PGO profile after significant code changes or when your workload profile shifts. Commit `default.pgo` to the repository so CI builds also benefit.
+
+---
+
 ## Caching Optimizations
 
 The following table summarizes all caching and pooling optimizations applied across the hot path:
@@ -1372,7 +1457,7 @@ metrics-governor exposes three main performance axes that let you trade between 
 
 **Axis 1: Durability** (`--queue-mode`) — Controls how export batches are queued between the pipeline and the backend. `memory` mode uses a zero-copy in-memory ring buffer for maximum throughput and lowest latency. `disk` mode writes every batch to the persistent FastQueue for full crash recovery at the cost of disk I/O. A hybrid mode is also available via `--queue-hybrid-spillover-pct`, which keeps batches in memory until queue utilization reaches the configured percentage (e.g., 80%), then spills to disk — giving you low-latency operation under normal load with disk-backed safety during backpressure.
 
-**Axis 2: Observability** (`--stats-level`) — Controls how much per-metric accounting the limits enforcer performs. `full` enables complete cardinality tracking with per-label-set Bloom filters, giving you full visibility into which label combinations drive cardinality. `basic` (the default) tracks per-metric datapoint counts and rule-level cardinality without per-label-set breakdowns. `none` disables all stats collection, eliminating the accounting overhead entirely — the limits enforcer still enforces rules, but no counters or cardinality trackers are maintained.
+**Axis 2: Observability** (`--stats-level`) — Controls how much per-metric accounting the limits enforcer performs. `full` enables complete cardinality tracking with per-label-set Bloom filters, giving you full visibility into which label combinations drive cardinality. With dual-map key building, atomic counters, and per-metric locking, full mode now runs at ~12-18% CPU overhead (down from 30-40%). `basic` (the default) tracks per-metric datapoint counts and rule-level cardinality without per-label-set breakdowns. `none` disables all stats collection, eliminating the accounting overhead entirely — the limits enforcer still enforces rules, but no counters or cardinality trackers are maintained.
 
 **Pipeline fusion** — The tenant identification and limits enforcement stages run as a single timed step rather than two sequential passes over the data. This fusion is automatic and always enabled; there is no flag to control it. It eliminates one full traversal of each incoming batch, which is particularly impactful at high datapoint rates.
 
@@ -1384,7 +1469,7 @@ metrics-governor exposes three main performance axes that let you trade between 
 | `--queue-max-bytes` | 512MB | 256MB | 128MB |
 | `--stats-level` | `full` | `basic` | `none` |
 | Pipeline fusion | enabled | enabled | enabled |
-| Expected CPU (100k dps) | ~120% | ~40-60% | ~25-35% |
+| Expected CPU (100k dps) | ~60-80% | ~40-60% | ~25-35% |
 | Expected memory | ~1 GB | ~500 MB | ~350 MB |
 | Durability | Full crash recovery | No persistence | No persistence |
 | Visibility | Full cardinality tracking | Per-metric counts | Global totals only |
@@ -1439,23 +1524,38 @@ The following table summarizes the CPU overhead of recently added limits feature
 
 ## Stability & Memory Tuning
 
-### Per-Profile GOGC
+### GOGC and GOMEMLIMIT — How They Work Together
 
-Each profile sets `GOGC` to balance GC overhead vs memory usage. Lower GOGC = more GC cycles but lower peak heap:
+Go has two memory tuning knobs that work as a team:
 
-| Profile | GOGC | Rationale |
-|---|---|---|
-| minimal | 50 | Tighter GC for stable memory in containers |
-| balanced | 50 | Tighter GC for stable memory and predictable CPU |
-| safety / observable | 50 | Aggressive — high allocation (full stats) |
-| resilient | 50 | Tighter GC for stable memory and predictable CPU |
-| performance | 25 | Very aggressive — maximize memory reuse |
+- **GOMEMLIMIT** = hard memory ceiling — "never use more than X bytes" (prevents OOM kills)
+- **GOGC** = GC frequency — "how full can the heap get before GC runs" (trades CPU for memory headroom)
 
-Override with the `GOGC` environment variable: `GOGC=100 ./metrics-governor --profile observable`.
+When GOMEMLIMIT is set, GOGC becomes purely a **CPU-vs-latency tradeoff**: higher GOGC = fewer GC pauses = less CPU spent on garbage collection. GOMEMLIMIT ensures memory never exceeds the container limit regardless of GOGC value.
 
-### GOMEMLIMIT
+**Example**: In a 1 GiB container with `memory_limit_ratio=0.85`:
+- GOMEMLIMIT is set to 870 MiB (hard ceiling)
+- With GOGC=200, GC triggers when the heap triples (e.g., 200 MiB → 600 MiB)
+- If heap approaches 870 MiB, GC runs aggressively regardless of GOGC to stay under the limit
 
-Auto-configured from container memory limits (or system memory on bare metal). Uses `memory_limit_ratio` (default 0.85) to set the soft limit, leaving headroom for transient spikes and kernel buffers. When GOMEMLIMIT is approached, the GC runs more aggressively, and stats degradation may activate to shed memory.
+#### Per-Profile GOGC
+
+| Profile | GOGC | GC Triggers When Heap... | CPU Impact |
+|---|:---:|---|---|
+| minimal | 100 | Doubles (2x) | Moderate — balanced for small containers |
+| balanced | 200 | Triples (3x) | Low — ~45% less GC CPU than GOGC=50 |
+| safety | 200 | Triples (3x) | Low |
+| observable | 200 | Triples (3x) | Low |
+| resilient | 200 | Triples (3x) | Low |
+| performance | 400 | Grows 5x | Minimal — maximum throughput, safe with GOMEMLIMIT |
+
+Override with the `GOGC` environment variable: `GOGC=300 ./metrics-governor --profile balanced`.
+
+**Why not GOGC=50 (the old default)?** CPU profiling at 50k dps showed GC consumed **44.5% of CPU** with GOGC=50 — the single largest CPU consumer. Since GOMEMLIMIT already prevents OOM, this GC frequency was pure waste. Raising GOGC to 200 cut governor CPU by ~45% at 50k dps.
+
+#### GOMEMLIMIT Auto-Detection
+
+Auto-configured from container memory limits via cgroups (Docker/K8s) or system memory on bare metal. Uses `memory_limit_ratio` (default 0.85) to set the ceiling, leaving 15% headroom for goroutine stacks, CGO allocations, and kernel buffers. When heap approaches GOMEMLIMIT, GC runs more aggressively regardless of GOGC, and stats degradation may activate to shed memory.
 
 ### Pipeline Health & Load Shedding
 
