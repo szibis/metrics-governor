@@ -1,0 +1,40 @@
+verifier-1  | 2026/02/15 22:17:43   Queue size:             0
+verifier-1  | 2026/02/15 22:17:43   Dropped total:          0
+verifier-1  | 2026/02/15 22:17:43   Export errors:          0
+verifier-1  | 2026/02/15 22:17:43 
+verifier-1  | 2026/02/15 22:17:43 VERIFICATION:
+verifier-1  | 2026/02/15 22:17:43   Ingestion rate:         100.00%
+verifier-1  | 2026/02/15 22:17:43   Pass threshold:         90.00%
+verifier-1  | 2026/02/15 22:17:43   Status:                 PASS
+verifier-1  | 2026/02/15 22:17:43   Message:                Data flowing, no errors detected
+verifier-1  | 2026/02/15 22:17:43 ========================================
+verifier-1  | 2026/02/15 22:17:43 Running verification: 12/12 checks passed (100.0%)
+verifier-1  | 2026/02/15 22:17:43 
+verifier-1  | 2026/02/15 22:17:58 Error querying metrics-governor stats: Get "http://metrics-governor:9090/metrics": dial tcp 172.20.0.4:9090: connect: connection refused
+verifier-1  | 2026/02/15 22:17:58 ========================================
+verifier-1  | 2026/02/15 22:17:58   VERIFICATION RESULT - PASS
+verifier-1  | 2026/02/15 22:17:58 ========================================
+verifier-1  | 2026/02/15 22:17:58 Timestamp: 2026-02-15T22:17:58Z
+verifier-1  | 2026/02/15 22:17:58 
+verifier-1  | 2026/02/15 22:17:58 VICTORIAMETRICS:
+verifier-1  | 2026/02/15 22:17:58   Total time series:      90933
+verifier-1  | 2026/02/15 22:17:58   Unique metric names:    10
+verifier-1  | 2026/02/15 22:17:58   High cardinality TS:    23219
+verifier-1  | 2026/02/15 22:17:58   Verification counter:   1564
+verifier-1  | 2026/02/15 22:17:58 
+verifier-1  | 2026/02/15 22:17:58 METRICS-GOVERNOR:
+verifier-1  | 2026/02/15 22:17:58   Datapoints received:    0
+verifier-1  | 2026/02/15 22:17:58   Datapoints sent:        0
+verifier-1  | 2026/02/15 22:17:58   Batches sent:           0
+verifier-1  | 2026/02/15 22:17:58   Queue size:             0
+verifier-1  | 2026/02/15 22:17:58   Dropped total:          0
+verifier-1  | 2026/02/15 22:17:58   Export errors:          0
+verifier-1  | 2026/02/15 22:17:58 
+verifier-1  | 2026/02/15 22:17:58 VERIFICATION:
+verifier-1  | 2026/02/15 22:17:58   Ingestion rate:         100.00%
+verifier-1  | 2026/02/15 22:17:58   Pass threshold:         90.00%
+verifier-1  | 2026/02/15 22:17:58   Status:                 PASS
+verifier-1  | 2026/02/15 22:17:58   Message:                Data flowing, no errors detected
+verifier-1  | 2026/02/15 22:17:58 ========================================
+verifier-1  | 2026/02/15 22:17:58 Running verification: 13/13 checks passed (100.0%)
+verifier-1  | 2026/02/15 22:17:58 

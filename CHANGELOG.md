@@ -6,6 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+
+- Profile-Guided Optimization (PGO) support: `make pgo-profile` and `make pgo-build` for 2-7% additional throughput
+- Native compression via Rust FFI (optional, build-tag gated): ~1.6x faster gzip/zlib/deflate through flate2 with zlib-ng backend
+- `Dockerfile.native` for multi-stage Rust+Go builds with native compression
+- Makefile targets: `rust-build`, `build-native`, `test-native`, `docker-native`
+- Stats full-mode config knobs: `--stats-cardinality-threshold` (skip Bloom for low-volume metrics) and `--stats-max-label-combinations` (cap label tracking memory)
+- YAML config: `stats.cardinality_threshold` and `stats.max_label_combinations`
+- CI: `cargo-audit` job in security-scan workflow for Rust dependency vulnerability scanning
+- Three-way multi-load comparison: `test/compare/run-multi-load.sh` tests governor vs OTel Collector vs vmagent at 50k/100k dps with scaled resources
+
+### Changed
+
+- GOGC raised from 50/25 to 200/400 across all profiles — GC CPU at 50k dps dropped from 44.5% to negligible (GOMEMLIMIT prevents OOM regardless)
+- Stats full-mode uses dual-map key building instead of `mergeAttrs()` — eliminates ~38% of pipeline allocations
+- Stats `Record*` counter methods are lock-free atomics with ARM64 cache line padding — Prometheus scrape latency drops from ~10ms to ~1ms under load
+- Stats `processFull` uses per-metric lock scope — Bloom filter `Add()` outside collector lock improves multi-core scaling
+- Zstd codec uses `EncodeAll`/`DecodeAll` single-shot API instead of streaming `Write`/`Close` — eliminates goroutine coordination overhead and enables pooled destination buffers
+- PRW exporter uses pooled `CompressToBuf()` instead of allocating `Compress()` — one fewer `[]byte` copy per export
+- Dockerfile conditionally uses PGO when `default.pgo` exists in build context
+
+### Performance
+
+Measured on Apple M3 Max (14 cores), before/after comparison:
+
+- End-to-end pipeline latency: **-13% to -21%** across 1k-50k dps workloads
+- Stats full-mode overhead: **22,373 → 18,008 ns/op** per batch (-20%)
+- Concurrent throughput (4 goroutines): **520 → 257 ns/op** (-51%)
+- Memory per operation: **-12% to -21%** across workloads
+- `Record*` counter latency: ~100-500ns (mutex) → ~132ns (atomic, zero allocs)
+- `full` stats mode now viable for production (CPU: 30-40% → 12-18% at 100k dps)
+- Zstd compress 100KB: **22,900 → 15,059 ns/op** (1.52x faster)
+- Zstd decompress 100KB: **62,674 → 36,611 ns/op** (1.71x faster, zero allocs)
+- Zstd roundtrip 100KB: **85,574 → 51,670 ns/op** (1.66x faster)
+- Governor vs OTel Collector at 50k dps: **29% less CPU** (5.35% vs 7.52%), **zero data loss**
+- Governor vs OTel Collector at 100k dps: roughly equal CPU (7.20% vs 6.81%), sublinear scaling (1.35x for 2x load)
+- vmagent degrades badly at 100k dps (16.70% CPU, 2.3x governor) — Remote Write scales poorly with high cardinality
+
+### Fixed
+
+- Comparison script measurement bug: `grep -i "metrics-governor"` matched all 6 containers (inflating CPU ~5x); now uses full Docker Compose container names
+
+
 ## [1.0.0] - 2026-02-11
 
 ### BREAKING CHANGES

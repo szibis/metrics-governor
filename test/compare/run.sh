@@ -39,17 +39,19 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-TESTS=("compare-governor" "compare-otel" "compare-vmagent")
-LABELS=("governor" "otel-collector" "vmagent")
+TESTS=("compare-governor" "compare-governor-balanced" "compare-otel" "compare-vmagent")
+LABELS=("governor-minimal" "governor-balanced" "otel-collector" "vmagent")
 # Which container is the "proxy under test" for each test
-PROXY_CONTAINERS=("metrics-governor" "otel-collector" "vmagent")
+# Use full container names to avoid matching other containers with project name prefix
+# Docker Compose names: <project>-<service>-<replica>, e.g. metrics-governor-metrics-governor-1
+PROXY_CONTAINERS=("metrics-governor-metrics-governor" "metrics-governor-metrics-governor" "metrics-governor-otel-collector" "metrics-governor-vmagent")
 
 mkdir -p "$RESULTS_DIR"
 SUMMARY="$RESULTS_DIR/summary.tsv"
 echo -e "proxy\tcpu_avg\tcpu_max\tmem_avg_pct\tingestion\tdatapoints_recv\tdatapoints_sent\texport_errors" > "$SUMMARY"
 
 echo "================================================================"
-echo "  Performance Comparison: governor vs otel-collector vs vmagent"
+echo "  Performance Comparison: governor (minimal/balanced) vs otel-collector vs vmagent"
 echo "================================================================"
 echo "  Direct connection: generator → proxy → VictoriaMetrics"
 echo "  Protocol: OTLP HTTP (all three)"
@@ -76,7 +78,7 @@ for i in "${!TESTS[@]}"; do
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  TEST $((i+1))/3: ${label}"
+    echo "  TEST $((i+1))/${#TESTS[@]}: ${label}"
     echo "  Pipeline: generator --OTLP HTTP--> ${label} --> VictoriaMetrics"
     echo "  Proxy container: ${proxy} (1 CPU, 512M)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -1,0 +1,5 @@
+proxy	cpu_avg	cpu_max	mem_avg_pct	ingestion	datapoints_recv	datapoints_sent	export_errors
+governor	0.69	4.30	20.5	N/A	0	0	0
+otel-collector	0.98	2.80	59.7	N/A	0	0	0
+vmagent	0.63	0.95	8.7	flowing (49496 series)	0	0	0
+governor-balanced	0.66	2.24	20.8	N/A	0	0	0

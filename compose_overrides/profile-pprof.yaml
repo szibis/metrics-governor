@@ -1,0 +1,13 @@
+# Temporary overlay: add --pprof-enabled to governor for CPU profiling
+# Usage: docker compose -f docker-compose.yaml -f compose_overrides/compare-governor-balanced.yaml -f compose_overrides/profile-pprof.yaml up -d
+services:
+  metrics-governor:
+    command:
+      - "--profile=balanced"
+      - "-exporter-endpoint=http://victoriametrics:8428/opentelemetry/v1/metrics"
+      - "-exporter-protocol=http"
+      - "-exporter-insecure=true"
+      - "-exporter-compression=zstd"
+      - "--pprof-enabled"
+    environment:
+      - GOGC=${GOGC:-}

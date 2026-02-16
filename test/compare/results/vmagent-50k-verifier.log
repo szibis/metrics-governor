@@ -1,0 +1,40 @@
+verifier-1  | 2026/02/15 22:46:45   Queue size:             0
+verifier-1  | 2026/02/15 22:46:45   Dropped total:          0
+verifier-1  | 2026/02/15 22:46:45   Export errors:          0
+verifier-1  | 2026/02/15 22:46:45 
+verifier-1  | 2026/02/15 22:46:45 VERIFICATION:
+verifier-1  | 2026/02/15 22:46:45   Ingestion rate:         0.00%
+verifier-1  | 2026/02/15 22:46:45   Pass threshold:         90.00%
+verifier-1  | 2026/02/15 22:46:45   Status:                 FAIL
+verifier-1  | 2026/02/15 22:46:45   Message:                Verification counter not found or zero
+verifier-1  | 2026/02/15 22:46:45 ========================================
+verifier-1  | 2026/02/15 22:46:45 Running verification: 0/12 checks passed (0.0%)
+verifier-1  | 2026/02/15 22:46:45 
+verifier-1  | 2026/02/15 22:47:00 Error querying metrics-governor stats: Get "http://metrics-governor:9090/metrics": dial tcp 172.20.0.5:9090: connect: connection refused
+verifier-1  | 2026/02/15 22:47:00 ========================================
+verifier-1  | 2026/02/15 22:47:00   VERIFICATION RESULT - FAIL
+verifier-1  | 2026/02/15 22:47:00 ========================================
+verifier-1  | 2026/02/15 22:47:00 Timestamp: 2026-02-15T22:47:00Z
+verifier-1  | 2026/02/15 22:47:00 
+verifier-1  | 2026/02/15 22:47:00 VICTORIAMETRICS:
+verifier-1  | 2026/02/15 22:47:00   Total time series:      93329
+verifier-1  | 2026/02/15 22:47:00   Unique metric names:    10
+verifier-1  | 2026/02/15 22:47:00   High cardinality TS:    0
+verifier-1  | 2026/02/15 22:47:00   Verification counter:   0
+verifier-1  | 2026/02/15 22:47:00 
+verifier-1  | 2026/02/15 22:47:00 METRICS-GOVERNOR:
+verifier-1  | 2026/02/15 22:47:00   Datapoints received:    0
+verifier-1  | 2026/02/15 22:47:00   Datapoints sent:        0
+verifier-1  | 2026/02/15 22:47:00   Batches sent:           0
+verifier-1  | 2026/02/15 22:47:00   Queue size:             0
+verifier-1  | 2026/02/15 22:47:00   Dropped total:          0
+verifier-1  | 2026/02/15 22:47:00   Export errors:          0
+verifier-1  | 2026/02/15 22:47:00 
+verifier-1  | 2026/02/15 22:47:00 VERIFICATION:
+verifier-1  | 2026/02/15 22:47:00   Ingestion rate:         0.00%
+verifier-1  | 2026/02/15 22:47:00   Pass threshold:         90.00%
+verifier-1  | 2026/02/15 22:47:00   Status:                 FAIL
+verifier-1  | 2026/02/15 22:47:00   Message:                Verification counter not found or zero
+verifier-1  | 2026/02/15 22:47:00 ========================================
+verifier-1  | 2026/02/15 22:47:00 Running verification: 0/13 checks passed (0.0%)
+verifier-1  | 2026/02/15 22:47:00 

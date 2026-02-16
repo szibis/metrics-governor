@@ -290,6 +290,66 @@ jobs:
             echo "result=pass" >> $GITHUB_OUTPUT
           fi
 
+  cargo-audit:
+    needs: [ci-filter]
+    name: cargo-audit
+    runs-on: ubuntu-latest
+    if: >-
+      needs.ci-filter.outputs.skip_security != 'true' &&
+      !(
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'release:skip')
+      )
+    outputs:
+      result: ${{ steps.result.outputs.result }}
+      details: ${{ steps.result.outputs.details }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check for Rust code
+        id: check
+        run: |
+          if [ -f rust/compress-ffi/Cargo.toml ]; then
+            echo "has_rust=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_rust=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Rust toolchain
+        if: steps.check.outputs.has_rust == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        if: steps.check.outputs.has_rust == 'true'
+        run: cargo install cargo-audit
+
+      - name: Run cargo audit
+        id: audit
+        if: steps.check.outputs.has_rust == 'true'
+        run: |
+          set +e
+          cd rust/compress-ffi
+          OUTPUT=$(cargo audit 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: Set result
+        id: result
+        run: |
+          if [ "${{ steps.check.outputs.has_rust }}" != "true" ]; then
+            echo "result=pass" >> $GITHUB_OUTPUT
+            echo "details=No Rust code found" >> $GITHUB_OUTPUT
+          elif [ "${{ steps.audit.outputs.exit_code }}" = "0" ]; then
+            echo "result=pass" >> $GITHUB_OUTPUT
+            echo "details=No vulnerabilities found" >> $GITHUB_OUTPUT
+          else
+            echo "result=fail" >> $GITHUB_OUTPUT
+            echo "details=Vulnerabilities found in Rust dependencies" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
   sbom:
     needs: [ci-filter]
     name: SBOM (syft)
@@ -339,7 +399,7 @@ jobs:
           echo "details=Generated (SPDX + CycloneDX)" >> $GITHUB_OUTPUT
 
   security-gate:
-    needs: [ci-filter, govulncheck, trivy-fs, trivy-image, gitleaks, checkov, sbom]
+    needs: [ci-filter, govulncheck, trivy-fs, trivy-image, gitleaks, checkov, cargo-audit, sbom]
     name: security-gate
     runs-on: ubuntu-latest
     if: >-
@@ -372,6 +432,7 @@ jobs:
           check_result "Trivy (container)" "${{ needs.trivy-image.outputs.result }}" "${{ needs.trivy-image.outputs.details }}"
           check_result "gitleaks" "${{ needs.gitleaks.outputs.result }}" "${{ needs.gitleaks.outputs.details }}"
           check_result "checkov" "${{ needs.checkov.outputs.result }}" "${{ needs.checkov.outputs.details }}"
+          check_result "cargo-audit" "${{ needs.cargo-audit.outputs.result }}" "${{ needs.cargo-audit.outputs.details }}"
 
           echo ""
           echo "SBOM: ${{ needs.sbom.outputs.details }} (informational)"
@@ -386,7 +447,7 @@ jobs:
           fi
 
   security-comment:
-    needs: [ci-filter, govulncheck, trivy-fs, trivy-image, gitleaks, checkov, sbom, security-gate]
+    needs: [ci-filter, govulncheck, trivy-fs, trivy-image, gitleaks, checkov, cargo-audit, sbom, security-gate]
     name: security-comment
     runs-on: ubuntu-latest
     if: >-
@@ -432,6 +493,12 @@ jobs:
                 blocks: true
               },
               {
+                name: 'cargo-audit',
+                result: '${{ needs.cargo-audit.outputs.result }}',
+                details: '${{ needs.cargo-audit.outputs.details }}',
+                blocks: true
+              },
+              {
                 name: 'SBOM (syft)',
                 result: '${{ needs.sbom.outputs.result }}',
                 details: '${{ needs.sbom.outputs.details }}',
@@ -474,6 +541,7 @@ jobs:
             - **Trivy (container)**: OS and application CVEs in the built Docker image
             - **gitleaks**: Leaked secrets, keys, and tokens in git history
             - **checkov**: Infrastructure-as-code misconfigurations in Helm charts and Dockerfile
+            - **cargo-audit**: Rust dependency vulnerabilities (for optional native compression FFI)
             - **SBOM (syft)**: Software Bill of Materials generation (informational)
 
             </details>

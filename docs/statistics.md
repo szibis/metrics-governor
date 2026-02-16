@@ -54,7 +54,7 @@ Measured at 100,000 datapoints per second:
 |-------|:------------:|:---------------:|:-------------------:|
 | **none** | ~0% | ~0 MB | none |
 | **basic** | ~3-5% | ~1-5 MB | negligible |
-| **full** | ~30-40% | ~50-200 MB | moderate (Bloom allocations, series key hashing) |
+| **full** | ~12-18% | ~50-200 MB | low (optimized dual-map keys, atomic counters) |
 
 ### What You Lose at Each Downgrade
 
@@ -77,10 +77,13 @@ Measured at 100,000 datapoints per second:
 |----------|:-----------------:|
 | High-throughput production relay (>500k dps), observability not critical | **none** |
 | Standard production deployment, need per-metric visibility | **basic** |
+| Production with cardinality governance (up to ~100k dps) | **full** |
 | Development, testing, debugging cardinality issues | **full** |
 | Capacity planning and cardinality audits | **full** |
 | Cost-sensitive environments with tight resource budgets | **none** or **basic** |
 | First deployment (understand your traffic) | **full**, then downgrade |
+
+> **Changed in v1.1**: The `full` level is now recommended for production cardinality governance workloads. Prior versions consumed 30-40% CPU at 100k dps, limiting `full` to dev/test. With dual-map key building, atomic counters, and per-metric locking, the overhead is now 12-18% — comparable to running a Prometheus sidecar for cardinality tracking.
 
 ### Configuration
 
@@ -99,6 +102,40 @@ metrics-governor --stats-level full --stats-labels service,env --stats-addr :909
 ```
 
 > **Note:** `--stats-labels` is only effective at the `full` level. At `none` or `basic`, label tracking is skipped regardless of the flag value.
+
+### Full-Mode Tuning Knobs
+
+When running at `full` level, two additional knobs help control resource usage in high-cardinality environments:
+
+**Cardinality Threshold** (`--stats-cardinality-threshold`, default: 0 = track all)
+
+Only create per-metric Bloom filter trackers for metrics that exceed the specified datapoint count. Metrics below the threshold get datapoint counting only (like `basic` level), but per-metric. This reduces Bloom filter memory by 10-100x for deployments with many low-volume metrics.
+
+```bash
+# Only track cardinality for metrics with > 100 datapoints per window
+metrics-governor --stats-level full --stats-cardinality-threshold 100
+```
+
+```yaml
+stats:
+  level: full
+  cardinality_threshold: 100
+```
+
+**Max Label Combinations** (`--stats-max-label-combinations`, default: 0 = unlimited)
+
+Caps the number of tracked label combinations in the stats collector. When exceeded, new label combination entries are not created. This prevents memory explosion from high-cardinality label tracking.
+
+```bash
+# Cap label combination tracking at 5000 entries
+metrics-governor --stats-level full --stats-max-label-combinations 5000
+```
+
+```yaml
+stats:
+  level: full
+  max_label_combinations: 5000
+```
 
 ## Metrics Collection Flow
 
@@ -579,9 +616,11 @@ The `Degrade()` method uses a lock-free atomic CAS loop — safe to call from an
 
 | Level | CPU at 50k dps | CPU at 100k dps | Allocations |
 |---|---|---|---|
-| `full` | ~17% | ~35% | High (attribute extraction, Bloom filter) |
+| `full` | ~8% | ~12-18% | Moderate (optimized dual-map keys, pooled buffers, atomic counters) |
 | `basic` | ~2.5% | ~5% | Low (counters only) |
 | `none` | 0% | 0% | Zero |
+
+> **Production recommendation**: With the v1.1 optimizations (dual-map key building, atomic counters, per-metric locking), `full` mode is now practical for production deployments up to ~100k dps. Previously, the 30-40% CPU overhead made it impractical above ~50k dps.
 
 See [stability-guide.md](stability-guide.md) for tuning guidance.
 

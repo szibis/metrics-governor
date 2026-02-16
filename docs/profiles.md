@@ -343,13 +343,13 @@ Each profile includes tuned stability parameters that control how the proxy beha
 
 | Setting | minimal | balanced | safety | observable | resilient | performance |
 |---|---|---|---|---|---|---|
-| GOGC | 50 | 50 | 50 | 50 | 50 | 25 |
+| GOGC | 100 | 200 | 200 | 200 | 200 | 400 |
 | Load shedding threshold | 0.80 | 0.85 | 0.90 | 0.85 | 0.90 | 0.95 |
 | Spillover threshold | — | — | — | 90% | 80% | 80% |
 | Stats degradation | auto | auto | auto | auto | auto | auto |
 | Meta sync interval | — | — | 1s | 5s | 3s | 2s |
 
-**GOGC**: Lower values mean more frequent GC but lower peak heap. The `performance` profile uses GOGC=25 to maximize memory reuse at the cost of GC CPU. Override with the `GOGC` environment variable if needed.
+**GOGC**: Controls GC frequency — higher values mean fewer GC cycles and less CPU spent on garbage collection, but more memory used between collections. This is safe because `GOMEMLIMIT` (auto-configured from container memory) provides a hard ceiling that prevents OOM kills regardless of GOGC. The `performance` profile uses GOGC=400 (GC when heap grows 5x) for minimum GC overhead. Override with the `GOGC` environment variable.
 
 **Load shedding**: When the pipeline health score exceeds this threshold, receivers return `ResourceExhausted` (gRPC) or `429 Too Many Requests` (HTTP). Higher-capacity profiles tolerate more pressure before shedding.
 

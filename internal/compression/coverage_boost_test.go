@@ -200,6 +200,10 @@ func TestCompressZstd_LevelBetterCompression(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPoolStatsSnapshot_AllFields(t *testing.T) {
+	if nativeCompressionAvailable {
+		t.Skip("native compression bypasses Go pools — pool counters not incremented")
+	}
+
 	ResetPoolStats()
 
 	// Drive some compression to populate counters.

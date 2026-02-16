@@ -768,6 +768,48 @@ func TestValidate_BackoffMultiplier(t *testing.T) {
 	}
 }
 
+func TestValidate_StatsCardinalityThreshold(t *testing.T) {
+	cfg := DefaultConfig()
+
+	cfg.StatsCardinalityThreshold = -1
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for stats-cardinality-threshold < 0")
+	} else if !contains(err.Error(), "stats-cardinality-threshold") {
+		t.Errorf("expected error to mention stats-cardinality-threshold, got: %v", err)
+	}
+
+	cfg.StatsCardinalityThreshold = 0
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("0 should be valid, got: %v", err)
+	}
+
+	cfg.StatsCardinalityThreshold = 100
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("100 should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_StatsMaxLabelCombinations(t *testing.T) {
+	cfg := DefaultConfig()
+
+	cfg.StatsMaxLabelCombinations = -1
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for stats-max-label-combinations < 0")
+	} else if !contains(err.Error(), "stats-max-label-combinations") {
+		t.Errorf("expected error to mention stats-max-label-combinations, got: %v", err)
+	}
+
+	cfg.StatsMaxLabelCombinations = 0
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("0 should be valid, got: %v", err)
+	}
+
+	cfg.StatsMaxLabelCombinations = 5000
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("5000 should be valid, got: %v", err)
+	}
+}
+
 func TestValidate_MultipleErrors(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.MemoryLimitRatio = 5.0

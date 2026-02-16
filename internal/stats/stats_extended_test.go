@@ -18,11 +18,8 @@ func TestRecordReceived(t *testing.T) {
 	c.RecordReceived(100)
 	c.RecordReceived(50)
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if c.datapointsReceived != 150 {
-		t.Errorf("expected datapointsReceived=150, got %d", c.datapointsReceived)
+	if c.datapointsReceived.Load() != 150 {
+		t.Errorf("expected datapointsReceived=150, got %d", c.datapointsReceived.Load())
 	}
 }
 
@@ -32,14 +29,11 @@ func TestRecordExport(t *testing.T) {
 	c.RecordExport(100)
 	c.RecordExport(200)
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if c.batchesSent != 2 {
-		t.Errorf("expected batchesSent=2, got %d", c.batchesSent)
+	if c.batchesSent.Load() != 2 {
+		t.Errorf("expected batchesSent=2, got %d", c.batchesSent.Load())
 	}
-	if c.datapointsSent != 300 {
-		t.Errorf("expected datapointsSent=300, got %d", c.datapointsSent)
+	if c.datapointsSent.Load() != 300 {
+		t.Errorf("expected datapointsSent=300, got %d", c.datapointsSent.Load())
 	}
 }
 
@@ -50,11 +44,8 @@ func TestRecordExportError(t *testing.T) {
 	c.RecordExportError()
 	c.RecordExportError()
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if c.exportErrors != 3 {
-		t.Errorf("expected exportErrors=3, got %d", c.exportErrors)
+	if c.exportErrors.Load() != 3 {
+		t.Errorf("expected exportErrors=3, got %d", c.exportErrors.Load())
 	}
 }
 
@@ -66,14 +57,11 @@ func TestRecordPRWReceived(t *testing.T) {
 	c.RecordPRWReceived(100, 10)
 	c.RecordPRWReceived(200, 20)
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if c.prwDatapointsReceived != 300 {
-		t.Errorf("expected prwDatapointsReceived=300, got %d", c.prwDatapointsReceived)
+	if c.prwDatapointsReceived.Load() != 300 {
+		t.Errorf("expected prwDatapointsReceived=300, got %d", c.prwDatapointsReceived.Load())
 	}
-	if c.prwTimeseriesReceived != 30 {
-		t.Errorf("expected prwTimeseriesReceived=30, got %d", c.prwTimeseriesReceived)
+	if c.prwTimeseriesReceived.Load() != 30 {
+		t.Errorf("expected prwTimeseriesReceived=30, got %d", c.prwTimeseriesReceived.Load())
 	}
 }
 
@@ -83,17 +71,14 @@ func TestRecordPRWExport(t *testing.T) {
 	c.RecordPRWExport(100, 10)
 	c.RecordPRWExport(200, 20)
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if c.prwBatchesSent != 2 {
-		t.Errorf("expected prwBatchesSent=2, got %d", c.prwBatchesSent)
+	if c.prwBatchesSent.Load() != 2 {
+		t.Errorf("expected prwBatchesSent=2, got %d", c.prwBatchesSent.Load())
 	}
-	if c.prwDatapointsSent != 300 {
-		t.Errorf("expected prwDatapointsSent=300, got %d", c.prwDatapointsSent)
+	if c.prwDatapointsSent.Load() != 300 {
+		t.Errorf("expected prwDatapointsSent=300, got %d", c.prwDatapointsSent.Load())
 	}
-	if c.prwTimeseriesSent != 30 {
-		t.Errorf("expected prwTimeseriesSent=30, got %d", c.prwTimeseriesSent)
+	if c.prwTimeseriesSent.Load() != 30 {
+		t.Errorf("expected prwTimeseriesSent=30, got %d", c.prwTimeseriesSent.Load())
 	}
 }
 
@@ -103,11 +88,8 @@ func TestRecordPRWExportError(t *testing.T) {
 	c.RecordPRWExportError()
 	c.RecordPRWExportError()
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if c.prwExportErrors != 2 {
-		t.Errorf("expected prwExportErrors=2, got %d", c.prwExportErrors)
+	if c.prwExportErrors.Load() != 2 {
+		t.Errorf("expected prwExportErrors=2, got %d", c.prwExportErrors.Load())
 	}
 }
 
@@ -174,10 +156,10 @@ func TestResetCardinalityLargeMap(t *testing.T) {
 	c.ResetCardinality()
 
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if len(c.metricStats) != 0 {
-		t.Errorf("expected metricStats to be reset, got %d entries", len(c.metricStats))
+	metricCountAfter := len(c.metricStats)
+	c.mu.RUnlock()
+	if metricCountAfter != 0 {
+		t.Errorf("expected metricStats to be reset, got %d entries", metricCountAfter)
 	}
 }
 
@@ -333,10 +315,10 @@ func TestProcessExponentialHistogramWithLabelTracking(t *testing.T) {
 	c.Process([]*metricspb.ResourceMetrics{rm})
 
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if len(c.labelStats) != 1 {
-		t.Errorf("expected 1 label combination, got %d", len(c.labelStats))
+	labelCount := len(c.labelStats)
+	c.mu.RUnlock()
+	if labelCount != 1 {
+		t.Errorf("expected 1 label combination, got %d", labelCount)
 	}
 }
 
@@ -370,10 +352,10 @@ func TestProcessHistogramWithLabelTracking(t *testing.T) {
 	c.Process([]*metricspb.ResourceMetrics{rm})
 
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if len(c.labelStats) != 1 {
-		t.Errorf("expected 1 label combination, got %d", len(c.labelStats))
+	labelCount := len(c.labelStats)
+	c.mu.RUnlock()
+	if labelCount != 1 {
+		t.Errorf("expected 1 label combination, got %d", labelCount)
 	}
 }
 
@@ -407,10 +389,10 @@ func TestProcessSummaryWithLabelTracking(t *testing.T) {
 	c.Process([]*metricspb.ResourceMetrics{rm})
 
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if len(c.labelStats) != 1 {
-		t.Errorf("expected 1 label combination, got %d", len(c.labelStats))
+	labelCount := len(c.labelStats)
+	c.mu.RUnlock()
+	if labelCount != 1 {
+		t.Errorf("expected 1 label combination, got %d", labelCount)
 	}
 }
 
@@ -444,10 +426,10 @@ func TestProcessGaugeWithLabelTracking(t *testing.T) {
 	c.Process([]*metricspb.ResourceMetrics{rm})
 
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if len(c.labelStats) != 1 {
-		t.Errorf("expected 1 label combination, got %d", len(c.labelStats))
+	labelCount := len(c.labelStats)
+	c.mu.RUnlock()
+	if labelCount != 1 {
+		t.Errorf("expected 1 label combination, got %d", labelCount)
 	}
 }
 

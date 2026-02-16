@@ -408,6 +408,10 @@ func TestPooledEncoder_ConcurrentSafety(t *testing.T) {
 
 // TestPoolStats verifies that pool metric counters are incremented.
 func TestPoolStats(t *testing.T) {
+	if nativeCompressionAvailable {
+		t.Skip("native compression bypasses Go pools — pool counters not incremented")
+	}
+
 	ResetPoolStats()
 
 	data := bytes.Repeat([]byte("pool-stats-test-"), 100)

@@ -1287,8 +1287,8 @@ func TestAllProfiles_HaveGOGC(t *testing.T) {
 				t.Fatal("GOGC must be set")
 			}
 			gogc := *p.GOGC
-			if gogc < 10 || gogc > 200 {
-				t.Errorf("GOGC=%d, want range [10, 200]", gogc)
+			if gogc < 10 || gogc > 500 {
+				t.Errorf("GOGC=%d, want range [10, 500]", gogc)
 			}
 		})
 	}
@@ -1299,12 +1299,12 @@ func TestAllProfiles_GOGCValues(t *testing.T) {
 		name ProfileName
 		gogc int
 	}{
-		{ProfileMinimal, 50},
-		{ProfileBalanced, 50},
-		{ProfileSafety, 50},
-		{ProfileObservable, 50},
-		{ProfileResilient, 50},
-		{ProfilePerformance, 25},
+		{ProfileMinimal, 100},
+		{ProfileBalanced, 200},
+		{ProfileSafety, 200},
+		{ProfileObservable, 200},
+		{ProfileResilient, 200},
+		{ProfilePerformance, 400},
 	}
 	for _, tc := range expected {
 		t.Run(string(tc.name), func(t *testing.T) {
@@ -1328,8 +1328,8 @@ func TestApplyProfile_GOGC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.GOGC != 50 {
-		t.Errorf("GOGC = %d, want 50 (observable profile)", cfg.GOGC)
+	if cfg.GOGC != 200 {
+		t.Errorf("GOGC = %d, want 200 (observable profile)", cfg.GOGC)
 	}
 }
 
