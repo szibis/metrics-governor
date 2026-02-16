@@ -9,7 +9,7 @@
 #   docker build -f Dockerfile.native --build-arg VERSION=1.2.3 -t metrics-governor:1.2.3-native .
 
 # Stage 1: Build Rust FFI static library (musl target for Alpine compatibility)
-FROM rust:1.85-alpine AS rust-builder
+FROM rust:1.93-alpine AS rust-builder
 
 RUN apk add --no-cache musl-dev
 
@@ -18,7 +18,7 @@ COPY rust/compress-ffi/ .
 RUN cargo build --release
 
 # Stage 2: Build Go binary with native compression enabled
-FROM golang:1.25.7-alpine AS go-builder
+FROM golang:1.26.0-alpine AS go-builder
 
 WORKDIR /app
 
