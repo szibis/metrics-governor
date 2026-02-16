@@ -18,7 +18,7 @@ COPY rust/compress-ffi/ .
 RUN cargo build --release
 
 # Stage 2: Build Go binary with native compression enabled
-FROM golang:1.25.7-alpine AS go-builder
+FROM golang:1.26.0-alpine AS go-builder
 
 WORKDIR /app
 
