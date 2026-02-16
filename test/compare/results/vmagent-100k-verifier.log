@@ -1,40 +1,40 @@
-verifier-1  | 2026/02/15 22:21:29   Queue size:             0
-verifier-1  | 2026/02/15 22:21:29   Dropped total:          0
-verifier-1  | 2026/02/15 22:21:29   Export errors:          0
-verifier-1  | 2026/02/15 22:21:29 
-verifier-1  | 2026/02/15 22:21:29 VERIFICATION:
-verifier-1  | 2026/02/15 22:21:29   Ingestion rate:         0.00%
-verifier-1  | 2026/02/15 22:21:29   Pass threshold:         90.00%
-verifier-1  | 2026/02/15 22:21:29   Status:                 FAIL
-verifier-1  | 2026/02/15 22:21:29   Message:                Verification counter not found or zero
-verifier-1  | 2026/02/15 22:21:29 ========================================
-verifier-1  | 2026/02/15 22:21:29 Running verification: 0/12 checks passed (0.0%)
-verifier-1  | 2026/02/15 22:21:29 
-verifier-1  | 2026/02/15 22:21:44 Error querying metrics-governor stats: Get "http://metrics-governor:9090/metrics": dial tcp 172.20.0.5:9090: connect: connection refused
-verifier-1  | 2026/02/15 22:21:44 ========================================
-verifier-1  | 2026/02/15 22:21:44   VERIFICATION RESULT - FAIL
-verifier-1  | 2026/02/15 22:21:44 ========================================
-verifier-1  | 2026/02/15 22:21:44 Timestamp: 2026-02-15T22:21:44Z
-verifier-1  | 2026/02/15 22:21:44 
-verifier-1  | 2026/02/15 22:21:44 VICTORIAMETRICS:
-verifier-1  | 2026/02/15 22:21:44   Total time series:      90176
-verifier-1  | 2026/02/15 22:21:44   Unique metric names:    10
-verifier-1  | 2026/02/15 22:21:44   High cardinality TS:    0
-verifier-1  | 2026/02/15 22:21:44   Verification counter:   0
-verifier-1  | 2026/02/15 22:21:44 
-verifier-1  | 2026/02/15 22:21:44 METRICS-GOVERNOR:
-verifier-1  | 2026/02/15 22:21:44   Datapoints received:    0
-verifier-1  | 2026/02/15 22:21:44   Datapoints sent:        0
-verifier-1  | 2026/02/15 22:21:44   Batches sent:           0
-verifier-1  | 2026/02/15 22:21:44   Queue size:             0
-verifier-1  | 2026/02/15 22:21:44   Dropped total:          0
-verifier-1  | 2026/02/15 22:21:44   Export errors:          0
-verifier-1  | 2026/02/15 22:21:44 
-verifier-1  | 2026/02/15 22:21:44 VERIFICATION:
-verifier-1  | 2026/02/15 22:21:44   Ingestion rate:         0.00%
-verifier-1  | 2026/02/15 22:21:44   Pass threshold:         90.00%
-verifier-1  | 2026/02/15 22:21:44   Status:                 FAIL
-verifier-1  | 2026/02/15 22:21:44   Message:                Verification counter not found or zero
-verifier-1  | 2026/02/15 22:21:44 ========================================
-verifier-1  | 2026/02/15 22:21:44 Running verification: 0/13 checks passed (0.0%)
-verifier-1  | 2026/02/15 22:21:44 
+verifier-1  | 2026/02/16 17:42:30   Queue size:             0
+verifier-1  | 2026/02/16 17:42:30   Dropped total:          0
+verifier-1  | 2026/02/16 17:42:30   Export errors:          0
+verifier-1  | 2026/02/16 17:42:30 
+verifier-1  | 2026/02/16 17:42:30 VERIFICATION:
+verifier-1  | 2026/02/16 17:42:30   Ingestion rate:         0.00%
+verifier-1  | 2026/02/16 17:42:30   Pass threshold:         90.00%
+verifier-1  | 2026/02/16 17:42:30   Status:                 FAIL
+verifier-1  | 2026/02/16 17:42:30   Message:                Verification counter not found or zero
+verifier-1  | 2026/02/16 17:42:30 ========================================
+verifier-1  | 2026/02/16 17:42:30 Running verification: 0/12 checks passed (0.0%)
+verifier-1  | 2026/02/16 17:42:30 
+verifier-1  | 2026/02/16 17:42:45 Error querying metrics-governor stats: Get "http://metrics-governor:9090/metrics": dial tcp 172.20.0.5:9090: connect: connection refused
+verifier-1  | 2026/02/16 17:42:45 ========================================
+verifier-1  | 2026/02/16 17:42:45   VERIFICATION RESULT - FAIL
+verifier-1  | 2026/02/16 17:42:45 ========================================
+verifier-1  | 2026/02/16 17:42:45 Timestamp: 2026-02-16T17:42:45Z
+verifier-1  | 2026/02/16 17:42:45 
+verifier-1  | 2026/02/16 17:42:45 VICTORIAMETRICS:
+verifier-1  | 2026/02/16 17:42:45   Total time series:      90872
+verifier-1  | 2026/02/16 17:42:45   Unique metric names:    10
+verifier-1  | 2026/02/16 17:42:45   High cardinality TS:    0
+verifier-1  | 2026/02/16 17:42:45   Verification counter:   0
+verifier-1  | 2026/02/16 17:42:45 
+verifier-1  | 2026/02/16 17:42:45 METRICS-GOVERNOR:
+verifier-1  | 2026/02/16 17:42:45   Datapoints received:    0
+verifier-1  | 2026/02/16 17:42:45   Datapoints sent:        0
+verifier-1  | 2026/02/16 17:42:45   Batches sent:           0
+verifier-1  | 2026/02/16 17:42:45   Queue size:             0
+verifier-1  | 2026/02/16 17:42:45   Dropped total:          0
+verifier-1  | 2026/02/16 17:42:45   Export errors:          0
+verifier-1  | 2026/02/16 17:42:45 
+verifier-1  | 2026/02/16 17:42:45 VERIFICATION:
+verifier-1  | 2026/02/16 17:42:45   Ingestion rate:         0.00%
+verifier-1  | 2026/02/16 17:42:45   Pass threshold:         90.00%
+verifier-1  | 2026/02/16 17:42:45   Status:                 FAIL
+verifier-1  | 2026/02/16 17:42:45   Message:                Verification counter not found or zero
+verifier-1  | 2026/02/16 17:42:45 ========================================
+verifier-1  | 2026/02/16 17:42:45 Running verification: 0/13 checks passed (0.0%)
+verifier-1  | 2026/02/16 17:42:45 

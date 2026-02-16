@@ -1,40 +1,40 @@
-verifier-1  | 2026/02/15 22:35:22   Batches sent:           0
-verifier-1  | 2026/02/15 22:35:22   Queue size:             0
-verifier-1  | 2026/02/15 22:35:22   Dropped total:          0
-verifier-1  | 2026/02/15 22:35:22   Export errors:          0
-verifier-1  | 2026/02/15 22:35:22 
-verifier-1  | 2026/02/15 22:35:22 VERIFICATION:
-verifier-1  | 2026/02/15 22:35:22   Ingestion rate:         100.00%
-verifier-1  | 2026/02/15 22:35:22   Pass threshold:         90.00%
-verifier-1  | 2026/02/15 22:35:22   Status:                 PASS
-verifier-1  | 2026/02/15 22:35:22   Message:                Data flowing, no errors detected
-verifier-1  | 2026/02/15 22:35:22 ========================================
-verifier-1  | 2026/02/15 22:35:22 Running verification: 12/12 checks passed (100.0%)
-verifier-1  | 2026/02/15 22:35:22 
-verifier-1  | 2026/02/15 22:35:37 ========================================
-verifier-1  | 2026/02/15 22:35:37   VERIFICATION RESULT - PASS
-verifier-1  | 2026/02/15 22:35:37 ========================================
-verifier-1  | 2026/02/15 22:35:37 Timestamp: 2026-02-15T22:35:37Z
-verifier-1  | 2026/02/15 22:35:37 
-verifier-1  | 2026/02/15 22:35:37 VICTORIAMETRICS:
-verifier-1  | 2026/02/15 22:35:37   Total time series:      92330
-verifier-1  | 2026/02/15 22:35:37   Unique metric names:    10
-verifier-1  | 2026/02/15 22:35:37   High cardinality TS:    25926
-verifier-1  | 2026/02/15 22:35:37   Verification counter:   1833
-verifier-1  | 2026/02/15 22:35:37 
-verifier-1  | 2026/02/15 22:35:37 METRICS-GOVERNOR:
-verifier-1  | 2026/02/15 22:35:37   Datapoints received:    0
-verifier-1  | 2026/02/15 22:35:37   Datapoints sent:        0
-verifier-1  | 2026/02/15 22:35:37   Batches sent:           0
-verifier-1  | 2026/02/15 22:35:37   Queue size:             0
-verifier-1  | 2026/02/15 22:35:37   Dropped total:          0
-verifier-1  | 2026/02/15 22:35:37   Export errors:          0
-verifier-1  | 2026/02/15 22:35:37 
-verifier-1  | 2026/02/15 22:35:37 VERIFICATION:
-verifier-1  | 2026/02/15 22:35:37   Ingestion rate:         100.00%
-verifier-1  | 2026/02/15 22:35:37   Pass threshold:         90.00%
-verifier-1  | 2026/02/15 22:35:37   Status:                 PASS
-verifier-1  | 2026/02/15 22:35:37   Message:                Data flowing, no errors detected
-verifier-1  | 2026/02/15 22:35:37 ========================================
-verifier-1  | 2026/02/15 22:35:37 Running verification: 13/13 checks passed (100.0%)
-verifier-1  | 2026/02/15 22:35:37 
+verifier-1  | 2026/02/16 17:16:13   Batches sent:           0
+verifier-1  | 2026/02/16 17:16:13   Queue size:             0
+verifier-1  | 2026/02/16 17:16:13   Dropped total:          0
+verifier-1  | 2026/02/16 17:16:13   Export errors:          0
+verifier-1  | 2026/02/16 17:16:13 
+verifier-1  | 2026/02/16 17:16:13 VERIFICATION:
+verifier-1  | 2026/02/16 17:16:13   Ingestion rate:         100.00%
+verifier-1  | 2026/02/16 17:16:13   Pass threshold:         90.00%
+verifier-1  | 2026/02/16 17:16:13   Status:                 PASS
+verifier-1  | 2026/02/16 17:16:13   Message:                Data flowing, no errors detected
+verifier-1  | 2026/02/16 17:16:13 ========================================
+verifier-1  | 2026/02/16 17:16:13 Running verification: 12/12 checks passed (100.0%)
+verifier-1  | 2026/02/16 17:16:13 
+verifier-1  | 2026/02/16 17:16:28 ========================================
+verifier-1  | 2026/02/16 17:16:28   VERIFICATION RESULT - PASS
+verifier-1  | 2026/02/16 17:16:28 ========================================
+verifier-1  | 2026/02/16 17:16:28 Timestamp: 2026-02-16T17:16:28Z
+verifier-1  | 2026/02/16 17:16:28 
+verifier-1  | 2026/02/16 17:16:28 VICTORIAMETRICS:
+verifier-1  | 2026/02/16 17:16:28   Total time series:      92361
+verifier-1  | 2026/02/16 17:16:28   Unique metric names:    10
+verifier-1  | 2026/02/16 17:16:28   High cardinality TS:    25952
+verifier-1  | 2026/02/16 17:16:28   Verification counter:   1829
+verifier-1  | 2026/02/16 17:16:28 
+verifier-1  | 2026/02/16 17:16:28 METRICS-GOVERNOR:
+verifier-1  | 2026/02/16 17:16:28   Datapoints received:    0
+verifier-1  | 2026/02/16 17:16:28   Datapoints sent:        0
+verifier-1  | 2026/02/16 17:16:28   Batches sent:           0
+verifier-1  | 2026/02/16 17:16:28   Queue size:             0
+verifier-1  | 2026/02/16 17:16:28   Dropped total:          0
+verifier-1  | 2026/02/16 17:16:28   Export errors:          0
+verifier-1  | 2026/02/16 17:16:28 
+verifier-1  | 2026/02/16 17:16:28 VERIFICATION:
+verifier-1  | 2026/02/16 17:16:28   Ingestion rate:         100.00%
+verifier-1  | 2026/02/16 17:16:28   Pass threshold:         90.00%
+verifier-1  | 2026/02/16 17:16:28   Status:                 PASS
+verifier-1  | 2026/02/16 17:16:28   Message:                Data flowing, no errors detected
+verifier-1  | 2026/02/16 17:16:28 ========================================
+verifier-1  | 2026/02/16 17:16:28 Running verification: 13/13 checks passed (100.0%)
+verifier-1  | 2026/02/16 17:16:28 
