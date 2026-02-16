@@ -486,7 +486,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./base-coverage-cache
-          key: base-coverage-${{ github.event.pull_request.base.sha }}
+          key: base-coverage-v2-${{ github.event.pull_request.base.sha }}
 
       - name: Get base branch coverage
         id: base_coverage
