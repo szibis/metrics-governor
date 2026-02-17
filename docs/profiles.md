@@ -58,7 +58,7 @@ Best for: local development, CI testing, non-critical metrics, sidecar mode.
 **Resource target:** 1–2 CPU, 64–256 MB RAM, no disk required
 **Max throughput:** ~150k dps
 
-Best for: production infrastructure monitoring, medium cardinality.
+Best for: production infrastructure monitoring, medium cardinality. The default profile — optimized for the best balance of performance and memory efficiency.
 
 | Feature | Status | Why |
 |---------|--------|-----|
@@ -72,7 +72,14 @@ Best for: production infrastructure monitoring, medium cardinality.
 | Stats | Basic | Per-metric counts |
 | Bloom persistence | Off | Memory queue — no disk backend |
 
-The balanced profile uses reduced memory allocation percentages (buffer 7%, queue 5%) and a smaller buffer pre-allocation (2000) compared to other profiles, keeping the memory footprint low. Combined with Green Tea GC (`GOEXPERIMENT=greenteagc`), this achieves lower CPU usage with competitive memory efficiency.
+**Memory optimization** (v1.0.3): The balanced profile uses reduced memory allocation percentages (buffer 7%, queue 5%) and a smaller buffer pre-allocation (2000) compared to other profiles. GOGC=100 halves GC headroom while Green Tea GC (`GOEXPERIMENT=greenteagc`) compensates for frequency. Result: **48% lower memory** at 50k dps (37.5%→19.5%) with only +0.19pp CPU increase.
+
+**Measured performance** (4-core, 1 GB container, OTLP gRPC→HTTP):
+
+| Load | CPU avg | Memory avg | Ingestion |
+|------|---------|-----------|-----------|
+| 50k dps | 4.51% | 19.5% | 99.25% |
+| 100k dps | 6.47% | 18.4% | 99.53% |
 
 **Prerequisites:**
 - Recommended: 256+ MB memory for adaptive tuning overhead

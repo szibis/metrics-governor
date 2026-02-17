@@ -7,7 +7,7 @@
 <p align="center">
 
 [![Release](https://img.shields.io/github/v/release/szibis/metrics-governor?style=for-the-badge&logo=github&label=Release&color=2ea44f)](https://github.com/szibis/metrics-governor/releases/latest)
-[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge&logo=apache)](LICENSE)
 
 [![Build](https://img.shields.io/github/actions/workflow/status/szibis/metrics-governor/build.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=Build)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
@@ -35,17 +35,105 @@
 
 **metrics-governor** is a high-performance metrics governance proxy for **OTLP** and **Prometheus Remote Write**. Drop it between your apps and your backend to control cardinality, transform metrics in-flight, and scale horizontally — with zero data loss.
 
+**Any pipeline. Any backend. On-prem or cloud.** Whether you're shipping metrics to Prometheus, Grafana Cloud, Datadog, Splunk, VictoriaMetrics, or any OTLP-compatible backend — metrics-governor sits in front and gives you governance powers that no collector, agent, or vendor provides out of the box.
+
 > **Two native pipelines. Zero conversion. Zero allocation.** OTLP stays OTLP. PRW stays PRW. Each protocol runs its own receive-process-export path with full feature parity, no conversion overhead, and zero-allocation serialization via [vtprotobuf](https://github.com/planetscale/vtprotobuf).
 
-### What's New in v1.0
+### What's New
 
-- **v1.0 stable release** — All 15 deprecated CLI flags, legacy sampling metrics, and backward-compatibility shims removed. Clean, unified API surface with the processing engine handling all operations.
-- **vtprotobuf integration** (v0.44) — Zero-allocation protobuf marshal/unmarshal via [PlanetScale vtprotobuf](https://github.com/planetscale/vtprotobuf) with `sync.Pool` message reuse across all OTLP pipelines. Measured **<1% CPU** at 100k dps and **~60 MiB** base memory.
-- **sync.Pool memory optimizations** (v0.43) — Pool-based allocation reuse for buffer operations, reducing GC pressure under sustained load.
-- **Pipeline stability improvements** (v0.42) — Predictable pipeline behavior under backpressure with improved queue drain ordering.
-- **3,100+ tests** — Comprehensive test coverage including vtprotobuf integration, race detector, and parity tests across all packages.
+- **v1.0.1 — Memory optimization** — GOGC tuning (200→100) + Green Tea GC + reduced buffer/queue allocation. Memory at 50k dps dropped **48%** (37.5%→19.5%) with only +0.19pp CPU. Memory budget metrics added for operational visibility. [Details](docs/performance.md)
+- **v1.0 stable release** — All 15 deprecated CLI flags, legacy sampling metrics, and backward-compatibility shims removed. Clean, unified API surface.
+- **vtprotobuf integration** (v0.44) — Zero-allocation protobuf marshal/unmarshal via [PlanetScale vtprotobuf](https://github.com/planetscale/vtprotobuf) with `sync.Pool` message reuse. Measured **<1% CPU** at 100k dps.
+- **Pipeline performance** (v1.0.1) — Lock-free atomic counters, single-shot zstd, pooled compression. Stats full-mode now viable for production.
+- **3,100+ tests** — Comprehensive coverage including race detector, vtprotobuf integration, and parity tests across all packages.
 
 > Migrating from v0.x? All deprecated flags have replacements — see [DEPRECATIONS.md](DEPRECATIONS.md) for the full migration table.
+
+### The Cardinality Problem — And Why It's Still Unsolved
+
+Metric cardinality is the silent budget killer in observability. Every distinct combination of metric name and label values creates a separate time series. One unbounded label — a user ID, a request path, an ephemeral container name — can turn a single counter into millions of series, crushing your storage backend and exploding your costs.
+
+**What's missing across the industry is governance *in transit*** — intelligence between your apps and your backend that knows who the offenders are, protects everyone else, and escalates gradually instead of cutting blindly. That's what metrics-governor does.
+
+### Comparison: Open-Source Collectors & Agents
+
+How metrics-governor compares against the most common open-source metrics collectors and agents:
+
+| Feature | [metrics-governor](https://github.com/szibis/metrics-governor) | [OTel Collector](https://opentelemetry.io/docs/collector/) | [Grafana Alloy](https://grafana.com/oss/alloy-opentelemetry-collector/) | [vmagent](https://docs.victoriametrics.com/vmagent/) | [Vector](https://vector.dev/) | [Prometheus](https://prometheus.io/) | [Cribl Stream](https://cribl.io/stream/) |
+|---------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Cardinality Governance** | | | | | | | |
+| Adaptive limiting (drop only top offenders) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Tiered escalation (log→sample→strip→drop) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Per-group / per-tenant quotas | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ |
+| Dry-run mode for limits | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ |
+| Dead rule detection | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Rule ownership labels (team routing) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Processing** | | | | | | | |
+| Static filter / drop | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Label transform (rename, regex, add/remove) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Downsample (per-series temporal compression) | ✅ | ❌ | ❌ | ⚠️ | ❌ | ❌ | ❌ |
+| Cross-series aggregation (avg, sum, p95) | ✅ | ⚠️ | ⚠️ | ✅ | ⚠️ | ⚠️ | ⚠️ |
+| Classify (derive ownership labels) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ |
+| **Pipeline** | | | | | | | |
+| OTLP native (gRPC + HTTP) | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | ⚠️ | ✅ |
+| PRW native (no conversion) | ✅ | ⚠️ | ⚠️ | ✅ | ✅ | ✅ | ✅ |
+| Persistent queue / zero data loss | ✅ | ⚠️ | ⚠️ | ✅ | ✅ | ⚠️ | ✅ |
+| Consistent hash sharding | ✅ | ❌ | ⚠️ | ⚠️ | ❌ | ❌ | ⚠️ |
+| Circuit breaker / backpressure | ✅ | ⚠️ | ⚠️ | ⚠️ | ✅ | ⚠️ | ✅ |
+
+<details>
+<summary>Legend and notes</summary>
+
+- ✅ Fully supported — ⚠️ Partial or limited — ❌ Not available
+- **vmagent** OTLP: experimental ingestion since v1.93+, primarily PRW-focused
+- **vmagent** downsample: stream aggregation provides time-based aggregation, not per-series compression algorithms (LTTB, SDT, CV-based)
+- **vmagent** sharding: requires external hashmod relabeling across multiple instances
+- **OTel Collector** PRW: available via contrib receiver/exporter, involves internal conversion
+- **OTel Collector** aggregation: `groupbyattrsprocessor` provides basic grouping, not full statistical aggregation
+- **OTel Collector** persistent queue: `file_storage` extension, limited compared to dedicated disk queue
+- **Grafana Alloy** sharding: clustering mode with hash ring distribution
+- **Vector** OTLP: source and sink available, later addition to the platform
+- **Vector** aggregation: `aggregate` transform provides interval-based reduction, limited cross-series operations
+- **Prometheus** OTLP: receiver available since v2.47+, recording rules provide aggregation (not in forwarding path)
+- **Prometheus** persistent queue: WAL-based remote write queue, limited durability guarantees
+- **Cribl Stream** quotas: routing by source/destination, not per-metric-group adaptive enforcement
+- **Cribl Stream** classify: data classification available, not metrics-ownership-specific
+
+</details>
+
+### Comparison: Vendor Cardinality Management
+
+How metrics-governor's in-transit governance compares against vendor-side cardinality management solutions:
+
+| Feature | [metrics-governor](https://github.com/szibis/metrics-governor) | [Datadog MwL](https://docs.datadoghq.com/metrics/metrics-without-limits/) | [Grafana Adaptive Metrics](https://grafana.com/docs/grafana-cloud/cost-management-and-billing/reduce-costs/metrics-costs/control-metrics-usage-via-adaptive-metrics/) | [Splunk MPM](https://docs.splunk.com/observability/en/infrastructure/metrics-pipeline/metrics-pipeline.html) | [Chronosphere](https://chronosphere.io/) | [New Relic](https://newrelic.com/) |
+|---------|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Where it runs** | **In transit** (your infra) | Backend (SaaS) | Backend (SaaS) | Backend (SaaS) | Backend (SaaS) | Backend (SaaS) |
+| **Open source** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Reduces volume before shipping** | ✅ | ❌ | ❌ | ❌ | ⚠️ | ❌ |
+| Adaptive limiting (top offenders only) | ✅ | ❌ | ⚠️ | ❌ | ⚠️ | ❌ |
+| Tiered escalation | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Tag allowlist / blocklist | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ |
+| Per-group / per-tenant quotas | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Unused dimension detection | ⚠️ | ✅ | ✅ | ✅ | ✅ | ⚠️ |
+| ML-based recommendations | ❌ | ❌ | ✅ | ❌ | ⚠️ | ❌ |
+| Downsample / aggregate in-transit | ✅ | ❌ | ❌ | ⚠️ | ❌ | ❌ |
+| Dead rule detection | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Works with any backend | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| No vendor lock-in | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Self-hosted / on-prem | ✅ | ❌ | ❌ | ❌ | ⚠️ | ❌ |
+
+<details>
+<summary>Legend and notes</summary>
+
+- ✅ Fully supported — ⚠️ Partial or limited — ❌ Not available
+- **Datadog Metrics without Limits**: Decouples ingestion from indexing — all data is ingested (and billed), you choose which tags to keep queryable. Does not reduce data in transit.
+- **Grafana Adaptive Metrics**: ML-based recommendations for tag aggregation in Grafana Cloud. Suggestions only — requires manual approval. Cloud-only, not available on-prem.
+- **Splunk MPM**: Dimension utilization ranking (R0-R5), aggregation rules. Available in Splunk Observability Cloud only. Aggregation reduces stored MTS but doesn't reduce ingest volume.
+- **Chronosphere**: Control plane with aggregation rules and quotas. Available as SaaS and on-prem (limited). Reduces stored data but relies on Chronosphere's storage.
+- **New Relic**: Drop rules and data management. Limited cardinality-specific controls compared to dedicated governance tools.
+- **metrics-governor** unused dimension detection: Dead rule detection tracks stale rules; per-metric stats in `full` mode tracks cardinality per metric. Not ML-based discovery.
+
+</details>
 
 ### Universal Governance for Mixed Environments
 
@@ -59,18 +147,17 @@ Whether you're running **legacy Prometheus Remote Write**, migrating to **modern
 
 | Challenge | How metrics-governor Solves It |
 |-----------|-------------------------------|
-| **Cardinality explosions** crush your backend | [Adaptive limiting](docs/limits.md) identifies and drops only the top offenders — well-behaved services keep flowing |
-| **Raw volume** too high for storage budget | [Processing rules](docs/processing-rules.md) sample, downsample, aggregate, classify, transform, or drop metrics before they leave the proxy |
+| **Cardinality explosions** crush your backend | [Adaptive limiting](docs/limits.md) identifies and drops only the **top offenders** — well-behaved services keep flowing |
+| **All-or-nothing** enforcement kills good data | [Tiered escalation](docs/limits.md) with graduated responses: log → sample → strip labels → drop |
+| **Raw volume** too high for storage budget | [Processing rules](docs/processing-rules.md) sample, downsample, aggregate, classify, transform, or drop metrics **before they leave the proxy** |
+| **Storage explosion** from a noisy tenant | [Multi-tenancy](docs/tenant.md) with per-tenant quotas and [adaptive limits](docs/limits.md) — detect tenants, enforce budgets, protect storage without blanket-dropping |
+| **No team accountability** for metric costs | [Rule ownership labels](docs/processing-rules.md) attach `team`, `slack_channel`, `pagerduty_service` to any rule for Alertmanager routing |
 | **Data loss** during backend outages | [Always-queue architecture](docs/resilience.md) with circuit breaker, persistent disk queue, and exponential backoff — zero data loss by default |
 | **Single backend** can't keep up | [Consistent sharding](docs/sharding.md) fans out to N backends via K8s DNS discovery with stable hash routing |
 | **No visibility** into the metrics pipeline | [Real-time stats](docs/statistics.md), [13 production alerts](docs/alerting.md), [Grafana dashboards](dashboards/), and [dead rule detection](docs/processing-rules.md#dead-rule-detection) |
 | **Unpredictable costs** from runaway services | [Per-group tracking](docs/limits.md) with configurable limits, dry-run mode, and ownership labels for team routing |
-| **Need team/severity labels** derived from business values | [Transform rules](docs/processing-rules.md) mangle labels — build `severity`, `team`, `env` from product metric names and label values |
-| **Elastic-style data reshaping** before storage | [Classify + Transform](docs/processing-rules.md) chain: classify metrics into categories, then transform labels to match your storage schema |
-| **Storage explosion** from a single noisy tenant | [Multi-tenancy](docs/tenant.md) with per-tenant quotas and [adaptive limits](docs/limits.md) — detect tenants, enforce budgets, protect storage without blanket-dropping good data |
+| **Need team/severity labels** derived from business values | [Transform rules](docs/processing-rules.md) — build `severity`, `team`, `env` from metric names and label values |
 | **Stale rules** pile up unnoticed | [Dead rule detection](docs/processing-rules.md#dead-rule-detection) tracks last-match time for every rule, with alerts for stale cleanup |
-| **No team accountability** for metric costs | [Rule ownership labels](docs/processing-rules.md) attach `team`, `slack_channel`, `pagerduty_service` to any rule for alert routing |
-| **All-or-nothing** enforcement kills good data | [Tiered escalation](docs/limits.md) with graduated responses: log → sample → strip labels → drop |
 | **Complex deployment** planning | [Interactive Playground](https://szibis.github.io/metrics-governor/) generates Helm, app, and limits YAML from your throughput inputs |
 
 ---
@@ -230,20 +317,31 @@ Six actions in a single ordered pipeline — first match wins:
 
 ## Performance at a Glance
 
-| Metric | Value |
-|--------|-------|
-| Throughput (4-core, OTLP→HTTP) | **~500k datapoints/sec** with pipeline split + async send |
+**Measured comparison** — governor vs OTel Collector vs vmagent (4-core, 1 GB, OTLP gRPC → HTTP):
+
+| Load | Tool | CPU avg | Memory avg | Ingestion |
+|------|------|---------|-----------|-----------|
+| **50k dps** | **metrics-governor** (balanced) | **4.51%** | **19.5%** | 99.25% |
+| | OTel Collector | 4.51% | 15.3% | 99.83% |
+| | vmagent | 2.94% | 7.3% | 99.90% |
+| **100k dps** | **metrics-governor** (balanced) | **6.47%** | **18.4%** | 99.53% |
+| | OTel Collector | 6.58% | 9.3% | 99.83% |
+| | vmagent | 16.70% | 3.2% | 99.83% |
+
+Governor scales **sublinearly**: 1.43x CPU for 2x load (50k→100k). At 100k dps, governor uses **less CPU than OTel Collector** while providing full governance features neither tool offers.
+
+| Optimization | Impact |
+|-------------|--------|
 | vtprotobuf marshal/unmarshal | **Zero allocations** — `sync.Pool` message reuse, near-zero GC pressure |
-| Measured CPU @ 100k dps | **<1% average** (minimal profile, vtprotobuf) |
-| Measured memory @ 15k dps | **~60 MiB** base overhead (1 CPU, 512 MB container) |
-| Pipeline split improvement | **+60-76%** vs unified workers |
+| Pipeline split | **+60-76% throughput** — CPU-bound preparers + I/O-bound senders |
+| Green Tea GC + GOGC=100 | **48% memory reduction** vs default GC tuning |
 | Cardinality memory (Bloom) | **1.2 MB** per 1M series (98% less than maps) |
-| String interning | **76%** fewer allocations |
+| String interning | **76%** fewer allocations on the hot path |
 | Disk I/O (buffered + coalesced) | **128x fewer IOPS**, 70% less throughput |
 | Queue compression (snappy) | **2.5-3x** storage capacity |
 | Two-tier traffic reduction | **10-50x** between DaemonSet and StatefulSet tiers |
 
-See [Performance Guide](docs/performance.md) and [Benchmarks](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml) for methodology and results.
+See [Performance Guide](docs/performance.md) and [Benchmarks](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml) for methodology and full results.
 
 ---
 
