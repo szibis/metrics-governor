@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine AS builder
+FROM golang:1.26.0-alpine AS builder
 
 WORKDIR /app
 COPY main.go .
@@ -7,7 +7,7 @@ COPY main.go .
 RUN go mod init verifier && \
     go build -o verifier .
 
-FROM alpine:3.19
+FROM alpine:3.23
 
 COPY --from=builder /app/verifier /usr/local/bin/verifier
 
