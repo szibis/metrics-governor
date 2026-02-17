@@ -315,13 +315,11 @@ jobs:
             echo "has_rust=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Install Rust toolchain
+      - name: Install Rust toolchain + cargo-audit
         if: steps.check.outputs.has_rust == 'true'
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-audit
-        if: steps.check.outputs.has_rust == 'true'
-        run: cargo install cargo-audit
+        run: |
+          rustup default stable && rustup update stable
+          cargo install cargo-audit
 
       - name: Run cargo audit
         id: audit
