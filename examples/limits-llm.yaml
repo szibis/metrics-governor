@@ -1,0 +1,90 @@
+# Example: LLM/GenAI metric governance with metrics-governor
+#
+# This configuration demonstrates two complementary approaches to governing
+# LLM observability metrics flowing through OTel GenAI semantic conventions.
+#
+# Approach A: Limits rules (uses existing limits engine)
+#   - Model version collapse (gpt-4-0125-preview → gpt-4)
+#   - Per-user cardinality caps on token usage metrics
+#   - Rate limits for high-frequency operation duration histograms
+#
+# Approach B: Token budget tracking (new internal/llm tracker)
+#   - Configured in the main governor config (stats.llm section)
+#   - See docs/llm-governance.md for full documentation
+#
+# Usage:
+#   metrics-governor --limits-config=examples/limits-llm.yaml
+#
+# For token budget tracking, add to your config.yaml:
+#   stats:
+#     llm:
+#       enabled: true
+#       budgets:
+#         - provider: "openai"
+#           model: "gpt-4*"
+#           daily_tokens: 1000000
+
+defaults:
+  max_datapoints_rate: 5000000
+  max_cardinality: 200000
+  action: log
+
+rules:
+  # --- Model Version Collapse ---
+  # Date-stamped model versions create unbounded cardinality:
+  #   gpt-4-0125-preview, gpt-4-1106-preview, gpt-4-turbo-2024-04-09, ...
+  # Relabel to base model family to reduce series by 10-50x.
+  - name: "llm-model-version-collapse"
+    match:
+      metric_name: "gen_ai\\..*"
+      labels:
+        gen_ai.request.model: "gpt-4-*"
+    max_cardinality: 50000
+    action: adaptive
+    group_by: ["gen_ai.request.model"]
+
+  # --- Per-User Cardinality Cap ---
+  # LLM APIs often add per-user/per-session dimensions:
+  #   gen_ai.user, gen_ai.session.id, gen_ai.request.id
+  # Cap cardinality to prevent individual users from exploding series count.
+  - name: "llm-per-user-cardinality-cap"
+    match:
+      metric_name: "gen_ai\\.client\\.token\\.usage"
+    max_cardinality: 10000
+    action: adaptive
+    group_by: ["gen_ai.system", "gen_ai.request.model"]
+
+  # --- Operation Duration Rate Limit ---
+  # gen_ai.client.operation.duration is a histogram that can produce
+  # high datapoint rates with many models × operations × users.
+  - name: "llm-operation-duration-rate"
+    match:
+      metric_name: "gen_ai\\.client\\.operation\\.duration"
+    max_datapoints_rate: 100000
+    max_cardinality: 20000
+    action: adaptive
+    group_by: ["gen_ai.system", "gen_ai.operation.name"]
+
+  # --- Embedding Metrics Governance ---
+  # Embedding calls can be extremely high frequency (vector DBs, RAG).
+  # Limit their contribution to avoid drowning out other gen_ai metrics.
+  - name: "llm-embedding-rate-limit"
+    match:
+      metric_name: "gen_ai\\.client\\..*"
+      labels:
+        gen_ai.operation.name: "embeddings"
+    max_datapoints_rate: 50000
+    max_cardinality: 5000
+    action: adaptive
+    group_by: ["gen_ai.system", "gen_ai.request.model"]
+
+  # --- Multi-Provider Observation ---
+  # Track all gen_ai metrics per provider for visibility,
+  # using log action (observe without dropping).
+  - name: "llm-provider-observation"
+    match:
+      metric_name: "gen_ai\\..*"
+    max_datapoints_rate: 500000
+    max_cardinality: 100000
+    action: log
+    group_by: ["gen_ai.system"]
