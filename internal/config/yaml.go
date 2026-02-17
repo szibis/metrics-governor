@@ -280,6 +280,7 @@ type StatsYAMLConfig struct {
 	CardinalityThreshold int           `yaml:"cardinality_threshold"`
 	MaxLabelCombinations int           `yaml:"max_label_combinations"`
 	SLI                  SLIYAMLConfig `yaml:"sli"`
+	LLM                  LLMYAMLConfig `yaml:"llm"`
 }
 
 // SLIYAMLConfig holds SLI/SLO configuration.
@@ -288,6 +289,21 @@ type SLIYAMLConfig struct {
 	DeliveryTarget float64  `yaml:"delivery_target"`
 	ExportTarget   float64  `yaml:"export_target"`
 	BudgetWindow   Duration `yaml:"budget_window"`
+}
+
+// LLMYAMLConfig holds LLM token budget tracking configuration.
+type LLMYAMLConfig struct {
+	Enabled      *bool            `yaml:"enabled"`
+	TokenMetric  string           `yaml:"token_metric"`
+	BudgetWindow Duration         `yaml:"budget_window"`
+	Budgets      []BudgetRuleYAML `yaml:"budgets"`
+}
+
+// BudgetRuleYAML holds a single token budget rule.
+type BudgetRuleYAML struct {
+	Provider    string `yaml:"provider"`
+	Model       string `yaml:"model"`
+	DailyTokens int64  `yaml:"daily_tokens"`
 }
 
 // LimitsYAMLConfig holds limits configuration.
@@ -525,6 +541,18 @@ func (y *YAMLConfig) ApplyDefaults() {
 	}
 	if y.Stats.SLI.BudgetWindow == 0 {
 		y.Stats.SLI.BudgetWindow = Duration(720 * time.Hour)
+	}
+
+	// LLM defaults
+	if y.Stats.LLM.Enabled == nil {
+		enabled := false
+		y.Stats.LLM.Enabled = &enabled
+	}
+	if y.Stats.LLM.TokenMetric == "" {
+		y.Stats.LLM.TokenMetric = "gen_ai.client.token.usage"
+	}
+	if y.Stats.LLM.BudgetWindow == 0 {
+		y.Stats.LLM.BudgetWindow = Duration(24 * time.Hour)
 	}
 
 	// Limits defaults
@@ -816,6 +844,10 @@ func (y *YAMLConfig) ToConfig() *Config {
 		SLIDeliveryTarget:         y.Stats.SLI.DeliveryTarget,
 		SLIExportTarget:           y.Stats.SLI.ExportTarget,
 		SLIBudgetWindow:           time.Duration(y.Stats.SLI.BudgetWindow),
+		LLMEnabled:                *y.Stats.LLM.Enabled,
+		LLMTokenMetric:            y.Stats.LLM.TokenMetric,
+		LLMBudgetWindow:           time.Duration(y.Stats.LLM.BudgetWindow),
+		LLMBudgets:                convertLLMBudgets(y.Stats.LLM.Budgets),
 
 		// Limits
 		LimitsDryRun:         *y.Limits.DryRun,
@@ -925,6 +957,18 @@ func (y *YAMLConfig) ToConfig() *Config {
 }
 
 // headersMapToString converts a headers map to the comma-separated format.
+// convertLLMBudgets converts YAML budget rules to config budget rules.
+func convertLLMBudgets(budgets []BudgetRuleYAML) []LLMBudgetRule {
+	if len(budgets) == 0 {
+		return nil
+	}
+	rules := make([]LLMBudgetRule, len(budgets))
+	for i, b := range budgets {
+		rules[i] = LLMBudgetRule(b)
+	}
+	return rules
+}
+
 func headersMapToString(headers map[string]string) string {
 	if len(headers) == 0 {
 		return ""

@@ -1062,3 +1062,278 @@ receiver:
 		t.Errorf("MaxRequestBodySize = %d, want 10485760", cfg.Receiver.HTTP.Server.MaxRequestBodySize)
 	}
 }
+
+// --- LLM YAML Config Tests ---
+
+func TestParseYAMLLLMConfig(t *testing.T) {
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+stats:
+  llm:
+    enabled: true
+    token_metric: "custom.token.metric"
+    budget_window: 12h
+    budgets:
+      - provider: "openai"
+        model: "gpt-4*"
+        daily_tokens: 1000000
+      - provider: "anthropic"
+        model: "claude-*"
+        daily_tokens: 500000
+      - provider: "*"
+        model: "*"
+        daily_tokens: 2000000
+`
+	cfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	if *cfg.Stats.LLM.Enabled != true {
+		t.Error("expected LLM enabled true")
+	}
+	if cfg.Stats.LLM.TokenMetric != "custom.token.metric" {
+		t.Errorf("expected token_metric 'custom.token.metric', got %q", cfg.Stats.LLM.TokenMetric)
+	}
+	if time.Duration(cfg.Stats.LLM.BudgetWindow) != 12*time.Hour {
+		t.Errorf("expected budget_window 12h, got %v", time.Duration(cfg.Stats.LLM.BudgetWindow))
+	}
+	if len(cfg.Stats.LLM.Budgets) != 3 {
+		t.Fatalf("expected 3 budget rules, got %d", len(cfg.Stats.LLM.Budgets))
+	}
+	if cfg.Stats.LLM.Budgets[0].Provider != "openai" {
+		t.Errorf("expected first budget provider 'openai', got %q", cfg.Stats.LLM.Budgets[0].Provider)
+	}
+	if cfg.Stats.LLM.Budgets[0].Model != "gpt-4*" {
+		t.Errorf("expected first budget model 'gpt-4*', got %q", cfg.Stats.LLM.Budgets[0].Model)
+	}
+	if cfg.Stats.LLM.Budgets[0].DailyTokens != 1000000 {
+		t.Errorf("expected first budget daily_tokens 1000000, got %d", cfg.Stats.LLM.Budgets[0].DailyTokens)
+	}
+	if cfg.Stats.LLM.Budgets[2].Provider != "*" {
+		t.Errorf("expected third budget provider '*', got %q", cfg.Stats.LLM.Budgets[2].Provider)
+	}
+}
+
+func TestParseYAMLLLMConfigDisabled(t *testing.T) {
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+stats:
+  llm:
+    enabled: false
+`
+	cfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	if *cfg.Stats.LLM.Enabled != false {
+		t.Error("expected LLM enabled false")
+	}
+	if len(cfg.Stats.LLM.Budgets) != 0 {
+		t.Errorf("expected no budget rules when disabled, got %d", len(cfg.Stats.LLM.Budgets))
+	}
+}
+
+func TestParseYAMLLLMConfigMinimal(t *testing.T) {
+	// LLM section not specified at all
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+stats:
+  address: ":9090"
+`
+	cfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	// After ApplyDefaults, should have sane defaults
+	cfg.ApplyDefaults()
+
+	if *cfg.Stats.LLM.Enabled != false {
+		t.Error("expected LLM disabled by default")
+	}
+	if cfg.Stats.LLM.TokenMetric != "gen_ai.client.token.usage" {
+		t.Errorf("expected default token_metric, got %q", cfg.Stats.LLM.TokenMetric)
+	}
+	if time.Duration(cfg.Stats.LLM.BudgetWindow) != 24*time.Hour {
+		t.Errorf("expected default budget_window 24h, got %v", time.Duration(cfg.Stats.LLM.BudgetWindow))
+	}
+}
+
+func TestApplyDefaultsLLM(t *testing.T) {
+	cfg := &YAMLConfig{}
+	cfg.ApplyDefaults()
+
+	if cfg.Stats.LLM.Enabled == nil {
+		t.Fatal("expected LLM.Enabled to be non-nil after ApplyDefaults")
+	}
+	if *cfg.Stats.LLM.Enabled != false {
+		t.Error("expected LLM disabled by default")
+	}
+	if cfg.Stats.LLM.TokenMetric != "gen_ai.client.token.usage" {
+		t.Errorf("expected default token metric, got %q", cfg.Stats.LLM.TokenMetric)
+	}
+	if time.Duration(cfg.Stats.LLM.BudgetWindow) != 24*time.Hour {
+		t.Errorf("expected default budget window 24h, got %v", time.Duration(cfg.Stats.LLM.BudgetWindow))
+	}
+}
+
+func TestApplyDefaultsLLM_PreserveExplicit(t *testing.T) {
+	enabled := true
+	cfg := &YAMLConfig{}
+	cfg.Stats.LLM.Enabled = &enabled
+	cfg.Stats.LLM.TokenMetric = "custom.metric"
+	cfg.Stats.LLM.BudgetWindow = Duration(48 * time.Hour)
+
+	cfg.ApplyDefaults()
+
+	if *cfg.Stats.LLM.Enabled != true {
+		t.Error("expected explicit enabled=true to be preserved")
+	}
+	if cfg.Stats.LLM.TokenMetric != "custom.metric" {
+		t.Errorf("expected explicit token metric to be preserved, got %q", cfg.Stats.LLM.TokenMetric)
+	}
+	if time.Duration(cfg.Stats.LLM.BudgetWindow) != 48*time.Hour {
+		t.Errorf("expected explicit budget window to be preserved, got %v", time.Duration(cfg.Stats.LLM.BudgetWindow))
+	}
+}
+
+func TestToConfigLLMFields(t *testing.T) {
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+stats:
+  llm:
+    enabled: true
+    token_metric: "gen_ai.client.token.usage"
+    budget_window: 12h
+    budgets:
+      - provider: "openai"
+        model: "gpt-4*"
+        daily_tokens: 500000
+`
+	yamlCfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	cfg := yamlCfg.ToConfig()
+
+	if cfg.LLMEnabled != true {
+		t.Error("expected LLMEnabled true in Config")
+	}
+	if cfg.LLMTokenMetric != "gen_ai.client.token.usage" {
+		t.Errorf("expected LLMTokenMetric, got %q", cfg.LLMTokenMetric)
+	}
+	if cfg.LLMBudgetWindow != 12*time.Hour {
+		t.Errorf("expected LLMBudgetWindow 12h, got %v", cfg.LLMBudgetWindow)
+	}
+	if len(cfg.LLMBudgets) != 1 {
+		t.Fatalf("expected 1 budget rule, got %d", len(cfg.LLMBudgets))
+	}
+	if cfg.LLMBudgets[0].Provider != "openai" {
+		t.Errorf("expected budget provider 'openai', got %q", cfg.LLMBudgets[0].Provider)
+	}
+	if cfg.LLMBudgets[0].Model != "gpt-4*" {
+		t.Errorf("expected budget model 'gpt-4*', got %q", cfg.LLMBudgets[0].Model)
+	}
+	if cfg.LLMBudgets[0].DailyTokens != 500000 {
+		t.Errorf("expected budget daily_tokens 500000, got %d", cfg.LLMBudgets[0].DailyTokens)
+	}
+}
+
+func TestToConfigLLMFieldsDefaults(t *testing.T) {
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+`
+	yamlCfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	cfg := yamlCfg.ToConfig()
+
+	if cfg.LLMEnabled != false {
+		t.Error("expected LLMEnabled false by default")
+	}
+	if cfg.LLMTokenMetric != "gen_ai.client.token.usage" {
+		t.Errorf("expected default LLMTokenMetric, got %q", cfg.LLMTokenMetric)
+	}
+	if cfg.LLMBudgetWindow != 24*time.Hour {
+		t.Errorf("expected default LLMBudgetWindow 24h, got %v", cfg.LLMBudgetWindow)
+	}
+	if len(cfg.LLMBudgets) != 0 {
+		t.Errorf("expected no budget rules by default, got %d", len(cfg.LLMBudgets))
+	}
+}
+
+func TestToConfigLLMBudgetsMultiple(t *testing.T) {
+	yaml := `
+exporter:
+  endpoint: "test:4317"
+stats:
+  llm:
+    enabled: true
+    budgets:
+      - provider: "openai"
+        model: "gpt-4*"
+        daily_tokens: 1000000
+      - provider: "anthropic"
+        model: "claude-*"
+        daily_tokens: 500000
+      - provider: "*"
+        model: "*"
+        daily_tokens: 0
+`
+	yamlCfg, err := ParseYAML([]byte(yaml))
+	if err != nil {
+		t.Fatalf("failed to parse yaml: %v", err)
+	}
+
+	cfg := yamlCfg.ToConfig()
+
+	if len(cfg.LLMBudgets) != 3 {
+		t.Fatalf("expected 3 budget rules, got %d", len(cfg.LLMBudgets))
+	}
+	// Verify order is preserved
+	if cfg.LLMBudgets[0].DailyTokens != 1000000 {
+		t.Errorf("first rule daily_tokens = %d, want 1000000", cfg.LLMBudgets[0].DailyTokens)
+	}
+	if cfg.LLMBudgets[1].DailyTokens != 500000 {
+		t.Errorf("second rule daily_tokens = %d, want 500000", cfg.LLMBudgets[1].DailyTokens)
+	}
+	// Observe-only rule (daily_tokens=0)
+	if cfg.LLMBudgets[2].DailyTokens != 0 {
+		t.Errorf("third rule daily_tokens = %d, want 0 (observe-only)", cfg.LLMBudgets[2].DailyTokens)
+	}
+}
+
+func TestConvertLLMBudgets(t *testing.T) {
+	budgets := []BudgetRuleYAML{
+		{Provider: "openai", Model: "gpt-4*", DailyTokens: 1000000},
+		{Provider: "*", Model: "*", DailyTokens: 0},
+	}
+	rules := convertLLMBudgets(budgets)
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 rules, got %d", len(rules))
+	}
+	if rules[0].Provider != "openai" || rules[0].Model != "gpt-4*" || rules[0].DailyTokens != 1000000 {
+		t.Errorf("unexpected first rule: %+v", rules[0])
+	}
+}
+
+func TestConvertLLMBudgetsEmpty(t *testing.T) {
+	rules := convertLLMBudgets(nil)
+	if rules != nil {
+		t.Errorf("expected nil for empty input, got %v", rules)
+	}
+	rules = convertLLMBudgets([]BudgetRuleYAML{})
+	if rules != nil {
+		t.Errorf("expected nil for empty slice, got %v", rules)
+	}
+}
