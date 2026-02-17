@@ -275,10 +275,19 @@ type BatchAutoTuneYAMLConfig struct {
 
 // StatsYAMLConfig holds stats configuration.
 type StatsYAMLConfig struct {
-	Address              string   `yaml:"address"`
-	Labels               []string `yaml:"labels"`
-	CardinalityThreshold int      `yaml:"cardinality_threshold"`
-	MaxLabelCombinations int      `yaml:"max_label_combinations"`
+	Address              string        `yaml:"address"`
+	Labels               []string      `yaml:"labels"`
+	CardinalityThreshold int           `yaml:"cardinality_threshold"`
+	MaxLabelCombinations int           `yaml:"max_label_combinations"`
+	SLI                  SLIYAMLConfig `yaml:"sli"`
+}
+
+// SLIYAMLConfig holds SLI/SLO configuration.
+type SLIYAMLConfig struct {
+	Enabled        *bool    `yaml:"enabled"`
+	DeliveryTarget float64  `yaml:"delivery_target"`
+	ExportTarget   float64  `yaml:"export_target"`
+	BudgetWindow   Duration `yaml:"budget_window"`
 }
 
 // LimitsYAMLConfig holds limits configuration.
@@ -503,6 +512,19 @@ func (y *YAMLConfig) ApplyDefaults() {
 	// Stats defaults
 	if y.Stats.Address == "" {
 		y.Stats.Address = ":9090"
+	}
+	if y.Stats.SLI.Enabled == nil {
+		enabled := true
+		y.Stats.SLI.Enabled = &enabled
+	}
+	if y.Stats.SLI.DeliveryTarget == 0 {
+		y.Stats.SLI.DeliveryTarget = 0.999
+	}
+	if y.Stats.SLI.ExportTarget == 0 {
+		y.Stats.SLI.ExportTarget = 0.995
+	}
+	if y.Stats.SLI.BudgetWindow == 0 {
+		y.Stats.SLI.BudgetWindow = Duration(720 * time.Hour)
 	}
 
 	// Limits defaults
@@ -790,6 +812,10 @@ func (y *YAMLConfig) ToConfig() *Config {
 		StatsLabels:               strings.Join(y.Stats.Labels, ","),
 		StatsCardinalityThreshold: y.Stats.CardinalityThreshold,
 		StatsMaxLabelCombinations: y.Stats.MaxLabelCombinations,
+		SLIEnabled:                *y.Stats.SLI.Enabled,
+		SLIDeliveryTarget:         y.Stats.SLI.DeliveryTarget,
+		SLIExportTarget:           y.Stats.SLI.ExportTarget,
+		SLIBudgetWindow:           time.Duration(y.Stats.SLI.BudgetWindow),
 
 		// Limits
 		LimitsDryRun:         *y.Limits.DryRun,

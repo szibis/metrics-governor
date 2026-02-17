@@ -1,0 +1,167 @@
+# Supplementary Recording Rules for metrics-governor SLI/SLO
+#
+# ALTERNATIVE APPROACH: Use these if you prefer Prometheus-side computation
+# over governor-computed SLI metrics. The governor already exposes
+# metrics_governor_sli_* metrics directly — these recording rules produce
+# equivalent results using rate() over raw counters.
+#
+# Import: cp alerts/recording-rules.yaml /etc/prometheus/rules/
+# Reload: kill -HUP $(pidof prometheus)
+#
+# Note: These rules do NOT subtract intentional drops from the delivery
+# denominator. For policy-aware delivery ratios, use the governor-computed
+# metrics_governor_sli_delivery_ratio metric instead.
+
+groups:
+  - name: metrics-governor-slo-recording
+    interval: 30s
+    rules:
+      # ── Delivery Ratio (Prometheus-side) ──────────────────────────
+      #
+      # delivery_ratio = sent / received (OTLP + PRW)
+      # Does not subtract intentional drops — use governor metrics for that.
+
+      - record: metrics_governor:delivery_ratio:5m
+        expr: |
+          (
+            rate(metrics_governor_datapoints_sent_total[5m])
+            + rate(metrics_governor_prw_datapoints_sent_total[5m])
+          )
+          /
+          clamp_min(
+            rate(metrics_governor_datapoints_received_total[5m])
+            + rate(metrics_governor_prw_datapoints_received_total[5m]),
+            1
+          )
+
+      - record: metrics_governor:delivery_ratio:30m
+        expr: |
+          (
+            rate(metrics_governor_datapoints_sent_total[30m])
+            + rate(metrics_governor_prw_datapoints_sent_total[30m])
+          )
+          /
+          clamp_min(
+            rate(metrics_governor_datapoints_received_total[30m])
+            + rate(metrics_governor_prw_datapoints_received_total[30m]),
+            1
+          )
+
+      - record: metrics_governor:delivery_ratio:1h
+        expr: |
+          (
+            rate(metrics_governor_datapoints_sent_total[1h])
+            + rate(metrics_governor_prw_datapoints_sent_total[1h])
+          )
+          /
+          clamp_min(
+            rate(metrics_governor_datapoints_received_total[1h])
+            + rate(metrics_governor_prw_datapoints_received_total[1h]),
+            1
+          )
+
+      - record: metrics_governor:delivery_ratio:6h
+        expr: |
+          (
+            rate(metrics_governor_datapoints_sent_total[6h])
+            + rate(metrics_governor_prw_datapoints_sent_total[6h])
+          )
+          /
+          clamp_min(
+            rate(metrics_governor_datapoints_received_total[6h])
+            + rate(metrics_governor_prw_datapoints_received_total[6h]),
+            1
+          )
+
+      # ── Export Success Ratio (Prometheus-side) ────────────────────
+      #
+      # export_success = batches_sent / (batches_sent + export_errors)
+
+      - record: metrics_governor:export_success_ratio:5m
+        expr: |
+          (
+            rate(metrics_governor_batches_sent_total[5m])
+            + rate(metrics_governor_prw_batches_sent_total[5m])
+          )
+          /
+          clamp_min(
+            rate(metrics_governor_batches_sent_total[5m])
+            + rate(metrics_governor_prw_batches_sent_total[5m])
+            + rate(metrics_governor_export_errors_total[5m])
+            + rate(metrics_governor_prw_export_errors_total[5m]),
+            1
+          )
+
+      - record: metrics_governor:export_success_ratio:30m
+        expr: |
+          (
+            rate(metrics_governor_batches_sent_total[30m])
+            + rate(metrics_governor_prw_batches_sent_total[30m])
+          )
+          /
+          clamp_min(
+            rate(metrics_governor_batches_sent_total[30m])
+            + rate(metrics_governor_prw_batches_sent_total[30m])
+            + rate(metrics_governor_export_errors_total[30m])
+            + rate(metrics_governor_prw_export_errors_total[30m]),
+            1
+          )
+
+      - record: metrics_governor:export_success_ratio:1h
+        expr: |
+          (
+            rate(metrics_governor_batches_sent_total[1h])
+            + rate(metrics_governor_prw_batches_sent_total[1h])
+          )
+          /
+          clamp_min(
+            rate(metrics_governor_batches_sent_total[1h])
+            + rate(metrics_governor_prw_batches_sent_total[1h])
+            + rate(metrics_governor_export_errors_total[1h])
+            + rate(metrics_governor_prw_export_errors_total[1h]),
+            1
+          )
+
+      - record: metrics_governor:export_success_ratio:6h
+        expr: |
+          (
+            rate(metrics_governor_batches_sent_total[6h])
+            + rate(metrics_governor_prw_batches_sent_total[6h])
+          )
+          /
+          clamp_min(
+            rate(metrics_governor_batches_sent_total[6h])
+            + rate(metrics_governor_prw_batches_sent_total[6h])
+            + rate(metrics_governor_export_errors_total[6h])
+            + rate(metrics_governor_prw_export_errors_total[6h]),
+            1
+          )
+
+      # ── Burn Rates (Prometheus-side) ──────────────────────────────
+      #
+      # burn_rate = (1 - ratio) / (1 - target)
+      # Default targets: delivery=0.999, export=0.995
+
+      - record: metrics_governor:delivery_burn_rate:5m
+        expr: (1 - metrics_governor:delivery_ratio:5m) / 0.001
+
+      - record: metrics_governor:delivery_burn_rate:30m
+        expr: (1 - metrics_governor:delivery_ratio:30m) / 0.001
+
+      - record: metrics_governor:delivery_burn_rate:1h
+        expr: (1 - metrics_governor:delivery_ratio:1h) / 0.001
+
+      - record: metrics_governor:delivery_burn_rate:6h
+        expr: (1 - metrics_governor:delivery_ratio:6h) / 0.001
+
+      - record: metrics_governor:export_burn_rate:5m
+        expr: (1 - metrics_governor:export_success_ratio:5m) / 0.005
+
+      - record: metrics_governor:export_burn_rate:30m
+        expr: (1 - metrics_governor:export_success_ratio:30m) / 0.005
+
+      - record: metrics_governor:export_burn_rate:1h
+        expr: (1 - metrics_governor:export_success_ratio:1h) / 0.005
+
+      - record: metrics_governor:export_burn_rate:6h
+        expr: (1 - metrics_governor:export_success_ratio:6h) / 0.005

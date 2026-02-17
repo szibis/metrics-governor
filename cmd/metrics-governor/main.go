@@ -399,6 +399,7 @@ func main() {
 		SetDryRun(dryRun bool)
 		DryRun() bool
 		SetStatsThreshold(int64)
+		TotalDropped() int64
 		Stop()
 	}
 	if cfg.LimitsConfig != "" {
@@ -718,6 +719,27 @@ func main() {
 			logging.Error("stats server error", logging.F("error", err.Error()))
 		}
 	}()
+
+	// Configure SLI tracker (governor-computed SLI metrics)
+	if statsCollector != nil && cfg.SLIEnabled {
+		sliCfg := stats.SLIConfig{
+			Enabled:        cfg.SLIEnabled,
+			DeliveryTarget: cfg.SLIDeliveryTarget,
+			ExportTarget:   cfg.SLIExportTarget,
+			BudgetWindow:   cfg.SLIBudgetWindow,
+		}
+		var dropsProvider func() int64
+		if limitsEnforcer != nil {
+			dropsProvider = limitsEnforcer.TotalDropped
+		}
+		sliTracker := stats.NewSLITracker(sliCfg, dropsProvider)
+		statsCollector.SetSLITracker(sliTracker)
+		logging.Info("SLI tracker enabled", logging.F(
+			"delivery_target", cfg.SLIDeliveryTarget,
+			"export_target", cfg.SLIExportTarget,
+			"budget_window", cfg.SLIBudgetWindow.String(),
+		))
+	}
 
 	// Start periodic stats logging (every 30 seconds, nil when stats_level=none)
 	if statsCollector != nil {

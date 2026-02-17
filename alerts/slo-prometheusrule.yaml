@@ -1,0 +1,114 @@
+# SLO Burn-Rate Alerts — Kubernetes PrometheusRule CRD format
+#
+# Same alerts as slo-alerts.yaml in Prometheus Operator CRD format.
+# kubectl apply -f alerts/slo-prometheusrule.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: metrics-governor-slo
+  labels:
+    app: metrics-governor
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: metrics-governor-slo
+      rules:
+        # ── Delivery SLO ──────────────────────────────────────────────
+        - alert: MetricsGovernorDeliveryBudgetCritical
+          expr: |
+            metrics_governor_sli_delivery_burn_rate{window="1h"} > 14.4
+            and
+            metrics_governor_sli_delivery_burn_rate{window="5m"} > 14.4
+          for: 2m
+          labels:
+            severity: critical
+            sli: delivery
+            team: platform
+          annotations:
+            summary: "Delivery SLO burn rate critical ({{ $value | printf \"%.1f\" }}x)"
+            description: |
+              Delivery error budget is being consumed at {{ $value | printf "%.1f" }}x the sustainable rate.
+              At this pace, the 30-day error budget will be exhausted in ~{{ printf "%.0f" (divf 30 $value) }} days.
+            runbook_url: "https://github.com/szibis/metrics-governor/blob/main/alerts/README.md#metricsgovernordeliverybudgetcritical"
+
+        - alert: MetricsGovernorDeliveryBudgetHigh
+          expr: |
+            metrics_governor_sli_delivery_burn_rate{window="6h"} > 6
+            and
+            metrics_governor_sli_delivery_burn_rate{window="30m"} > 6
+          for: 5m
+          labels:
+            severity: critical
+            sli: delivery
+            team: platform
+          annotations:
+            summary: "Delivery SLO burn rate high ({{ $value | printf \"%.1f\" }}x)"
+            description: |
+              Delivery error budget is being consumed at {{ $value | printf "%.1f" }}x the sustainable rate.
+            runbook_url: "https://github.com/szibis/metrics-governor/blob/main/alerts/README.md#metricsgovernordeliverybudgethigh"
+
+        - alert: MetricsGovernorDeliveryBudgetSlow
+          expr: |
+            metrics_governor_sli_delivery_burn_rate{window="6h"} > 1
+            and
+            metrics_governor_sli_delivery_burn_rate{window="1h"} > 1
+          for: 30m
+          labels:
+            severity: warning
+            sli: delivery
+            team: platform
+          annotations:
+            summary: "Delivery SLO burn rate at budget pace ({{ $value | printf \"%.1f\" }}x)"
+            description: |
+              Delivery error budget is being consumed at or above the sustainable rate.
+            runbook_url: "https://github.com/szibis/metrics-governor/blob/main/alerts/README.md#metricsgovernordeliverybudgetslow"
+
+        # ── Export Success SLO ────────────────────────────────────────
+        - alert: MetricsGovernorExportBudgetCritical
+          expr: |
+            metrics_governor_sli_export_burn_rate{window="1h"} > 14.4
+            and
+            metrics_governor_sli_export_burn_rate{window="5m"} > 14.4
+          for: 2m
+          labels:
+            severity: critical
+            sli: export
+            team: platform
+          annotations:
+            summary: "Export SLO burn rate critical ({{ $value | printf \"%.1f\" }}x)"
+            description: |
+              Export error budget is being consumed at {{ $value | printf "%.1f" }}x the sustainable rate.
+            runbook_url: "https://github.com/szibis/metrics-governor/blob/main/alerts/README.md#metricsgovernorexportbudgetcritical"
+
+        - alert: MetricsGovernorExportBudgetHigh
+          expr: |
+            metrics_governor_sli_export_burn_rate{window="6h"} > 6
+            and
+            metrics_governor_sli_export_burn_rate{window="30m"} > 6
+          for: 5m
+          labels:
+            severity: critical
+            sli: export
+            team: platform
+          annotations:
+            summary: "Export SLO burn rate high ({{ $value | printf \"%.1f\" }}x)"
+            description: |
+              Export error budget is being consumed at {{ $value | printf "%.1f" }}x the sustainable rate.
+            runbook_url: "https://github.com/szibis/metrics-governor/blob/main/alerts/README.md#metricsgovernorexportbudgethigh"
+
+        - alert: MetricsGovernorExportBudgetSlow
+          expr: |
+            metrics_governor_sli_export_burn_rate{window="6h"} > 1
+            and
+            metrics_governor_sli_export_burn_rate{window="1h"} > 1
+          for: 30m
+          labels:
+            severity: warning
+            sli: export
+            team: platform
+          annotations:
+            summary: "Export SLO burn rate at budget pace ({{ $value | printf \"%.1f\" }}x)"
+            description: |
+              Export error budget is being consumed at or above the sustainable rate.
+            runbook_url: "https://github.com/szibis/metrics-governor/blob/main/alerts/README.md#metricsgovernorexportbudgetslow"

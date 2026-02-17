@@ -219,6 +219,19 @@ func (e *Enforcer) SetStatsThreshold(threshold int64) {
 	e.statsThreshold.Store(threshold)
 }
 
+// TotalDropped returns the total number of intentionally dropped datapoints
+// across all rules. Used by the SLI tracker to subtract policy-driven drops
+// from the delivery ratio denominator.
+func (e *Enforcer) TotalDropped() int64 {
+	e.violations.mu.RLock()
+	defer e.violations.mu.RUnlock()
+	var total int64
+	for _, counter := range e.violations.datapointsDropped {
+		total += counter.Load()
+	}
+	return total
+}
+
 // Stop stops the enforcer and flushes any pending aggregated logs.
 func (e *Enforcer) Stop() {
 	if e.logAggregator != nil {

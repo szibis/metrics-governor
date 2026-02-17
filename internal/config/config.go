@@ -100,6 +100,12 @@ type Config struct {
 	StatsCardinalityThreshold int    // Only create Bloom trackers for metrics with > N datapoints (0 = track all)
 	StatsMaxLabelCombinations int    // Max label combination entries in full mode (0 = unlimited)
 
+	// SLI/SLO settings
+	SLIEnabled        bool          // Enable governor-computed SLI metrics (default: true)
+	SLIDeliveryTarget float64       // Delivery SLO target (default: 0.999 = 99.9%)
+	SLIExportTarget   float64       // Export success SLO target (default: 0.995 = 99.5%)
+	SLIBudgetWindow   time.Duration // Error budget window (default: 720h = 30 days)
+
 	// Limits settings
 	LimitsConfig     string
 	LimitsDryRun     bool
@@ -492,6 +498,12 @@ func ParseFlags() *Config {
 	flag.IntVar(&cfg.StatsCardinalityThreshold, "stats-cardinality-threshold", 0, "Only create Bloom trackers for metrics with > N datapoints per cycle (0 = track all)")
 	flag.IntVar(&cfg.StatsMaxLabelCombinations, "stats-max-label-combinations", 0, "Max label combination entries in full mode (0 = unlimited)")
 
+	// SLI/SLO flags
+	flag.BoolVar(&cfg.SLIEnabled, "sli-enabled", true, "Enable governor-computed SLI metrics (delivery ratio, export success, burn rates, error budgets)")
+	flag.Float64Var(&cfg.SLIDeliveryTarget, "sli-delivery-target", 0.999, "Delivery SLO target (0.0-1.0, default: 0.999 = 99.9%)")
+	flag.Float64Var(&cfg.SLIExportTarget, "sli-export-target", 0.995, "Export success SLO target (0.0-1.0, default: 0.995 = 99.5%)")
+	flag.DurationVar(&cfg.SLIBudgetWindow, "sli-budget-window", 720*time.Hour, "Error budget window (default: 720h = 30 days)")
+
 	// Limits flags
 	flag.StringVar(&cfg.LimitsConfig, "limits-config", "", "Path to limits configuration YAML file")
 	flag.BoolVar(&cfg.LimitsDryRun, "limits-dry-run", true, "Dry run mode: log violations but don't drop/sample")
@@ -851,6 +863,20 @@ func applyFlagOverrides(cfg *Config) {
 			cfg.StatsLabels = f.Value.String()
 		case "stats-level":
 			cfg.StatsLevel = f.Value.String()
+		case "sli-enabled":
+			cfg.SLIEnabled = f.Value.String() == "true"
+		case "sli-delivery-target":
+			if v, err := strconv.ParseFloat(f.Value.String(), 64); err == nil {
+				cfg.SLIDeliveryTarget = v
+			}
+		case "sli-export-target":
+			if v, err := strconv.ParseFloat(f.Value.String(), 64); err == nil {
+				cfg.SLIExportTarget = v
+			}
+		case "sli-budget-window":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.SLIBudgetWindow = d
+			}
 		case "limits-config":
 			cfg.LimitsConfig = f.Value.String()
 		case "limits-dry-run":
@@ -1968,6 +1994,10 @@ func DefaultConfig() *Config {
 		StatsLevel:                      "basic",
 		StatsCardinalityThreshold:       0,
 		StatsMaxLabelCombinations:       0,
+		SLIEnabled:                      true,
+		SLIDeliveryTarget:               0.999,
+		SLIExportTarget:                 0.995,
+		SLIBudgetWindow:                 720 * time.Hour,
 		LimitsConfig:                    "",
 		LimitsDryRun:                    true,
 		RuleCacheMaxSize:                10000,
@@ -2115,6 +2145,12 @@ func (c *Config) Validate() error {
 	}
 	if c.QueueCompactThreshold < 0 || c.QueueCompactThreshold > 1.0 {
 		errs = append(errs, fmt.Sprintf("queue-compact-threshold must be between 0.0 and 1.0, got %f", c.QueueCompactThreshold))
+	}
+	if c.SLIDeliveryTarget < 0 || c.SLIDeliveryTarget > 1.0 {
+		errs = append(errs, fmt.Sprintf("sli-delivery-target must be between 0.0 and 1.0, got %f", c.SLIDeliveryTarget))
+	}
+	if c.SLIExportTarget < 0 || c.SLIExportTarget > 1.0 {
+		errs = append(errs, fmt.Sprintf("sli-export-target must be between 0.0 and 1.0, got %f", c.SLIExportTarget))
 	}
 
 	// Cardinality validation

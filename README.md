@@ -25,6 +25,7 @@
 [![PRW](https://img.shields.io/badge/PRW-1.0_%7C_2.0-e8833a?style=for-the-badge&logo=prometheus&logoColor=white)](docs/receiving.md#prometheus-remote-write-receiver)
 [![vtprotobuf](https://img.shields.io/badge/vtprotobuf-Zero_Alloc-00ADD8?style=for-the-badge&logo=go&logoColor=white)](docs/performance.md)
 [![Alerts](https://img.shields.io/badge/Alerts-13_Rules_%2B_Runbooks-dc3545?style=for-the-badge&logo=prometheus&logoColor=white)](docs/alerting.md)
+[![SLOs](https://img.shields.io/badge/SLOs-Error_Budgets_%2B_Burn_Rate-8B5CF6?style=for-the-badge&logo=prometheus&logoColor=white)](docs/slo.md)
 [![Helm Chart](https://img.shields.io/badge/Helm-Chart_Included-0F1689?style=for-the-badge&logo=helm&logoColor=white)](helm/metrics-governor/)
 [![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F46800?style=for-the-badge&logo=grafana&logoColor=white)](dashboards/)
 [![Playground](https://img.shields.io/badge/Playground-Config_Tool-20c997?style=for-the-badge&logo=googlechrome&logoColor=white)](https://szibis.github.io/metrics-governor/)
@@ -448,6 +449,7 @@ Plan your deployment in seconds. The **interactive Playground** estimates CPU, m
 | 🔢 | [**Cardinality Tracking**](docs/cardinality-tracking.md) | Bloom, HyperLogLog, Hybrid mode |
 | 💾 | [**Bloom Persistence**](docs/bloom-persistence.md) | Save/restore filter state across restarts |
 | 🚨 | [**Alerting**](docs/alerting.md) | 13 alerts with runbooks, dead rule detection |
+| 🎯 | [**SLOs**](docs/slo.md) | SLI definitions, error budgets, burn-rate alerts, health dashboard |
 | 📊 | [**Dashboards**](docs/dashboards.md) | Grafana operations and development dashboards |
 | 🏭 | [**Production Guide**](docs/production-guide.md) | Sizing, HPA/VPA, DaemonSet, bare metal |
 | 🔧 | [**Stability Tuning**](docs/stability-guide.md) | Graduated spillover, load shedding, drain ordering, backpressure tuning |

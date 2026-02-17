@@ -771,8 +771,28 @@ These alerts work **without** the in-governor scanner -- they use always-on `las
 
 ---
 
+## SLO Burn-Rate Alerts
+
+In addition to the 13 operational alerts above, metrics-governor provides **6 SLO burn-rate alerts** that measure error budget consumption over time. These two alert sets are complementary:
+
+| Type | Purpose | Fires When | Response |
+|------|---------|-----------|----------|
+| **Operational** (13 alerts) | Symptom-based — what's broken NOW | A specific component is failing | Fix the immediate issue |
+| **SLO** (6 alerts) | Budget-based — impact OVER TIME | Error budget is being consumed too fast | Assess cumulative impact, prioritize |
+
+The SLO alerts use governor-computed `metrics_governor_sli_*_burn_rate` metrics and follow the multi-window, multi-burn-rate pattern from the Google SRE Workbook:
+
+- **Critical (14.4x):** Budget exhausted in ~2 days — page immediately
+- **High (6x):** Budget exhausted in ~5 days — page, investigate sustained degradation
+- **Warning (1x):** At budget pace — ticket, investigate before breach
+
+See [SLO documentation](slo.md) for full details, and [alerts/slo-alerts.yaml](../alerts/slo-alerts.yaml) for the alert definitions.
+
+---
+
 ## See Also
 
+- [SLOs](slo.md) — SLI definitions, error budgets, burn-rate alerts, health dashboard
 - [Production Guide](production-guide.md) — Deployment sizing, resilience tuning, HPA/VPA
 - [Resilience](resilience.md) — Circuit breaker, backoff, failure modes
 - [Performance](performance.md) — Internals, benchmarks, pipeline tuning
