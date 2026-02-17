@@ -1606,9 +1606,36 @@ Four-way comparison: metrics-governor (minimal + balanced profiles) vs OpenTelem
 | OTel Collector CPU | 4.65% | 6.74% | 1.45x (linear) |
 | vmagent CPU | 3.89% | 19.31% | **4.96x** (superlinear) |
 
-Governor scales sublinearly due to GOGC=200 amortization and batch auto-tuning. vmagent degrades superlinearly at high cardinality because Remote Write protocol overhead grows with series count. OTel Collector scales linearly — efficient but without governor's amortization benefits.
+Governor scales sublinearly due to batch auto-tuning and GC amortization. vmagent degrades superlinearly at high cardinality because Remote Write protocol overhead grows with series count. OTel Collector scales linearly — efficient but without governor's amortization benefits.
 
-Governor balanced uses more memory (25-38%) than OTel Collector (9-17%) or vmagent (5-7%) due to buffer pre-allocation and GOMEMLIMIT headroom. This is a deliberate CPU-memory tradeoff — GOGC=200 reduces GC frequency by ~45% at the cost of higher peak memory.
+Governor balanced memory is now competitive with OTel Collector after post-v1.0.1 optimizations (GOGC=100 + greenteagc). See [Memory Optimization](#memory-optimization-post-v101) for details.
+
+### Memory Optimization (post-v1.0.1)
+
+Combined optimizations reduce balanced profile memory by ~48% with minimal CPU impact:
+
+| Optimization | Measured Savings | Mechanism |
+|-------------|:----------------:|-----------|
+| **GOGC 200→100** | **~18pp** | GC triggers at 2x live heap instead of 3x. ~50% more GC cycles but greenteagc makes each cycle cheaper. |
+| Green Tea GC (`GOEXPERIMENT=greenteagc`) | **~5-10%** | Go 1.25 experimental GC algorithm. Reduces per-cycle overhead, compensating for higher GC frequency at GOGC=100. |
+| Reduced buffer memory % (10% → 7%) | 2-3% | At 850 MB GOMEMLIMIT: 60 MB buffer cap vs 85 MB — still 1.2-2.4x steady-state usage headroom. |
+| Reduced buffer pre-alloc (5000 → 2000) | 1-2% | Go's `append` grows the slice dynamically. Matches actual batch sizes (250-500 items at 50k dps). |
+| Reduced queue memory % (10% → 5%) | 2-3% | Halves in-memory queue allocation from ~85 MB to ~42 MB. |
+| Reduced QueueInmemoryBlocks (1024 → 512) | 1% | Proportional to halved queue memory percent. 512 blocks = 5-10x headroom at 50k dps. |
+
+**Measured results (50k dps):** Memory avg 37.5% → **19.5%** (-48%), CPU avg 4.32% → **4.51%** (+0.19pp). At 100k dps: Memory avg 25.4% → **18.4%** (-28%), CPU 5.33% → **6.47%** (still below OTel's 6.58%).
+
+**Key insight:** GOGC=100 + greenteagc is synergistic — greenteagc makes each GC cycle cheaper, so doubling GC frequency (GOGC 200→100) costs minimal CPU while halving GC heap headroom.
+
+**Note:** Hybrid queue mode was evaluated but reverted — the FastQueue disk backend adds steady-state overhead (bufio.Writer buffers, chunk metadata) that gets amplified by GOGC, resulting in higher memory usage than pure memory mode.
+
+**Memory budget observability**: Four new metrics expose the memory budget breakdown:
+- `metrics_governor_memory_budget_gomemlimit_bytes` — Go's hard memory limit
+- `metrics_governor_memory_budget_buffer_bytes` — Maximum buffer allocation
+- `metrics_governor_memory_budget_queue_bytes` — Maximum in-memory queue allocation
+- `metrics_governor_memory_budget_utilization_ratio` — HeapAlloc / GOMEMLIMIT (0.0-1.0)
+
+These enable alerting on memory pressure (`utilization_ratio > 0.85` for 5m → warning) and visibility into budget headroom.
 
 For detailed analysis, test methodology, and delivery ratio investigation, see [COMPARISON-REPORT.md](../test/compare/results/COMPARISON-REPORT.md).
 

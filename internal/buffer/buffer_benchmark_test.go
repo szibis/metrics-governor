@@ -249,6 +249,113 @@ func BenchmarkFlush_NoStats(b *testing.B) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Phase 8.12: Memory-optimization benchmarks for reduced buffer capacity
+// These benchmarks compare BufferSize=2000 (new balanced profile) against
+// BufferSize=5000 (original) to quantify the impact on Add throughput.
+// ---------------------------------------------------------------------------
+
+// BenchmarkBuffer_Add_ReducedCapacity benchmarks Add operations at both the
+// original (5000) and reduced (2000) buffer sizes. The reduced capacity means
+// the buffer hits its cap sooner, exercising the drop/reject path more often
+// under sustained load.
+func BenchmarkBuffer_Add_ReducedCapacity(b *testing.B) {
+	configs := []struct {
+		name       string
+		bufferSize int
+		batchSize  int
+	}{
+		{"reduced_2000", 2000, 500},  // new balanced profile
+		{"original_5000", 5000, 500}, // original balanced profile
+	}
+
+	for _, cfg := range configs {
+		b.Run(cfg.name, func(b *testing.B) {
+			exp := &noopExporter{}
+			buf := New(cfg.bufferSize, cfg.batchSize, time.Hour, exp, nil, nil, nil)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go buf.Start(ctx)
+
+			metrics := createBenchmarkResourceMetrics(10, 10)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				buf.Add(metrics)
+			}
+		})
+	}
+}
+
+// BenchmarkBuffer_Add_ReducedCapacity_HighCardinality benchmarks Add with
+// high-cardinality payloads (many metrics, few datapoints each) at both
+// buffer sizes. High cardinality workloads are common in production and
+// stress the per-entry size tracking.
+func BenchmarkBuffer_Add_ReducedCapacity_HighCardinality(b *testing.B) {
+	configs := []struct {
+		name       string
+		bufferSize int
+	}{
+		{"reduced_2000", 2000},
+		{"original_5000", 5000},
+	}
+
+	for _, cfg := range configs {
+		b.Run(cfg.name, func(b *testing.B) {
+			exp := &noopExporter{}
+			buf := New(cfg.bufferSize, 500, time.Hour, exp, nil, nil, nil)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go buf.Start(ctx)
+
+			// High cardinality: 500 metrics, 2 datapoints each
+			metrics := createBenchmarkResourceMetrics(500, 2)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				buf.Add(metrics)
+			}
+		})
+	}
+}
+
+// BenchmarkBuffer_FlushCycle_ReducedCapacity benchmarks full add-then-flush
+// cycles at the reduced buffer size. With a smaller buffer, flushes are
+// triggered more frequently, so flush overhead becomes proportionally larger.
+func BenchmarkBuffer_FlushCycle_ReducedCapacity(b *testing.B) {
+	configs := []struct {
+		name       string
+		bufferSize int
+		batchSize  int
+	}{
+		{"reduced_2000_batch500", 2000, 500},
+		{"original_5000_batch500", 5000, 500},
+	}
+
+	for _, cfg := range configs {
+		b.Run(cfg.name, func(b *testing.B) {
+			exp := &noopExporter{}
+			buf := New(cfg.bufferSize, cfg.batchSize, time.Hour, exp, nil, nil, nil)
+
+			metrics := createBenchmarkResourceMetrics(cfg.batchSize, 10)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				buf.mu.Lock()
+				buf.metrics = append(buf.metrics[:0], metrics...)
+				buf.mu.Unlock()
+
+				buf.flush(context.Background())
+			}
+		})
+	}
+}
+
 // Helper functions
 
 func createBenchmarkResourceMetrics(numMetrics, datapointsPerMetric int) []*metricspb.ResourceMetrics {

@@ -170,3 +170,37 @@ func TestLeakCheck_FastQueue_BufferedWriter(t *testing.T) {
 		t.Fatalf("Close() error = %v", err)
 	}
 }
+
+func TestLeakCheck_MemoryQueue_BalancedConfig(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	q := NewMemoryBatchQueue(MemoryBatchQueueConfig{
+		MaxSize:      5000,
+		MaxBytes:     44040192, // 42 MB
+		FullBehavior: DropOldest,
+	})
+
+	// Push 100 batches
+	for i := 0; i < 100; i++ {
+		batch := &ExportBatch{
+			Timestamp:      time.Now(),
+			EstimatedBytes: 1000,
+		}
+		if err := q.PushBatch(batch); err != nil {
+			t.Fatalf("PushBatch failed on batch %d: %v", i, err)
+		}
+	}
+
+	// Pop all batches
+	for i := 0; i < 100; i++ {
+		batch, err := q.PopBatch()
+		if err != nil {
+			t.Fatalf("PopBatch failed on batch %d: %v", i, err)
+		}
+		if batch == nil {
+			t.Fatalf("PopBatch returned nil on batch %d", i)
+		}
+	}
+
+	q.Close()
+}

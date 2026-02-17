@@ -176,8 +176,8 @@ func TestApplyProfile_Balanced(t *testing.T) {
 	if cfg.QueueAdaptiveWorkersEnabled != true {
 		t.Errorf("QueueAdaptiveWorkersEnabled = %v, want true", cfg.QueueAdaptiveWorkersEnabled)
 	}
-	if cfg.BufferSize != 5000 {
-		t.Errorf("BufferSize = %d, want 5000", cfg.BufferSize)
+	if cfg.BufferSize != 2000 {
+		t.Errorf("BufferSize = %d, want 2000", cfg.BufferSize)
 	}
 	if cfg.QueuePipelineSplitEnabled != false {
 		t.Errorf("QueuePipelineSplitEnabled = %v, want false", cfg.QueuePipelineSplitEnabled)
@@ -197,8 +197,18 @@ func TestApplyProfile_Balanced(t *testing.T) {
 	if cfg.ExporterPrewarmConnections != true {
 		t.Errorf("ExporterPrewarmConnections = %v, want true", cfg.ExporterPrewarmConnections)
 	}
+	// Memory queue — in-memory only, no disk overhead
+	if cfg.QueueMode != "memory" {
+		t.Errorf("QueueMode = %q, want %q", cfg.QueueMode, "memory")
+	}
 	if cfg.QueueType != "memory" {
 		t.Errorf("QueueType = %q, want %q", cfg.QueueType, "memory")
+	}
+	if cfg.QueueMaxBytes != 268435456 {
+		t.Errorf("QueueMaxBytes = %d, want 268435456", cfg.QueueMaxBytes)
+	}
+	if cfg.QueueInmemoryBlocks != 512 {
+		t.Errorf("QueueInmemoryBlocks = %d, want 512", cfg.QueueInmemoryBlocks)
 	}
 	if cfg.CardinalityMode != "bloom" {
 		t.Errorf("CardinalityMode = %q, want %q", cfg.CardinalityMode, "bloom")
@@ -214,6 +224,10 @@ func TestApplyProfile_Balanced(t *testing.T) {
 	}
 	if cfg.QueueMaxConcurrentSends != 4 {
 		t.Errorf("QueueMaxConcurrentSends = %d, want 4", cfg.QueueMaxConcurrentSends)
+	}
+	// Bloom persistence off (memory queue, no disk)
+	if cfg.BloomPersistenceEnabled != false {
+		t.Errorf("BloomPersistenceEnabled = %v, want false", cfg.BloomPersistenceEnabled)
 	}
 }
 
@@ -627,6 +641,9 @@ func TestDumpProfile(t *testing.T) {
 				"(default)",
 				"queue.enabled",
 				"true",
+				"queue.mode",
+				"memory",
+				"no disk required",
 			},
 		},
 		{
@@ -760,13 +777,12 @@ func TestPrerequisites_Balanced(t *testing.T) {
 	}
 	prereqs := p.Prerequisites()
 	if len(prereqs) != 1 {
-		t.Fatalf("balanced should have 1 prerequisite, got %d", len(prereqs))
+		t.Fatalf("balanced should have 1 prerequisite (memory), got %d", len(prereqs))
 	}
-	if prereqs[0].Severity != "recommended" {
-		t.Errorf("balanced prerequisite severity = %q, want %q", prereqs[0].Severity, "recommended")
-	}
-	if prereqs[0].Type != "memory" {
-		t.Errorf("balanced prerequisite type = %q, want %q", prereqs[0].Type, "memory")
+
+	if prereqs[0].Type != "memory" || prereqs[0].Severity != "recommended" {
+		t.Errorf("balanced prerequisite: got type=%q severity=%q, want type=memory severity=recommended",
+			prereqs[0].Type, prereqs[0].Severity)
 	}
 }
 
@@ -1102,7 +1118,7 @@ func TestAllProfiles_ExportCompression_Policy(t *testing.T) {
 
 func TestAllProfiles_QueueCompression_Policy(t *testing.T) {
 	// All disk/hybrid profiles must use snappy for queue (fast, allocation-free)
-	diskProfiles := []ProfileName{ProfileSafety, ProfileObservable, ProfileResilient, ProfilePerformance}
+	diskProfiles := []ProfileName{ProfileBalanced, ProfileSafety, ProfileObservable, ProfileResilient, ProfilePerformance}
 	for _, name := range diskProfiles {
 		t.Run(string(name), func(t *testing.T) {
 			p, err := GetProfile(name)
@@ -1300,7 +1316,7 @@ func TestAllProfiles_GOGCValues(t *testing.T) {
 		gogc int
 	}{
 		{ProfileMinimal, 100},
-		{ProfileBalanced, 200},
+		{ProfileBalanced, 100},
 		{ProfileSafety, 200},
 		{ProfileObservable, 200},
 		{ProfileResilient, 200},
@@ -1343,5 +1359,86 @@ func TestApplyProfile_GOGC_ExplicitOverride(t *testing.T) {
 	// Explicit override should be preserved
 	if cfg.GOGC != 42 {
 		t.Errorf("GOGC = %d, want 42 (explicit override)", cfg.GOGC)
+	}
+}
+
+// --- Memory optimization: hybrid spillover settings ---
+
+func TestApplyProfile_Balanced_NoSpilloverSettings(t *testing.T) {
+	p, err := GetProfile(ProfileBalanced)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p.QueueHybridSpilloverPct != nil {
+		t.Errorf("balanced (memory queue) should not have QueueHybridSpilloverPct, got %d", *p.QueueHybridSpilloverPct)
+	}
+	if p.QueueHybridHysteresisPct != nil {
+		t.Errorf("balanced (memory queue) should not have QueueHybridHysteresisPct, got %d", *p.QueueHybridHysteresisPct)
+	}
+}
+
+func TestAllProfiles_HybridProfiles_HaveSpilloverSettings(t *testing.T) {
+	// All hybrid profiles must have both spillover and hysteresis set
+	hybridProfiles := []ProfileName{ProfileObservable, ProfileResilient}
+	for _, name := range hybridProfiles {
+		t.Run(string(name), func(t *testing.T) {
+			p, err := GetProfile(name)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if p.QueueHybridSpilloverPct == nil {
+				t.Error("QueueHybridSpilloverPct must be set for hybrid profile")
+			}
+			if p.QueueHybridHysteresisPct == nil {
+				t.Error("QueueHybridHysteresisPct must be set for hybrid profile")
+			}
+			if p.QueueHybridSpilloverPct != nil && p.QueueHybridHysteresisPct != nil {
+				if *p.QueueHybridSpilloverPct <= *p.QueueHybridHysteresisPct {
+					t.Errorf("spillover (%d) must be > hysteresis (%d) to prevent oscillation",
+						*p.QueueHybridSpilloverPct, *p.QueueHybridHysteresisPct)
+				}
+			}
+		})
+	}
+}
+
+func TestAllProfiles_MemoryQueueProfiles_NoSpilloverSettings(t *testing.T) {
+	// Memory-only profiles should not have hybrid spillover settings
+	memoryProfiles := []ProfileName{ProfileMinimal, ProfileBalanced}
+	for _, name := range memoryProfiles {
+		t.Run(string(name), func(t *testing.T) {
+			p, err := GetProfile(name)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if p.QueueHybridSpilloverPct != nil {
+				t.Error("memory-only profile should not have QueueHybridSpilloverPct")
+			}
+			if p.QueueHybridHysteresisPct != nil {
+				t.Error("memory-only profile should not have QueueHybridHysteresisPct")
+			}
+		})
+	}
+}
+
+// --- Memory optimization: reduced memory percents ---
+
+func TestApplyProfile_Balanced_ReducedMemoryPercents(t *testing.T) {
+	cfg := DefaultConfig()
+	err := ApplyProfile(cfg, ProfileBalanced, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.BufferMemoryPercent != 0.07 {
+		t.Errorf("BufferMemoryPercent = %f, want 0.07", cfg.BufferMemoryPercent)
+	}
+	if cfg.QueueMemoryPercent != 0.05 {
+		t.Errorf("QueueMemoryPercent = %f, want 0.05", cfg.QueueMemoryPercent)
+	}
+	// Sum should be well under 15% to leave headroom
+	sum := cfg.BufferMemoryPercent + cfg.QueueMemoryPercent
+	if sum > 0.15 {
+		t.Errorf("BufferMemoryPercent + QueueMemoryPercent = %f, want < 0.15", sum)
 	}
 }

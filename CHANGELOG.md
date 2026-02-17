@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Balanced profile: reduced memory allocation percentages (buffer 10%→7%, queue 10%→5%) and buffer pre-allocation (5000→2000) for lower memory footprint
+- Balanced profile: GOGC tuned from 200→100 — trades modest CPU increase for ~48% memory reduction (greenteagc compensates for GC frequency)
+- Docker image: built with `GOEXPERIMENT=greenteagc` for Go 1.25's experimental Green Tea GC — lower memory overhead and reduced GC pause times
+- Added memory budget metrics (`gomemlimit_bytes`, `buffer_bytes`, `queue_bytes`, `utilization_ratio`) to `/metrics` endpoint for operational visibility
+- Added "Memory Budget" row to Grafana operations dashboard with GOMEMLIMIT vs Heap, utilization gauge, budget allocation, and fill-rate panels
 - GOGC raised from 50/25 to 200/400 across all profiles — GC CPU at 50k dps dropped from 44.5% to negligible (GOMEMLIMIT prevents OOM regardless)
 - Stats full-mode uses dual-map key building instead of `mergeAttrs()` — eliminates ~38% of pipeline allocations
 - Stats `Record*` counter methods are lock-free atomics with ARM64 cache line padding — Prometheus scrape latency drops from ~10ms to ~1ms under load

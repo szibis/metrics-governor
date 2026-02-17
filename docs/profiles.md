@@ -55,14 +55,14 @@ Best for: local development, CI testing, non-critical metrics, sidecar mode.
 
 ### `balanced` — Production Default
 
-**Resource target:** 1–2 CPU, 128–512 MB RAM, no disk required
+**Resource target:** 1–2 CPU, 64–256 MB RAM, no disk required
 **Max throughput:** ~150k dps
 
 Best for: production infrastructure monitoring, medium cardinality.
 
 | Feature | Status | Why |
 |---------|--------|-----|
-| Queue | Memory | Absorbs spikes without disk I/O |
+| Queue | **Memory** (in-memory only) | Fast, no disk overhead — lowest memory footprint |
 | Adaptive workers | **On** | Self-tunes worker count |
 | Batch auto-tune | **On** | AIMD batch sizing |
 | Pipeline split | Off | Not needed at this scale |
@@ -70,6 +70,9 @@ Best for: production infrastructure monitoring, medium cardinality.
 | Compression | Snappy | Fast, low CPU |
 | Circuit breaker | On (5 failures) | Protect downstream |
 | Stats | Basic | Per-metric counts |
+| Bloom persistence | Off | Memory queue — no disk backend |
+
+The balanced profile uses reduced memory allocation percentages (buffer 7%, queue 5%) and a smaller buffer pre-allocation (2000) compared to other profiles, keeping the memory footprint low. Combined with Green Tea GC (`GOEXPERIMENT=greenteagc`), this achieves lower CPU usage with competitive memory efficiency.
 
 **Prerequisites:**
 - Recommended: 256+ MB memory for adaptive tuning overhead
@@ -238,7 +241,7 @@ metrics-governor --show-deprecations
 | Pipeline split | off | off | off | off | off | **on** |
 | Adaptive workers | off | **on** | **on** | **on** | **on** | **on** |
 | Batch auto-tune | off | **on** | **on** | **on** | **on** | **on** |
-| Buffer size | 1,000 | 5,000 | 5,000 | 5,000 | 5,000 | 50,000 |
+| Buffer size | 1,000 | 2,000 | 5,000 | 5,000 | 5,000 | 50,000 |
 | Batch size | 200 | 500 | 500 | 500 | 500 | 1,000 |
 | Flush interval | 10s | 5s | 5s | 5s | 5s | 2s |
 | Queue type | memory | memory | **disk** | disk | disk | disk |
@@ -249,7 +252,7 @@ metrics-governor --show-deprecations
 | Export compression | none | snappy | **zstd** | **zstd** | snappy | zstd |
 | Queue compression | none | snappy | snappy | snappy | snappy | snappy |
 | String interning | off | on | on | on | on | on |
-| Memory limit ratio | 0.90 | 0.85 | 0.80 | 0.82 | 0.82 | 0.80 |
+| Memory limit ratio | 0.90 | 0.80 | 0.80 | 0.80 | 0.82 | 0.80 |
 | Circuit breaker | off | on (5) | on (5) | on (5) | on (5) | on (3) |
 | Backoff | off | on (2.0x) | on (2.0x) | on (2.0x) | on (2.0x) | on (3.0x) |
 | Cardinality mode | exact | bloom | bloom | bloom | bloom | hybrid |
@@ -268,7 +271,7 @@ Reference workload: **100,000 datapoints/sec**, **10,000 unique metric names**, 
 | Profile | CPU (request) | CPU (limit) | Memory (request) | Memory (limit) | Disk (PVC) | Max throughput |
 |---------|-------------|-------------|-----------------|---------------|------------|---------------|
 | `minimal` | 0.1 | 0.5 | 64 MB | 256 MB | — | ~15k dps |
-| `balanced` | 0.5 | 1.0 | 128 MB | 512 MB | — | ~150k dps |
+| `balanced` | 0.5 | 1.0 | 64 MB | 256 MB | 2 GB | ~150k dps |
 | `safety` | 0.75 | 2.0 | 256 MB | 768 MB | 8 GB | ~120k dps |
 | `observable` | 0.5 | 1.75 | 256 MB | 640 MB | 8 GB | ~100k dps |
 | `resilient` | 0.5 | 1.0 | 192 MB | 512 MB | 12 GB | ~200k dps |
@@ -343,13 +346,13 @@ Each profile includes tuned stability parameters that control how the proxy beha
 
 | Setting | minimal | balanced | safety | observable | resilient | performance |
 |---|---|---|---|---|---|---|
-| GOGC | 100 | 200 | 200 | 200 | 200 | 400 |
+| GOGC | 100 | 100 | 200 | 200 | 200 | 400 |
 | Load shedding threshold | 0.80 | 0.85 | 0.90 | 0.85 | 0.90 | 0.95 |
-| Spillover threshold | — | — | — | 90% | 80% | 80% |
+| Spillover threshold | — | 80% | — | 90% | 80% | 80% |
 | Stats degradation | auto | auto | auto | auto | auto | auto |
-| Meta sync interval | — | — | 1s | 5s | 3s | 2s |
+| Meta sync interval | — | 1s | 1s | 5s | 3s | 2s |
 
-**GOGC**: Controls GC frequency — higher values mean fewer GC cycles and less CPU spent on garbage collection, but more memory used between collections. This is safe because `GOMEMLIMIT` (auto-configured from container memory) provides a hard ceiling that prevents OOM kills regardless of GOGC. The `performance` profile uses GOGC=400 (GC when heap grows 5x) for minimum GC overhead. Override with the `GOGC` environment variable.
+**GOGC**: Controls GC frequency — higher values mean fewer GC cycles and less CPU spent on garbage collection, but more memory used between collections. This is safe because `GOMEMLIMIT` (auto-configured from container memory) provides a hard ceiling that prevents OOM kills regardless of GOGC. The `balanced` profile uses GOGC=100 (GC when heap doubles) combined with `greenteagc` to achieve ~48% lower memory than GOGC=200 with only +0.19pp CPU. The `performance` profile uses GOGC=400 (GC when heap grows 5x) for minimum GC overhead. Override with the `GOGC` environment variable.
 
 **Load shedding**: When the pipeline health score exceeds this threshold, receivers return `ResourceExhausted` (gRPC) or `429 Too Many Requests` (HTTP). Higher-capacity profiles tolerate more pressure before shedding.
 

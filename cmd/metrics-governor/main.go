@@ -508,6 +508,9 @@ func main() {
 		))
 	}
 
+	// Wire memory budget into runtime stats for /metrics observability
+	runtimeStats.SetMemoryBudget(memorySizing.MemoryLimit, memorySizing.BufferMaxBytes, memorySizing.QueueMaxBytes)
+
 	// Create log aggregator for buffer (aggregates logs per 10s interval)
 	bufferLogAggregator := limits.NewLogAggregator(10 * time.Second)
 

@@ -1,40 +1,40 @@
-verifier-1  | 2026/02/16 17:35:00   Batches sent:           69
-verifier-1  | 2026/02/16 17:35:00   Queue size:             0
-verifier-1  | 2026/02/16 17:35:00   Dropped total:          0
-verifier-1  | 2026/02/16 17:35:00   Export errors:          0
-verifier-1  | 2026/02/16 17:35:00 
-verifier-1  | 2026/02/16 17:35:00 VERIFICATION:
-verifier-1  | 2026/02/16 17:35:00   Ingestion rate:         99.18%
-verifier-1  | 2026/02/16 17:35:00   Pass threshold:         90.00%
-verifier-1  | 2026/02/16 17:35:00   Status:                 PASS
-verifier-1  | 2026/02/16 17:35:00   Message:                Ingestion rate 99.18% meets threshold 90.00%
-verifier-1  | 2026/02/16 17:35:00 ========================================
-verifier-1  | 2026/02/16 17:35:00 Running verification: 11/12 checks passed (91.7%)
-verifier-1  | 2026/02/16 17:35:00 
-verifier-1  | 2026/02/16 17:35:15 ========================================
-verifier-1  | 2026/02/16 17:35:15   VERIFICATION RESULT - PASS
-verifier-1  | 2026/02/16 17:35:15 ========================================
-verifier-1  | 2026/02/16 17:35:15 Timestamp: 2026-02-16T17:35:15Z
-verifier-1  | 2026/02/16 17:35:15 
-verifier-1  | 2026/02/16 17:35:15 VICTORIAMETRICS:
-verifier-1  | 2026/02/16 17:35:15   Total time series:      89417
-verifier-1  | 2026/02/16 17:35:15   Unique metric names:    10
-verifier-1  | 2026/02/16 17:35:15   High cardinality TS:    22362
-verifier-1  | 2026/02/16 17:35:15   Verification counter:   1485
-verifier-1  | 2026/02/16 17:35:15 
-verifier-1  | 2026/02/16 17:35:15 METRICS-GOVERNOR:
-verifier-1  | 2026/02/16 17:35:15   Datapoints received:    15762923
-verifier-1  | 2026/02/16 17:35:15   Datapoints sent:        15644458
-verifier-1  | 2026/02/16 17:35:15   Batches sent:           75
-verifier-1  | 2026/02/16 17:35:15   Queue size:             0
-verifier-1  | 2026/02/16 17:35:15   Dropped total:          0
-verifier-1  | 2026/02/16 17:35:15   Export errors:          0
-verifier-1  | 2026/02/16 17:35:15 
-verifier-1  | 2026/02/16 17:35:15 VERIFICATION:
-verifier-1  | 2026/02/16 17:35:15   Ingestion rate:         99.25%
-verifier-1  | 2026/02/16 17:35:15   Pass threshold:         90.00%
-verifier-1  | 2026/02/16 17:35:15   Status:                 PASS
-verifier-1  | 2026/02/16 17:35:15   Message:                Ingestion rate 99.25% meets threshold 90.00%
-verifier-1  | 2026/02/16 17:35:15 ========================================
-verifier-1  | 2026/02/16 17:35:15 Running verification: 12/13 checks passed (92.3%)
-verifier-1  | 2026/02/16 17:35:15 
+verifier-1  | 2026/02/16 21:53:58   Batches sent:           69
+verifier-1  | 2026/02/16 21:53:58   Queue size:             0
+verifier-1  | 2026/02/16 21:53:58   Dropped total:          0
+verifier-1  | 2026/02/16 21:53:58   Export errors:          0
+verifier-1  | 2026/02/16 21:53:58 
+verifier-1  | 2026/02/16 21:53:58 VERIFICATION:
+verifier-1  | 2026/02/16 21:53:58   Ingestion rate:         99.16%
+verifier-1  | 2026/02/16 21:53:58   Pass threshold:         90.00%
+verifier-1  | 2026/02/16 21:53:58   Status:                 PASS
+verifier-1  | 2026/02/16 21:53:58   Message:                Ingestion rate 99.16% meets threshold 90.00%
+verifier-1  | 2026/02/16 21:53:58 ========================================
+verifier-1  | 2026/02/16 21:53:58 Running verification: 11/12 checks passed (91.7%)
+verifier-1  | 2026/02/16 21:53:58 
+verifier-1  | 2026/02/16 21:54:13 ========================================
+verifier-1  | 2026/02/16 21:54:13   VERIFICATION RESULT - PASS
+verifier-1  | 2026/02/16 21:54:13 ========================================
+verifier-1  | 2026/02/16 21:54:13 Timestamp: 2026-02-16T21:54:13Z
+verifier-1  | 2026/02/16 21:54:13 
+verifier-1  | 2026/02/16 21:54:13 VICTORIAMETRICS:
+verifier-1  | 2026/02/16 21:54:13   Total time series:      89188
+verifier-1  | 2026/02/16 21:54:13   Unique metric names:    10
+verifier-1  | 2026/02/16 21:54:13   High cardinality TS:    22304
+verifier-1  | 2026/02/16 21:54:13   Verification counter:   1479
+verifier-1  | 2026/02/16 21:54:13 
+verifier-1  | 2026/02/16 21:54:13 METRICS-GOVERNOR:
+verifier-1  | 2026/02/16 21:54:13   Datapoints received:    15699261
+verifier-1  | 2026/02/16 21:54:13   Datapoints sent:        15577143
+verifier-1  | 2026/02/16 21:54:13   Batches sent:           75
+verifier-1  | 2026/02/16 21:54:13   Queue size:             0
+verifier-1  | 2026/02/16 21:54:13   Dropped total:          0
+verifier-1  | 2026/02/16 21:54:13   Export errors:          0
+verifier-1  | 2026/02/16 21:54:13 
+verifier-1  | 2026/02/16 21:54:13 VERIFICATION:
+verifier-1  | 2026/02/16 21:54:13   Ingestion rate:         99.22%
+verifier-1  | 2026/02/16 21:54:13   Pass threshold:         90.00%
+verifier-1  | 2026/02/16 21:54:13   Status:                 PASS
+verifier-1  | 2026/02/16 21:54:13   Message:                Ingestion rate 99.22% meets threshold 90.00%
+verifier-1  | 2026/02/16 21:54:13 ========================================
+verifier-1  | 2026/02/16 21:54:13 Running verification: 12/13 checks passed (92.3%)
+verifier-1  | 2026/02/16 21:54:13 

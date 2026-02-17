@@ -15,9 +15,11 @@ COPY . .
 
 # Build (uses PGO profile if default.pgo exists in the build context)
 ARG VERSION=dev
+ARG GOEXPERIMENT=greenteagc
 RUN PGO_FLAG=""; \
     if [ -f default.pgo ]; then PGO_FLAG="-pgo=default.pgo"; echo "Building with PGO profile"; fi; \
-    CGO_ENABLED=0 go build $PGO_FLAG -ldflags "-s -w -X github.com/szibis/metrics-governor/internal/config.version=${VERSION}" \
+    GOEXPERIMENT=${GOEXPERIMENT} CGO_ENABLED=0 go build $PGO_FLAG \
+    -ldflags "-s -w -X github.com/szibis/metrics-governor/internal/config.version=${VERSION}" \
     -o metrics-governor ./cmd/metrics-governor
 
 # Runtime stage
