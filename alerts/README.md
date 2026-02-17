@@ -30,6 +30,13 @@
   - [MetricsGovernorProcessingOverloaded](#metricsgovernorprocessingoverloaded)
   - [MetricsGovernorAggregateGroupExplosion](#metricsgovernoraggregategroupexplosion)
   - [MetricsGovernorProcessingHighDropRate](#metricsgovernorprocessinghighdroprate)
+- [SLO Burn-Rate Alert Runbooks](#slo-burn-rate-alert-runbooks)
+  - [MetricsGovernorDeliveryBudgetCritical](#metricsgovernordeliverybudgetcritical)
+  - [MetricsGovernorDeliveryBudgetHigh](#metricsgovernordeliverybudgethigh)
+  - [MetricsGovernorDeliveryBudgetSlow](#metricsgovernordeliverybudgetslow)
+  - [MetricsGovernorExportBudgetCritical](#metricsgovernorexportbudgetcritical)
+  - [MetricsGovernorExportBudgetHigh](#metricsgovernorexportbudgethigh)
+  - [MetricsGovernorExportBudgetSlow](#metricsgovernorexportbudgetslow)
 
 ---
 
@@ -922,3 +929,118 @@ curl -s http://<governor>:9090/metrics | grep -E 'processing_input_datapoints|pr
 - Review processing rules before deployment — verify input patterns match only intended metrics
 - Use the playground to preview rule impact before applying
 - For intentional high-drop configurations (Tier 1), disable this alert
+
+---
+
+## SLO Burn-Rate Alert Runbooks
+
+These 6 alerts measure error budget consumption over time using governor-computed SLI metrics. They complement the 13 operational alerts above — operational alerts detect **what's broken now**, SLO alerts measure **cumulative impact over time**.
+
+See [docs/slo.md](../docs/slo.md) for full SLI/SLO framework documentation.
+
+**Import:**
+```bash
+# Prometheus / VictoriaMetrics
+cp alerts/slo-alerts.yaml /etc/prometheus/rules/
+# Kubernetes (Prometheus Operator)
+kubectl apply -f alerts/slo-prometheusrule.yaml
+```
+
+---
+
+### MetricsGovernorDeliveryBudgetCritical
+
+**Severity:** critical | **Burn rate:** 14.4x | **Budget exhaustion:** ~2 days
+
+**Meaning:** The delivery error budget is being consumed at 14.4x the sustainable rate. Both the 1h and 5m windows exceed the threshold, confirming this is active (not stale).
+
+**Investigation:**
+```bash
+# Check delivery ratio
+curl -s localhost:9090/metrics | grep sli_delivery_ratio
+# Check export errors
+curl -s localhost:9090/metrics | grep export_errors_total
+# Check if limits enforcer is dropping excessively
+curl -s localhost:9090/metrics | grep limit_datapoints_dropped
+```
+
+**Resolution:**
+
+| Root Cause | Fix |
+|-----------|-----|
+| Backend down | Check backend health, circuit breaker state |
+| Network issues | Verify connectivity to export endpoints |
+| Queue overflow | Scale up or increase queue capacity |
+| Excessive drops not classified as intentional | Check limits enforcer configuration |
+
+---
+
+### MetricsGovernorDeliveryBudgetHigh
+
+**Severity:** critical | **Burn rate:** 6x | **Budget exhaustion:** ~5 days
+
+**Meaning:** Sustained delivery degradation detected. Both the 6h and 30m windows exceed the threshold.
+
+**Investigation:** Same as DeliveryBudgetCritical, plus check for intermittent failures:
+```bash
+# Check error budget remaining
+curl -s localhost:9090/metrics | grep delivery_budget_remaining
+# Check burn rate trend
+curl -s localhost:9090/metrics | grep delivery_burn_rate
+```
+
+---
+
+### MetricsGovernorDeliveryBudgetSlow
+
+**Severity:** warning | **Burn rate:** 1x | **Budget exhaustion:** 30 days (at SLO pace)
+
+**Meaning:** The delivery error rate is at or above the sustainable pace. If sustained for the full budget window, the SLO will be breached.
+
+**Resolution:** Investigate intermittent export failures or elevated drop rates. This is a leading indicator — address before it escalates.
+
+---
+
+### MetricsGovernorExportBudgetCritical
+
+**Severity:** critical | **Burn rate:** 14.4x | **Budget exhaustion:** ~2 days
+
+**Meaning:** Export batches are failing at 14.4x the sustainable rate. Both the 1h and 5m windows confirm active degradation.
+
+**Investigation:**
+```bash
+# Check export error rate
+curl -s localhost:9090/metrics | grep -E '(export_errors|batches_sent)_total'
+# Check circuit breaker
+curl -s localhost:9090/metrics | grep circuit_breaker
+# Check backend response codes
+curl -s localhost:9090/metrics | grep export_latency
+```
+
+**Resolution:**
+
+| Root Cause | Fix |
+|-----------|-----|
+| Backend returning errors | Check backend logs, capacity |
+| Circuit breaker tripping | Wait for auto-recovery or check reset timeout |
+| Timeout issues | Increase `--exporter-timeout` or reduce batch size |
+
+---
+
+### MetricsGovernorExportBudgetHigh
+
+**Severity:** critical | **Burn rate:** 6x | **Budget exhaustion:** ~5 days
+
+**Meaning:** Sustained export failure rate detected over 6h window.
+
+**Investigation:** Same as ExportBudgetCritical, plus check for intermittent backend issues and worker saturation.
+
+---
+
+### MetricsGovernorExportBudgetSlow
+
+**Severity:** warning | **Burn rate:** 1x | **Budget exhaustion:** 30 days
+
+**Meaning:** Export error rate is at the sustainable limit. If sustained, the SLO will be breached at the end of the budget window.
+
+**Resolution:** Investigate intermittent backend errors, retry exhaustion, or partial failures. This is a leading indicator — address proactively.

@@ -164,6 +164,9 @@ type Collector struct {
 	// --- Group 7: Buffer sizes (infrequent updates) ---
 	prwBufferSize  atomic.Int64
 	otlpBufferSize atomic.Int64
+
+	// SLI tracker for governor-computed SLI metrics (nil when disabled)
+	sliTracker *SLITracker
 }
 
 // MetricStats holds stats for a single metric name.
@@ -732,8 +735,15 @@ func (c *Collector) SetOTLPBufferSize(size int) {
 	c.otlpBufferSize.Store(int64(size))
 }
 
+// SetSLITracker sets the SLI tracker for governor-computed SLI metrics.
+// Must be called before StartPeriodicLogging.
+func (c *Collector) SetSLITracker(tracker *SLITracker) {
+	c.sliTracker = tracker
+}
+
 // StartPeriodicLogging starts logging global stats every interval.
-// It also resets cardinality tracking to prevent unbounded memory growth.
+// It also resets cardinality tracking to prevent unbounded memory growth,
+// and records SLI snapshots when the SLI tracker is configured.
 func (c *Collector) StartPeriodicLogging(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -753,6 +763,19 @@ func (c *Collector) StartPeriodicLogging(ctx context.Context, interval time.Dura
 				"unique_metrics", uniqueMetrics,
 				"total_cardinality", totalCardinality,
 			))
+			// Record SLI snapshot (lock-free counter reads)
+			if c.sliTracker != nil {
+				c.sliTracker.RecordSnapshot(counterReader{
+					otlpReceived:     c.datapointsReceived.Load(),
+					otlpSent:         c.datapointsSent.Load(),
+					prwReceived:      c.prwDatapointsReceived.Load(),
+					prwSent:          c.prwDatapointsSent.Load(),
+					otlpBatchesSent:  c.batchesSent.Load(),
+					otlpExportErrors: c.exportErrors.Load(),
+					prwBatchesSent:   c.prwBatchesSent.Load(),
+					prwExportErrors:  c.prwExportErrors.Load(),
+				})
+			}
 		case <-resetTicker.C:
 			c.ResetCardinality()
 		}
@@ -1026,6 +1049,11 @@ func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# HELP metrics_governor_stats_level Current stats collection level (1=active)\n")
 	fmt.Fprintf(w, "# TYPE metrics_governor_stats_level gauge\n")
 	fmt.Fprintf(w, "metrics_governor_stats_level{level=%q} 1\n", string(c.level))
+
+	// Write SLI metrics (separate lock scope — no contention with hot path)
+	if c.sliTracker != nil {
+		c.sliTracker.WriteSLIMetrics(w)
+	}
 }
 
 // formatLabels formats a label map as Prometheus label string.
