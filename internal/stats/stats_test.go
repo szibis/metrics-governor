@@ -3,9 +3,12 @@ package stats
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1055,4 +1058,216 @@ func TestByteMetricsConcurrent(t *testing.T) {
 	if !strings.Contains(output, "metrics_governor_buffer_size") {
 		t.Error("expected buffer size metrics after concurrent access")
 	}
+}
+
+// --- LLM Observer wiring tests ---
+
+// mockLLMObserver implements the unexported llmObserver interface for testing.
+// Uses atomic counters and a mutex for thread-safe access under -race.
+type mockLLMObserver struct {
+	observeCalls  atomic.Int64
+	snapshotCalls atomic.Int64
+	writeCalls    atomic.Int64
+	mu            sync.Mutex
+	lastMetrics   []*metricspb.ResourceMetrics
+}
+
+func (m *mockLLMObserver) ObserveMetrics(rms []*metricspb.ResourceMetrics) {
+	m.observeCalls.Add(1)
+	m.mu.Lock()
+	m.lastMetrics = rms
+	m.mu.Unlock()
+}
+
+func (m *mockLLMObserver) RecordSnapshot() {
+	m.snapshotCalls.Add(1)
+}
+
+func (m *mockLLMObserver) WriteLLMMetrics(w http.ResponseWriter) {
+	m.writeCalls.Add(1)
+	fmt.Fprintf(w, "metrics_governor_llm_tracker_enabled 1\n")
+}
+
+func TestSetLLMTracker(t *testing.T) {
+	c := NewCollector(nil, StatsLevelFull)
+
+	// Initially nil
+	if c.llmTracker != nil {
+		t.Fatal("expected llmTracker to be nil initially")
+	}
+
+	// Set a mock tracker
+	mock := &mockLLMObserver{}
+	c.SetLLMTracker(mock)
+	if c.llmTracker == nil {
+		t.Fatal("expected llmTracker to be set after SetLLMTracker")
+	}
+
+	// Set back to nil (nil-safety)
+	c.SetLLMTracker(nil)
+	if c.llmTracker != nil {
+		t.Fatal("expected llmTracker to be nil after setting nil")
+	}
+}
+
+func TestProcessCallsLLMObserver(t *testing.T) {
+	c := NewCollector(nil, StatsLevelFull)
+	mock := &mockLLMObserver{}
+	c.SetLLMTracker(mock)
+
+	rm := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{
+			createTestMetric("http_requests_total", []map[string]string{
+				{"method": "GET", "status": "200"},
+			}),
+		},
+	)
+
+	rms := []*metricspb.ResourceMetrics{rm}
+	c.Process(rms)
+
+	if got := mock.observeCalls.Load(); got != 1 {
+		t.Errorf("expected ObserveMetrics to be called 1 time, got %d", got)
+	}
+	mock.mu.Lock()
+	lastLen := len(mock.lastMetrics)
+	lastFirst := mock.lastMetrics[0]
+	mock.mu.Unlock()
+	if lastLen != 1 {
+		t.Errorf("expected ObserveMetrics to receive 1 ResourceMetrics, got %d", lastLen)
+	}
+	if lastFirst != rm {
+		t.Error("expected ObserveMetrics to receive the same ResourceMetrics pointer")
+	}
+
+	// Call Process again to verify accumulation
+	c.Process(rms)
+	if got := mock.observeCalls.Load(); got != 2 {
+		t.Errorf("expected ObserveMetrics to be called 2 times, got %d", got)
+	}
+}
+
+func TestProcessWithoutLLMTracker(t *testing.T) {
+	c := NewCollector(nil, StatsLevelFull)
+	// llmTracker is nil — Process should not panic
+
+	rm := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{
+			createTestMetric("test_metric", []map[string]string{{"id": "1"}}),
+		},
+	)
+
+	// Should not panic
+	c.Process([]*metricspb.ResourceMetrics{rm})
+
+	datapoints, _, _ := c.GetGlobalStats()
+	if datapoints != 1 {
+		t.Errorf("expected 1 datapoint, got %d", datapoints)
+	}
+}
+
+func TestServeHTTPCallsLLMObserver(t *testing.T) {
+	c := NewCollector(nil, StatsLevelFull)
+	mock := &mockLLMObserver{}
+	c.SetLLMTracker(mock)
+
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	w := httptest.NewRecorder()
+
+	c.ServeHTTP(w, req)
+
+	if got := mock.writeCalls.Load(); got != 1 {
+		t.Errorf("expected WriteLLMMetrics to be called 1 time, got %d", got)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "metrics_governor_llm_tracker_enabled") {
+		t.Error("expected response to contain LLM tracker metrics")
+	}
+}
+
+func TestServeHTTPWithoutLLMTracker(t *testing.T) {
+	c := NewCollector(nil, StatsLevelFull)
+	// llmTracker is nil — ServeHTTP should not panic
+
+	rm := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{
+			createTestMetric("test_metric", []map[string]string{{"id": "1"}}),
+		},
+	)
+	c.Process([]*metricspb.ResourceMetrics{rm})
+
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	w := httptest.NewRecorder()
+
+	// Should not panic
+	c.ServeHTTP(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "metrics_governor_datapoints_total") {
+		t.Error("expected response to contain standard stats output")
+	}
+	if strings.Contains(body, "metrics_governor_llm_tracker_enabled") {
+		t.Error("expected response to NOT contain LLM tracker metrics when tracker is nil")
+	}
+}
+
+func TestStartPeriodicLoggingCallsLLMObserver(t *testing.T) {
+	c := NewCollector(nil, StatsLevelFull)
+	mock := &mockLLMObserver{}
+	c.SetLLMTracker(mock)
+
+	// Add some data so the logging has something to report
+	rm := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{
+			createTestMetric("test_metric", []map[string]string{{"id": "1"}}),
+		},
+	)
+	c.Process([]*metricspb.ResourceMetrics{rm})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go c.StartPeriodicLogging(ctx, 10*time.Millisecond)
+
+	// Wait long enough for at least one tick
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	// Allow goroutine to finish
+	time.Sleep(10 * time.Millisecond)
+
+	if got := mock.snapshotCalls.Load(); got < 1 {
+		t.Errorf("expected RecordSnapshot to be called at least 1 time, got %d", got)
+	}
+}
+
+func TestStartPeriodicLoggingWithoutLLMTracker(t *testing.T) {
+	c := NewCollector(nil, StatsLevelFull)
+	// llmTracker is nil — StartPeriodicLogging should not panic
+
+	rm := createTestResourceMetrics(
+		map[string]string{"service": "api"},
+		[]*metricspb.Metric{
+			createTestMetric("test_metric", []map[string]string{{"id": "1"}}),
+		},
+	)
+	c.Process([]*metricspb.ResourceMetrics{rm})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go c.StartPeriodicLogging(ctx, 10*time.Millisecond)
+
+	// Let it run a few ticks — should not panic
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	// Allow goroutine to finish
+	time.Sleep(10 * time.Millisecond)
 }

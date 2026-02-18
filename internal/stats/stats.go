@@ -167,6 +167,17 @@ type Collector struct {
 
 	// SLI tracker for governor-computed SLI metrics (nil when disabled)
 	sliTracker *SLITracker
+
+	// LLM tracker for token budget tracking (nil when disabled)
+	llmTracker llmObserver
+}
+
+// llmObserver is the interface for LLM token budget tracking.
+// Implemented by llm.Tracker; nil when disabled (zero cost).
+type llmObserver interface {
+	ObserveMetrics([]*metricspb.ResourceMetrics)
+	RecordSnapshot()
+	WriteLLMMetrics(w http.ResponseWriter)
 }
 
 // MetricStats holds stats for a single metric name.
@@ -261,6 +272,11 @@ func (c *Collector) Degrade() bool {
 // At basic level, only per-metric datapoint counts are tracked (no Bloom filters).
 // At full level, Bloom-based cardinality and per-label stats are also tracked.
 func (c *Collector) Process(resourceMetrics []*metricspb.ResourceMetrics) {
+	// LLM observation: nil check only when disabled (~1ns)
+	if c.llmTracker != nil {
+		c.llmTracker.ObserveMetrics(resourceMetrics)
+	}
+
 	level := c.effectiveLevel.Load()
 	if level == levelNone {
 		return // degraded to none — skip all stats
@@ -741,6 +757,12 @@ func (c *Collector) SetSLITracker(tracker *SLITracker) {
 	c.sliTracker = tracker
 }
 
+// SetLLMTracker sets the LLM token budget tracker.
+// Must be called before StartPeriodicLogging.
+func (c *Collector) SetLLMTracker(tracker llmObserver) {
+	c.llmTracker = tracker
+}
+
 // StartPeriodicLogging starts logging global stats every interval.
 // It also resets cardinality tracking to prevent unbounded memory growth,
 // and records SLI snapshots when the SLI tracker is configured.
@@ -775,6 +797,10 @@ func (c *Collector) StartPeriodicLogging(ctx context.Context, interval time.Dura
 					prwBatchesSent:   c.prwBatchesSent.Load(),
 					prwExportErrors:  c.prwExportErrors.Load(),
 				})
+			}
+			// Record LLM token snapshot
+			if c.llmTracker != nil {
+				c.llmTracker.RecordSnapshot()
 			}
 		case <-resetTicker.C:
 			c.ResetCardinality()
@@ -1053,6 +1079,11 @@ func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Write SLI metrics (separate lock scope — no contention with hot path)
 	if c.sliTracker != nil {
 		c.sliTracker.WriteSLIMetrics(w)
+	}
+
+	// Write LLM token budget metrics (separate lock scope)
+	if c.llmTracker != nil {
+		c.llmTracker.WriteLLMMetrics(w)
 	}
 }
 

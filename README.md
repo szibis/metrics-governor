@@ -42,6 +42,7 @@
 
 ### What's New
 
+- **v1.2.0 — LLM/GenAI metric governance** — Token budget tracking, `gen_ai.*` metric governance with limits rules, per-model/provider visibility. First Prometheus-native proxy to govern LLM observability metrics. [Details](docs/llm-governance.md)
 - **v1.0.1 — Memory optimization** — GOGC tuning (200→100) + Green Tea GC + reduced buffer/queue allocation. Memory at 50k dps dropped **48%** (37.5%→19.5%) with only +0.19pp CPU. Memory budget metrics added for operational visibility. [Details](docs/performance.md)
 - **v1.0 stable release** — All 15 deprecated CLI flags, legacy sampling metrics, and backward-compatibility shims removed. Clean, unified API surface.
 - **vtprotobuf integration** (v0.44) — Zero-allocation protobuf marshal/unmarshal via [PlanetScale vtprotobuf](https://github.com/planetscale/vtprotobuf) with `sync.Pool` message reuse. Measured **<1% CPU** at 100k dps.
@@ -81,6 +82,8 @@ How metrics-governor compares against the most common open-source metrics collec
 | Persistent queue / zero data loss | ✅ | ⚠️ | ⚠️ | ✅ | ✅ | ⚠️ | ✅ |
 | Consistent hash sharding | ✅ | ❌ | ⚠️ | ⚠️ | ❌ | ❌ | ⚠️ |
 | Circuit breaker / backpressure | ✅ | ⚠️ | ⚠️ | ⚠️ | ✅ | ⚠️ | ✅ |
+| **Observability** | | | | | | | |
+| LLM/GenAI metric governance | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 <details>
 <summary>Legend and notes</summary>
@@ -122,6 +125,7 @@ How metrics-governor's in-transit governance compares against vendor-side cardin
 | Works with any backend | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | No vendor lock-in | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Self-hosted / on-prem | ✅ | ❌ | ❌ | ❌ | ⚠️ | ❌ |
+| LLM/GenAI metric governance | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 <details>
 <summary>Legend and notes</summary>
@@ -267,6 +271,7 @@ Six actions in a single ordered pipeline — first match wins:
 - **[Cardinality Tracking](docs/cardinality-tracking.md)** — Three modes: **Bloom filter** (98% less memory — 1.2 MB vs 75 MB @ 1M series), **HyperLogLog** (constant 12 KB), **Hybrid** (auto-switches at threshold)
 - **[Bloom Persistence](docs/bloom-persistence.md)** — Save/restore filter state across restarts, eliminating cold-start re-learning
 - **[Rule Ownership Labels](docs/processing-rules.md)** — Attach `team`, `slack_channel`, `pagerduty_service` to any rule for Alertmanager routing
+- **[LLM/GenAI Token Budget Tracking](docs/llm-governance.md)** — Monitor token consumption rates, budget burn, per-model/provider visibility. Govern `gen_ai.*` metrics with limits rules or dedicated tracker
 
 ### Export — High-Throughput Pipeline
 
@@ -450,6 +455,7 @@ Plan your deployment in seconds. The **interactive Playground** estimates CPU, m
 | 💾 | [**Bloom Persistence**](docs/bloom-persistence.md) | Save/restore filter state across restarts |
 | 🚨 | [**Alerting**](docs/alerting.md) | 13 alerts with runbooks, dead rule detection |
 | 🎯 | [**SLOs**](docs/slo.md) | SLI definitions, error budgets, burn-rate alerts, health dashboard |
+| 🤖 | [**LLM Governance**](docs/llm-governance.md) | Token budget tracking, `gen_ai.*` metric governance, example configs |
 | 📊 | [**Dashboards**](docs/dashboards.md) | Grafana operations and development dashboards |
 | 🏭 | [**Production Guide**](docs/production-guide.md) | Sizing, HPA/VPA, DaemonSet, bare metal |
 | 🔧 | [**Stability Tuning**](docs/stability-guide.md) | Graduated spillover, load shedding, drain ordering, backpressure tuning |

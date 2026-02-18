@@ -24,6 +24,7 @@ import (
 	"github.com/szibis/metrics-governor/internal/exporter"
 	"github.com/szibis/metrics-governor/internal/health"
 	"github.com/szibis/metrics-governor/internal/limits"
+	"github.com/szibis/metrics-governor/internal/llm"
 	"github.com/szibis/metrics-governor/internal/logging"
 	metricspb "github.com/szibis/metrics-governor/internal/otlpvt/metricspb"
 	"github.com/szibis/metrics-governor/internal/pipeline"
@@ -738,6 +739,29 @@ func main() {
 			"delivery_target", cfg.SLIDeliveryTarget,
 			"export_target", cfg.SLIExportTarget,
 			"budget_window", cfg.SLIBudgetWindow.String(),
+		))
+	}
+
+	// Configure LLM token budget tracker
+	if statsCollector != nil && cfg.LLMEnabled {
+		llmCfg := llm.LLMConfig{
+			Enabled:      cfg.LLMEnabled,
+			TokenMetric:  cfg.LLMTokenMetric,
+			BudgetWindow: cfg.LLMBudgetWindow,
+		}
+		for _, b := range cfg.LLMBudgets {
+			llmCfg.Budgets = append(llmCfg.Budgets, llm.BudgetRule{
+				Provider:    b.Provider,
+				Model:       b.Model,
+				DailyTokens: b.DailyTokens,
+			})
+		}
+		llmTracker := llm.NewTracker(llmCfg)
+		statsCollector.SetLLMTracker(llmTracker)
+		logging.Info("LLM tracker enabled", logging.F(
+			"token_metric", cfg.LLMTokenMetric,
+			"budget_window", cfg.LLMBudgetWindow.String(),
+			"budget_rules", len(cfg.LLMBudgets),
 		))
 	}
 

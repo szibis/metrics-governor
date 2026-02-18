@@ -106,6 +106,12 @@ type Config struct {
 	SLIExportTarget   float64       // Export success SLO target (default: 0.995 = 99.5%)
 	SLIBudgetWindow   time.Duration // Error budget window (default: 720h = 30 days)
 
+	// LLM token budget tracking settings
+	LLMEnabled      bool            // Enable LLM token budget tracking (default: false)
+	LLMTokenMetric  string          // Token usage metric name (default: "gen_ai.client.token.usage")
+	LLMBudgetWindow time.Duration   // Token budget window (default: 24h)
+	LLMBudgets      []LLMBudgetRule // Token budget rules (YAML-only)
+
 	// Limits settings
 	LimitsConfig     string
 	LimitsDryRun     bool
@@ -504,6 +510,11 @@ func ParseFlags() *Config {
 	flag.Float64Var(&cfg.SLIExportTarget, "sli-export-target", 0.995, "Export success SLO target (0.0-1.0, default: 0.995 = 99.5%)")
 	flag.DurationVar(&cfg.SLIBudgetWindow, "sli-budget-window", 720*time.Hour, "Error budget window (default: 720h = 30 days)")
 
+	// LLM token budget tracking flags
+	flag.BoolVar(&cfg.LLMEnabled, "llm-enabled", false, "Enable LLM/GenAI token budget tracking (token consumption rates, budget burn, per-model visibility)")
+	flag.StringVar(&cfg.LLMTokenMetric, "llm-token-metric", "gen_ai.client.token.usage", "Token usage metric name prefix to match")
+	flag.DurationVar(&cfg.LLMBudgetWindow, "llm-budget-window", 24*time.Hour, "Token budget window (default: 24h)")
+
 	// Limits flags
 	flag.StringVar(&cfg.LimitsConfig, "limits-config", "", "Path to limits configuration YAML file")
 	flag.BoolVar(&cfg.LimitsDryRun, "limits-dry-run", true, "Dry run mode: log violations but don't drop/sample")
@@ -876,6 +887,14 @@ func applyFlagOverrides(cfg *Config) {
 		case "sli-budget-window":
 			if d, err := time.ParseDuration(f.Value.String()); err == nil {
 				cfg.SLIBudgetWindow = d
+			}
+		case "llm-enabled":
+			cfg.LLMEnabled = f.Value.String() == "true"
+		case "llm-token-metric":
+			cfg.LLMTokenMetric = f.Value.String()
+		case "llm-budget-window":
+			if d, err := time.ParseDuration(f.Value.String()); err == nil {
+				cfg.LLMBudgetWindow = d
 			}
 		case "limits-config":
 			cfg.LimitsConfig = f.Value.String()
@@ -1427,6 +1446,13 @@ func (c *Config) QueueConfig() QueueConfig {
 		AdaptiveEnabled:   c.QueueAdaptiveEnabled,
 		CompactThreshold:  c.QueueCompactThreshold,
 	}
+}
+
+// LLMBudgetRule defines a token budget for a provider/model pattern.
+type LLMBudgetRule struct {
+	Provider    string // glob pattern: "openai", "*"
+	Model       string // glob pattern: "gpt-4*", "*"
+	DailyTokens int64  // 0 = observe only
 }
 
 // QueueConfig holds queue configuration.
@@ -1998,6 +2024,9 @@ func DefaultConfig() *Config {
 		SLIDeliveryTarget:               0.999,
 		SLIExportTarget:                 0.995,
 		SLIBudgetWindow:                 720 * time.Hour,
+		LLMEnabled:                      false,
+		LLMTokenMetric:                  "gen_ai.client.token.usage",
+		LLMBudgetWindow:                 24 * time.Hour,
 		LimitsConfig:                    "",
 		LimitsDryRun:                    true,
 		RuleCacheMaxSize:                10000,
