@@ -18,7 +18,7 @@
 [![Coverage](https://img.shields.io/badge/Coverage-90%25-brightgreen?style=for-the-badge&logo=codecov&logoColor=white)](https://github.com/szibis/metrics-governor/actions/workflows/build.yml)
 [![Race Detector](https://img.shields.io/badge/Race_Detector-passing-success?style=for-the-badge&logo=go&logoColor=white)](docs/testing.md)
 [![Go Lines](https://img.shields.io/badge/Go_Code-169k_lines-informational?style=for-the-badge&logo=go&logoColor=white)](.)
-[![Docs](https://img.shields.io/badge/Docs-31_guides-8A2BE2?style=for-the-badge&logo=readthedocs&logoColor=white)](docs/)
+[![Docs](https://img.shields.io/badge/Docs-32_guides-8A2BE2?style=for-the-badge&logo=readthedocs&logoColor=white)](https://metrics-governor.io/docs/getting-started/installation)
 [![Benchmarks](https://img.shields.io/badge/Benchmarks-5_Matrix_Tests-success?style=for-the-badge&logo=speedtest&logoColor=white)](https://github.com/szibis/metrics-governor/actions/workflows/benchmark.yml)
 
 [![OTLP](https://img.shields.io/badge/OTLP-gRPC_%7C_HTTP-4a90d9?style=for-the-badge&logo=opentelemetry&logoColor=white)](docs/receiving.md)
@@ -28,7 +28,7 @@
 [![SLOs](https://img.shields.io/badge/SLOs-Error_Budgets_%2B_Burn_Rate-8B5CF6?style=for-the-badge&logo=prometheus&logoColor=white)](docs/slo.md)
 [![Helm Chart](https://img.shields.io/badge/Helm-Chart_Included-0F1689?style=for-the-badge&logo=helm&logoColor=white)](helm/metrics-governor/)
 [![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F46800?style=for-the-badge&logo=grafana&logoColor=white)](dashboards/)
-[![Playground](https://img.shields.io/badge/Playground-Config_Tool-20c997?style=for-the-badge&logo=googlechrome&logoColor=white)](https://szibis.github.io/metrics-governor/)
+[![Playground](https://img.shields.io/badge/Playground-Config_Tool-20c997?style=for-the-badge&logo=googlechrome&logoColor=white)](https://metrics-governor.io/playground)
 
 </p>
 
@@ -159,7 +159,7 @@ Whether you're running **legacy Prometheus Remote Write**, migrating to **modern
 | **Unpredictable costs** from runaway services | [Per-group tracking](docs/limits.md) with configurable limits, dry-run mode, and ownership labels for team routing |
 | **Need team/severity labels** derived from business values | [Transform rules](docs/processing-rules.md) — build `severity`, `team`, `env` from metric names and label values |
 | **Stale rules** pile up unnoticed | [Dead rule detection](docs/processing-rules.md#dead-rule-detection) tracks last-match time for every rule, with alerts for stale cleanup |
-| **Complex deployment** planning | [Interactive Playground](https://szibis.github.io/metrics-governor/) generates Helm, app, and limits YAML from your throughput inputs |
+| **Complex deployment** planning | [Interactive Playground](https://metrics-governor.io/playground) generates Helm, app, and limits YAML from your throughput inputs |
 
 ---
 
@@ -310,7 +310,7 @@ Six actions in a single ordered pipeline — first match wins:
 - **[Helm Chart](helm/metrics-governor/)** — Full production chart with probes, ConfigMap sidecar, HPA-ready, alert rules integrated
 - **[Profiles](docs/profiles.md)** — 6 presets (`minimal`, `balanced`, `safety`, `observable`, `resilient`, `performance`) — one flag to set 30+ parameters, tuned from measured vtprotobuf benchmarks
 - **[Hot Reload](docs/reload.md)** — SIGHUP reloads limits and processing rules without restart; ConfigMap sidecar for Kubernetes
-- **[Interactive Playground](https://szibis.github.io/metrics-governor/)** — Browser tool estimates resources, generates Helm/YAML/limits configs, recommends cloud storage classes
+- **[Interactive Playground](https://metrics-governor.io/playground)** — Browser tool estimates resources, generates Helm/YAML/limits configs, recommends cloud storage classes
 - **[TLS/mTLS + Auth](docs/tls.md)** — Full TLS, mutual TLS, bearer token, basic auth, custom headers
 - **Zero-Config Start** — Works out of the box with sensible defaults; add limits and sharding when needed
 
@@ -400,7 +400,7 @@ When cardinality exceeds 10,000, metrics-governor identifies which service is th
 
 Plan your deployment in seconds. The **interactive Playground** estimates CPU, memory, disk I/O, and K8s pod sizing from your throughput inputs, and generates ready-to-use Helm, app config, and limits YAML — all in a single zero-dependency HTML page.
 
-**[Open Playground](https://szibis.github.io/metrics-governor/)** | [Source](tools/playground/)
+**[Open Playground](https://metrics-governor.io/playground)** | [Source](tools/playground/)
 
 <table>
 <tr>

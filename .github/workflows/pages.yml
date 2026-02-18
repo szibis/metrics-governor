@@ -1,11 +1,10 @@
-name: Deploy Playground
+name: Deploy Docs Site
 
 on:
   push:
     branches: [main]
     paths:
-      - 'tools/playground/**'
-      - 'docs/images/logo.svg'
+      - 'website/**'
   workflow_dispatch:
 
 permissions:
@@ -23,14 +22,24 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Build site
-        run: |
-          mkdir -p _site/docs/images
-          cp tools/playground/index.html _site/index.html
-          cp docs/images/logo.svg _site/docs/images/logo.svg 2>/dev/null || true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: website
+
+      - name: Build Docusaurus site
+        run: npm run build
+        working-directory: website
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
+        with:
+          path: website/build
 
   deploy:
     environment:

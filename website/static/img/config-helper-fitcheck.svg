@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="180" viewBox="0 0 480 180">
+  <defs>
+    <style>
+      .bg { fill: #1a1a2e; }
+      .title { fill: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 700; }
+      .label { fill: #94a3b8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 10px; }
+      .header { fill: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 16px; font-weight: 700; }
+      .small { fill: #64748b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 9px; }
+      .value { fill: #f1f5f9; font-family: ui-monospace, 'Cascadia Code', monospace; font-size: 12px; }
+      .value-unit { fill: #f1f5f9; font-family: ui-monospace, 'Cascadia Code', monospace; font-size: 9px; }
+      .status-green { fill: #2ecc40; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 9px; }
+      .arrow-label { fill: #818cf8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 8px; font-weight: 600; }
+    </style>
+    <marker id="arrowR" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="none" stroke="#6366f1" stroke-width="1.5"/></marker>
+    <marker id="arrowL" markerWidth="6" markerHeight="6" refX="1" refY="3" orient="auto"><path d="M6,0 L0,3 L6,6" fill="none" stroke="#6366f1" stroke-width="1.5"/></marker>
+  </defs>
+  <rect class="bg" width="480" height="180"/>
+
+  <text class="header" x="20" y="24">Fit Check &#x2014; does it fit your cluster?</text>
+  <text class="small" x="20" y="40">Enter your actual available resources. Pod override lets you set a fixed replica count.</text>
+
+  <!-- Pod Override -->
+  <rect x="15" y="50" width="105" height="80" rx="8" ry="8" fill="#16213e" stroke="#334155"/>
+  <text class="label" x="25" y="68">Pod Override</text>
+  <circle cx="94" cy="65" r="3" fill="#2ecc40"/>
+  <rect x="25" y="74" width="85" height="24" rx="4" ry="4" fill="#0f172a" stroke="#334155"/>
+  <text class="value" x="35" y="91">0</text>
+  <text class="small" x="60" y="91">(auto)</text>
+  <text class="status-green" x="25" y="118">Using recommended: 1 pod</text>
+
+  <!-- CPU -->
+  <rect x="130" y="50" width="105" height="80" rx="8" ry="8" fill="#16213e" stroke="#334155"/>
+  <text class="label" x="140" y="68">Available CPU</text>
+  <circle cx="209" cy="65" r="3" fill="#2ecc40"/>
+  <rect x="140" y="74" width="55" height="24" rx="4" ry="4" fill="#0f172a" stroke="#334155"/>
+  <text class="value" x="150" y="91">4</text>
+  <rect x="198" y="74" width="28" height="24" rx="4" ry="4" fill="#0f172a" stroke="#334155"/>
+  <text class="value-unit" x="201" y="91">cores</text>
+  <text class="status-green" x="140" y="118">OK &#x2014; 87% headroom</text>
+
+  <!-- Memory -->
+  <rect x="245" y="50" width="105" height="80" rx="8" ry="8" fill="#16213e" stroke="#334155"/>
+  <text class="label" x="255" y="68">Available Memory</text>
+  <circle cx="324" cy="65" r="3" fill="#2ecc40"/>
+  <rect x="255" y="74" width="55" height="24" rx="4" ry="4" fill="#0f172a" stroke="#334155"/>
+  <text class="value" x="265" y="91">512</text>
+  <rect x="313" y="74" width="28" height="24" rx="4" ry="4" fill="#0f172a" stroke="#334155"/>
+  <text class="value-unit" x="318" y="91">MB</text>
+  <text class="status-green" x="255" y="118">OK &#x2014; 89% headroom</text>
+
+  <!-- Disk -->
+  <rect x="360" y="50" width="105" height="80" rx="8" ry="8" fill="#16213e" stroke="#334155"/>
+  <text class="label" x="370" y="68">Available Disk</text>
+  <circle cx="439" cy="65" r="3" fill="#2ecc40"/>
+  <rect x="370" y="74" width="55" height="24" rx="4" ry="4" fill="#0f172a" stroke="#334155"/>
+  <text class="value" x="380" y="91">500</text>
+  <rect x="428" y="74" width="28" height="24" rx="4" ry="4" fill="#0f172a" stroke="#334155"/>
+  <text class="value-unit" x="433" y="91">MB</text>
+  <text class="status-green" x="370" y="118">OK &#x2014; 76% headroom</text>
+
+  <!-- Bidirectional sync hint -->
+  <rect x="15" y="140" width="450" height="32" rx="8" ry="8" fill="#16213e" stroke="#334155"/>
+  <line x1="30" y1="156" x2="60" y2="156" fill="none" stroke="#6366f1" stroke-width="1.5" marker-end="url(#arrowR)" marker-start="url(#arrowL)"/>
+  <text class="arrow-label" x="70" y="160">Pod override &amp; fit check values sync with YAML textareas bidirectionally</text>
+</svg>
