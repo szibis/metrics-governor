@@ -26,6 +26,7 @@ type YAMLConfig struct {
 	Performance PerformanceYAMLConfig `yaml:"performance"`
 	Memory      MemoryYAMLConfig      `yaml:"memory"`
 	Telemetry   TelemetryYAMLConfig   `yaml:"telemetry"`
+	Autotune    AutotuneYAMLConfig    `yaml:"autotune"`
 }
 
 // TelemetryYAMLConfig holds OTLP self-monitoring telemetry configuration.
@@ -313,6 +314,60 @@ type LimitsYAMLConfig struct {
 	StatsThreshold   int64 `yaml:"stats_threshold"` // Only report per-group stats for groups with >= N datapoints
 }
 
+// AutotuneYAMLConfig holds autotune closed-loop governance configuration.
+type AutotuneYAMLConfig struct {
+	Enabled  *bool    `yaml:"enabled"`
+	Interval Duration `yaml:"interval"`
+	Source   AutotuneSourceYAMLConfig `yaml:"source"`
+
+	// Tier 2: vmanomaly.
+	VManomalyEnabled *bool  `yaml:"vmanomaly_enabled"`
+	VManomalyURL     string `yaml:"vmanomaly_url"`
+	VManomalyMetric  string `yaml:"vmanomaly_metric"`
+
+	// Persistence.
+	PersistMode     string `yaml:"persist_mode"`
+	PersistFilePath string `yaml:"persist_file_path"`
+
+	// HA coordination.
+	HAMode             string `yaml:"ha_mode"`
+	HADesignatedLeader *bool  `yaml:"ha_designated_leader"`
+	HALeaseName        string `yaml:"ha_lease_name"`
+
+	// Config propagation.
+	PropagationMode    string `yaml:"propagation_mode"`
+	PropagationService string `yaml:"propagation_service"`
+
+	// Tier 3: AI/LLM.
+	AIEnabled  *bool  `yaml:"ai_enabled"`
+	AIEndpoint string `yaml:"ai_endpoint"`
+	AIModel    string `yaml:"ai_model"`
+	AIAPIKey   string `yaml:"ai_api_key"`
+
+	// External signal provider.
+	ExternalURL          string   `yaml:"external_url"`
+	ExternalPollInterval Duration `yaml:"external_poll_interval"`
+}
+
+// AutotuneSourceYAMLConfig holds cardinality source config for YAML.
+type AutotuneSourceYAMLConfig struct {
+	Backend  string   `yaml:"backend"`
+	URL      string   `yaml:"url"`
+	TenantID string   `yaml:"tenant_id"`
+	Timeout  Duration `yaml:"timeout"`
+	TopN     int      `yaml:"top_n"`
+	VM       AutotuneVMYAMLConfig `yaml:"vm"`
+}
+
+// AutotuneVMYAMLConfig holds VM-specific autotune settings for YAML.
+type AutotuneVMYAMLConfig struct {
+	TSDBInsights        *bool    `yaml:"tsdb_insights"`
+	CardinalityExplorer *bool    `yaml:"cardinality_explorer"`
+	ExplorerInterval    Duration `yaml:"explorer_interval"`
+	ExplorerMatch       string   `yaml:"explorer_match"`
+	ExplorerFocusLabel  string   `yaml:"explorer_focus_label"`
+}
+
 // Duration is a wrapper for time.Duration that supports YAML unmarshaling.
 type Duration time.Duration
 
@@ -553,6 +608,65 @@ func (y *YAMLConfig) ApplyDefaults() {
 	}
 	if y.Stats.LLM.BudgetWindow == 0 {
 		y.Stats.LLM.BudgetWindow = Duration(24 * time.Hour)
+	}
+
+	// Autotune defaults
+	if y.Autotune.Enabled == nil {
+		enabled := false
+		y.Autotune.Enabled = &enabled
+	}
+	if y.Autotune.Interval == 0 {
+		y.Autotune.Interval = Duration(60 * time.Second)
+	}
+	if y.Autotune.Source.Backend == "" {
+		y.Autotune.Source.Backend = "vm"
+	}
+	if y.Autotune.Source.Timeout == 0 {
+		y.Autotune.Source.Timeout = Duration(10 * time.Second)
+	}
+	if y.Autotune.Source.TopN == 0 {
+		y.Autotune.Source.TopN = 100
+	}
+	if y.Autotune.Source.VM.TSDBInsights == nil {
+		tsdb := true
+		y.Autotune.Source.VM.TSDBInsights = &tsdb
+	}
+	if y.Autotune.Source.VM.CardinalityExplorer == nil {
+		explorer := false
+		y.Autotune.Source.VM.CardinalityExplorer = &explorer
+	}
+	if y.Autotune.Source.VM.ExplorerInterval == 0 {
+		y.Autotune.Source.VM.ExplorerInterval = Duration(5 * time.Minute)
+	}
+	if y.Autotune.VManomalyEnabled == nil {
+		enabled := false
+		y.Autotune.VManomalyEnabled = &enabled
+	}
+	if y.Autotune.VManomalyMetric == "" {
+		y.Autotune.VManomalyMetric = "anomaly_score"
+	}
+	if y.Autotune.PersistMode == "" {
+		y.Autotune.PersistMode = "memory"
+	}
+	if y.Autotune.HAMode == "" {
+		y.Autotune.HAMode = "noop"
+	}
+	if y.Autotune.HADesignatedLeader == nil {
+		leader := false
+		y.Autotune.HADesignatedLeader = &leader
+	}
+	if y.Autotune.HALeaseName == "" {
+		y.Autotune.HALeaseName = "governor-autotune"
+	}
+	if y.Autotune.PropagationMode == "" {
+		y.Autotune.PropagationMode = "configmap"
+	}
+	if y.Autotune.AIEnabled == nil {
+		aiEnabled := false
+		y.Autotune.AIEnabled = &aiEnabled
+	}
+	if y.Autotune.ExternalPollInterval == 0 {
+		y.Autotune.ExternalPollInterval = Duration(5 * time.Minute)
 	}
 
 	// Limits defaults
@@ -848,6 +962,36 @@ func (y *YAMLConfig) ToConfig() *Config {
 		LLMTokenMetric:            y.Stats.LLM.TokenMetric,
 		LLMBudgetWindow:           time.Duration(y.Stats.LLM.BudgetWindow),
 		LLMBudgets:                convertLLMBudgets(y.Stats.LLM.Budgets),
+
+		// Autotune
+		AutotuneEnabled:             *y.Autotune.Enabled,
+		AutotuneInterval:            time.Duration(y.Autotune.Interval),
+		AutotuneSourceBackend:       y.Autotune.Source.Backend,
+		AutotuneSourceURL:           y.Autotune.Source.URL,
+		AutotuneSourceTenantID:      y.Autotune.Source.TenantID,
+		AutotuneSourceTimeout:       time.Duration(y.Autotune.Source.Timeout),
+		AutotuneSourceTopN:          y.Autotune.Source.TopN,
+		AutotuneVMTSDBInsights:      *y.Autotune.Source.VM.TSDBInsights,
+		AutotuneVMExplorer:          *y.Autotune.Source.VM.CardinalityExplorer,
+		AutotuneVMExplorerInterval:  time.Duration(y.Autotune.Source.VM.ExplorerInterval),
+		AutotuneVMExplorerMatch:     y.Autotune.Source.VM.ExplorerMatch,
+		AutotuneVMExplorerFocusLabel: y.Autotune.Source.VM.ExplorerFocusLabel,
+		AutotuneVManomalyEnabled:    *y.Autotune.VManomalyEnabled,
+		AutotuneVManomalyURL:        y.Autotune.VManomalyURL,
+		AutotuneVManomalyMetric:     y.Autotune.VManomalyMetric,
+		AutotunePersistMode:         y.Autotune.PersistMode,
+		AutotunePersistFilePath:     y.Autotune.PersistFilePath,
+		AutotuneHAMode:              y.Autotune.HAMode,
+		AutotuneHADesignatedLeader:  *y.Autotune.HADesignatedLeader,
+		AutotuneHALeaseName:         y.Autotune.HALeaseName,
+		AutotunePropagationMode:     y.Autotune.PropagationMode,
+		AutotunePropagationService:    y.Autotune.PropagationService,
+		AutotuneAIEnabled:             *y.Autotune.AIEnabled,
+		AutotuneAIEndpoint:            y.Autotune.AIEndpoint,
+		AutotuneAIModel:               y.Autotune.AIModel,
+		AutotuneAIAPIKey:              y.Autotune.AIAPIKey,
+		AutotuneExternalURL:           y.Autotune.ExternalURL,
+		AutotuneExternalPollInterval:  time.Duration(y.Autotune.ExternalPollInterval),
 
 		// Limits
 		LimitsDryRun:         *y.Limits.DryRun,

@@ -112,6 +112,36 @@ type Config struct {
 	LLMBudgetWindow time.Duration   // Token budget window (default: 24h)
 	LLMBudgets      []LLMBudgetRule // Token budget rules (YAML-only)
 
+	// Autotune settings
+	AutotuneEnabled        bool          // Enable autotune (default: false)
+	AutotuneInterval       time.Duration // Evaluation interval (default: 60s)
+	AutotuneSourceBackend  string        // Cardinality source: vm|prometheus|mimir|thanos|promql|multi (default: vm)
+	AutotuneSourceURL      string        // Cardinality source URL
+	AutotuneSourceTenantID string        // Tenant ID for source queries
+	AutotuneSourceTimeout  time.Duration // Source query timeout (default: 10s)
+	AutotuneSourceTopN     int           // Top-N metrics to fetch (default: 100)
+	AutotuneVMTSDBInsights bool          // Enable VM TSDB insights mode (default: true)
+	AutotuneVMExplorer     bool          // Enable VM cardinality explorer mode (default: false)
+	AutotuneVMExplorerInterval time.Duration // Cardinality explorer poll interval (default: 5m)
+	AutotuneVMExplorerMatch    string     // Series selector for explorer match[] filter
+	AutotuneVMExplorerFocusLabel string   // Label name for per-value drill-down
+	AutotuneVManomalyEnabled   bool       // Enable vmanomaly integration (default: false)
+	AutotuneVManomalyURL       string     // vmanomaly query URL
+	AutotuneVManomalyMetric    string     // vmanomaly metric name (default: anomaly_score)
+	AutotunePersistMode        string     // Change persistence: memory|file|git (default: memory)
+	AutotunePersistFilePath    string     // File path for persist_mode=file
+	AutotuneHAMode             string     // HA coordination: noop|designated|lease (default: noop)
+	AutotuneHADesignatedLeader bool       // Set true on designated leader pod (ha_mode=designated)
+	AutotuneHALeaseName        string     // K8s Lease resource name (ha_mode=lease)
+	AutotunePropagationMode    string     // Config propagation: configmap|peer|pull (default: configmap)
+	AutotunePropagationService string     // Headless service for peer discovery
+	AutotuneAIEnabled          bool       // Enable AI/LLM advisor (default: false)
+	AutotuneAIEndpoint         string     // LLM API URL
+	AutotuneAIModel            string     // LLM model name
+	AutotuneAIAPIKey           string     // LLM API key
+	AutotuneExternalURL        string     // External signal provider URL
+	AutotuneExternalPollInterval time.Duration // External signal poll interval (default: 5m)
+
 	// Limits settings
 	LimitsConfig     string
 	LimitsDryRun     bool
@@ -514,6 +544,36 @@ func ParseFlags() *Config {
 	flag.BoolVar(&cfg.LLMEnabled, "llm-enabled", false, "Enable LLM/GenAI token budget tracking (token consumption rates, budget burn, per-model visibility)")
 	flag.StringVar(&cfg.LLMTokenMetric, "llm-token-metric", "gen_ai.client.token.usage", "Token usage metric name prefix to match")
 	flag.DurationVar(&cfg.LLMBudgetWindow, "llm-budget-window", 24*time.Hour, "Token budget window (default: 24h)")
+
+	// Autotune flags
+	flag.BoolVar(&cfg.AutotuneEnabled, "autotune-enabled", false, "Enable autotune closed-loop governance")
+	flag.DurationVar(&cfg.AutotuneInterval, "autotune-interval", 60*time.Second, "Autotune evaluation interval (default: 60s)")
+	flag.StringVar(&cfg.AutotuneSourceBackend, "autotune-source-backend", "vm", "Cardinality source: vm|prometheus|mimir|thanos|promql|multi (default: vm)")
+	flag.StringVar(&cfg.AutotuneSourceURL, "autotune-source-url", "", "Cardinality source URL (required when autotune enabled)")
+	flag.StringVar(&cfg.AutotuneSourceTenantID, "autotune-source-tenant-id", "", "Tenant ID for source queries (VM cluster, Mimir X-Scope-OrgID, Thanos THANOS-TENANT)")
+	flag.DurationVar(&cfg.AutotuneSourceTimeout, "autotune-source-timeout", 10*time.Second, "Source query timeout (default: 10s)")
+	flag.IntVar(&cfg.AutotuneSourceTopN, "autotune-source-top-n", 100, "Top-N metrics to fetch from source (default: 100)")
+	flag.BoolVar(&cfg.AutotuneVMTSDBInsights, "autotune-vm-tsdb-insights", true, "Enable VM TSDB insights mode (default: true)")
+	flag.BoolVar(&cfg.AutotuneVMExplorer, "autotune-vm-explorer", false, "Enable VM cardinality explorer mode (default: false)")
+	flag.DurationVar(&cfg.AutotuneVMExplorerInterval, "autotune-vm-explorer-interval", 5*time.Minute, "Cardinality explorer poll interval (default: 5m)")
+	flag.StringVar(&cfg.AutotuneVMExplorerMatch, "autotune-vm-explorer-match", "", "Series selector for explorer match[] filter")
+	flag.StringVar(&cfg.AutotuneVMExplorerFocusLabel, "autotune-vm-explorer-focus-label", "", "Label name for per-value drill-down (focusLabel)")
+	flag.BoolVar(&cfg.AutotuneVManomalyEnabled, "autotune-vmanomaly-enabled", false, "Enable vmanomaly integration (default: false)")
+	flag.StringVar(&cfg.AutotuneVManomalyURL, "autotune-vmanomaly-url", "", "vmanomaly query URL")
+	flag.StringVar(&cfg.AutotuneVManomalyMetric, "autotune-vmanomaly-metric", "anomaly_score", "vmanomaly metric name (default: anomaly_score)")
+	flag.StringVar(&cfg.AutotunePersistMode, "autotune-persist-mode", "memory", "Change persistence: memory|file|git (default: memory)")
+	flag.StringVar(&cfg.AutotunePersistFilePath, "autotune-persist-file-path", "", "File path for autotune persist_mode=file")
+	flag.StringVar(&cfg.AutotuneHAMode, "autotune-ha-mode", "noop", "HA coordination: noop|designated|lease (default: noop)")
+	flag.BoolVar(&cfg.AutotuneHADesignatedLeader, "autotune-ha-leader", false, "Set true on designated leader pod (ha_mode=designated)")
+	flag.StringVar(&cfg.AutotuneHALeaseName, "autotune-ha-lease-name", "governor-autotune", "K8s Lease resource name (ha_mode=lease)")
+	flag.StringVar(&cfg.AutotunePropagationMode, "autotune-propagation-mode", "configmap", "Config propagation: configmap|peer|pull (default: configmap)")
+	flag.StringVar(&cfg.AutotunePropagationService, "autotune-propagation-service", "", "Headless service for peer discovery (peer/pull modes)")
+	flag.BoolVar(&cfg.AutotuneAIEnabled, "autotune-ai-enabled", false, "Enable AI/LLM advisor (default: false)")
+	flag.StringVar(&cfg.AutotuneAIEndpoint, "autotune-ai-endpoint", "", "LLM API URL for AI advisor")
+	flag.StringVar(&cfg.AutotuneAIModel, "autotune-ai-model", "", "LLM model name for AI advisor")
+	flag.StringVar(&cfg.AutotuneAIAPIKey, "autotune-ai-api-key", "", "LLM API key for AI advisor")
+	flag.StringVar(&cfg.AutotuneExternalURL, "autotune-external-url", "", "External signal provider URL")
+	flag.DurationVar(&cfg.AutotuneExternalPollInterval, "autotune-external-poll-interval", 5*time.Minute, "External signal provider poll interval (default: 5m)")
 
 	// Limits flags
 	flag.StringVar(&cfg.LimitsConfig, "limits-config", "", "Path to limits configuration YAML file")
@@ -2027,6 +2087,20 @@ func DefaultConfig() *Config {
 		LLMEnabled:                      false,
 		LLMTokenMetric:                  "gen_ai.client.token.usage",
 		LLMBudgetWindow:                 24 * time.Hour,
+		AutotuneEnabled:                 false,
+		AutotuneInterval:                60 * time.Second,
+		AutotuneSourceBackend:           "vm",
+		AutotuneSourceTimeout:           10 * time.Second,
+		AutotuneSourceTopN:              100,
+		AutotuneVMTSDBInsights:          true,
+		AutotuneVMExplorer:              false,
+		AutotuneVMExplorerInterval:      5 * time.Minute,
+		AutotuneVManomalyMetric:         "anomaly_score",
+		AutotunePersistMode:             "memory",
+		AutotuneHAMode:                  "noop",
+		AutotuneHALeaseName:             "governor-autotune",
+		AutotunePropagationMode:         "configmap",
+		AutotuneExternalPollInterval:    5 * time.Minute,
 		LimitsConfig:                    "",
 		LimitsDryRun:                    true,
 		RuleCacheMaxSize:                10000,
@@ -2261,6 +2335,34 @@ func (c *Config) Validate() error {
 	// Bloom persistence compression level
 	if c.BloomPersistenceCompressionLevel < 0 || c.BloomPersistenceCompressionLevel > 9 {
 		errs = append(errs, fmt.Sprintf("bloom-persistence-compression-level must be between 0 and 9, got %d", c.BloomPersistenceCompressionLevel))
+	}
+
+	// Autotune validation
+	if c.AutotuneEnabled {
+		if c.AutotuneSourceURL == "" {
+			errs = append(errs, "autotune-source-url is required when autotune-enabled=true")
+		}
+		validBackends := map[string]bool{"vm": true, "prometheus": true, "mimir": true, "thanos": true, "promql": true, "multi": true}
+		if !validBackends[c.AutotuneSourceBackend] {
+			errs = append(errs, fmt.Sprintf("autotune-source-backend must be one of: vm, prometheus, mimir, thanos, promql, multi; got %q", c.AutotuneSourceBackend))
+		}
+		if c.AutotuneSourceBackend == "vm" && !c.AutotuneVMTSDBInsights && !c.AutotuneVMExplorer {
+			errs = append(errs, "at least one VM mode must be enabled when autotune-source-backend=vm (tsdb-insights or explorer)")
+		}
+		validPersistModes := map[string]bool{"memory": true, "file": true, "git": true}
+		if !validPersistModes[c.AutotunePersistMode] {
+			errs = append(errs, fmt.Sprintf("autotune-persist-mode must be one of: memory, file, git; got %q", c.AutotunePersistMode))
+		}
+		validHAModes := map[string]bool{"noop": true, "designated": true, "lease": true}
+		if !validHAModes[c.AutotuneHAMode] {
+			errs = append(errs, fmt.Sprintf("autotune-ha-mode must be one of: noop, designated, lease; got %q", c.AutotuneHAMode))
+		}
+		if c.AutotuneInterval < time.Second {
+			errs = append(errs, fmt.Sprintf("autotune-interval must be >= 1s, got %s", c.AutotuneInterval))
+		}
+		if c.LimitsConfig == "" {
+			errs = append(errs, "limits-config is required when autotune-enabled=true (autotune adjusts limits)")
+		}
 	}
 
 	if len(errs) == 0 {
