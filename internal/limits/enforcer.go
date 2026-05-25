@@ -232,6 +232,54 @@ func (e *Enforcer) TotalDropped() int64 {
 	return total
 }
 
+// GetConfig returns a deep copy of the current limits configuration.
+// Used by the autotune system to read current rule limits.
+func (e *Enforcer) GetConfig() *Config {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.config == nil {
+		return nil
+	}
+	// Return a shallow copy with copied rules slice.
+	cfgCopy := *e.config
+	cfgCopy.Rules = make([]Rule, len(e.config.Rules))
+	copy(cfgCopy.Rules, e.config.Rules)
+	return &cfgCopy
+}
+
+// RuleUtilization holds current utilization data for a single rule.
+type RuleUtilization struct {
+	Name        string
+	MaxCard     int64
+	MaxDPRate   int64
+	CurrentCard int64
+	CurrentDPs  int64
+}
+
+// GetRuleUtilization returns per-rule utilization from ruleStats.
+// Uses existing ruleStats fields: totalCard, totalDPs.
+func (e *Enforcer) GetRuleUtilization() map[string]RuleUtilization {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.config == nil {
+		return nil
+	}
+	result := make(map[string]RuleUtilization, len(e.config.Rules))
+	for _, rule := range e.config.Rules {
+		ru := RuleUtilization{
+			Name:      rule.Name,
+			MaxCard:   rule.MaxCardinality,
+			MaxDPRate: rule.MaxDatapointsRate,
+		}
+		if rs, ok := e.ruleStats[rule.Name]; ok {
+			ru.CurrentCard = rs.totalCard
+			ru.CurrentDPs = rs.totalDPs
+		}
+		result[rule.Name] = ru
+	}
+	return result
+}
+
 // Stop stops the enforcer and flushes any pending aggregated logs.
 func (e *Enforcer) Stop() {
 	if e.logAggregator != nil {

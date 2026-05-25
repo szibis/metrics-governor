@@ -18,6 +18,7 @@ import (
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/szibis/metrics-governor/internal/autotune"
 	"github.com/szibis/metrics-governor/internal/buffer"
 	"github.com/szibis/metrics-governor/internal/cardinality"
 	"github.com/szibis/metrics-governor/internal/config"
@@ -657,6 +658,10 @@ func main() {
 		}
 	}()
 
+	// Declare autotuner variable early so the /metrics closure can reference it.
+	// It will be initialized later if autotune is enabled.
+	var autotuner *autotune.Tuner
+
 	// Create health checker for liveness/readiness probes
 	healthChecker := health.New()
 
@@ -678,6 +683,10 @@ func main() {
 		// Write limits metrics (if enabled)
 		if limitsEnforcer != nil {
 			limitsEnforcer.ServeHTTP(recorder, r)
+		}
+		// Write autotune metrics (if enabled)
+		if autotuner != nil {
+			autotuner.ServeHTTP(recorder, r)
 		}
 		// Write runtime metrics (goroutines, memory, GC, PSI)
 		runtimeStats.ServeHTTP(recorder, r)
@@ -762,6 +771,71 @@ func main() {
 			"token_metric", cfg.LLMTokenMetric,
 			"budget_window", cfg.LLMBudgetWindow.String(),
 			"budget_rules", len(cfg.LLMBudgets),
+		))
+	}
+
+	// Create and start autotune controller (if enabled + limits enforcer exists)
+	if cfg.AutotuneEnabled && limitsEnforcer != nil {
+		// Build VM explorer match selectors.
+		var explorerMatch []string
+		if cfg.AutotuneVMExplorerMatch != "" {
+			explorerMatch = []string{cfg.AutotuneVMExplorerMatch}
+		}
+
+		autotuneCfg := autotune.Config{
+			Enabled:  true,
+			Interval: cfg.AutotuneInterval,
+			Source: autotune.SourceConfig{
+				Backend:  autotune.Backend(cfg.AutotuneSourceBackend),
+				URL:      cfg.AutotuneSourceURL,
+				TenantID: cfg.AutotuneSourceTenantID,
+				Timeout:  cfg.AutotuneSourceTimeout,
+				TopN:     cfg.AutotuneSourceTopN,
+				VM: autotune.VMSourceConfig{
+					TSDBInsights:        cfg.AutotuneVMTSDBInsights,
+					CardinalityExplorer: cfg.AutotuneVMExplorer,
+					ExplorerInterval:    cfg.AutotuneVMExplorerInterval,
+					ExplorerMatch:       explorerMatch,
+					ExplorerFocusLabel:  cfg.AutotuneVMExplorerFocusLabel,
+				},
+			},
+			VManomalyEnabled: cfg.AutotuneVManomalyEnabled,
+			VManomalyURL:     cfg.AutotuneVManomalyURL,
+			VManomalyMetric:  cfg.AutotuneVManomalyMetric,
+			Persist: autotune.PersistConfig{
+				Mode: autotune.PersistMode(cfg.AutotunePersistMode),
+				File: autotune.FilePersistConfig{Path: cfg.AutotunePersistFilePath},
+			},
+			HA: autotune.HAConfig{
+				Mode:             autotune.HAMode(cfg.AutotuneHAMode),
+				DesignatedLeader: cfg.AutotuneHADesignatedLeader,
+				LeaseName:        cfg.AutotuneHALeaseName,
+			},
+			Propagation: autotune.PropagationConfig{
+				Mode:        autotune.PropagationMode(cfg.AutotunePropagationMode),
+				PeerService: cfg.AutotunePropagationService,
+			},
+			AIEnabled:  cfg.AutotuneAIEnabled,
+			AIEndpoint: cfg.AutotuneAIEndpoint,
+			AIModel:    cfg.AutotuneAIModel,
+			AIAPIKey:   cfg.AutotuneAIAPIKey,
+		}
+
+		// Build options with enforcer function adapters.
+		opts := []autotune.Option{
+			autotune.WithDropsFunc(limitsEnforcer.TotalDropped),
+		}
+
+		// Create and start the autotune controller.
+		autotuner = autotune.NewTuner(autotuneCfg, opts...)
+		go autotuner.Start(ctx)
+		logging.Info("autotune controller started", logging.F(
+			"interval", cfg.AutotuneInterval.String(),
+			"source_backend", cfg.AutotuneSourceBackend,
+			"source_url", cfg.AutotuneSourceURL,
+			"ha_mode", cfg.AutotuneHAMode,
+			"persist_mode", cfg.AutotunePersistMode,
+			"propagation_mode", cfg.AutotunePropagationMode,
 		))
 	}
 
@@ -951,6 +1025,11 @@ func main() {
 					}
 				}
 
+				// Notify autotune about manual SIGHUP so it updates its baseline.
+				if autotuner != nil {
+					autotuner.UpdateBaseline()
+				}
+
 				logging.Info("SIGHUP reload complete")
 			}
 		}()
@@ -987,6 +1066,10 @@ func main() {
 	// Stop aggregate engine (flushes final windows)
 	if sampler != nil {
 		sampler.StopAggregation()
+	}
+	// Stop autotune controller
+	if autotuner != nil {
+		autotuner.Stop()
 	}
 
 	cancel()

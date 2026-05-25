@@ -5,7 +5,7 @@ LDFLAGS=-ldflags "-s -w -X github.com/slawomirskowron/metrics-governor/internal/
 
 BUILD_DIR=bin
 
-.PHONY: all build build-greenteagc clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all test-helm test-stability test-stability-stress test-pool test-memory-regression bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all bench-stability bench-profile-budget bench-handoff bench-contention bench-hotpath bench-full-stability bench-proto bench-pool-regression pgo-profile pgo-build lint lint-dockerfile lint-yaml lint-helm lint-all validate-playground generate-config-meta ship ship-dry-run tag compose-up compose-down compose-light compose-stable compose-perf compose-queue compose-persistence compose-sharding compose-logs compose-compare compose-compare-quick rust-build rust-test rust-clean build-native test-native bench-native bench-native-compare docker-native
+.PHONY: all build build-greenteagc clean darwin-arm64 linux-arm64 linux-amd64 docker test test-coverage test-verbose test-unit test-functional test-e2e test-all test-helm test-stability test-stability-stress test-pool test-memory-regression bench bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-all bench-stability bench-profile-budget bench-handoff bench-contention bench-hotpath bench-full-stability bench-proto bench-pool-regression bench-autotune test-autotune pgo-profile pgo-build lint lint-dockerfile lint-yaml lint-helm lint-all validate-playground generate-config-meta ship ship-dry-run tag compose-up compose-down compose-light compose-stable compose-perf compose-queue compose-persistence compose-sharding compose-logs compose-compare compose-compare-quick rust-build rust-test rust-clean build-native test-native bench-native bench-native-compare docker-native
 
 all: darwin-arm64 linux-arm64 linux-amd64
 
@@ -92,7 +92,15 @@ bench-auth:
 	@echo "Running auth benchmarks..."
 	go test -bench=. -benchmem ./internal/auth/...
 
-bench-all: bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth
+bench-autotune:
+	@echo "Running autotune benchmarks..."
+	go test -bench=. -benchmem ./internal/autotune/...
+
+test-autotune:
+	@echo "Running autotune tests..."
+	go test -v -race -count=1 ./internal/autotune/...
+
+bench-all: bench-stats bench-buffer bench-compression bench-limits bench-queue bench-receiver bench-exporter bench-auth bench-autotune
 	@echo "All benchmarks complete!"
 
 bench-compare:
