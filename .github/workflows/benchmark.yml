@@ -212,7 +212,7 @@ jobs:
           cp ./benchmark-cache/benchmark-${{ matrix.package }}.txt .
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-${{ matrix.package }}
           path: benchmark-${{ matrix.package }}.txt
@@ -303,7 +303,7 @@ jobs:
           echo "Benchmark history updated with $(jq '.entries | length' ./cache/benchmark-history.json) entries"
 
       - name: Upload benchmark artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-results-full
           path: |
@@ -340,7 +340,7 @@ jobs:
             ${{ runner.os }}-benchmark
 
       - name: Download current benchmark results
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: ./current
           pattern: benchmark-*
@@ -528,7 +528,7 @@ jobs:
           cat comparison.md >> $GITHUB_STEP_SUMMARY
 
       - name: Comment on PR
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
