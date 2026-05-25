@@ -1,0 +1,3015 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>metrics-governor Playground</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+  <style>
+    :root { --status-green: #2ecc40; --status-yellow: #ffdc00; --status-red: #ff4136; }
+    .status-green { color: var(--status-green); } .status-yellow { color: var(--status-yellow); } .status-red { color: var(--status-red); }
+    .badge-green { background: var(--status-green); color: #fff; padding: 2px 8px; border-radius: 4px; font-size: .8em; }
+    .badge-yellow { background: var(--status-yellow); color: #333; padding: 2px 8px; border-radius: 4px; font-size: .8em; }
+    .badge-red { background: var(--status-red); color: #fff; padding: 2px 8px; border-radius: 4px; font-size: .8em; }
+    .est-card { border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 1rem; margin-bottom: .75rem; }
+    .est-card h4 { margin-bottom: .5rem; }
+    .est-val { font-size: 1.4em; font-weight: 700; }
+    .rule-card { border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 1rem; margin-bottom: .75rem; }
+    .rule-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+    .rule-header h4 { margin: 0; }
+    .label-pair { display: flex; gap: .5rem; align-items: center; margin-bottom: .25rem; }
+    .label-pair input { flex: 1; }
+    .tag { display: inline-block; background: var(--pico-primary-background); color: var(--pico-primary-inverse); padding: 2px 8px; border-radius: 12px; font-size: .85em; margin: 2px; cursor: pointer; }
+    .tag.selected { outline: 2px solid var(--pico-primary); }
+    pre.yaml-preview { background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 1rem; overflow-x: auto; max-height: 500px; white-space: pre; font-size: .85em; line-height: 1.4; }
+    .yaml-edit { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace; font-size: .85em; line-height: 1.5; min-height: 300px; resize: vertical; width: 100%; tab-size: 2; white-space: pre; overflow-x: auto; }
+    .yaml-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: .25rem; }
+    .yaml-toolbar small { color: var(--pico-muted-color); }
+    .tab-bar { display: flex; gap: 0; border-bottom: 2px solid var(--pico-muted-border-color); margin-bottom: 1rem; }
+    .tab-btn { padding: .5rem 1rem; cursor: pointer; border: none; background: none; font-weight: 600; font-size: .95em; color: var(--pico-muted-color); border-bottom: 2px solid transparent; margin-bottom: -2px; display: flex; align-items: center; gap: .4rem; }
+    .tab-btn:hover { color: var(--pico-color); }
+    .tab-btn.active { border-bottom-color: var(--pico-primary); color: var(--pico-primary); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .dot-green { background: var(--status-green); } .dot-yellow { background: var(--status-yellow); } .dot-red { background: var(--status-red); }
+    .btn-row { display: flex; gap: .5rem; margin-top: .5rem; }
+    .btn-row button { font-size: .85em; padding: .4rem .8rem; }
+    .help-tip { font-size: .85em; color: var(--pico-muted-color); margin-top: .1rem; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .75rem; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .4rem .6rem; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem .75rem; }
+    .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: .5rem .75rem; }
+    .grid-3 label, .grid-2 label { margin-bottom: 0; }
+    .grid-3 input, .grid-3 select, .grid-2 input, .grid-2 select { margin-bottom: .15rem; padding: .4rem .5rem; }
+    @media (max-width: 768px) { .grid-2, .grid-3, .grid-4, .grid-5 { grid-template-columns: 1fr; } }
+    @media (min-width: 769px) and (max-width: 1100px) { .grid-5 { grid-template-columns: repeat(3, 1fr); } }
+    summary { cursor: pointer; font-weight: 600; }
+    details details > summary { font-size: 1.1em; font-weight: 700; }
+    .copy-ok { color: var(--status-green); font-size: .85em; }
+    .storage-rec { background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: .75rem; margin-top: .5rem; }
+    .error-msg { color: var(--status-red); font-size: .85em; margin-top: .25rem; }
+    .warn-msg { color: var(--status-yellow); font-size: .85em; margin-top: .25rem; }
+    .lint-panel { background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: .75rem; margin-top: .5rem; font-size: .85em; }
+    .lint-item { display: flex; align-items: flex-start; gap: .4rem; margin-bottom: .25rem; }
+    .lint-item:last-child { margin-bottom: 0; }
+    .lint-icon { font-weight: 700; min-width: 16px; text-align: center; }
+    .lint-error .lint-icon { color: var(--status-red); }
+    .lint-warn .lint-icon { color: var(--status-yellow); }
+    .lint-ok .lint-icon { color: var(--status-green); }
+    .section-title { display: flex; align-items: center; gap: .5rem; }
+    .theme-toggle { background: none; border: 1px solid var(--pico-muted-border-color); border-radius: 50%; width: 40px; height: 40px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; transition: border-color .2s; }
+    .theme-toggle:hover { border-color: var(--pico-primary); }
+    .theme-toggle svg { width: 20px; height: 20px; transition: fill .2s; }
+    [data-theme="dark"] .theme-toggle svg { fill: #fbbf24; }
+    [data-theme="light"] .theme-toggle svg { fill: #475569; }
+    .header-row { display: flex; align-items: center; justify-content: space-between; }
+    .logo-title { display: flex; align-items: center; gap: .75rem; }
+    .logo-title img { width: 48px; height: 48px; }
+  </style>
+</head>
+<body x-data="configHelper()" class="container">
+
+<header>
+  <div class="header-row">
+    <div class="logo-title">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="48" height="48" style="width:48px;height:48px">
+        <defs><linearGradient id="sg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#4f46e5"/><stop offset="100%" stop-color="#7c3aed"/></linearGradient><linearGradient id="sf" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#4f46e5" stop-opacity="0.18"/><stop offset="100%" stop-color="#7c3aed" stop-opacity="0.08"/></linearGradient><linearGradient id="b1" x1="0%" y1="100%" x2="0%" y2="0%"><stop offset="0%" stop-color="#0891b2"/><stop offset="100%" stop-color="#22d3ee"/></linearGradient><linearGradient id="b2" x1="0%" y1="100%" x2="0%" y2="0%"><stop offset="0%" stop-color="#059669"/><stop offset="100%" stop-color="#34d399"/></linearGradient><linearGradient id="br" x1="0%" y1="100%" x2="0%" y2="0%"><stop offset="0%" stop-color="#dc2626"/><stop offset="100%" stop-color="#f87171"/></linearGradient><linearGradient id="hh" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#f1f5f9"/><stop offset="100%" stop-color="#94a3b8"/></linearGradient><linearGradient id="hw" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#92400e"/><stop offset="100%" stop-color="#78350f"/></linearGradient><filter id="ds"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000" flood-opacity="0.35"/></filter><clipPath id="sc"><path d="M256 44 L444 108 Q452 112 452 120 L452 256 Q452 346 352 412 L264 468 Q256 472 248 468 L160 412 Q60 346 60 256 L60 120 Q60 112 68 108 Z"/></clipPath></defs>
+        <path d="M256 24 L460 96 Q470 100 470 110 L470 262 Q470 366 360 438 L264 500 Q256 504 248 500 L152 438 Q42 366 42 262 L42 110 Q42 100 52 96 Z" fill="none" stroke="#4f46e5" stroke-width="4" stroke-linejoin="round" opacity="0.15"/>
+        <path d="M256 30 L458 100 Q468 104 468 114 L468 262 Q468 364 360 436 L264 498 Q256 502 248 498 L152 436 Q44 364 44 262 L44 114 Q44 104 54 100 Z" fill="url(#sf)"/><path d="M256 30 L458 100 Q468 104 468 114 L468 262 Q468 364 360 436 L264 498 Q256 502 248 498 L152 436 Q44 364 44 262 L44 114 Q44 104 54 100 Z" fill="none" stroke="url(#sg)" stroke-width="18" stroke-linejoin="round"/>
+        <path d="M256 58 L434 118 Q440 121 440 126 L440 252 Q440 334 344 398 L264 452 Q256 456 248 452 L168 398 Q72 334 72 252 L72 126 Q72 121 78 118 Z" fill="none" stroke="url(#sg)" stroke-width="3.5" stroke-linejoin="round" opacity="0.25"/>
+        <g clip-path="url(#sc)"><rect x="120" y="300" width="64" height="120" rx="8" ry="8" fill="url(#b1)" filter="url(#ds)"/><rect x="210" y="268" width="64" height="152" rx="8" ry="8" fill="url(#b2)" filter="url(#ds)"/><rect x="310" y="155" width="64" height="265" rx="8" ry="8" fill="url(#br)" filter="url(#ds)" opacity="0.85"/><line x1="306" y1="232" x2="378" y2="212" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity="0.7"/><line x1="306" y1="248" x2="378" y2="228" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity="0.5"/><line x1="324" y1="218" x2="350" y2="248" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity="0.4"/><line x1="80" y1="260" x2="440" y2="260" stroke="#dc2626" stroke-width="5" stroke-dasharray="16,8" opacity="0.75"/></g>
+        <g transform="translate(130, 68) rotate(38, 110, 90)" filter="url(#ds)"><rect x="96" y="126" width="28" height="130" rx="7" ry="7" fill="url(#hw)" stroke="#713f12" stroke-width="3"/><rect x="14" y="52" width="192" height="80" rx="12" ry="12" fill="url(#hh)" stroke="#64748b" stroke-width="4"/><rect x="0" y="58" width="26" height="66" rx="7" ry="7" fill="#e2e8f0" stroke="#94a3b8" stroke-width="3"/><rect x="194" y="58" width="26" height="66" rx="7" ry="7" fill="#e2e8f0" stroke="#94a3b8" stroke-width="3"/><rect x="36" y="60" width="148" height="10" rx="5" ry="5" fill="#fff" opacity="0.3"/></g>
+      </svg>
+      <h1 style="margin-bottom:0">metrics-governor Playground</h1>
+    </div>
+    <button class="theme-toggle" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'" :title="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
+      <!-- Sun icon (shown in dark mode → click to go light) -->
+      <template x-if="theme === 'dark'">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-3a1 1 0 0 0 1-1V1a1 1 0 1 0-2 0v2a1 1 0 0 0 1 1zm0 18a1 1 0 0 0-1 1v2a1 1 0 1 0 2 0v-2a1 1 0 0 0-1-1zM4.22 5.64a1 1 0 0 0 1.42-1.42l-1.42-1.4a1 1 0 0 0-1.4 1.4l1.4 1.42zm15.56 12.72a1 1 0 0 0-1.42 1.42l1.42 1.4a1 1 0 0 0 1.4-1.4l-1.4-1.42zM4 12a1 1 0 0 0-1-1H1a1 1 0 1 0 0 2h2a1 1 0 0 0 1-1zm19-1h-2a1 1 0 1 0 0 2h2a1 1 0 1 0 0-2zM5.64 19.78a1 1 0 0 0-1.42 0l-1.4 1.42a1 1 0 1 0 1.4 1.4l1.42-1.4a1 1 0 0 0 0-1.42zM19.78 4.22l1.4-1.42a1 1 0 1 0-1.4-1.4l-1.42 1.4a1 1 0 1 0 1.42 1.42z"/></svg>
+      </template>
+      <!-- Moon icon (shown in light mode → click to go dark) -->
+      <template x-if="theme === 'light'">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.05 8.05 0 0 1-3.37.73A8.15 8.15 0 0 1 9.08 5.49a8.59 8.59 0 0 1 .25-2 1 1 0 0 0-.37-1 1 1 0 0 0-1.05-.17A10 10 0 1 0 22 17.29a1 1 0 0 0-.36-1.29zM12 20a8 8 0 0 1-6.95-12A9.94 9.94 0 0 0 19.19 16 8 8 0 0 1 12 20z"/></svg>
+      </template>
+    </button>
+  </div>
+  <p>Plan your deployment: estimate resources, build limits rules, and generate ready-to-use config files.</p>
+</header>
+
+<main>
+  <!-- ====== SECTION 1: INPUTS ====== -->
+  <section>
+    <details open>
+      <summary>
+        <span style="display:inline-flex;align-items:center;gap:.75rem;width:100%">
+          <span style="font-size:1.25em;font-weight:700">1. Throughput &amp; Environment</span>
+          <label style="margin-left:auto;display:flex;align-items:center;gap:.5rem;font-size:.85em" @click.stop>
+            <input type="checkbox" x-model="advanced" role="switch"> Advanced
+          </label>
+        </span>
+      </summary>
+
+    <div class="grid-2" style="margin-top:.5rem">
+      <label style="grid-column: 1 / -1">
+        Profile preset
+        <select x-model="selectedProfile">
+          <option value="">(Custom — manual inputs)</option>
+          <option value="minimal">minimal — Development & Testing</option>
+          <option value="balanced">balanced — Production Default</option>
+          <option value="safety">safety — Maximum Data Safety + Cost Efficiency</option>
+          <option value="observable">observable — Full Observability + Cost Efficiency</option>
+          <option value="resilient">resilient — Durable + Fast</option>
+          <option value="performance">performance — High Throughput</option>
+        </select>
+        <small class="help-tip">Pre-fills inputs for common scenarios. Override any value below. <a href="docs/profiles.md" target="_blank">Docs</a></small>
+        <template x-if="selectedProfile === 'safety' || selectedProfile === 'observable'">
+          <span class="badge-green" style="display:inline-block;margin-top:.25rem">Cost Efficient — full stats + zstd save on backend SaaS costs</span>
+        </template>
+      </label>
+      <label>
+        Datapoints/sec
+        <input type="number" x-model.number="dps" min="1" step="1000">
+        <small class="help-tip" x-text="'Total incoming metric datapoints per second. ~' + (effectiveDpsPerCore/1000) + 'k dps/core' + (pipelineOptimized ? ' (pipeline split)' : ' (legacy)') + '.'">
+        </small> <small class="help-tip"><a href="docs/performance.md#throughput" target="_blank">Docs</a></small>
+      </label>
+      <label>
+        Unique metric names
+        <input type="number" x-model.number="uniqueMetrics" min="1" step="100">
+        <small class="help-tip">Distinct __name__ values. Each gets its own cardinality tracker. <a href="docs/performance.md#cardinality" target="_blank">Docs</a></small>
+      </label>
+      <label>
+        Avg cardinality per metric
+        <input type="number" x-model.number="avgCardinality" min="1" step="100">
+        <small class="help-tip">Unique label combos per metric. High values (&gt;10k) increase memory. <a href="docs/limits.md" target="_blank">Docs</a></small>
+      </label>
+      <label>
+        CPU cores available
+        <input type="number" x-model.number="availableCores" min="1" step="1">
+        <small class="help-tip">Total CPU cores for metrics-governor. <a href="docs/performance.md#cpu" target="_blank">Docs</a></small>
+      </label>
+      <label>
+        Target outage buffer
+        <div style="display:flex;gap:.25rem">
+          <input type="number" x-model.number="targetRetentionVal" min="1" :step="targetRetentionUnit === 'min' ? 5 : 1" style="flex:1">
+          <select x-model="targetRetentionUnit" style="width:auto;min-width:80px">
+            <option value="min">min</option>
+            <option value="hours">hours</option>
+            <option value="days">days</option>
+          </select>
+        </div>
+        <small class="help-tip">Data the queue should hold during a backend outage. Queue size is auto-calculated.</small>
+      </label>
+      <label>
+        Disk queue compression
+        <div style="display:flex;align-items:center;gap:.5rem;margin-top:.25rem">
+          <input type="checkbox" x-model="queueCompression" role="switch">
+          <span x-text="queueCompression ? 'snappy (recommended)' : 'disabled'" :style="queueCompression ? 'color:var(--status-green)' : 'color:var(--pico-muted-color)'" style="font-size:.9em"></span>
+        </div>
+        <small class="help-tip">Snappy reduces disk I/O ~70% and storage ~3x. <a href="docs/performance.md#queue" target="_blank">Docs</a></small>
+      </label>
+      <label>
+        Pipeline optimizations
+        <div style="display:flex;align-items:center;gap:.5rem;margin-top:.25rem">
+          <input type="checkbox" x-model="pipelineOptimized" role="switch">
+          <span x-text="pipelineOptimized ? 'Pipeline Split + Auto-tune (recommended)' : 'Legacy unified workers'"
+                :style="pipelineOptimized ? 'color:var(--status-green)' : 'color:var(--pico-muted-color)'"
+                style="font-size:.9em"></span>
+        </div>
+        <small class="help-tip">Enables pipeline split, batch auto-tuning, adaptive scaling. ~60% higher throughput. <a href="docs/exporting.md" target="_blank">Docs</a></small>
+      </label>
+    </div>
+
+    <template x-if="advanced">
+      <div>
+        <hr style="margin:.5rem 0">
+        <h4 style="margin-bottom:.35rem;font-size:.95em">Advanced Tuning</h4>
+        <div class="grid-3">
+          <label>
+            Avg labels per series
+            <input type="number" x-model.number="avgLabels" min="1" max="50" step="1">
+            <small class="help-tip">Label key-value pairs per series (typical 3-8). <a href="docs/performance.md#memory" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Avg label value length
+            <input type="number" x-model.number="avgLabelLen" min="1" max="256" step="5">
+            <small class="help-tip">Byte length of label values. Longer = more memory. <a href="docs/performance.md#memory" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Retention window
+            <input type="text" x-model="retentionWindow" placeholder="60s">
+            <small class="help-tip">How long trackers remember series. <a href="docs/limits.md#window" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Cardinality mode
+            <select x-model="cardinalityMode">
+              <option value="bloom">bloom (memory-efficient)</option>
+              <option value="exact">exact (precise, higher memory)</option>
+              <option value="hybrid">hybrid (bloom+HLL)</option>
+            </select>
+            <small class="help-tip"><a href="docs/performance.md#cardinality-modes" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Bloom FPR
+            <input type="number" x-model.number="bloomFPR" min="0.001" max="0.5" step="0.005">
+            <small class="help-tip">False positive rate (0.01 = 1%). Lower = more memory. <a href="docs/performance.md#bloom-filter" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            HLL threshold
+            <input type="number" x-model.number="hllThreshold" min="100" step="1000">
+            <small class="help-tip">Hybrid switch point Bloom&rarr;HLL. <a href="docs/performance.md#hybrid" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Buffer max size
+            <input type="number" x-model.number="bufferMaxSize" min="100" step="1000">
+            <small class="help-tip">Max write requests in buffer. <a href="docs/performance.md#buffer" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Buffer batch size
+            <input type="number" x-model.number="bufferBatchSize" min="100" step="100">
+            <small class="help-tip">Items per export batch. <a href="docs/performance.md#buffer" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Queue max retries
+            <input type="number" x-model.number="queueMaxRetries" min="0" max="100" step="1">
+            <small class="help-tip">Retries before data dropped. <a href="docs/performance.md#queue" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Queue type
+            <select x-model="queueType">
+              <option value="memory">memory (in-process)</option>
+              <option value="disk">disk (persistent)</option>
+            </select>
+            <small class="help-tip"><a href="docs/performance.md#queue" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Disk queue compression
+            <div style="display:flex;align-items:center;gap:.5rem;margin-top:.25rem">
+              <input type="checkbox" x-model="queueCompression" role="switch">
+              <span x-text="queueCompression ? 'snappy (recommended)' : 'disabled'" :style="queueCompression ? 'color:var(--status-green)' : 'color:var(--pico-muted-color)'" style="font-size:.9em"></span>
+            </div>
+            <small class="help-tip">Snappy compression reduces disk I/O ~70%. <a href="docs/performance.md#queue" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Target outage buffer
+            <div style="display:flex;gap:.25rem">
+              <input type="number" x-model.number="targetRetentionVal" min="1" :step="targetRetentionUnit === 'min' ? 5 : 1" style="flex:1">
+              <select x-model="targetRetentionUnit" style="width:auto;min-width:80px">
+                <option value="min">min</option>
+                <option value="hours">hours</option>
+                <option value="days">days</option>
+              </select>
+            </div>
+            <small class="help-tip">How long to buffer data during backend outage. Auto-sizes queue below.</small>
+          </label>
+          <label>
+            Queue max size
+            <div style="display:flex;gap:.25rem">
+              <input type="number" x-model.number="queueMaxSizeVal" min="1" :step="queueMaxSizeUnit === 'MB' ? 50 : (queueMaxSizeUnit === 'GB' ? 1 : 0.1)" style="flex:1">
+              <select x-model="queueMaxSizeUnit" style="width:auto;min-width:70px">
+                <option value="MB">MB</option>
+                <option value="GB">GB</option>
+                <option value="TB">TB</option>
+              </select>
+            </div>
+            <small class="help-tip" x-text="'Sized for ~' + queueRetentionStr + ' of outage buffer at current throughput.'"></small>
+          </label>
+          <label>
+            CPU cores per pod
+            <input type="number" x-model.number="coresPerPod" min="0.5" step="0.5">
+            <small class="help-tip">CPU per K8s pod. Determines pod count. <a href="docs/performance.md#scaling" target="_blank">Docs</a></small>
+          </label>
+          <label>
+            Cloud provider
+            <select x-model="cloudProvider">
+              <option value="none">None</option>
+              <option value="aws">AWS</option>
+              <option value="azure">Azure</option>
+              <option value="gcp">GCP</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </template>
+    </details>
+  </section>
+
+  <!-- ====== SECTION 2+3: ESTIMATION & RULES ====== -->
+  <section>
+    <div class="tab-bar" style="margin-bottom:0">
+      <button class="tab-btn" :class="middleTab === 'estimation' ? 'active' : ''" @click="middleTab = 'estimation'">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 16H5V5h14v14zM7 10h2v7H7zm4-3h2v10h-2zm4 6h2v4h-2z"/></svg>
+        2. Resource Estimation
+      </button>
+      <button class="tab-btn" :class="middleTab === 'builder' ? 'active' : ''" @click="middleTab = 'builder'">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+        3. Limits Rules Builder
+      </button>
+    </div>
+
+    <template x-if="middleTab === 'estimation'">
+    <div style="margin-top:1rem">
+    <div class="grid-3">
+      <!-- CPU -->
+      <div class="est-card">
+        <h4>CPU</h4>
+        <div class="est-val" :class="cpuStatusClass" x-text="estCores >= 1 ? estCores.toFixed(2) + ' cores' : Math.ceil(estCores * 1000) + 'm'"></div>
+        <small x-text="(estCores >= 1 ? Math.ceil(estCores * 1000) + 'm' : estCores.toFixed(2) + ' cores') + ' \u2014 ' + availableCores + ' available (' + cpuUtilPct + '%)'"></small>
+        <div><span :class="cpuBadgeClass" x-text="cpuStatusLabel"></span></div>
+        <small class="help-tip" x-text="'At ~' + (effectiveDpsPerCore/1000) + 'k dps/core' + (pipelineOptimized ? ' (pipeline split)' : ' (legacy)') + ', ' + (dps/1000) + 'k dps needs ' + estCores.toFixed(1) + ' of ' + availableCores + ' cores (' + cpuUtilPct + '% utilization). Target: <' + Math.round(_est.cpu_target_utilization*100) + '%.'"></small>
+      </div>
+
+      <!-- Pipeline Mode -->
+      <div class="est-card">
+        <h4>Pipeline Mode</h4>
+        <div class="est-val" x-text="pipelineOptimized ? 'Pipeline Split' : 'Legacy'"></div>
+        <small x-text="pipelineOptimized ? 'Preparers + Senders (60% higher throughput)' : 'Unified workers (2\u00d7NumCPU)'"></small>
+      </div>
+
+      <!-- Memory -->
+      <div class="est-card">
+        <h4>Memory (Total)</h4>
+        <div class="est-val" x-text="fmtBytes(totalMemory)"></div>
+        <small>Trackers: <span x-text="fmtBytes(trackerMemory)"></span></small>
+        <small class="help-tip" x-text="' (' + uniqueMetrics + ' metrics \u00d7 ' + cardinalityMode + ' tracker)'"></small><br>
+        <small>Buffer: <span x-text="fmtBytes(bufferMemory)"></span></small>
+        <small class="help-tip" x-text="' (' + bufferMaxSize + ' slots \u00d7 ' + avgSeriesSize + ' B/series)'"></small><br>
+        <small>Base overhead: ~50 MB</small>
+        <small class="help-tip"> (Go runtime, gRPC, HTTP server, Prometheus metrics)</small>
+        <template x-if="queueType === 'memory'">
+          <span><br><small>Queue (memory): <span x-text="fmtBytes(queueMaxSizeMB * 1048576)"></span></small>
+          <small class="help-tip"> (in-process buffer for retries)</small></span>
+        </template>
+      </div>
+
+      <!-- Queue / Disk -->
+      <div class="est-card">
+        <h4 x-text="queueType === 'disk' ? 'Queue (Disk I/O)' : 'Queue (Memory)'"></h4>
+        <template x-if="queueType === 'disk'">
+          <div>
+            <div class="est-val" x-text="fmtBytes(pvcSize * 1048576)"></div>
+            <small>PVC size (incl. 20% headroom)</small>
+            <small class="help-tip"> &mdash; <span x-text="fmtBytes(queueMaxSizeMB * 1048576)"></span> data + 20% for filesystem overhead and metadata. <a href="docs/performance.md#queue" target="_blank">Docs</a></small><br>
+            <small>Compression: <span :style="queueCompression ? 'color:var(--status-green)' : 'color:var(--pico-muted-color)'" x-text="queueCompression ? 'snappy (' + compressionRatio + 'x ratio)' : 'off'"></span></small><br>
+            <small>Write IOPS: <span x-text="writeIOPS"></span></small>
+            <small class="help-tip"> (buffered, ~128x fewer syscalls)</small><br>
+            <small>Read IOPS: <span x-text="readIOPS"></span></small><br>
+            <small>Total IOPS: <span x-text="totalIOPS"></span></small><br>
+            <template x-if="queueCompression">
+              <span>
+                <small>Raw throughput: <span x-text="fmtBytes(writeThroughput / compressionRatio) + '/s'"></span></small><br>
+                <small>Effective (compressed): <b x-text="fmtBytes(writeThroughput) + '/s'"></b></small>
+              </span>
+            </template>
+            <template x-if="!queueCompression">
+              <small>Write throughput: <span x-text="fmtBytes(writeThroughput) + '/s'"></span></small>
+            </template>
+            <div style="margin-top:.35rem;padding-top:.35rem;border-top:1px dashed var(--pico-muted-border-color)">
+              <small class="help-tip"><b>Per pod</b> (traffic split by LB): <span x-text="fmtBytes(perPodPvcSize * 1048576)"></span> PVC, <span x-text="perPodWriteIOPS"></span> IOPS, <span x-text="fmtBytes(perPodWriteThroughput) + '/s'"></span> &mdash; <span x-text="(perPodDps >= 1000 ? (perPodDps/1000).toFixed(1) + 'k' : perPodDps) + ' dps/pod'"></span></small><br>
+              <small class="help-tip"><b>I/O optimizations:</b> 256KB buffered writer, write coalescing, <span x-text="queueCompression ? 'snappy compression' : 'compression disabled'"></span>. <a href="docs/performance.md#queue" target="_blank">Details</a></small>
+            </div>
+          </div>
+        </template>
+        <template x-if="queueType === 'memory'">
+          <div>
+            <div class="est-val" x-text="fmtBytes(queueMaxSizeMB * 1048576)"></div>
+            <small>Added to RAM estimate</small>
+          </div>
+        </template>
+        <div style="margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--pico-muted-border-color)">
+          <small><b>Outage buffer:</b> <span class="status-green" style="font-weight:700" x-text="queueRetentionStr"></span></small><br>
+          <small class="help-tip">How long the queue can absorb incoming data if the backend is down, before data starts being dropped.</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fit Check -->
+    <details open style="margin-top:.5rem">
+      <summary style="font-size:.95em">Fit Check &mdash; does it fit your cluster?</summary>
+      <div style="margin-top:.5rem">
+        <small class="help-tip" style="display:block;margin-bottom:.5rem">Enter your actual available resources to check if the estimated sizing fits. Status shows green when estimates are within budget.</small>
+        <div class="grid-4">
+          <div>
+            <span style="display:flex;align-items:center;gap:.4rem;font-weight:600;font-size:.9em;margin-bottom:.25rem">Pod Override <span class="dot" :class="fitPodOk ? 'dot-green' : 'dot-red'"></span></span>
+            <input type="number" x-model.number="podOverride" min="0" step="1" placeholder="0 = auto">
+            <small :class="fitPodOk ? 'status-green' : 'status-red'" x-text="fitPodStatusText" style="font-size:.8em"></small>
+          </div>
+          <div>
+            <span style="display:flex;align-items:center;gap:.4rem;font-weight:600;font-size:.9em;margin-bottom:.25rem">Available CPU <span class="dot" :class="fitCpuOk ? 'dot-green' : 'dot-red'"></span></span>
+            <div style="display:flex;gap:.25rem">
+              <input type="number" x-model.number="fitCpuVal" min="0" :step="fitCpuUnit === 'cores' ? 0.5 : 100" style="flex:1">
+              <select x-model="fitCpuUnit" style="width:auto;min-width:90px">
+                <option value="cores">cores</option>
+                <option value="m">millicores</option>
+              </select>
+            </div>
+            <small :class="fitCpuOk ? 'status-green' : 'status-red'" x-text="fitCpuStatusText"></small>
+          </div>
+          <div>
+            <span style="display:flex;align-items:center;gap:.4rem;font-weight:600;font-size:.9em;margin-bottom:.25rem">Available Memory <span class="dot" :class="fitMemOk ? 'dot-green' : 'dot-red'"></span></span>
+            <div style="display:flex;gap:.25rem">
+              <input type="number" x-model.number="fitMemVal" min="0" :step="fitMemUnit === 'MB' ? 64 : 0.5" style="flex:1">
+              <select x-model="fitMemUnit" style="width:auto;min-width:70px">
+                <option value="MB">MB</option>
+                <option value="GB">GB</option>
+              </select>
+            </div>
+            <small :class="fitMemOk ? 'status-green' : 'status-red'" x-text="fitMemStatusText"></small>
+          </div>
+          <div>
+            <span style="display:flex;align-items:center;gap:.4rem;font-weight:600;font-size:.9em;margin-bottom:.25rem">Available Disk <span class="dot" :class="fitDiskOk ? 'dot-green' : 'dot-red'"></span></span>
+            <div style="display:flex;gap:.25rem">
+              <input type="number" x-model.number="fitDiskVal" min="0" :step="fitDiskUnit === 'MB' ? 100 : (fitDiskUnit === 'GB' ? 1 : 0.1)" style="flex:1">
+              <select x-model="fitDiskUnit" style="width:auto;min-width:70px">
+                <option value="MB">MB</option>
+                <option value="GB">GB</option>
+                <option value="TB">TB</option>
+              </select>
+            </div>
+            <small :class="fitDiskOk ? 'status-green' : 'status-red'" x-text="fitDiskStatusText"></small>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- Cloud Storage Recommendation -->
+    <template x-if="queueType === 'disk' && cloudProvider !== 'none'">
+      <div class="storage-rec">
+        <h4>Cloud Block Storage Recommendation (<span x-text="cloudProvider.toUpperCase()"></span>)</h4>
+        <table>
+          <thead><tr><th>Storage Class</th><th>Effective IOPS</th><th>Sustained MB/s</th><th>Burst MB/s</th><th>Note</th><th>Fit</th></tr></thead>
+          <tbody>
+            <template x-for="opt in storageOptions" :key="opt.name">
+              <tr :style="opt.recommended ? 'font-weight:700' : ''">
+                <td x-text="opt.name"></td>
+                <td x-text="opt.maxIOPS.toLocaleString()"></td>
+                <td x-text="opt.maxThroughput + ' MB/s'"></td>
+                <td x-text="opt.burstThroughput ? opt.burstThroughput + ' MB/s' : '\u2014'"></td>
+                <td style="font-size:.8em;color:var(--pico-muted-color)" x-text="opt.note || ''"></td>
+                <td>
+                  <template x-if="opt.recommended"><span class="badge-green">Recommended</span></template>
+                  <template x-if="!opt.recommended && opt.fits"><span style="font-size:.85em">Fits</span></template>
+                  <template x-if="!opt.fits"><span class="badge-red">Insufficient</span></template>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </template>
+
+    <!-- K8s Pod Sizing -->
+    <details open>
+      <summary>Kubernetes Pod Sizing</summary>
+      <div class="grid-5" style="margin-top:.75rem">
+        <div class="est-card">
+          <h4 x-text="podOverride > 0 ? 'Pods (overridden)' : 'Recommended Pods'"></h4>
+          <div class="est-val" x-text="actualPods"></div>
+          <template x-if="podOverride > 0 && podOverride !== recommendedPods">
+            <small>Recommended: <span x-text="recommendedPods"></span></small>
+          </template>
+          <small class="help-tip">Based on 70% CPU target utilization per pod</small>
+        </div>
+        <div class="est-card">
+          <h4>Per-Pod CPU</h4>
+          <div class="est-val" x-text="perPodCpuReq + 'm'"></div>
+          <small x-text="(perPodCpuReq / 1000).toFixed(2) + ' cores'"></small><br>
+          <small x-text="'Limit: ' + perPodCpuLimit + 'm (' + (perPodCpuLimit / 1000).toFixed(2) + ' cores)'"></small>
+          <br><small class="help-tip">Limit = request &times; 1.5</small>
+          <br><small class="help-tip" x-text="'Traffic per pod: ' + (perPodDps >= 1000 ? (perPodDps/1000).toFixed(1) + 'k' : perPodDps) + ' dps (' + (dps >= 1000 ? (dps/1000).toFixed(0) + 'k' : dps) + ' total \u00f7 ' + actualPods + ' pods)'"></small>
+        </div>
+        <div class="est-card">
+          <h4>Per-Pod Memory</h4>
+          <div class="est-val" x-text="fmtBytes(perPodMemReq)"></div>
+          <small x-text="'Limit: ' + fmtBytes(perPodMemLimit)"></small>
+          <br><small class="help-tip">Limit = request &times; 1.3</small>
+        </div>
+        <div class="est-card">
+          <h4>Per-Pod Disk</h4>
+          <template x-if="queueType === 'disk'">
+            <div>
+              <div class="est-val" x-text="fmtBytes(perPodPvcSize * 1048576)"></div>
+              <small>PVC size (incl. 20% headroom)</small><br>
+              <small>Queue: <span x-text="fmtBytes(perPodQueueMB * 1048576)"></span></small><br>
+              <small>Write IOPS: <span x-text="perPodWriteIOPS"></span></small><br>
+              <small>Throughput: <span x-text="fmtBytes(perPodWriteThroughput) + '/s'"></span></small>
+              <small class="help-tip" x-text="'Traffic: ' + (perPodDps >= 1000 ? (perPodDps/1000).toFixed(1) + 'k' : perPodDps) + ' dps/pod'"></small>
+            </div>
+          </template>
+          <template x-if="queueType === 'memory'">
+            <div><small>N/A — memory queue</small></div>
+          </template>
+        </div>
+        <div class="est-card">
+          <h4>Total Cluster</h4>
+          <small>CPU: <span x-text="totalClusterCpu + 'm (' + (totalClusterCpu / 1000).toFixed(2) + ' cores)'"></span></small><br>
+          <small>Memory: <span x-text="fmtBytes(totalClusterMem)"></span></small><br>
+          <template x-if="queueType === 'disk'">
+            <small>Disk: <span x-text="fmtBytes(actualPods * perPodPvcSize * 1048576)"></span></small>
+          </template>
+          <br><small>Outage buffer: <span class="status-green" style="font-weight:700" x-text="queueRetentionStr"></span></small>
+          <small class="help-tip" x-text="actualPods + ' pods \u00d7 ' + (perPodDps >= 1000 ? (perPodDps/1000).toFixed(1) + 'k' : perPodDps) + ' dps each'"></small>
+        </div>
+      </div>
+
+      <!-- Sizing rules explanation -->
+      <details style="margin-top:.75rem">
+        <summary style="font-size:.95em">How these values are calculated</summary>
+        <div style="margin-top:.5rem">
+          <table style="font-size:.85em">
+            <thead><tr><th>Value</th><th>Formula</th><th>Rationale</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><b>Pod count</b></td>
+                <td><code>ceil(dps / (cores_per_pod &times; 100k &times; 0.7))</code></td>
+                <td>Each core handles ~100k dps; 70% target leaves headroom for GC and spikes</td>
+              </tr>
+              <tr>
+                <td><b>CPU request</b></td>
+                <td><code>ceil(dps / pods / 100k &times; 1000)m</code></td>
+                <td>Actual expected usage converted to millicores</td>
+              </tr>
+              <tr>
+                <td><b>CPU limit</b></td>
+                <td><code>request &times; 1.5</code></td>
+                <td>50% headroom for burst handling (traffic spikes, GC pauses)</td>
+              </tr>
+              <tr>
+                <td><b>Memory request</b></td>
+                <td><code>ceil(total_memory / pods)</code></td>
+                <td>Steady-state memory: trackers + buffer + base overhead + queue</td>
+              </tr>
+              <tr>
+                <td><b>Memory limit</b></td>
+                <td><code>request &times; 1.3</code></td>
+                <td>30% headroom for Go GC overhead and transient allocations</td>
+              </tr>
+              <tr>
+                <td><b>Per-pod DPS</b></td>
+                <td><code>ceil(total_dps / pods)</code></td>
+                <td>Traffic split evenly across pods via load balancer</td>
+              </tr>
+              <tr>
+                <td><b>Per-pod queue</b></td>
+                <td><code>ceil(total_queue_bytes / pods)</code></td>
+                <td>Each pod only buffers its fraction of total traffic during outage</td>
+              </tr>
+              <tr>
+                <td><b>PVC size</b></td>
+                <td><code>per_pod_queue_bytes &times; 1.2</code></td>
+                <td>20% headroom over per-pod queue capacity for filesystem metadata and compaction</td>
+              </tr>
+              <tr>
+                <td><b>Write throughput</b></td>
+                <td><code>per_pod_dps &times; series_size &times; compression_ratio</code></td>
+                <td>Sustained bytes/sec per pod to disk. compression_ratio = 0.3 with snappy, 1.0 without</td>
+              </tr>
+              <tr>
+                <td><b>Write IOPS</b></td>
+                <td><code>ceil(per_pod_dps / batch_size)</code></td>
+                <td>Per-pod batch flushes. Smaller batches &rarr; more IOPS. Increase batch size to reduce IOPS pressure</td>
+              </tr>
+              <tr>
+                <td><b>Read IOPS</b></td>
+                <td><code>write_IOPS &times; 0.1</code></td>
+                <td>~10% read overhead for queue metadata, retry reads, and compaction</td>
+              </tr>
+              <tr>
+                <td><b>Total cluster disk</b></td>
+                <td><code>pods &times; per_pod_PVC_size</code></td>
+                <td>Each pod gets its own PersistentVolumeClaim (ReadWriteOnce)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+
+      <!-- CNCF / K8s best practices -->
+      <details style="margin-top:.5rem">
+        <summary style="font-size:.95em">K8s resource sizing best practices</summary>
+        <div style="margin-top:.5rem;font-size:.85em;line-height:1.6">
+          <p><b>Requests vs Limits</b> &mdash; per the <a href="https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/" target="_blank">Kubernetes resource management docs</a>:</p>
+          <ul style="margin-top:.25rem">
+            <li><b>Requests</b> = guaranteed minimum. The scheduler uses this to place pods. Set to actual expected usage so the scheduler can bin-pack efficiently.</li>
+            <li><b>Limits</b> = hard ceiling. The kubelet enforces this: CPU is throttled, memory triggers OOM kill. Set above requests to allow for bursts.</li>
+            <li><b>CPU</b>: limits &gt; requests is fine &mdash; CPU is compressible and just gets throttled. A 1.5&times; ratio is a common production pattern.</li>
+            <li><b>Memory</b>: keep limit closer to request (1.2&ndash;1.3&times;) because exceeding the limit means OOM kill and pod restart. Go's <code>GOMEMLIMIT</code> (auto-detected by metrics-governor) makes GC more aggressive near the limit, preventing most OOM scenarios.</li>
+          </ul>
+
+          <p style="margin-top:.75rem"><b>CNCF recommended patterns:</b></p>
+          <ul style="margin-top:.25rem">
+            <li><b>Guaranteed QoS</b> (request = limit) &mdash; best for latency-sensitive workloads. Pods won't be evicted under memory pressure. Use this if metrics-governor is a critical path component.</li>
+            <li><b>Burstable QoS</b> (request &lt; limit) &mdash; better cluster utilization. Pods can burst above requests when resources are free. <b>This tool uses this pattern by default.</b></li>
+            <li><b>Always set requests</b> &mdash; pods without requests get <i>BestEffort</i> QoS and are the first to be evicted.</li>
+          </ul>
+
+          <p style="margin-top:.75rem"><b>Sizing tips for metrics-governor:</b></p>
+          <ul style="margin-top:.25rem">
+            <li><b>Right-size over time</b> &mdash; start with these estimates, then observe actual usage via <code>container_cpu_usage_seconds_total</code> and <code>container_memory_working_set_bytes</code> in Prometheus. Adjust requests to P95 actual usage.</li>
+            <li><b>Use VPA or Goldilocks</b> &mdash; the <a href="https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler" target="_blank">Vertical Pod Autoscaler</a> or <a href="https://github.com/FairwindsOps/goldilocks" target="_blank">Goldilocks</a> can recommend optimal requests/limits based on observed usage.</li>
+            <li><b>HPA for horizontal scaling</b> &mdash; metrics-governor's Helm chart supports HPA. Scale on CPU utilization (default 80%) or custom metrics like <code>metrics_governor_datapoints_total</code>.</li>
+            <li><b>PodDisruptionBudget</b> &mdash; set <code>minAvailable: 1</code> to ensure at least one pod stays running during node drains and cluster upgrades.</li>
+            <li><b>Topology spread</b> &mdash; for high availability, use <code>topologySpreadConstraints</code> to distribute pods across zones/nodes.</li>
+          </ul>
+
+          <p style="margin-top:.75rem;color:var(--pico-muted-color)"><small>References: <a href="https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/" target="_blank">K8s Resource Management</a> &bull; <a href="https://kubernetes.io/docs/tasks/configure-pod-container/quality-service-pod/" target="_blank">QoS Classes</a> &bull; <a href="https://www.cncf.io/blog/2023/09/29/kubernetes-resource-management-a-practitioners-guide/" target="_blank">CNCF Resource Management Guide</a> &bull; <a href="https://home.robusta.dev/blog/stop-using-cpu-limits" target="_blank">Stop Using CPU Limits</a></small></p>
+        </div>
+      </details>
+    </details>
+    </div>
+    </template>
+
+    <template x-if="middleTab === 'builder'">
+    <div style="margin-top:1rem">
+
+    <details open>
+      <summary>Global Defaults</summary>
+      <div class="grid-3" style="margin-top:.75rem">
+        <label>
+          Default max cardinality
+          <input type="number" x-model.number="defaultMaxCardinality" min="0" step="1000">
+        </label>
+        <label>
+          Default max datapoints rate
+          <input type="number" x-model.number="defaultMaxDpRate" min="0" step="10000">
+        </label>
+        <label>
+          Default action
+          <select x-model="defaultAction">
+            <option value="log">log</option>
+            <option value="drop">drop</option>
+            <option value="adaptive">adaptive</option>
+          </select>
+        </label>
+      </div>
+    </details>
+
+    <div style="margin-top:1rem">
+      <button @click="addRule()" class="outline">+ Add Rule</button>
+    </div>
+
+    <template x-for="(rule, idx) in rules" :key="rule.id">
+      <div class="rule-card" style="margin-top:.75rem">
+        <div class="rule-header" @click="rule.expanded = !rule.expanded">
+          <h4 x-text="rule.name || 'Untitled Rule #' + (idx + 1)"></h4>
+          <div style="display:flex;gap:.25rem;align-items:center">
+            <button class="outline secondary" style="padding:2px 8px;font-size:.8em" @click.stop="moveRule(idx, -1)" :disabled="idx === 0">&uarr;</button>
+            <button class="outline secondary" style="padding:2px 8px;font-size:.8em" @click.stop="moveRule(idx, 1)" :disabled="idx === rules.length - 1">&darr;</button>
+            <button class="outline" style="padding:2px 8px;font-size:.8em;color:var(--status-red)" @click.stop="rules.splice(idx, 1)">Delete</button>
+            <span x-text="rule.expanded ? '&#9660;' : '&#9654;'" style="font-size:.8em"></span>
+          </div>
+        </div>
+        <template x-if="rule.expanded">
+          <div style="margin-top:.75rem">
+            <div class="grid-2">
+              <label>
+                Name
+                <input type="text" x-model="rule.name" placeholder="e.g. high-cardinality-protection">
+              </label>
+              <label>
+                Match metric_name (regex)
+                <input type="text" x-model="rule.matchMetricName" placeholder="e.g. http_request_.*">
+              </label>
+            </div>
+
+            <fieldset>
+              <legend>Match Labels</legend>
+              <template x-for="(lbl, li) in rule.labels" :key="li">
+                <div class="label-pair">
+                  <input type="text" x-model="lbl.key" placeholder="key">
+                  <input type="text" x-model="lbl.value" placeholder="value">
+                  <button class="outline" style="padding:2px 8px;font-size:.8em;color:var(--status-red)" @click="rule.labels.splice(li, 1)">x</button>
+                </div>
+              </template>
+              <button class="outline secondary" style="font-size:.8em;padding:4px 10px" @click="rule.labels.push({key:'',value:''})">+ Label</button>
+            </fieldset>
+
+            <div class="grid-3">
+              <label>
+                Max cardinality
+                <input type="number" x-model.number="rule.maxCardinality" min="0" step="1000">
+              </label>
+              <label>
+                Max datapoints rate
+                <input type="number" x-model.number="rule.maxDpRate" min="0" step="10000">
+              </label>
+              <label>
+                Action
+                <select x-model="rule.action">
+                  <option value="log">log</option>
+                  <option value="drop">drop</option>
+                  <option value="adaptive">adaptive</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="grid-2">
+              <label>
+                Window
+                <input type="text" x-model="rule.window" placeholder="e.g. 60s">
+              </label>
+              <div>
+                <label>Group By</label>
+                <div style="border:1px solid var(--pico-muted-border-color);border-radius:8px;padding:.5rem;min-height:42px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">
+                  <template x-for="(g, gi) in rule.groupBy" :key="gi">
+                    <span class="tag" style="display:inline-flex;align-items:center;gap:2px">
+                      <span x-text="g"></span>
+                      <span style="cursor:pointer;font-weight:700;margin-left:2px" @click="rule.groupBy.splice(gi, 1)">&times;</span>
+                    </span>
+                  </template>
+                  <input type="text" x-model="rule.customGroupBy" placeholder="type label, press Enter" style="border:none;outline:none;background:transparent;flex:1;min-width:120px;font-size:.85em;padding:4px;margin:0" @keydown.enter.prevent="addGroupByLabel(rule)" @keydown.comma.prevent="addGroupByLabel(rule)" @keydown.backspace="if(!rule.customGroupBy && rule.groupBy.length) rule.groupBy.pop()">
+                </div>
+                <div style="margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                  <small class="help-tip" style="margin:0">Quick add:</small>
+                  <template x-for="s in groupByOptions" :key="s">
+                    <button class="outline secondary" style="font-size:.75em;padding:2px 8px;margin:0;border-radius:12px" @click="if(!rule.groupBy.includes(s)) rule.groupBy.push(s)" x-text="'+ ' + s" :disabled="rule.groupBy.includes(s)"></button>
+                  </template>
+                  <small class="help-tip" style="margin:0">Labels used to track &amp; identify top offenders for adaptive action.</small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </template>
+    </div>
+    </template>
+  </section>
+
+  <!-- ====== SECTION 4: LIVE CONFIG PREVIEW ====== -->
+  <section>
+    <details open>
+      <summary style="font-size:1.25em;font-weight:700">4. Config Preview &amp; Export</summary>
+
+    <div class="tab-bar">
+      <button class="tab-btn" :class="activeTab === 'helm' ? 'active' : ''" @click="activeTab = 'helm'">
+        <span class="dot" :class="!helmValid ? 'dot-red' : helmHasWarns ? 'dot-yellow' : 'dot-green'"></span> Helm values.yaml
+      </button>
+      <button class="tab-btn" :class="activeTab === 'app' ? 'active' : ''" @click="activeTab = 'app'">
+        <span class="dot" :class="!appValid ? 'dot-red' : appHasWarns ? 'dot-yellow' : 'dot-green'"></span> App config.yaml
+      </button>
+      <button class="tab-btn" :class="activeTab === 'limits' ? 'active' : ''" @click="activeTab = 'limits'">
+        <span class="dot" :class="!limitsValid ? 'dot-red' : limitsHasWarns ? 'dot-yellow' : 'dot-green'"></span> Limits rules YAML
+      </button>
+      <button class="tab-btn" :class="activeTab === 'alerts' ? 'active' : ''" @click="activeTab = 'alerts'">
+        <span class="dot dot-green"></span> Alert rules
+      </button>
+      <button class="tab-btn" :class="activeTab === 'processing' ? 'active' : ''" @click="activeTab = 'processing'">
+        <span class="dot" :class="!procValid ? 'dot-red' : procHasWarns ? 'dot-yellow' : 'dot-green'"></span> Processing rules
+      </button>
+    </div>
+
+    <!-- Helm values.yaml -->
+    <template x-if="activeTab === 'helm'">
+      <div>
+        <div class="yaml-toolbar">
+          <small>Edit YAML directly — changes reflect in inputs and estimations</small>
+          <button class="outline secondary" style="font-size:.8em;padding:2px 10px;margin:0" @click="resetYamlText('helm')">Reset to generated</button>
+        </div>
+        <textarea class="yaml-edit" x-model.debounce.500ms="helmText" @focus="editingTab='helm'" @blur="editingTab=null" spellcheck="false"></textarea>
+        <div class="lint-panel">
+          <template x-for="issue in helmLint" :key="issue.msg">
+            <div class="lint-item" :class="'lint-' + issue.type">
+              <span class="lint-icon" x-text="issue.type === 'error' ? '\u2716' : issue.type === 'warn' ? '\u26A0' : '\u2714'"></span>
+              <span x-text="issue.msg"></span>
+            </div>
+          </template>
+        </div>
+        <div class="btn-row">
+          <button @click="copyToClipboard(helmText, 'helm')">Copy to Clipboard</button>
+          <button class="outline" @click="downloadFile(helmText, 'values.yaml')">Download values.yaml</button>
+          <span class="copy-ok" x-show="copyOk === 'helm'" x-transition>Copied!</span>
+        </div>
+      </div>
+    </template>
+
+    <!-- App config.yaml -->
+    <template x-if="activeTab === 'app'">
+      <div>
+        <div class="yaml-toolbar">
+          <small>Edit YAML directly — changes reflect in inputs and estimations</small>
+          <button class="outline secondary" style="font-size:.8em;padding:2px 10px;margin:0" @click="resetYamlText('app')">Reset to generated</button>
+        </div>
+        <textarea class="yaml-edit" x-model.debounce.500ms="appText" @focus="editingTab='app'" @blur="editingTab=null" spellcheck="false"></textarea>
+        <div class="lint-panel">
+          <template x-for="issue in appLint" :key="issue.msg">
+            <div class="lint-item" :class="'lint-' + issue.type">
+              <span class="lint-icon" x-text="issue.type === 'error' ? '\u2716' : issue.type === 'warn' ? '\u26A0' : '\u2714'"></span>
+              <span x-text="issue.msg"></span>
+            </div>
+          </template>
+        </div>
+        <div class="btn-row">
+          <button @click="copyToClipboard(appText, 'app')">Copy to Clipboard</button>
+          <button class="outline" @click="downloadFile(appText, 'config.yaml')">Download config.yaml</button>
+          <span class="copy-ok" x-show="copyOk === 'app'" x-transition>Copied!</span>
+        </div>
+      </div>
+    </template>
+
+    <!-- Limits rules YAML -->
+    <template x-if="activeTab === 'limits'">
+      <div>
+        <div class="yaml-toolbar">
+          <small>Edit YAML directly — changes reflect in inputs and estimations</small>
+          <button class="outline secondary" style="font-size:.8em;padding:2px 10px;margin:0" @click="resetYamlText('limits')">Reset to generated</button>
+        </div>
+        <textarea class="yaml-edit" x-model.debounce.500ms="limitsText" @focus="editingTab='limits'" @blur="editingTab=null" spellcheck="false"></textarea>
+        <div class="lint-panel">
+          <template x-for="issue in limitsLint" :key="issue.msg">
+            <div class="lint-item" :class="'lint-' + issue.type">
+              <span class="lint-icon" x-text="issue.type === 'error' ? '\u2716' : issue.type === 'warn' ? '\u26A0' : '\u2714'"></span>
+              <span x-text="issue.msg"></span>
+            </div>
+          </template>
+        </div>
+        <div class="btn-row">
+          <button @click="copyToClipboard(limitsText, 'limits')">Copy to Clipboard</button>
+          <button class="outline" @click="downloadFile(limitsText, 'limits.yaml')">Download limits.yaml</button>
+          <span class="copy-ok" x-show="copyOk === 'limits'" x-transition>Copied!</span>
+        </div>
+      </div>
+    </template>
+
+    <!-- Alert rules -->
+    <template x-if="activeTab === 'alerts'">
+      <div>
+        <p style="font-size:.9em;color:var(--pico-muted-color);margin-bottom:.75rem">
+          13 non-overlapping alerts covering availability, reliability, resilience, performance.
+          Thresholds auto-adjusted based on your throughput and configuration.
+          <a href="https://github.com/your-org/metrics-governor/blob/main/alerts/README.md" target="_blank">Runbooks</a>
+        </p>
+
+        <details open style="margin-bottom:1rem">
+          <summary>Threshold Tuning</summary>
+          <div class="grid-3" style="margin-top:.5rem">
+            <label>Export error rate %
+              <input type="number" x-model.number="alertExportErrorPct" min="1" max="50" step="1">
+              <small class="help-tip">Fire when error rate exceeds this %</small>
+            </label>
+            <label>Queue utilization %
+              <input type="number" x-model.number="alertQueuePct" min="50" max="99" step="1">
+              <small class="help-tip">Fire when queue exceeds this %</small>
+            </label>
+            <label>Memory usage %
+              <input type="number" x-model.number="alertMemoryPct" min="50" max="99" step="1">
+              <small class="help-tip">Fire when heap exceeds this % of limit</small>
+            </label>
+            <label>Backpressure rate/s
+              <input type="number" x-model.number="alertBackpressureRate" min="0.1" max="100" step="0.1">
+              <small class="help-tip">Buffer reject/evict events per second</small>
+            </label>
+            <label>Worker utilization %
+              <input type="number" x-model.number="alertWorkerPct" min="50" max="99" step="1">
+              <small class="help-tip">Fire when workers exceed this %</small>
+            </label>
+            <label>Config stale (hours)
+              <input type="number" x-model.number="alertConfigStaleHours" min="1" max="168" step="1">
+              <small class="help-tip">Hours without config reload</small>
+            </label>
+          </div>
+          <div style="margin-top:.5rem">
+            <label style="display:inline-flex;align-items:center;gap:.5rem">
+              <input type="checkbox" x-model="alertK8sFormat" role="switch" style="margin:0">
+              <span>Kubernetes PrometheusRule CRD format</span>
+            </label>
+          </div>
+        </details>
+
+        <details style="margin-bottom:1rem">
+          <summary>Alert Coverage Map</summary>
+          <table style="font-size:.85em;margin-top:.5rem">
+            <thead><tr><th>#</th><th>Alert</th><th>Severity</th><th>Detects</th><th>Threshold</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td><code>Down</code></td><td><span class="badge-red">critical</span></td><td>Process unavailable</td><td>up == 0 for 2m</td></tr>
+              <tr><td>2</td><td><code>DataLoss</code></td><td><span class="badge-red">critical</span></td><td>Permanent data loss</td><td>data_loss &gt; 0</td></tr>
+              <tr><td>3</td><td><code>ExportDegraded</code></td><td><span class="badge-yellow">warning</span></td><td>Backend errors</td><td><span x-text="alertExportErrorPct + '%'"></span> for 5m</td></tr>
+              <tr><td>4</td><td><code>QueueSaturated</code></td><td><span class="badge-yellow">warning</span></td><td>Queue filling</td><td><span x-text="alertQueuePct + '%'"></span> for 5m</td></tr>
+              <tr><td>5</td><td><code>CircuitOpen</code></td><td><span class="badge-yellow">warning</span></td><td>CB tripped</td><td>open for 2m</td></tr>
+              <tr><td>6</td><td><code>OOMRisk</code></td><td><span class="badge-red">critical</span></td><td>Memory pressure</td><td><span x-text="alertMemoryPct + '%'"></span> for 5m</td></tr>
+              <tr><td>7</td><td><code>Backpressure</code></td><td><span class="badge-yellow">warning</span></td><td>Pipeline bottleneck</td><td><span x-text="alertBackpressureRate + '/s'"></span> for 5m</td></tr>
+              <tr><td>8</td><td><code>WorkersSaturated</code></td><td><span class="badge-yellow">warning</span></td><td>Export ceiling</td><td><span x-text="alertWorkerPct + '%'"></span> for 10m</td></tr>
+              <tr><td>9</td><td><code>CardinalityExplosion</code></td><td><span class="badge-yellow">warning</span></td><td>Governance breach</td><td>violations for 10m</td></tr>
+              <tr><td>10</td><td><code>ConfigStale</code></td><td style="color:var(--pico-muted-color)">info</td><td>Operational drift</td><td><span x-text="alertConfigStaleHours + 'h'"></span></td></tr>
+              <tr><td>11</td><td><code>SpilloverCascade</code></td><td><span class="badge-yellow">warning</span></td><td>Queue cascade</td><td>active for 2m</td></tr>
+              <tr><td>12</td><td><code>LoadSheddingActive</code></td><td><span class="badge-yellow">warning</span></td><td>Rejecting requests</td><td>rate &gt; 0 for 2m</td></tr>
+              <tr><td>13</td><td><code>StatsDegraded</code></td><td><span class="badge-yellow">warning</span></td><td>Stats downgraded</td><td>level &lt; configured for 5m</td></tr>
+            </tbody>
+          </table>
+        </details>
+
+        <div class="yaml-toolbar">
+          <small x-text="alertK8sFormat ? 'PrometheusRule CRD — kubectl apply -f' : 'Prometheus rules — copy to /etc/prometheus/rules/'"></small>
+          <button class="outline secondary" style="font-size:.8em;padding:2px 10px;margin:0" @click="alertsText = alertsYaml">Reset to generated</button>
+        </div>
+        <textarea class="yaml-edit" x-model.debounce.500ms="alertsText" spellcheck="false" style="min-height:400px"></textarea>
+        <div class="btn-row">
+          <button @click="copyToClipboard(alertsText, 'alerts')">Copy to Clipboard</button>
+          <button class="outline" @click="downloadFile(alertsText, alertK8sFormat ? 'prometheusrule.yaml' : 'prometheus-rules.yaml')">
+            <span x-text="alertK8sFormat ? 'Download prometheusrule.yaml' : 'Download prometheus-rules.yaml'"></span>
+          </button>
+          <span class="copy-ok" x-show="copyOk === 'alerts'" x-transition>Copied!</span>
+        </div>
+      </div>
+    </template>
+
+    <!-- Processing rules -->
+    <template x-if="activeTab === 'processing'">
+      <div>
+        <p style="font-size:.9em;color:var(--pico-muted-color);margin-bottom:.75rem">
+          Define processing rules to sample, downsample, aggregate, transform, or drop metrics before export.
+          Rules are evaluated in order; the first matching rule wins.
+        </p>
+
+        <!-- Staleness interval -->
+        <div class="grid-2" style="margin-bottom:1rem">
+          <label>
+            Staleness interval
+            <input type="text" x-model="procStalenessInterval" placeholder="10m">
+            <small class="help-tip">How long a series is kept in processing state after its last datapoint. Default: 10m.</small>
+          </label>
+        </div>
+
+        <!-- Rule builder -->
+        <details open style="margin-bottom:1rem">
+          <summary>Processing Rules Builder</summary>
+          <div style="margin-top:.5rem">
+            <template x-for="(rule, idx) in procRules" :key="rule.id">
+              <div class="rule-card">
+                <div class="rule-header" @click="rule.expanded = !rule.expanded">
+                  <h4>
+                    <span x-text="rule.expanded ? '\u25BC' : '\u25B6'" style="font-size:.8em;margin-right:.25rem"></span>
+                    <span x-text="rule.name || ('Rule #' + (idx + 1))"></span>
+                    <small style="margin-left:.5rem;color:var(--pico-muted-color)" x-text="rule.action"></small>
+                  </h4>
+                  <div style="display:flex;gap:.25rem" @click.stop>
+                    <button class="outline secondary" style="font-size:.75em;padding:2px 8px;margin:0" @click="moveProcRule(idx, -1)" :disabled="idx === 0">Up</button>
+                    <button class="outline secondary" style="font-size:.75em;padding:2px 8px;margin:0" @click="moveProcRule(idx, 1)" :disabled="idx === procRules.length - 1">Down</button>
+                    <button class="outline" style="font-size:.75em;padding:2px 8px;margin:0;border-color:var(--status-red);color:var(--status-red)" @click="procRules.splice(idx, 1)">Delete</button>
+                  </div>
+                </div>
+                <template x-if="rule.expanded">
+                  <div style="margin-top:.75rem">
+                    <div class="grid-3">
+                      <label>
+                        Rule name
+                        <input type="text" x-model="rule.name" placeholder="e.g. sample-debug-metrics">
+                      </label>
+                      <label>
+                        Input pattern (regex)
+                        <input type="text" x-model="rule.input" placeholder=".*">
+                        <small class="help-tip">Regex matching metric __name__</small>
+                      </label>
+                      <label>
+                        Action
+                        <select x-model="rule.action">
+                          <option value="sample">Sample</option>
+                          <option value="downsample">Downsample</option>
+                          <option value="aggregate">Aggregate</option>
+                          <option value="transform">Transform</option>
+                          <option value="drop">Drop</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    <!-- Input labels (optional) -->
+                    <details style="margin-top:.5rem">
+                      <summary style="font-size:.9em">Input label matchers (optional)</summary>
+                      <div style="margin-top:.25rem">
+                        <template x-for="(lbl, li) in rule.inputLabels" :key="li">
+                          <div class="label-pair">
+                            <input type="text" x-model="lbl.key" placeholder="label key" style="max-width:180px">
+                            <input type="text" x-model="lbl.value" placeholder="label value (regex)">
+                            <button class="outline" style="font-size:.75em;padding:2px 8px;margin:0;border-color:var(--status-red);color:var(--status-red)" @click="rule.inputLabels.splice(li, 1)">&times;</button>
+                          </div>
+                        </template>
+                        <button class="outline secondary" style="font-size:.8em;padding:4px 10px;margin-top:.25rem" @click="rule.inputLabels.push({key:'', value:''})">+ Add label matcher</button>
+                      </div>
+                    </details>
+
+                    <!-- ======= SAMPLE ======= -->
+                    <template x-if="rule.action === 'sample'">
+                      <div style="margin-top:.75rem;padding:.75rem;border:1px solid var(--pico-muted-border-color);border-radius:8px">
+                        <h5 style="margin:0 0 .5rem 0;font-size:.9em">Sample Configuration</h5>
+                        <div class="grid-2">
+                          <label>
+                            Sample rate
+                            <input type="range" x-model.number="rule.rate" min="0" max="1" step="0.01" style="margin-bottom:0">
+                            <div style="display:flex;justify-content:space-between;font-size:.8em;color:var(--pico-muted-color)">
+                              <span>0% (drop all)</span>
+                              <span x-text="(rule.rate * 100).toFixed(0) + '%'" style="font-weight:700"></span>
+                              <span>100% (keep all)</span>
+                            </div>
+                          </label>
+                          <label>
+                            Method
+                            <div style="display:flex;gap:1rem;margin-top:.25rem">
+                              <label style="display:flex;align-items:center;gap:.3rem;font-size:.9em;margin:0">
+                                <input type="radio" x-model="rule.method" value="head" style="margin:0"> Head (first N)
+                              </label>
+                              <label style="display:flex;align-items:center;gap:.3rem;font-size:.9em;margin:0">
+                                <input type="radio" x-model="rule.method" value="probabilistic" style="margin:0"> Probabilistic
+                              </label>
+                            </div>
+                            <small class="help-tip">Head keeps the first N%; probabilistic uses random sampling.</small>
+                          </label>
+                        </div>
+                      </div>
+                    </template>
+
+                    <!-- ======= DOWNSAMPLE ======= -->
+                    <template x-if="rule.action === 'downsample'">
+                      <div style="margin-top:.75rem;padding:.75rem;border:1px solid var(--pico-muted-border-color);border-radius:8px">
+                        <h5 style="margin:0 0 .5rem 0;font-size:.9em">Downsample Configuration</h5>
+                        <div class="grid-3">
+                          <label>
+                            Method
+                            <select x-model="rule.dsMethod">
+                              <template x-for="m in procDownsampleMethods" :key="m">
+                                <option :value="m" x-text="m"></option>
+                              </template>
+                            </select>
+                          </label>
+                          <label>
+                            Interval
+                            <input type="text" x-model="rule.dsInterval" placeholder="1m">
+                            <small class="help-tip">Output interval (e.g. 1m, 5m, 1h)</small>
+                          </label>
+                          <!-- LTTB: resolution -->
+                          <label x-show="rule.dsMethod === 'lttb'">
+                            Resolution (points)
+                            <input type="number" x-model.number="rule.dsResolution" min="3" step="1">
+                            <small class="help-tip">Target number of points to keep per window</small>
+                          </label>
+                          <!-- SDT: deviation -->
+                          <label x-show="rule.dsMethod === 'sdt'">
+                            Deviation threshold
+                            <input type="number" x-model.number="rule.dsDeviation" min="0" step="0.01">
+                            <small class="help-tip">Minimum deviation to emit a point</small>
+                          </label>
+                          <!-- Adaptive: min_rate, max_rate, variance_window -->
+                          <template x-if="rule.dsMethod === 'adaptive'">
+                            <label>
+                              Min rate
+                              <input type="number" x-model.number="rule.dsMinRate" min="0" max="1" step="0.01">
+                              <small class="help-tip">Minimum output rate (0-1)</small>
+                            </label>
+                          </template>
+                        </div>
+                        <template x-if="rule.dsMethod === 'adaptive'">
+                          <div class="grid-2" style="margin-top:.5rem">
+                            <label>
+                              Max rate
+                              <input type="number" x-model.number="rule.dsMaxRate" min="0" max="1" step="0.01">
+                              <small class="help-tip">Maximum output rate (0-1)</small>
+                            </label>
+                            <label>
+                              Variance window
+                              <input type="number" x-model.number="rule.dsVarianceWindow" min="1" step="1">
+                              <small class="help-tip">Number of samples for variance calculation</small>
+                            </label>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+
+                    <!-- ======= AGGREGATE ======= -->
+                    <template x-if="rule.action === 'aggregate'">
+                      <div style="margin-top:.75rem;padding:.75rem;border:1px solid var(--pico-muted-border-color);border-radius:8px">
+                        <h5 style="margin:0 0 .5rem 0;font-size:.9em">Aggregate Configuration</h5>
+                        <div class="grid-3">
+                          <label>
+                            Output metric name
+                            <input type="text" x-model="rule.aggOutput" placeholder="e.g. request_total:5m_sum">
+                            <small class="help-tip">Name of the aggregated output metric</small>
+                          </label>
+                          <label>
+                            Interval
+                            <input type="text" x-model="rule.aggInterval" placeholder="1m">
+                            <small class="help-tip">Aggregation window (e.g. 1m, 5m)</small>
+                          </label>
+                          <label>
+                            <input type="checkbox" x-model="rule.aggKeepInput" role="switch" style="margin-top:.25rem"> Keep original input
+                            <small class="help-tip">Forward both original and aggregated series</small>
+                          </label>
+                        </div>
+
+                        <!-- Functions multi-select -->
+                        <div style="margin-top:.5rem">
+                          <label style="margin-bottom:.25rem;font-size:.9em">Aggregation functions</label>
+                          <div style="display:flex;flex-wrap:wrap;gap:4px">
+                            <template x-for="f in procFunctionOptions" :key="f">
+                              <span class="tag" :class="rule.aggFunctions.includes(f) ? 'selected' : ''"
+                                    @click="toggleProcFunction(rule, f)" x-text="f"></span>
+                            </template>
+                          </div>
+                        </div>
+
+                        <!-- Group by -->
+                        <div style="margin-top:.5rem">
+                          <label style="margin-bottom:.25rem;font-size:.9em">Group by labels</label>
+                          <div style="display:flex;flex-wrap:wrap;align-items:center;border:1px solid var(--pico-muted-border-color);border-radius:8px;padding:4px 6px;min-height:36px;gap:4px">
+                            <template x-for="(g, gi) in rule.aggGroupBy" :key="gi">
+                              <span class="tag selected">
+                                <span x-text="g"></span>
+                                <span style="cursor:pointer;font-weight:700;margin-left:2px" @click="rule.aggGroupBy.splice(gi, 1)">&times;</span>
+                              </span>
+                            </template>
+                            <input type="text" x-model="rule.aggCustomGroupBy" placeholder="type label, press Enter"
+                                   style="border:none;outline:none;background:transparent;flex:1;min-width:120px;font-size:.85em;padding:4px;margin:0"
+                                   @keydown.enter.prevent="addProcGroupByLabel(rule)"
+                                   @keydown.comma.prevent="addProcGroupByLabel(rule)"
+                                   @keydown.backspace="if(!rule.aggCustomGroupBy && rule.aggGroupBy.length) rule.aggGroupBy.pop()">
+                          </div>
+                          <div style="margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                            <small class="help-tip" style="margin:0">Quick add:</small>
+                            <template x-for="s in procGroupByOptions" :key="s">
+                              <button class="outline secondary" style="font-size:.75em;padding:2px 8px;margin:0;border-radius:12px"
+                                      @click="if(!rule.aggGroupBy.includes(s)) rule.aggGroupBy.push(s)"
+                                      x-text="'+ ' + s" :disabled="rule.aggGroupBy.includes(s)"></button>
+                            </template>
+                          </div>
+                        </div>
+
+                        <!-- Drop labels -->
+                        <div style="margin-top:.5rem">
+                          <label style="margin-bottom:.25rem;font-size:.9em">Drop labels (mutually exclusive with group_by)</label>
+                          <div style="display:flex;flex-wrap:wrap;align-items:center;border:1px solid var(--pico-muted-border-color);border-radius:8px;padding:4px 6px;min-height:36px;gap:4px">
+                            <template x-for="(dl, dli) in rule.aggDropLabels" :key="dli">
+                              <span class="tag selected">
+                                <span x-text="dl"></span>
+                                <span style="cursor:pointer;font-weight:700;margin-left:2px" @click="rule.aggDropLabels.splice(dli, 1)">&times;</span>
+                              </span>
+                            </template>
+                            <input type="text" x-model="rule.aggCustomDropLabel" placeholder="type label, press Enter"
+                                   style="border:none;outline:none;background:transparent;flex:1;min-width:120px;font-size:.85em;padding:4px;margin:0"
+                                   @keydown.enter.prevent="addProcDropLabel(rule)"
+                                   @keydown.comma.prevent="addProcDropLabel(rule)"
+                                   @keydown.backspace="if(!rule.aggCustomDropLabel && rule.aggDropLabels.length) rule.aggDropLabels.pop()">
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+
+                    <!-- ======= TRANSFORM ======= -->
+                    <template x-if="rule.action === 'transform'">
+                      <div style="margin-top:.75rem;padding:.75rem;border:1px solid var(--pico-muted-border-color);border-radius:8px">
+                        <h5 style="margin:0 0 .5rem 0;font-size:.9em">Transform Configuration</h5>
+
+                        <!-- When conditions -->
+                        <div style="margin-bottom:.5rem">
+                          <label style="font-size:.9em;margin-bottom:.25rem">When conditions (optional)</label>
+                          <template x-for="(cond, ci) in rule.transformWhen" :key="ci">
+                            <div class="label-pair" style="margin-bottom:.25rem">
+                              <input type="text" x-model="cond.label" placeholder="label name" style="max-width:150px">
+                              <select x-model="cond.type" style="max-width:130px">
+                                <option value="equals">equals</option>
+                                <option value="not_equals">not equals</option>
+                                <option value="matches">matches (regex)</option>
+                                <option value="not_matches">not matches</option>
+                                <option value="exists">exists</option>
+                                <option value="not_exists">not exists</option>
+                              </select>
+                              <input type="text" x-model="cond.value" placeholder="value" x-show="!['exists','not_exists'].includes(cond.type)">
+                              <button class="outline" style="font-size:.75em;padding:2px 8px;margin:0;border-color:var(--status-red);color:var(--status-red)" @click="rule.transformWhen.splice(ci, 1)">&times;</button>
+                            </div>
+                          </template>
+                          <button class="outline secondary" style="font-size:.8em;padding:4px 10px" @click="addProcTransformWhen(rule)">+ Add condition</button>
+                        </div>
+
+                        <!-- Operations -->
+                        <div>
+                          <label style="font-size:.9em;margin-bottom:.25rem">Operations</label>
+                          <template x-for="(op, oi) in rule.transformOps" :key="oi">
+                            <div class="rule-card" style="padding:.5rem;margin-bottom:.5rem">
+                              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+                                <select x-model="op.type" style="max-width:180px;margin:0">
+                                  <template x-for="t in procTransformOps" :key="t">
+                                    <option :value="t" x-text="t"></option>
+                                  </template>
+                                </select>
+                                <button class="outline" style="font-size:.75em;padding:2px 8px;margin:0;border-color:var(--status-red);color:var(--status-red)" @click="rule.transformOps.splice(oi, 1)">&times;</button>
+                              </div>
+                              <!-- set: label + value -->
+                              <div x-show="op.type === 'set'" class="grid-2">
+                                <label style="margin:0">Label <input type="text" x-model="op.label" placeholder="label name"></label>
+                                <label style="margin:0">Value <input type="text" x-model="op.value" placeholder="label value"></label>
+                              </div>
+                              <!-- remove: label -->
+                              <div x-show="op.type === 'remove'">
+                                <label style="margin:0">Label <input type="text" x-model="op.label" placeholder="label to remove"></label>
+                              </div>
+                              <!-- rename: source + target -->
+                              <div x-show="op.type === 'rename'" class="grid-2">
+                                <label style="margin:0">Source <input type="text" x-model="op.source" placeholder="old label name"></label>
+                                <label style="margin:0">Target <input type="text" x-model="op.target" placeholder="new label name"></label>
+                              </div>
+                              <!-- copy: source + target -->
+                              <div x-show="op.type === 'copy'" class="grid-2">
+                                <label style="margin:0">Source <input type="text" x-model="op.source" placeholder="source label"></label>
+                                <label style="margin:0">Target <input type="text" x-model="op.target" placeholder="target label"></label>
+                              </div>
+                              <!-- replace: label + pattern + replacement -->
+                              <div x-show="op.type === 'replace'" class="grid-3">
+                                <label style="margin:0">Label <input type="text" x-model="op.label" placeholder="label name"></label>
+                                <label style="margin:0">Pattern <input type="text" x-model="op.pattern" placeholder="regex pattern"></label>
+                                <label style="margin:0">Replacement <input type="text" x-model="op.replacement" placeholder="replacement string"></label>
+                              </div>
+                              <!-- extract: source + pattern + target + group -->
+                              <div x-show="op.type === 'extract'" class="grid-2">
+                                <label style="margin:0">Source label <input type="text" x-model="op.source" placeholder="source label"></label>
+                                <label style="margin:0">Pattern (regex) <input type="text" x-model="op.pattern" placeholder="regex with capture group"></label>
+                                <label style="margin:0">Target label <input type="text" x-model="op.target" placeholder="target label"></label>
+                                <label style="margin:0">Group index <input type="number" x-model.number="op.group" min="0" step="1"></label>
+                              </div>
+                              <!-- hash_mod: label + modulus + target -->
+                              <div x-show="op.type === 'hash_mod'" class="grid-3">
+                                <label style="margin:0">Source label <input type="text" x-model="op.label" placeholder="label to hash"></label>
+                                <label style="margin:0">Modulus <input type="number" x-model.number="op.modulus" min="1" step="1"></label>
+                                <label style="margin:0">Target label <input type="text" x-model="op.target" placeholder="output label"></label>
+                              </div>
+                              <!-- lower/upper: label -->
+                              <div x-show="op.type === 'lower' || op.type === 'upper'">
+                                <label style="margin:0">Label <input type="text" x-model="op.label" placeholder="label to transform"></label>
+                              </div>
+                              <!-- concat: sources + separator + target -->
+                              <div x-show="op.type === 'concat'" class="grid-3">
+                                <label style="margin:0">Source labels (comma-separated) <input type="text" x-model="op.sources" placeholder="label1,label2"></label>
+                                <label style="margin:0">Separator <input type="text" x-model="op.separator" placeholder="."></label>
+                                <label style="margin:0">Target label <input type="text" x-model="op.target" placeholder="output label"></label>
+                              </div>
+                              <!-- map: label + mapValues + mapDefault -->
+                              <div x-show="op.type === 'map'" class="grid-3">
+                                <label style="margin:0">Label <input type="text" x-model="op.label" placeholder="label to map"></label>
+                                <label style="margin:0">Map values (key=val,...) <input type="text" x-model="op.mapValues" placeholder="old1=new1,old2=new2"></label>
+                                <label style="margin:0">Default value <input type="text" x-model="op.mapDefault" placeholder="fallback value"></label>
+                              </div>
+                              <!-- math: label + operation + operand -->
+                              <div x-show="op.type === 'math'" class="grid-3">
+                                <label style="margin:0">Label <input type="text" x-model="op.label" placeholder="numeric label"></label>
+                                <label style="margin:0">Operation
+                                  <select x-model="op.operation" style="margin:0">
+                                    <option value="add">add</option>
+                                    <option value="sub">subtract</option>
+                                    <option value="mul">multiply</option>
+                                    <option value="div">divide</option>
+                                    <option value="mod">modulo</option>
+                                  </select>
+                                </label>
+                                <label style="margin:0">Operand <input type="number" x-model.number="op.operand" step="any"></label>
+                              </div>
+                            </div>
+                          </template>
+                          <button class="outline secondary" style="font-size:.8em;padding:4px 10px" @click="addProcTransformOp(rule)">+ Add operation</button>
+                        </div>
+                      </div>
+                    </template>
+
+                    <!-- ======= DROP ======= -->
+                    <template x-if="rule.action === 'drop'">
+                      <div style="margin-top:.75rem;padding:.75rem;border:1px solid var(--pico-muted-border-color);border-radius:8px">
+                        <h5 style="margin:0 0 .25rem 0;font-size:.9em">Drop Configuration</h5>
+                        <p style="font-size:.85em;color:var(--pico-muted-color);margin:0">
+                          All matching metrics will be silently dropped. No additional configuration needed.
+                        </p>
+                      </div>
+                    </template>
+
+                  </div>
+                </template>
+              </div>
+            </template>
+            <button class="outline" @click="addProcRule()" style="margin-top:.5rem">+ Add processing rule</button>
+          </div>
+        </details>
+
+        <!-- Impact estimator -->
+        <details open style="margin-bottom:1rem">
+          <summary>Impact Estimator</summary>
+          <div style="margin-top:.5rem">
+            <template x-if="procRules.length === 0">
+              <p style="font-size:.85em;color:var(--pico-muted-color)">Add processing rules above to see estimated impact on your datapoint throughput.</p>
+            </template>
+            <template x-if="procRules.length > 0">
+              <div>
+                <div class="grid-4" style="margin-bottom:.75rem">
+                  <div class="est-card">
+                    <h4 style="font-size:.85em;color:var(--pico-muted-color)">Input dps</h4>
+                    <div class="est-val" x-text="procImpactEstimate.inputDps.toLocaleString()"></div>
+                  </div>
+                  <div class="est-card">
+                    <h4 style="font-size:.85em;color:var(--pico-muted-color)">Output dps</h4>
+                    <div class="est-val" :class="procImpactEstimate.outputDps < procImpactEstimate.inputDps ? 'status-green' : ''" x-text="procImpactEstimate.outputDps.toLocaleString()"></div>
+                  </div>
+                  <div class="est-card">
+                    <h4 style="font-size:.85em;color:var(--pico-muted-color)">Total reduction</h4>
+                    <div class="est-val" :class="parseFloat(procImpactEstimate.reductionPct) > 0 ? 'status-green' : ''" x-text="procImpactEstimate.reductionPct + '%'"></div>
+                  </div>
+                  <div class="est-card">
+                    <h4 style="font-size:.85em;color:var(--pico-muted-color)">Memory overhead</h4>
+                    <div class="est-val" x-text="fmtBytes(procImpactEstimate.memOverhead)"></div>
+                  </div>
+                </div>
+                <table style="font-size:.85em;width:100%">
+                  <thead><tr><th>#</th><th>Rule</th><th>Action</th><th>Input dps</th><th>Output dps</th><th>Reduction</th></tr></thead>
+                  <tbody>
+                    <template x-for="(pr, pri) in procImpactEstimate.perRule" :key="pri">
+                      <tr>
+                        <td x-text="pri + 1"></td>
+                        <td x-text="pr.name"></td>
+                        <td><code x-text="pr.action"></code></td>
+                        <td x-text="pr.inputDps.toLocaleString()"></td>
+                        <td x-text="pr.outputDps.toLocaleString()"></td>
+                        <td x-text="(pr.reduction * 100).toFixed(0) + '%'"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+          </div>
+        </details>
+
+        <!-- YAML Preview -->
+        <div class="yaml-toolbar">
+          <small>Edit YAML directly or use the rule builder above</small>
+          <button class="outline secondary" style="font-size:.8em;padding:2px 10px;margin:0" @click="procText = processingYaml">Reset to generated</button>
+        </div>
+        <textarea class="yaml-edit" x-model.debounce.500ms="procText" @focus="editingTab='processing'" @blur="editingTab=null" spellcheck="false" style="min-height:300px"></textarea>
+        <div class="lint-panel">
+          <template x-for="issue in procLint" :key="issue.msg">
+            <div class="lint-item" :class="'lint-' + issue.type">
+              <span class="lint-icon" x-text="issue.type === 'error' ? '\u2716' : issue.type === 'warn' ? '\u26A0' : '\u2714'"></span>
+              <span x-text="issue.msg"></span>
+            </div>
+          </template>
+        </div>
+        <div class="btn-row">
+          <button @click="copyToClipboard(procText, 'processing')">Copy to Clipboard</button>
+          <button class="outline" @click="downloadFile(procText, 'processing.yaml')">Download processing.yaml</button>
+          <span class="copy-ok" x-show="copyOk === 'processing'" x-transition>Copied!</span>
+        </div>
+      </div>
+    </template>
+    </details>
+  </section>
+</main>
+
+<footer>
+  <small>metrics-governor Playground &mdash; open this file directly in your browser, no build step needed.</small>
+  <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid var(--pico-muted-border-color);text-align:center">
+    <button style="background:var(--status-red);border-color:var(--status-red);color:#fff;font-size:.85em;padding:.4rem 1rem" @click="if(confirm('This will erase all saved settings and reload the page with defaults. Continue?')){localStorage.removeItem('mg-config-state');localStorage.removeItem('mg-theme');location.reload()}">Reset all settings to defaults</button>
+    <br><small style="color:var(--pico-muted-color)">Clears saved inputs, rules, and theme from browser storage and reloads with factory defaults.</small>
+  </div>
+</footer>
+
+<script type="application/json" id="config-meta">
+{
+  "defaults": {
+    "bloom_fpr": 0.01,
+    "buffer_batch_size": 5000,
+    "buffer_size": 10000,
+    "cardinality_mode": "bloom",
+    "exporter_endpoint": "localhost:4317",
+    "exporter_insecure": true,
+    "exporter_protocol": "grpc",
+    "flush_interval": "5s",
+    "grpc_listen": ":4317",
+    "hll_threshold": 10000,
+    "http_listen": ":4318",
+    "intern_max_value_length": 64,
+    "queue_compression": "snappy",
+    "queue_full_behavior": "drop_oldest",
+    "queue_inmemory_blocks": 2048,
+    "queue_max_bytes": 1073741824,
+    "queue_max_retries": 3,
+    "queue_max_retry_delay": "5m",
+    "queue_retry_interval": "5s",
+    "queue_stale_flush": "30s",
+    "queue_type": "memory",
+    "queue_write_buffer_size": 262144,
+    "retention_window": "60s",
+    "stats_addr": ":9090",
+    "string_interning": true
+  },
+  "estimation": {
+    "base_overhead_bytes": 52428800,
+    "compression_ratio": 0.3,
+    "cpu_limit_factor": 1.5,
+    "cpu_target_utilization": 0.7,
+    "dps_per_core": 150000,
+    "exact_mode_bytes_per_series": 75,
+    "hll_memory_bytes": 12288,
+    "label_key_overhead_bytes": 10,
+    "mem_limit_factor": 1.3,
+    "pvc_headroom_factor": 1.2,
+    "read_iops_ratio": 0.1,
+    "series_base_overhead_bytes": 16
+  },
+  "storage": {
+    "aws": [
+      {
+        "name": "gp3",
+        "class": "gp3",
+        "disk_type": "gp3",
+        "min_gib": 1,
+        "max_gib": 65536,
+        "baseline_iops": 3000,
+        "iops_per_gib": 500,
+        "max_iops": 80000,
+        "baseline_tput_mbs": 125,
+        "tput_per_iops_mbs": 0.25,
+        "max_tput_mbs": 2000,
+        "burst_model": "provisioned"
+      },
+      {
+        "name": "io2 Block Express",
+        "class": "io2",
+        "disk_type": "io2",
+        "min_gib": 4,
+        "max_gib": 65536,
+        "baseline_iops": 100,
+        "iops_per_gib": 1000,
+        "max_iops": 256000,
+        "baseline_tput_mbs": 0,
+        "tput_per_gib_mbs": 0.256,
+        "max_tput_mbs": 4000,
+        "burst_model": "provisioned"
+      },
+      {
+        "name": "io1",
+        "class": "io1",
+        "disk_type": "io1",
+        "min_gib": 4,
+        "max_gib": 16384,
+        "baseline_iops": 100,
+        "iops_per_gib": 50,
+        "max_iops": 64000,
+        "baseline_tput_mbs": 0,
+        "tput_per_gib_mbs": 0.016,
+        "max_tput_mbs": 1000,
+        "burst_model": "provisioned"
+      },
+      {
+        "name": "st1 (HDD)",
+        "class": "st1",
+        "disk_type": "st1",
+        "min_gib": 125,
+        "max_gib": 16384,
+        "baseline_iops": 500,
+        "iops_per_gib": 0,
+        "max_iops": 500,
+        "baseline_tput_mbs": 0,
+        "tput_per_tib_mbs": 40,
+        "burst_tput_per_tib_mbs": 250,
+        "max_tput_mbs": 500,
+        "burst_model": "credit"
+      }
+    ],
+    "azure": [
+      {
+        "name": "Premium SSD v1",
+        "class": "managed-premium",
+        "disk_type": "Premium_LRS",
+        "min_gib": 4,
+        "max_gib": 32768,
+        "baseline_iops": 120,
+        "iops_per_gib": 120,
+        "max_iops": 20000,
+        "baseline_tput_mbs": 25,
+        "tput_per_gib_mbs": 0.15,
+        "max_tput_mbs": 900,
+        "burst_iops": 3500,
+        "burst_tput_mbs": 170,
+        "burst_model": "credit"
+      },
+      {
+        "name": "Premium SSD v2",
+        "class": "managed-premium-v2",
+        "disk_type": "PremiumV2_LRS",
+        "min_gib": 1,
+        "max_gib": 65536,
+        "baseline_iops": 3000,
+        "iops_per_gib": 1,
+        "max_iops": 80000,
+        "baseline_tput_mbs": 125,
+        "tput_per_gib_mbs": 0,
+        "max_tput_mbs": 1200,
+        "burst_model": "provisioned"
+      },
+      {
+        "name": "Ultra Disk",
+        "class": "ultra-disk",
+        "disk_type": "UltraSSD_LRS",
+        "min_gib": 4,
+        "max_gib": 65536,
+        "baseline_iops": 0,
+        "iops_per_gib": 1000,
+        "max_iops": 400000,
+        "baseline_tput_mbs": 0,
+        "tput_per_iops_mbs": 0.25,
+        "max_tput_mbs": 10000,
+        "burst_model": "provisioned"
+      },
+      {
+        "name": "Standard SSD",
+        "class": "managed-standard",
+        "disk_type": "StandardSSD_LRS",
+        "min_gib": 4,
+        "max_gib": 32768,
+        "baseline_iops": 500,
+        "iops_per_gib": 0,
+        "max_iops": 6000,
+        "baseline_tput_mbs": 60,
+        "tput_per_gib_mbs": 0,
+        "max_tput_mbs": 750,
+        "burst_iops": 6000,
+        "burst_tput_mbs": 750,
+        "burst_model": "credit"
+      }
+    ],
+    "gcp": [
+      {
+        "name": "pd-ssd",
+        "class": "pd-ssd",
+        "disk_type": "pd-ssd",
+        "min_gib": 10,
+        "max_gib": 65536,
+        "baseline_iops": 0,
+        "iops_per_gib": 30,
+        "max_iops": 100000,
+        "baseline_tput_mbs": 0,
+        "tput_per_gib_mbs": 0.48,
+        "max_tput_mbs": 1200,
+        "burst_model": "none"
+      },
+      {
+        "name": "pd-balanced",
+        "class": "pd-balanced",
+        "disk_type": "pd-balanced",
+        "min_gib": 10,
+        "max_gib": 65536,
+        "baseline_iops": 3000,
+        "iops_per_gib": 6,
+        "max_iops": 80000,
+        "baseline_tput_mbs": 0,
+        "tput_per_gib_mbs": 0.28,
+        "max_tput_mbs": 1200,
+        "burst_model": "none"
+      },
+      {
+        "name": "pd-standard",
+        "class": "pd-standard",
+        "disk_type": "pd-standard",
+        "min_gib": 10,
+        "max_gib": 65536,
+        "baseline_iops": 0,
+        "iops_per_gib": 1.5,
+        "max_iops": 15000,
+        "baseline_tput_mbs": 0,
+        "tput_per_gib_mbs": 0.12,
+        "max_tput_mbs": 400,
+        "burst_model": "none"
+      }
+    ]
+  }
+}
+</script>
+
+<script>
+function configHelper() {
+  return {
+    // ---- Theme ----
+    theme: localStorage.getItem('mg-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+    init() {
+      // Load config-meta JSON (single source of truth from Go defaults)
+      const meta = JSON.parse(document.getElementById('config-meta').textContent);
+      this._meta = meta;
+      this._est = meta.estimation;
+      this._storage = meta.storage;
+      // Apply Go-sourced defaults (before loadState which may override)
+      this.bufferMaxSize = meta.defaults.buffer_size;
+      this.bufferBatchSize = meta.defaults.buffer_batch_size;
+      this.queueType = meta.defaults.queue_type;
+      this.queueMaxSizeVal = Math.round(meta.defaults.queue_max_bytes / 1073741824 * 100) / 100;
+      this.queueMaxSizeUnit = 'GB';
+      this.cardinalityMode = meta.defaults.cardinality_mode;
+      this.bloomFPR = meta.defaults.bloom_fpr;
+      this.hllThreshold = meta.defaults.hll_threshold;
+      this.retentionWindow = meta.defaults.retention_window;
+      this.queueCompression = meta.defaults.queue_compression !== 'none';
+
+      this.applyTheme();
+      this.$watch('theme', () => this.applyTheme());
+      this.loadState();
+      // Auto-save all reactive state on any change (debounced)
+      let saveTimer = null;
+      const fields = [
+        'selectedProfile',
+        'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
+        'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
+        'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
+        'queueType','queueCompression','pipelineOptimized','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
+        'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
+        'podOverride',
+        'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
+        'rules','middleTab','activeTab',
+        'alertExportErrorPct','alertQueuePct','alertMemoryPct','alertBackpressureRate','alertWorkerPct','alertConfigStaleHours','alertK8sFormat',
+        'procRules','procStalenessInterval',
+      ];
+      for (const f of fields) {
+        this.$watch(f, () => {
+          clearTimeout(saveTimer);
+          saveTimer = setTimeout(() => this.saveState(), 300);
+        }, { deep: true });
+      }
+      // Auto-size queue when retention target or throughput changes
+      this.$watch('targetRetentionVal', () => this.autoSizeQueue());
+      this.$watch('targetRetentionUnit', () => this.autoSizeQueue());
+      this.$watch('dps', () => this.autoSizeQueue());
+      this.$watch('bufferBatchSize', () => this.autoSizeQueue());
+      this.$watch('avgLabels', () => this.autoSizeQueue());
+      this.$watch('avgLabelLen', () => this.autoSizeQueue());
+      this.$watch('queueCompression', () => this.autoSizeQueue());
+      // Reverse: queue size changes → update target outage buffer
+      this.$watch('queueMaxSizeVal', () => this.autoSizeRetention());
+      this.$watch('queueMaxSizeUnit', () => this.autoSizeRetention());
+      // Auto-sync Fit Check from main inputs
+      this.$watch('availableCores', (val) => {
+        this.fitCpuVal = this.fitCpuUnit === 'm' ? val * 1000 : val;
+      });
+      this.$watch('totalMemory', () => this.autoSizeFitMem());
+      this.$watch('perPodPvcSize', () => this.autoSizeFitDisk());
+
+      // Profile selector — apply presets when profile changes
+      this.$watch('selectedProfile', (val) => {
+        if (val && this.profilePresets[val]) {
+          const preset = this.profilePresets[val];
+          Object.assign(this, preset);
+        }
+      });
+
+      // Initialize textarea content from generated YAML
+      this.helmText = this.helmYaml;
+      this.appText = this.appYaml;
+      this.limitsText = this.limitsYaml;
+      this.alertsText = this.alertsYaml;
+      this.procText = this.processingYaml;
+
+      // Auto-sync alerts YAML when thresholds or format change
+      for (const f of ['alertExportErrorPct','alertQueuePct','alertMemoryPct','alertBackpressureRate','alertWorkerPct','alertConfigStaleHours','alertK8sFormat']) {
+        this.$watch(f, () => { this.alertsText = this.alertsYaml; });
+      }
+
+      // Inputs → Textarea: sync generated YAML to textarea when textarea is not focused
+      this.$watch('helmYaml', (val) => {
+        if (this.editingTab !== 'helm' && !this._updatingFromYaml) this.helmText = val;
+      });
+      this.$watch('appYaml', (val) => {
+        if (this.editingTab !== 'app' && !this._updatingFromYaml) this.appText = val;
+      });
+      this.$watch('limitsYaml', (val) => {
+        if (this.editingTab !== 'limits' && !this._updatingFromYaml) this.limitsText = val;
+      });
+      this.$watch('processingYaml', (val) => {
+        if (this.editingTab !== 'processing' && !this._updatingFromYaml) this.procText = val;
+      });
+
+      // Textarea → Inputs: parse edited YAML back into state (debounced via x-model.debounce)
+      this.$watch('helmText', (val) => {
+        if (!this._updatingFromYaml && this.editingTab === 'helm') this.applyHelmText(val);
+      });
+      this.$watch('appText', (val) => {
+        if (!this._updatingFromYaml && this.editingTab === 'app') this.applyAppText(val);
+      });
+      this.$watch('limitsText', (val) => {
+        if (!this._updatingFromYaml && this.editingTab === 'limits') this.applyLimitsText(val);
+      });
+    },
+    _queueSyncDirection: null, // 'retention' or 'queue' — prevents sync loops
+    autoSizeQueue() {
+      if (this._queueSyncDirection === 'queue') return;
+      this._queueSyncDirection = 'retention';
+      const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (this._est.label_key_overhead_bytes + this.avgLabelLen) + this._est.series_base_overhead_bytes)) * this.compressionRatio;
+      const needed = Math.ceil(bytesPerSec * this.targetRetentionMin * 60 / 1048576);
+      this.setQueueMaxSizeMB(Math.max(10, needed));
+      this.$nextTick(() => { this._queueSyncDirection = null; });
+    },
+    autoSizeRetention() {
+      if (this._queueSyncDirection === 'retention') return;
+      this._queueSyncDirection = 'queue';
+      const bytesPerSec = (this.dps / this.bufferBatchSize) * (this.bufferBatchSize * (this.avgLabels * (this._est.label_key_overhead_bytes + this.avgLabelLen) + this._est.series_base_overhead_bytes)) * this.compressionRatio;
+      if (bytesPerSec <= 0) { this._queueSyncDirection = null; return; }
+      const retentionSec = (this.queueMaxSizeMB * 1048576) / bytesPerSec;
+      const retentionMin = retentionSec / 60;
+      if (this.targetRetentionUnit === 'days') this.targetRetentionVal = Math.round(retentionMin / 1440 * 100) / 100;
+      else if (this.targetRetentionUnit === 'hours') this.targetRetentionVal = Math.round(retentionMin / 60 * 100) / 100;
+      else this.targetRetentionVal = Math.max(1, Math.round(retentionMin));
+      this.$nextTick(() => { this._queueSyncDirection = null; });
+    },
+    autoSizeFitMem() {
+      const memMB = this.totalMemory / 1048576;
+      if (memMB >= 1024) { this.fitMemUnit = 'GB'; this.fitMemVal = Math.round(memMB / 1024 * 10) / 10; }
+      else { this.fitMemUnit = 'MB'; this.fitMemVal = Math.ceil(memMB); }
+    },
+    autoSizeFitDisk() {
+      if (this.queueType !== 'disk') return;
+      const diskMB = this.perPodPvcSize;
+      if (diskMB >= 1024) { this.fitDiskUnit = 'GB'; this.fitDiskVal = Math.round(diskMB / 1024 * 10) / 10; }
+      else { this.fitDiskUnit = 'MB'; this.fitDiskVal = Math.ceil(diskMB); }
+    },
+    saveState() {
+      const state = {};
+      const fields = [
+        'selectedProfile',
+        'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
+        'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
+        'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
+        'queueType','queueCompression','pipelineOptimized','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
+        'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
+        'podOverride',
+        'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
+        'rules','middleTab','activeTab','ruleIdCounter',
+        'alertExportErrorPct','alertQueuePct','alertMemoryPct','alertBackpressureRate','alertWorkerPct','alertConfigStaleHours','alertK8sFormat',
+        'procRules','procRuleIdCounter','procStalenessInterval',
+      ];
+      for (const f of fields) state[f] = this[f];
+      try { localStorage.setItem('mg-config-state', JSON.stringify(state)); } catch(e) {}
+    },
+    loadState() {
+      try {
+        const raw = localStorage.getItem('mg-config-state');
+        if (!raw) return;
+        const state = JSON.parse(raw);
+        // Only load known mutable fields — skip old getter-named keys (queueMaxSizeMB, targetRetentionMin)
+        const loadable = [
+          'selectedProfile',
+          'dps','uniqueMetrics','avgCardinality','availableCores','advanced',
+          'avgLabels','avgLabelLen','retentionWindow','cardinalityMode','bloomFPR',
+          'hllThreshold','bufferMaxSize','bufferBatchSize','queueMaxRetries',
+          'queueType','queueCompression','pipelineOptimized','queueMaxSizeVal','queueMaxSizeUnit','targetRetentionVal','targetRetentionUnit','coresPerPod','cloudProvider',
+          'fitCpuVal','fitCpuUnit','fitMemVal','fitMemUnit','fitDiskVal','fitDiskUnit',
+          'podOverride',
+          'defaultMaxCardinality','defaultMaxDpRate','defaultAction',
+          'rules','middleTab','activeTab','ruleIdCounter',
+          'alertExportErrorPct','alertQueuePct','alertMemoryPct','alertBackpressureRate','alertWorkerPct','alertConfigStaleHours','alertK8sFormat',
+          'procRules','procRuleIdCounter','procStalenessInterval',
+        ];
+        for (const k of loadable) {
+          if (state[k] !== undefined && state[k] !== null) this[k] = state[k];
+        }
+        // Migrate old state: queueMaxSizeMB → queueMaxSizeVal (MB)
+        if (state.queueMaxSizeMB !== undefined && state.queueMaxSizeVal === undefined) {
+          this.queueMaxSizeVal = state.queueMaxSizeMB;
+          this.queueMaxSizeUnit = 'MB';
+        }
+        // Migrate old state: targetRetentionMin → targetRetentionVal (min)
+        if (state.targetRetentionMin !== undefined && state.targetRetentionVal === undefined) {
+          this.targetRetentionVal = state.targetRetentionMin;
+          this.targetRetentionUnit = 'min';
+        }
+      } catch(e) {}
+    },
+    applyTheme() {
+      document.documentElement.setAttribute('data-theme', this.theme);
+      localStorage.setItem('mg-theme', this.theme);
+    },
+    toggleTheme() {
+      this.theme = this.theme === 'dark' ? 'light' : 'dark';
+    },
+
+    // ---- Profile selector ----
+    selectedProfile: '',
+    profilePresets: {
+      minimal:     { queueType: 'memory', queueCompression: false, pipelineOptimized: false, dps: 10000, availableCores: 1 },
+      balanced:    { queueType: 'memory', queueCompression: true, pipelineOptimized: false, dps: 100000, availableCores: 2 },
+      safety:      { queueType: 'disk', queueCompression: true, pipelineOptimized: false, dps: 100000, availableCores: 2 },
+      observable:  { queueType: 'disk', queueCompression: true, pipelineOptimized: false, dps: 100000, availableCores: 2 },
+      resilient:   { queueType: 'disk', queueCompression: true, pipelineOptimized: false, dps: 100000, availableCores: 2 },
+      performance: { queueType: 'disk', queueCompression: true, pipelineOptimized: true, dps: 500000, availableCores: 4 },
+    },
+
+    // ---- Simple inputs ----
+    dps: 50000,
+    uniqueMetrics: 1000,
+    avgCardinality: 100,
+    availableCores: 4,
+
+    // ---- Advanced inputs ----
+    advanced: false,
+    avgLabels: 5,
+    avgLabelLen: 20,
+    retentionWindow: '60s',
+    cardinalityMode: 'bloom',
+    bloomFPR: 0.01,
+    hllThreshold: 10000,
+    bufferMaxSize: 10000,
+    bufferBatchSize: 1000,
+    queueMaxRetries: 3,
+    queueType: 'memory',
+    queueCompression: true,
+    pipelineOptimized: true,
+    queueMaxSizeVal: 1,
+    queueMaxSizeUnit: 'GB',
+    targetRetentionVal: 10,
+    targetRetentionUnit: 'min',
+    fitCpuVal: 4,
+    fitCpuUnit: 'cores',
+    fitMemVal: 512,
+    fitMemUnit: 'MB',
+    fitDiskVal: 500,
+    fitDiskUnit: 'MB',
+    podOverride: 0,
+    coresPerPod: 2,
+    cloudProvider: 'aws',
+
+    // ---- Limits defaults ----
+    defaultMaxCardinality: 100000,
+    defaultMaxDpRate: 1000000,
+    defaultAction: 'log',
+
+    // ---- Rules ----
+    rules: [],
+    ruleIdCounter: 0,
+    groupByOptions: ['service', 'env', 'namespace', 'cluster', 'job', 'instance'],
+
+    // ---- UI state ----
+    middleTab: 'estimation',
+    activeTab: 'helm',
+    copyOk: null,
+
+    // ---- Alert thresholds ----
+    alertExportErrorPct: 10,
+    alertQueuePct: 85,
+    alertMemoryPct: 90,
+    alertBackpressureRate: 1,
+    alertWorkerPct: 90,
+    alertConfigStaleHours: 24,
+    alertK8sFormat: false,
+    alertsText: '',
+
+    // ---- Processing rules ----
+    procRules: [],
+    procRuleIdCounter: 0,
+    procStalenessInterval: '10m',
+    procText: '',
+
+    // Processing group_by/functions options
+    procGroupByOptions: ['service', 'env', 'namespace', 'cluster', 'method', 'status_code', 'job', 'instance'],
+    procFunctionOptions: ['sum', 'avg', 'min', 'max', 'count', 'last', 'increase', 'rate', 'stddev'],
+    procDownsampleMethods: ['avg', 'min', 'max', 'sum', 'count', 'last', 'delta', 'lttb', 'sdt', 'adaptive'],
+    procTransformOps: ['remove', 'set', 'rename', 'copy', 'replace', 'extract', 'hash_mod', 'lower', 'upper', 'concat', 'map', 'math'],
+
+    // ---- Bidirectional YAML editing state ----
+    helmText: '',
+    appText: '',
+    limitsText: '',
+    editingTab: null,
+    _updatingFromYaml: false,
+
+    // ---- Helpers ----
+    addRule() {
+      this.ruleIdCounter++;
+      this.rules.push({
+        id: this.ruleIdCounter,
+        name: '',
+        matchMetricName: '',
+        labels: [],
+        maxCardinality: 50000,
+        maxDpRate: 500000,
+        action: 'log',
+        groupBy: [],
+        customGroupBy: '',
+        window: '60s',
+        expanded: true,
+      });
+    },
+    moveRule(idx, dir) {
+      const target = idx + dir;
+      if (target < 0 || target >= this.rules.length) return;
+      const tmp = this.rules[idx];
+      this.rules[idx] = this.rules[target];
+      this.rules[target] = tmp;
+    },
+    toggleGroupBy(rule, g) {
+      const i = rule.groupBy.indexOf(g);
+      if (i >= 0) rule.groupBy.splice(i, 1);
+      else rule.groupBy.push(g);
+    },
+    addGroupByLabel(rule) {
+      const val = rule.customGroupBy.replace(/,/g, '').trim();
+      if (val && !rule.groupBy.includes(val)) {
+        rule.groupBy.push(val);
+      }
+      rule.customGroupBy = '';
+    },
+
+    // ---- Processing rule methods ----
+    addProcRule() {
+      this.procRuleIdCounter++;
+      this.procRules.push({
+        id: this.procRuleIdCounter,
+        name: '',
+        input: '.*',
+        inputLabels: [],
+        action: 'sample',
+        expanded: true,
+        // Sample
+        rate: 1.0,
+        method: 'head',
+        // Downsample
+        dsMethod: 'avg',
+        dsInterval: '1m',
+        dsResolution: 10,
+        dsDeviation: 0.5,
+        dsMinRate: 0.1,
+        dsMaxRate: 1.0,
+        dsVarianceWindow: 20,
+        // Aggregate
+        aggOutput: '',
+        aggInterval: '1m',
+        aggGroupBy: [],
+        aggDropLabels: [],
+        aggFunctions: ['sum'],
+        aggKeepInput: false,
+        aggCustomGroupBy: '',
+        aggCustomDropLabel: '',
+        // Transform
+        transformWhen: [],
+        transformOps: [],
+        // Transform custom entries
+        transformCustomWhenLabel: '',
+      });
+    },
+
+    moveProcRule(idx, dir) {
+      const target = idx + dir;
+      if (target < 0 || target >= this.procRules.length) return;
+      const tmp = this.procRules[idx];
+      this.procRules[idx] = this.procRules[target];
+      this.procRules[target] = tmp;
+    },
+
+    addProcTransformWhen(rule) {
+      rule.transformWhen.push({ label: '', type: 'equals', value: '' });
+    },
+
+    addProcTransformOp(rule) {
+      rule.transformOps.push({ type: 'set', label: '', value: '', source: '', target: '', pattern: '', replacement: '', group: 1, modulus: 16, separator: '.', sources: '', operation: 'div', operand: 1, mapValues: '', mapDefault: '' });
+    },
+
+    toggleProcGroupBy(rule, g) {
+      const i = rule.aggGroupBy.indexOf(g);
+      if (i >= 0) rule.aggGroupBy.splice(i, 1);
+      else rule.aggGroupBy.push(g);
+    },
+
+    toggleProcFunction(rule, f) {
+      const i = rule.aggFunctions.indexOf(f);
+      if (i >= 0) rule.aggFunctions.splice(i, 1);
+      else rule.aggFunctions.push(f);
+    },
+
+    toggleProcDropLabel(rule, l) {
+      const i = rule.aggDropLabels.indexOf(l);
+      if (i >= 0) rule.aggDropLabels.splice(i, 1);
+      else rule.aggDropLabels.push(l);
+    },
+
+    addProcGroupByLabel(rule) {
+      const val = rule.aggCustomGroupBy.replace(/,/g, '').trim();
+      if (val && !rule.aggGroupBy.includes(val)) {
+        rule.aggGroupBy.push(val);
+      }
+      rule.aggCustomGroupBy = '';
+    },
+
+    addProcDropLabel(rule) {
+      const val = rule.aggCustomDropLabel.replace(/,/g, '').trim();
+      if (val && !rule.aggDropLabels.includes(val)) {
+        rule.aggDropLabels.push(val);
+      }
+      rule.aggCustomDropLabel = '';
+    },
+
+    // ---- Formatters ----
+    fmtBytes(b) {
+      if (b < 1024) return b + ' B';
+      if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+      if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+      return (b / 1073741824).toFixed(2) + ' GB';
+    },
+    fmtBytesYaml(b) {
+      if (b >= 1073741824 && b % 1073741824 === 0) return (b / 1073741824) + 'Gi';
+      if (b >= 1048576 && b % 1048576 === 0) return (b / 1048576) + 'Mi';
+      if (b >= 1048576) return (b / 1048576).toFixed(1) + 'Mi';
+      if (b >= 1024 && b % 1024 === 0) return (b / 1024) + 'Ki';
+      return b;
+    },
+
+    // ---- CPU estimation ----
+    get effectiveDpsPerCore() { return this.pipelineOptimized ? this._est.dps_per_core : this._est.dps_per_core_legacy; },
+    get estCores() { return this.dps / this.effectiveDpsPerCore; },
+    get cpuUtil() { return this.estCores / this.availableCores; },
+    get cpuUtilPct() { return (this.cpuUtil * 100).toFixed(0); },
+    get cpuStatusClass() {
+      if (this.cpuUtil <= this._est.cpu_target_utilization) return 'status-green';
+      if (this.cpuUtil <= 0.9) return 'status-yellow';
+      return 'status-red';
+    },
+    get cpuBadgeClass() {
+      if (this.cpuUtil <= this._est.cpu_target_utilization) return 'badge-green';
+      if (this.cpuUtil <= 0.9) return 'badge-yellow';
+      return 'badge-red';
+    },
+    get cpuStatusLabel() {
+      if (this.cpuUtil <= this._est.cpu_target_utilization) return 'OK';
+      if (this.cpuUtil <= 0.9) return 'Warning';
+      return 'Over capacity';
+    },
+
+    // ---- Memory estimation ----
+    get totalSeries() { return this.uniqueMetrics * this.avgCardinality; },
+    get bloomBitsPerTracker() {
+      const n = this.avgCardinality;
+      const p = this.bloomFPR;
+      return Math.ceil(-n * Math.log(p) / (Math.log(2) * Math.log(2)));
+    },
+    get trackerMemory() {
+      const mode = this.cardinalityMode;
+      if (mode === 'exact') return this.totalSeries * this._est.exact_mode_bytes_per_series;
+      if (mode === 'bloom') return this.uniqueMetrics * Math.ceil(this.bloomBitsPerTracker / 8);
+      // hybrid: bloom up to threshold, HLL above
+      const bloomTrackers = Math.min(this.uniqueMetrics, Math.floor(this.uniqueMetrics * (this.hllThreshold / this.avgCardinality)));
+      const hllTrackers = this.uniqueMetrics - bloomTrackers;
+      return bloomTrackers * Math.ceil(this.bloomBitsPerTracker / 8) + hllTrackers * this._est.hll_memory_bytes;
+    },
+    get avgSeriesSize() { return this.avgLabels * (this._est.label_key_overhead_bytes + this.avgLabelLen) + this._est.series_base_overhead_bytes; },
+    get bufferMemory() { return this.bufferMaxSize * this.avgSeriesSize; },
+    get baseOverhead() { return this._est.base_overhead_bytes; },
+    get queueMemoryAdd() { return this.queueType === 'memory' ? this.queueMaxSizeMB * 1048576 : 0; },
+    get totalMemory() { return this.trackerMemory + this.bufferMemory + this.baseOverhead + this.queueMemoryAdd; },
+
+    get queueMaxSizeMB() {
+      if (this.queueMaxSizeUnit === 'GB') return this.queueMaxSizeVal * 1024;
+      if (this.queueMaxSizeUnit === 'TB') return this.queueMaxSizeVal * 1048576;
+      return this.queueMaxSizeVal;
+    },
+    setQueueMaxSizeMB(mb) {
+      if (this.queueMaxSizeUnit === 'TB') this.queueMaxSizeVal = Math.round(mb / 1048576 * 1000) / 1000;
+      else if (this.queueMaxSizeUnit === 'GB') this.queueMaxSizeVal = Math.round(mb / 1024 * 100) / 100;
+      else this.queueMaxSizeVal = Math.max(10, Math.ceil(mb));
+    },
+    // ---- Queue disk estimation (global / total) ----
+    get avgBatchBytes() { return this.bufferBatchSize * this.avgSeriesSize; },
+    get compressionRatio() { return this.queueCompression ? this._est.compression_ratio : 1.0; },
+    get writeThroughput() { return (this.dps / this.bufferBatchSize) * this.avgBatchBytes * this.compressionRatio; },
+    get writeIOPS() { return Math.ceil(this.dps / this.bufferBatchSize); },
+    get readIOPS() { return Math.ceil(this.writeIOPS * this._est.read_iops_ratio); },
+    get totalIOPS() { return this.writeIOPS + this.readIOPS; },
+    get pvcSize() { return Math.ceil(this.queueMaxSizeMB * this._est.pvc_headroom_factor); },
+
+    // ---- Per-pod queue estimation (traffic split evenly via load balancer) ----
+    get perPodDps() { return Math.ceil(this.dps / this.actualPods); },
+    get perPodQueueMB() { return Math.max(10, Math.ceil(this.queueMaxSizeMB / this.actualPods)); },
+    get perPodPvcSize() { return Math.ceil(this.perPodQueueMB * this._est.pvc_headroom_factor); },
+    get perPodWriteThroughput() { return this.perPodDps * this.avgSeriesSize * this.compressionRatio; },
+    get perPodWriteIOPS() { return Math.ceil(this.perPodDps / this.bufferBatchSize); },
+    get perPodReadIOPS() { return Math.ceil(this.perPodWriteIOPS * this._est.read_iops_ratio); },
+    get perPodTotalIOPS() { return this.perPodWriteIOPS + this.perPodReadIOPS; },
+
+    // ---- Queue retention ----
+    get queueRetentionSec() {
+      if (this.writeThroughput <= 0) return Infinity;
+      return (this.queueMaxSizeMB * 1048576) / this.writeThroughput;
+    },
+    get queueRetentionStr() {
+      const s = this.queueRetentionSec;
+      if (!isFinite(s)) return 'unlimited';
+      if (s < 60) return Math.round(s) + 's';
+      if (s < 3600) return Math.round(s / 60) + ' min';
+      if (s < 86400) return (s / 3600).toFixed(1) + ' hours';
+      return (s / 86400).toFixed(1) + ' days';
+    },
+
+    // ---- Fit check (normalized) ----
+    get targetRetentionMin() {
+      if (this.targetRetentionUnit === 'hours') return this.targetRetentionVal * 60;
+      if (this.targetRetentionUnit === 'days') return this.targetRetentionVal * 1440;
+      return this.targetRetentionVal;
+    },
+    get fitCpuCores() { return this.fitCpuUnit === 'm' ? this.fitCpuVal / 1000 : this.fitCpuVal; },
+    get fitMemMB() { return this.fitMemUnit === 'GB' ? this.fitMemVal * 1024 : this.fitMemVal; },
+    get fitDiskMB() {
+      if (this.fitDiskUnit === 'GB') return this.fitDiskVal * 1024;
+      if (this.fitDiskUnit === 'TB') return this.fitDiskVal * 1048576;
+      return this.fitDiskVal;
+    },
+    get estMemMB() { return this.totalMemory / 1048576; },
+    get estDiskMB() { return this.queueType === 'disk' ? this.perPodPvcSize : 0; },
+    get fitCpuOk() { return this.estCores <= this.fitCpuCores; },
+    get fitMemOk() { return this.estMemMB <= this.fitMemMB; },
+    get fitDiskOk() { return this.estDiskMB <= this.fitDiskMB; },
+    get fitCpuStatusText() {
+      const avail = this.fitCpuCores;
+      const need = this.estCores;
+      if (need <= avail) return 'OK \u2014 ' + ((1 - need / avail) * 100).toFixed(0) + '% headroom (' + need.toFixed(2) + ' of ' + avail.toFixed(2) + ' cores)';
+      return 'Over by ' + (need - avail).toFixed(2) + ' cores (' + Math.ceil(need * 1000) + 'm needed)';
+    },
+    get fitMemStatusText() {
+      const avail = this.fitMemMB;
+      const need = this.estMemMB;
+      if (need <= avail) return 'OK \u2014 ' + ((1 - need / avail) * 100).toFixed(0) + '% headroom (' + this.fmtBytes(need * 1048576) + ' of ' + this.fmtBytes(avail * 1048576) + ')';
+      return 'Over by ' + this.fmtBytes((need - avail) * 1048576) + ' (' + this.fmtBytes(need * 1048576) + ' needed)';
+    },
+    get fitDiskStatusText() {
+      if (this.queueType !== 'disk') return 'N/A \u2014 memory queue selected';
+      const avail = this.fitDiskMB;
+      const need = this.estDiskMB;
+      if (need <= avail) return 'OK \u2014 ' + ((1 - need / avail) * 100).toFixed(0) + '% headroom (' + this.fmtBytes(need * 1048576) + ' of ' + this.fmtBytes(avail * 1048576) + ')';
+      return 'Over by ' + this.fmtBytes((need - avail) * 1048576) + ' (' + this.fmtBytes(need * 1048576) + ' needed)';
+    },
+
+    // ---- Cloud storage ----
+    calcDiskPerformance(disk, sizeGiB) {
+      const volGiB = Math.max(disk.min_gib, Math.min(disk.max_gib, sizeGiB));
+      const volTiB = volGiB / 1024;
+
+      // IOPS: baseline + per-GiB scaling, capped at max
+      let effIOPS = (disk.baseline_iops || 0) + (disk.iops_per_gib || 0) * volGiB;
+      effIOPS = Math.min(disk.max_iops, Math.round(effIOPS));
+
+      // Throughput: baseline + per-GiB or per-TiB or per-IOPS scaling, capped at max
+      let effTput = (disk.baseline_tput_mbs || 0);
+      if (disk.tput_per_gib_mbs) effTput += disk.tput_per_gib_mbs * volGiB;
+      if (disk.tput_per_tib_mbs) effTput += disk.tput_per_tib_mbs * volTiB;
+      if (disk.tput_per_iops_mbs) effTput += disk.tput_per_iops_mbs * effIOPS;
+      effTput = Math.min(disk.max_tput_mbs, Math.round(effTput));
+
+      // Burst throughput (credit-based disks)
+      let burstTput = null;
+      if (disk.burst_tput_per_tib_mbs) {
+        burstTput = Math.min(disk.max_tput_mbs, Math.round(disk.burst_tput_per_tib_mbs * volTiB));
+      } else if (disk.burst_tput_mbs) {
+        burstTput = disk.burst_tput_mbs;
+      }
+
+      let burstIOPS = null;
+      if (disk.burst_iops) burstIOPS = disk.burst_iops;
+
+      return { effIOPS, effTput, burstTput, burstIOPS, volGiB };
+    },
+    get storageOptions() {
+      const iops = this.perPodTotalIOPS;
+      const tput = this.perPodWriteThroughput / 1048576; // MB/s per pod
+      const sizeGiB = Math.max(1, Math.ceil(this.perPodPvcSize / 1024));
+      const disks = this._storage[this.cloudProvider] || [];
+
+      return disks.map(disk => {
+        const perf = this.calcDiskPerformance(disk, sizeGiB);
+        // Use burst for fits check if credit-based, effective for provisioned/none
+        const fitsIOPS = perf.burstIOPS ? Math.max(perf.effIOPS, perf.burstIOPS) : perf.effIOPS;
+        const fitsTput = perf.burstTput ? Math.max(perf.effTput, perf.burstTput) : perf.effTput;
+
+        // Generate note automatically from parameters
+        let note = '';
+        if (disk.burst_model === 'credit') {
+          note = `At ${perf.volGiB} GiB: ${perf.effTput} MB/s sustained`;
+          if (perf.burstTput) note += `, ${perf.burstTput} MB/s burst`;
+        } else if (disk.burst_model === 'provisioned') {
+          note = `At ${perf.volGiB} GiB: ${perf.effIOPS.toLocaleString()} IOPS, ${perf.effTput} MB/s baseline`;
+        } else {
+          note = `${perf.effIOPS.toLocaleString()} IOPS at ${perf.volGiB} GiB (${disk.iops_per_gib}/GiB)`;
+        }
+
+        return {
+          name: disk.name,
+          class: disk.class,
+          disk_type: disk.disk_type,
+          maxIOPS: perf.effIOPS,
+          maxThroughput: perf.effTput,
+          burstIOPS: perf.burstIOPS,
+          burstThroughput: perf.burstTput,
+          note,
+          fits: iops <= fitsIOPS && tput <= fitsTput,
+          recommended: false,
+        };
+      }).map((opt, i, arr) => {
+        if (!arr.some(o => o.recommended) && opt.fits) opt.recommended = true;
+        return opt;
+      });
+    },
+    get recommendedStorageClass() {
+      const rec = this.storageOptions.find(o => o.recommended);
+      return rec ? rec.class : '';
+    },
+
+    // ---- K8s pod sizing ----
+    get maxThroughputPerPod() { return this.coresPerPod * this.effectiveDpsPerCore * this._est.cpu_target_utilization; },
+    get recommendedPods() { return Math.max(1, Math.ceil(this.dps / this.maxThroughputPerPod)); },
+    get actualPods() { return this.podOverride > 0 ? this.podOverride : this.recommendedPods; },
+    get perPodCpuReq() { return Math.ceil(this.dps / this.actualPods / this.effectiveDpsPerCore * 1000); },
+    get perPodCpuLimit() { return Math.ceil(this.perPodCpuReq * this._est.cpu_limit_factor); },
+    get perPodMemReq() { return Math.ceil(this.totalMemory / this.actualPods); },
+    get perPodMemLimit() { return Math.ceil(this.perPodMemReq * this._est.mem_limit_factor); },
+    get totalClusterCpu() { return this.actualPods * this.perPodCpuReq; },
+    get totalClusterMem() { return this.actualPods * this.perPodMemReq; },
+    get fitPodOk() { return this.podOverride <= 0 || this.podOverride >= this.recommendedPods; },
+    get fitPodStatusText() {
+      if (this.podOverride <= 0) return 'Using recommended: ' + this.recommendedPods + ' pods';
+      if (this.podOverride >= this.recommendedPods) return 'OK \u2014 ' + this.podOverride + ' pods (\u2265 ' + this.recommendedPods + ' recommended)';
+      return 'Below recommended (' + this.recommendedPods + ') \u2014 may cause CPU overload';
+    },
+
+    // ---- YAML generation ----
+    get helmYaml() {
+      const csi = { aws: 'ebs.csi.aws.com', azure: 'disk.csi.azure.com', gcp: 'pd.csi.storage.gke.io' };
+      const rec = this.storageOptions.find(o => o.recommended);
+      const recClass = rec ? rec.class : '';
+      const recDiskType = rec ? rec.disk_type : '';
+      let y = '';
+      if (this.selectedProfile) {
+        y += `# Profile: ${this.selectedProfile} — most settings derived automatically\n`;
+        y += `profile: ${this.selectedProfile}\n\n`;
+      }
+      y += `replicaCount: ${this.actualPods}\n`;
+      y += `\nresources:\n`;
+      y += `  requests:\n`;
+      y += `    cpu: "${this.perPodCpuReq}m"\n`;
+      y += `    memory: "${this.fmtBytesYaml(this.perPodMemReq)}"\n`;
+      y += `  limits:\n`;
+      y += `    cpu: "${this.perPodCpuLimit}m"\n`;
+      y += `    memory: "${this.fmtBytesYaml(this.perPodMemLimit)}"\n`;
+      y += `\nconfig:\n`;
+      y += `  grpcListen: ":4317"\n`;
+      y += `  httpListen: ":4318"\n`;
+      y += `  statsAddr: ":9090"\n`;
+      y += `  exporterEndpoint: "localhost:4317"\n`;
+      y += `  exporterProtocol: "grpc"\n`;
+      y += `  exporterInsecure: true\n`;
+      y += `  bufferSize: ${this.bufferMaxSize}\n`;
+      y += `  batchSize: ${this.bufferBatchSize}\n`;
+      y += `  flushInterval: "5s"\n`;
+      y += `\nlimits:\n`;
+      y += `  enabled: true\n`;
+      y += `  config: |\n`;
+      // Inline limits
+      const limitsLines = this.limitsYaml.split('\n');
+      for (const line of limitsLines) {
+        y += `    ${line}\n`;
+      }
+      y += `\nqueue:\n`;
+      y += `  enabled: true\n`;
+      y += `  path: "/data/queue"\n`;
+      y += `  maxSize: 10000\n`;
+      y += `  maxBytes: "${this.fmtBytesYaml(this.perPodQueueMB * 1048576)}"  # per-pod (${this.fmtBytes(this.queueMaxSizeMB * 1048576)} total \u00f7 ${this.actualPods} pods)\n`;
+      y += `  compression: "${this.queueCompression ? 'snappy' : 'none'}"\n`;
+      y += `  writeBufferSize: "${this.fmtBytesYaml(262144)}"\n`;
+      y += `  retryInterval: "5s"\n`;
+      y += `  maxRetryDelay: "5m"\n`;
+      y += `  fullBehavior: "drop_oldest"\n`;
+      y += `\nperformance:\n`;
+      y += `  stringInterning: true\n`;
+      y += `  internMaxValueLength: 64\n`;
+      if (this.pipelineOptimized) {
+        y += `\npipelineSplit:\n`;
+        y += `  enabled: true\n`;
+        y += `\nbatchAutoTune:\n`;
+        y += `  enabled: true\n`;
+        y += `\nadaptiveWorkers:\n`;
+        y += `  enabled: true\n`;
+      }
+      if (this.queueType === 'disk') {
+        y += `\npersistence:\n`;
+        y += `  enabled: true\n`;
+        y += `  storageClassName: "${this.recommendedStorageClass}"\n`;
+        y += `  accessModes:\n`;
+        y += `    - ReadWriteOnce\n`;
+        y += `  size: "${this.perPodPvcSize}Mi"  # per-pod queue + 20% headroom\n`;
+        if (this.cloudProvider !== 'none') {
+          const driver = csi[this.cloudProvider] || 'kubernetes.io/no-provisioner';
+          const dt = recDiskType || 'default';
+          y += `\n# StorageClass example (apply separately if needed)\n`;
+          y += `# ---\n`;
+          y += `# apiVersion: storage.k8s.io/v1\n`;
+          y += `# kind: StorageClass\n`;
+          y += `# metadata:\n`;
+          y += `#   name: metrics-governor-queue\n`;
+          y += `# provisioner: ${driver}\n`;
+          y += `# parameters:\n`;
+          y += `#   type: ${dt}\n`;
+          if (this.cloudProvider === 'aws') {
+            y += `#   iops: "${this.perPodTotalIOPS}"\n`;
+            y += `#   throughput: "${Math.ceil(this.perPodWriteThroughput / 1048576)}"\n`;
+          }
+          y += `# volumeBindingMode: WaitForFirstConsumer\n`;
+        }
+      }
+      return y;
+    },
+
+    get appYaml() {
+      let y = '';
+      if (this.selectedProfile) {
+        y += `# Profile: ${this.selectedProfile} — most settings derived automatically\n`;
+        y += `profile: ${this.selectedProfile}\n\n`;
+      }
+      y += `receiver:\n`;
+      y += `  grpc:\n`;
+      y += `    address: ":4317"\n`;
+      y += `  http:\n`;
+      y += `    address: ":4318"\n`;
+      y += `\nexporter:\n`;
+      y += `  endpoint: "localhost:4317"\n`;
+      y += `  protocol: "grpc"\n`;
+      y += `  insecure: true\n`;
+      y += `  timeout: 30s\n`;
+      y += `\nbuffer:\n`;
+      y += `  size: ${this.bufferMaxSize}\n`;
+      y += `  batch_size: ${this.bufferBatchSize}\n`;
+      y += `  flush_interval: 5s\n`;
+      y += `\nstats:\n`;
+      y += `  address: ":9090"\n`;
+      y += `\nlimits:\n`;
+      y += `  dry_run: false\n`;
+      y += `\nperformance:\n`;
+      y += `  cardinality_mode: "${this.cardinalityMode}"\n`;
+      y += `  bloom_fpr: ${this.bloomFPR}\n`;
+      y += `  string_interning: true\n`;
+      y += `  intern_max_value_length: 64\n`;
+      if (this.pipelineOptimized) {
+        y += `\npipeline_split:\n`;
+        y += `  enabled: true\n`;
+        y += `\nbatch_auto_tune:\n`;
+        y += `  enabled: true\n`;
+        y += `\nadaptive_workers:\n`;
+        y += `  enabled: true\n`;
+      }
+      if (this.queueType === 'disk') {
+        y += `\nqueue:\n`;
+        y += `  enabled: true\n`;
+        y += `  type: disk\n`;
+        y += `  path: "/var/lib/metrics-governor/queue"\n`;
+        y += `  max_bytes: "${this.fmtBytesYaml(this.perPodQueueMB * 1048576)}"  # per-pod (${this.fmtBytes(this.queueMaxSizeMB * 1048576)} total \u00f7 ${this.actualPods} pods)\n`;
+        y += `  compression: ${this.queueCompression ? 'snappy' : 'none'}\n`;
+        y += `  write_buffer_size: "${this.fmtBytesYaml(262144)}"\n`;
+        y += `  retry_interval: 5s\n`;
+        y += `  max_retry_delay: 5m\n`;
+      } else {
+        y += `\nqueue:\n`;
+        y += `  enabled: true\n`;
+        y += `  type: memory\n`;
+        y += `  max_bytes: "${this.fmtBytesYaml(this.perPodQueueMB * 1048576)}"  # per-pod (${this.fmtBytes(this.queueMaxSizeMB * 1048576)} total \u00f7 ${this.actualPods} pods)\n`;
+        y += `  compression: ${this.queueCompression ? 'snappy' : 'none'}\n`;
+        y += `  write_buffer_size: "${this.fmtBytesYaml(262144)}"\n`;
+        y += `  retry_interval: 5s\n`;
+        y += `  max_retry_delay: 5m\n`;
+      }
+      return y;
+    },
+
+    get limitsYaml() {
+      let y = '';
+      y += `defaults:\n`;
+      y += `  max_cardinality: ${this.defaultMaxCardinality}\n`;
+      y += `  max_datapoints_rate: ${this.defaultMaxDpRate}\n`;
+      y += `  action: "${this.defaultAction}"\n`;
+      if (this.rules.length > 0) {
+        y += `\nrules:\n`;
+        for (const rule of this.rules) {
+          y += `  - name: "${this.escYaml(rule.name)}"\n`;
+          if (rule.matchMetricName || rule.labels.length > 0) {
+            y += `    match:\n`;
+            if (rule.matchMetricName) {
+              y += `      metric_name: "${this.escYaml(rule.matchMetricName)}"\n`;
+            }
+            const validLabels = rule.labels.filter(l => l.key.trim());
+            if (validLabels.length > 0) {
+              y += `      labels:\n`;
+              for (const lbl of validLabels) {
+                y += `        ${lbl.key}: "${this.escYaml(lbl.value)}"\n`;
+              }
+            }
+          }
+          if (rule.maxCardinality) y += `    max_cardinality: ${rule.maxCardinality}\n`;
+          if (rule.maxDpRate) y += `    max_datapoints_rate: ${rule.maxDpRate}\n`;
+          y += `    action: "${rule.action}"\n`;
+          if (rule.groupBy.length > 0) {
+            y += `    group_by: [${rule.groupBy.map(g => '"' + g + '"').join(', ')}]\n`;
+          }
+          if (rule.window) y += `    window: "${rule.window}"\n`;
+        }
+      } else {
+        y += `\nrules: []\n`;
+      }
+      return y;
+    },
+
+    get alertsYaml() {
+      const errRate = (this.alertExportErrorPct / 100).toFixed(2);
+      const queuePct = (this.alertQueuePct / 100).toFixed(2);
+      const memPct = (this.alertMemoryPct / 100).toFixed(2);
+      const bpRate = this.alertBackpressureRate;
+      const workerPct = (this.alertWorkerPct / 100).toFixed(2);
+      const staleSecs = this.alertConfigStaleHours * 3600;
+
+      const rules = [
+        {name:'MetricsGovernorDown', sev:'critical', expr:'up{job=~".*metrics-governor.*"} == 0', forD:'2m',
+         sum:'metrics-governor is down', desc:'{{ $labels.instance }} has been unreachable for 2 minutes.'},
+        {name:'MetricsGovernorDataLoss', sev:'critical', expr:'rate(metrics_governor_export_data_loss_total[5m]) > 0', forD:'1m',
+         sum:'metrics-governor is losing data', desc:'{{ $labels.instance }} is dropping batches permanently.'},
+        {name:'MetricsGovernorExportDegraded', sev:'warning',
+         expr:`(\n              rate(metrics_governor_otlp_export_errors_total[5m])\n              / clamp_min(rate(metrics_governor_otlp_export_requests_total[5m]), 0.001)\n            ) > ${errRate}`,
+         forD:'5m', sum:`metrics-governor export error rate > ${this.alertExportErrorPct}%`, desc:'{{ $labels.instance }} has elevated export failure rate.'},
+        {name:'MetricsGovernorQueueSaturated', sev:'warning',
+         expr:`(\n              metrics_governor_queue_bytes\n              / clamp_min(metrics_governor_queue_max_bytes, 1)\n            ) > ${queuePct}`,
+         forD:'5m', sum:`metrics-governor queue > ${this.alertQueuePct}% full`, desc:'{{ $labels.instance }} queue approaching capacity.'},
+        {name:'MetricsGovernorCircuitOpen', sev:'warning', expr:'metrics_governor_circuit_breaker_state{state="open"} == 1', forD:'2m',
+         sum:'metrics-governor circuit breaker is open', desc:'{{ $labels.instance }} circuit breaker open.'},
+        {name:'MetricsGovernorOOMRisk', sev:'critical',
+         expr:`(\n              go_memstats_heap_alloc_bytes{job=~".*metrics-governor.*"}\n              / clamp_min(metrics_governor_memory_limit_bytes, 1)\n            ) > ${memPct}`,
+         forD:'5m', sum:`metrics-governor memory > ${this.alertMemoryPct}% of limit`, desc:'{{ $labels.instance }} heap approaching limit.'},
+        {name:'MetricsGovernorBackpressure', sev:'warning',
+         expr:`(\n              rate(metrics_governor_buffer_rejected_total[5m])\n              + rate(metrics_governor_buffer_evictions_total[5m])\n            ) > ${bpRate}`,
+         forD:'5m', sum:'metrics-governor buffer under pressure', desc:'{{ $labels.instance }} buffer rejecting or evicting data.'},
+        {name:'MetricsGovernorWorkersSaturated', sev:'warning',
+         expr:`(\n              metrics_governor_queue_workers_active\n              / clamp_min(metrics_governor_queue_workers_total, 1)\n            ) > ${workerPct}`,
+         forD:'10m', sum:`metrics-governor workers > ${this.alertWorkerPct}% utilized`, desc:'{{ $labels.instance }} worker pool saturated.'},
+        {name:'MetricsGovernorCardinalityExplosion', sev:'warning', expr:'rate(metrics_governor_limit_cardinality_exceeded_total[10m]) > 0', forD:'10m',
+         sum:'metrics-governor cardinality limits exceeded', desc:'{{ $labels.instance }} sustained cardinality violations.'},
+        {name:'MetricsGovernorConfigStale', sev:'info',
+         expr:`(time() - metrics_governor_limits_config_reload_last_success_timestamp_seconds) > ${staleSecs}`,
+         forD:'1h', sum:'metrics-governor config not reloaded recently', desc:'{{ $labels.instance }} config may be stale.'},
+        {name:'MetricsGovernorSpilloverCascade', sev:'warning', expr:'metrics_governor_spillover_active == 1', forD:'2m',
+         sum:'metrics-governor spillover cascade active', desc:'{{ $labels.instance }} hybrid queue in spillover mode for 2+ minutes.'},
+        {name:'MetricsGovernorLoadSheddingActive', sev:'warning', expr:'rate(metrics_governor_receiver_load_shedding_total[2m]) > 0', forD:'2m',
+         sum:'metrics-governor is shedding load', desc:'{{ $labels.instance }} rejecting requests due to pipeline pressure.'},
+        {name:'MetricsGovernorStatsDegraded', sev:'warning', expr:'metrics_governor_stats_level_current < metrics_governor_stats_level_configured', forD:'5m',
+         sum:'metrics-governor stats level degraded', desc:'{{ $labels.instance }} stats auto-downgraded due to memory pressure.'},
+      ];
+
+      let y = '';
+      if (this.alertK8sFormat) {
+        y += `# metrics-governor PrometheusRule\n`;
+        y += `# Generated by playground — thresholds tuned to your configuration\n`;
+        y += `apiVersion: monitoring.coreos.com/v1\n`;
+        y += `kind: PrometheusRule\n`;
+        y += `metadata:\n`;
+        y += `  name: metrics-governor-alerts\n`;
+        y += `  labels:\n`;
+        y += `    prometheus: kube-prometheus\n`;
+        y += `spec:\n`;
+        y += `  groups:\n`;
+        y += `    - name: metrics-governor\n`;
+        y += `      interval: "30s"\n`;
+        y += `      rules:\n`;
+        for (const r of rules) {
+          y += `        - alert: ${r.name}\n`;
+          y += `          expr: |\n`;
+          y += `            ${r.expr}\n`;
+          y += `          for: ${r.forD}\n`;
+          y += `          labels:\n`;
+          y += `            severity: ${r.sev}\n`;
+          y += `          annotations:\n`;
+          y += `            summary: "${r.sum}"\n`;
+          y += `            description: "${r.desc}"\n`;
+          y += `            runbook_url: "alerts/README.md#${r.name.toLowerCase()}"\n`;
+        }
+      } else {
+        y += `# metrics-governor Prometheus Alert Rules\n`;
+        y += `# Generated by playground — thresholds tuned to your configuration\n\n`;
+        y += `groups:\n`;
+        y += `  - name: metrics-governor\n`;
+        y += `    interval: 30s\n`;
+        y += `    rules:\n`;
+        for (const r of rules) {
+          y += `\n      - alert: ${r.name}\n`;
+          y += `        expr: |\n`;
+          y += `          ${r.expr}\n`;
+          y += `        for: ${r.forD}\n`;
+          y += `        labels:\n`;
+          y += `          severity: ${r.sev}\n`;
+          y += `        annotations:\n`;
+          y += `          summary: "${r.sum}"\n`;
+          y += `          description: "${r.desc}"\n`;
+          y += `          runbook: "alerts/README.md#${r.name.toLowerCase()}"\n`;
+        }
+      }
+      return y;
+    },
+
+    escYaml(s) {
+      if (!s) return '';
+      return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    },
+
+    // ---- Processing YAML generation ----
+    get processingYaml() {
+      let y = '# Processing Rules Configuration\n';
+      y += '# Generated by metrics-governor Playground\n\n';
+      y += `staleness_interval: ${this.procStalenessInterval}\n\n`;
+      y += 'rules:\n';
+      if (this.procRules.length === 0) {
+        y += '  # No rules defined - all metrics pass through unchanged\n';
+        return y;
+      }
+      for (const rule of this.procRules) {
+        y += `  - name: "${this.escYaml(rule.name)}"\n`;
+        y += `    input: "${this.escYaml(rule.input)}"\n`;
+        // input_labels if any
+        const validLabels = (rule.inputLabels || []).filter(l => l.key && l.key.trim());
+        if (validLabels.length > 0) {
+          y += `    input_labels:\n`;
+          for (const lbl of validLabels) {
+            y += `      ${lbl.key}: "${this.escYaml(lbl.value)}"\n`;
+          }
+        }
+        y += `    action: ${rule.action}\n`;
+
+        // Action-specific fields
+        if (rule.action === 'sample') {
+          y += `    rate: ${rule.rate}\n`;
+          y += `    method: ${rule.method}\n`;
+        } else if (rule.action === 'downsample') {
+          y += `    method: ${rule.dsMethod}\n`;
+          y += `    interval: ${rule.dsInterval}\n`;
+          if (rule.dsMethod === 'lttb') {
+            y += `    resolution: ${rule.dsResolution}\n`;
+          } else if (rule.dsMethod === 'sdt') {
+            y += `    deviation: ${rule.dsDeviation}\n`;
+          } else if (rule.dsMethod === 'adaptive') {
+            y += `    min_rate: ${rule.dsMinRate}\n`;
+            y += `    max_rate: ${rule.dsMaxRate}\n`;
+            y += `    variance_window: ${rule.dsVarianceWindow}\n`;
+          }
+        } else if (rule.action === 'aggregate') {
+          if (rule.aggOutput) y += `    output: "${this.escYaml(rule.aggOutput)}"\n`;
+          y += `    interval: ${rule.aggInterval}\n`;
+          if (rule.aggGroupBy.length > 0) {
+            y += `    group_by: [${rule.aggGroupBy.map(g => '"' + g + '"').join(', ')}]\n`;
+          }
+          if (rule.aggDropLabels.length > 0) {
+            y += `    drop_labels: [${rule.aggDropLabels.map(l => '"' + l + '"').join(', ')}]\n`;
+          }
+          if (rule.aggFunctions.length > 0) {
+            y += `    functions: [${rule.aggFunctions.map(f => '"' + f + '"').join(', ')}]\n`;
+          }
+          if (rule.aggKeepInput) {
+            y += `    keep_input: true\n`;
+          }
+        } else if (rule.action === 'transform') {
+          if (rule.transformWhen && rule.transformWhen.length > 0) {
+            const validWhen = rule.transformWhen.filter(w => w.label && w.label.trim());
+            if (validWhen.length > 0) {
+              y += `    when:\n`;
+              for (const w of validWhen) {
+                y += `      - label: "${this.escYaml(w.label)}"\n`;
+                y += `        type: ${w.type}\n`;
+                if (!['exists', 'not_exists'].includes(w.type) && w.value) {
+                  y += `        value: "${this.escYaml(w.value)}"\n`;
+                }
+              }
+            }
+          }
+          if (rule.transformOps && rule.transformOps.length > 0) {
+            y += `    operations:\n`;
+            for (const op of rule.transformOps) {
+              y += `      - type: ${op.type}\n`;
+              if (['set'].includes(op.type)) {
+                if (op.label) y += `        label: "${this.escYaml(op.label)}"\n`;
+                if (op.value) y += `        value: "${this.escYaml(op.value)}"\n`;
+              } else if (op.type === 'remove') {
+                if (op.label) y += `        label: "${this.escYaml(op.label)}"\n`;
+              } else if (['rename', 'copy'].includes(op.type)) {
+                if (op.source) y += `        source: "${this.escYaml(op.source)}"\n`;
+                if (op.target) y += `        target: "${this.escYaml(op.target)}"\n`;
+              } else if (op.type === 'replace') {
+                if (op.label) y += `        label: "${this.escYaml(op.label)}"\n`;
+                if (op.pattern) y += `        pattern: "${this.escYaml(op.pattern)}"\n`;
+                if (op.replacement) y += `        replacement: "${this.escYaml(op.replacement)}"\n`;
+              } else if (op.type === 'extract') {
+                if (op.source) y += `        source: "${this.escYaml(op.source)}"\n`;
+                if (op.pattern) y += `        pattern: "${this.escYaml(op.pattern)}"\n`;
+                if (op.target) y += `        target: "${this.escYaml(op.target)}"\n`;
+                y += `        group: ${op.group || 1}\n`;
+              } else if (op.type === 'hash_mod') {
+                if (op.label) y += `        label: "${this.escYaml(op.label)}"\n`;
+                y += `        modulus: ${op.modulus || 16}\n`;
+                if (op.target) y += `        target: "${this.escYaml(op.target)}"\n`;
+              } else if (['lower', 'upper'].includes(op.type)) {
+                if (op.label) y += `        label: "${this.escYaml(op.label)}"\n`;
+              } else if (op.type === 'concat') {
+                if (op.sources) y += `        sources: [${op.sources.split(',').map(s => '"' + s.trim() + '"').join(', ')}]\n`;
+                y += `        separator: "${this.escYaml(op.separator || '.')}"\n`;
+                if (op.target) y += `        target: "${this.escYaml(op.target)}"\n`;
+              } else if (op.type === 'map') {
+                if (op.label) y += `        label: "${this.escYaml(op.label)}"\n`;
+                if (op.mapValues) {
+                  y += `        values:\n`;
+                  for (const pair of op.mapValues.split(',')) {
+                    const parts = pair.split('=');
+                    if (parts.length === 2) {
+                      y += `          "${parts[0].trim()}": "${parts[1].trim()}"\n`;
+                    }
+                  }
+                }
+                if (op.mapDefault) y += `        default: "${this.escYaml(op.mapDefault)}"\n`;
+              } else if (op.type === 'math') {
+                if (op.label) y += `        label: "${this.escYaml(op.label)}"\n`;
+                y += `        operation: ${op.operation || 'div'}\n`;
+                y += `        operand: ${op.operand || 1}\n`;
+              }
+            }
+          }
+        }
+        // Drop: no additional fields
+      }
+      return y;
+    },
+
+    // ---- Processing impact estimator ----
+    get procImpactEstimate() {
+      let inputDps = this.dps;
+      let outputDps = this.dps;
+      let memOverhead = 0;
+      const perRule = [];
+
+      for (const rule of this.procRules) {
+        let ruleOutput = inputDps;
+        let ruleReduction = 0;
+
+        if (rule.action === 'drop') {
+          ruleReduction = 0.3; // assume 30% of traffic matches
+        } else if (rule.action === 'sample') {
+          ruleReduction = 1 - rule.rate;
+        } else if (rule.action === 'downsample') {
+          ruleReduction = 0.5; // rough estimate
+          memOverhead += 150 * Math.max(100, Math.round(inputDps / 10)); // 150 bytes per downsample series
+        } else if (rule.action === 'aggregate') {
+          ruleReduction = 0.8; // significant reduction
+          memOverhead += 200 * (rule.aggGroupBy.length > 0 ? 1000 : 10000); // estimated groups
+        } else if (rule.action === 'transform') {
+          ruleReduction = 0; // transforms don't reduce volume
+        }
+
+        ruleOutput = Math.round(inputDps * (1 - ruleReduction));
+        perRule.push({ name: rule.name || 'unnamed', action: rule.action, inputDps, outputDps: ruleOutput, reduction: ruleReduction });
+        outputDps = ruleOutput;
+        inputDps = ruleOutput; // chain: output of one rule feeds the next
+      }
+
+      return {
+        inputDps: this.dps,
+        outputDps,
+        reductionPct: ((1 - outputDps / Math.max(1, this.dps)) * 100).toFixed(1),
+        memOverhead,
+        perRule,
+      };
+    },
+
+    // ---- Processing lint/validation ----
+    lintProcessing() {
+      const issues = this.validateYamlSyntax(this.procText);
+      for (const rule of this.procRules) {
+        const idx = this.procRules.indexOf(rule) + 1;
+        if (!rule.name.trim()) issues.push({ type: 'error', msg: `Rule #${idx}: name is required` });
+        if (!rule.input.trim()) issues.push({ type: 'error', msg: `Rule "${rule.name || '#' + idx}": input pattern is required` });
+        // Validate regex
+        try { new RegExp(rule.input); } catch(e) { issues.push({ type: 'error', msg: `Rule "${rule.name || '#' + idx}": invalid input regex` }); }
+        // Action-specific validation
+        if (rule.action === 'sample') {
+          if (rule.rate < 0 || rule.rate > 1) issues.push({ type: 'error', msg: `Rule "${rule.name || '#' + idx}": rate must be 0.0-1.0` });
+        }
+        if (rule.action === 'aggregate') {
+          if (rule.aggGroupBy.length > 0 && rule.aggDropLabels.length > 0) issues.push({ type: 'error', msg: `Rule "${rule.name || '#' + idx}": group_by and drop_labels are mutually exclusive` });
+          if (rule.aggFunctions.length === 0) issues.push({ type: 'error', msg: `Rule "${rule.name || '#' + idx}": at least one function is required` });
+        }
+        if (rule.action === 'downsample' && rule.dsMethod === 'sdt' && !rule.dsDeviation) {
+          issues.push({ type: 'error', msg: `Rule "${rule.name || '#' + idx}": SDT method requires deviation` });
+        }
+        if (rule.action === 'transform' && (!rule.transformOps || rule.transformOps.length === 0)) {
+          issues.push({ type: 'error', msg: `Rule "${rule.name || '#' + idx}": transform requires at least one operation` });
+        }
+      }
+      // Warnings
+      if (this.procRules.length > 20) issues.push({ type: 'warn', msg: 'Many rules (>20) may impact processing latency' });
+      const dropAll = this.procRules.some(r => r.action === 'drop' && r.input === '.*');
+      if (dropAll) issues.push({ type: 'warn', msg: 'A rule drops ALL metrics (input: ".*") - is this intentional?' });
+      const sampleZero = this.procRules.some(r => r.action === 'sample' && r.rate === 0);
+      if (sampleZero) issues.push({ type: 'warn', msg: 'A sample rule has rate=0, effectively dropping all matching metrics' });
+      if (issues.length === 0) issues.push({ type: 'ok', msg: 'Valid - no issues found' });
+      return issues;
+    },
+    get procLint() { return this.lintProcessing(); },
+    get procValid() { return !this.procLint.some(i => i.type === 'error'); },
+    get procHasWarns() { return this.procLint.some(i => i.type === 'warn'); },
+
+    // ---- Bidirectional YAML parsing ----
+    parseYamlToMap(text) {
+      const map = {};
+      const lines = text.split('\n');
+      const indentStack = [{ indent: -1, prefix: '' }];
+      for (const line of lines) {
+        if (line.trim() === '' || line.trim().startsWith('#')) continue;
+        const match = line.match(/^(\s*)([\w_.-]+):\s*(.*)/);
+        if (!match) continue;
+        const indent = match[1].length;
+        const key = match[2];
+        let val = match[3].trim();
+        // Pop stack to find parent
+        while (indentStack.length > 1 && indentStack[indentStack.length - 1].indent >= indent) {
+          indentStack.pop();
+        }
+        const parent = indentStack[indentStack.length - 1].prefix;
+        const fullKey = parent ? parent + '.' + key : key;
+        if (val === '' || val === '|' || val === '>') {
+          // This is a parent node
+          indentStack.push({ indent, prefix: fullKey });
+        } else {
+          // Strip quotes
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+          map[fullKey] = val;
+        }
+      }
+      return map;
+    },
+
+    parseYamlNum(val) {
+      if (val === undefined || val === null) return undefined;
+      const n = Number(val);
+      return isNaN(n) ? undefined : n;
+    },
+
+    parseCpuToMillicores(val) {
+      if (val === undefined) return undefined;
+      const s = String(val).trim();
+      if (s.endsWith('m')) return parseFloat(s);
+      return parseFloat(s) * 1000;
+    },
+
+    parseSizeToBytes(val) {
+      if (val === undefined) return undefined;
+      const s = String(val).trim();
+      if (s.endsWith('Ti')) return parseFloat(s) * 1099511627776;
+      if (s.endsWith('Gi')) return parseFloat(s) * 1073741824;
+      if (s.endsWith('Mi')) return parseFloat(s) * 1048576;
+      if (s.endsWith('Ki')) return parseFloat(s) * 1024;
+      return parseFloat(s);
+    },
+    parseSizeToMB(val) {
+      const b = this.parseSizeToBytes(val);
+      if (b === undefined || isNaN(b)) return undefined;
+      return Math.ceil(b / 1048576);
+    },
+
+    applyHelmText(text) {
+      this._updatingFromYaml = true;
+      try {
+        const m = this.parseYamlToMap(text);
+        if (m['config.bufferSize'] !== undefined) {
+          const v = this.parseYamlNum(m['config.bufferSize']);
+          if (v !== undefined) this.bufferMaxSize = v;
+        }
+        if (m['config.batchSize'] !== undefined) {
+          const v = this.parseYamlNum(m['config.batchSize']);
+          if (v !== undefined) this.bufferBatchSize = v;
+        }
+        if (m['queue.maxBytes'] !== undefined) {
+          const b = this.parseSizeToBytes(m['queue.maxBytes']);
+          if (b !== undefined && !isNaN(b)) this.setQueueMaxSizeMB(Math.max(10, Math.ceil(b / 1048576)));
+        }
+        if (m['queue.compression'] !== undefined) {
+          this.queueCompression = m['queue.compression'] !== 'none';
+        }
+        if (m['replicaCount'] !== undefined) {
+          const pods = this.parseYamlNum(m['replicaCount']);
+          if (pods !== undefined && pods >= 1) {
+            this.podOverride = pods;
+          }
+        }
+        if (m['resources.requests.cpu'] !== undefined) {
+          const mc = this.parseCpuToMillicores(m['resources.requests.cpu']);
+          if (mc !== undefined && mc > 0) {
+            // reverse: perPodCpuReq = ceil(dps / pods / effectiveDpsPerCore * 1000) → dps = mc * pods * effectiveDpsPerCore / 1000
+            const pods = this.actualPods;
+            const newDps = Math.round(mc * pods * this.effectiveDpsPerCore / 1000);
+            if (newDps > 0) this.dps = newDps;
+          }
+        }
+        if (m['persistence.size'] !== undefined) {
+          const mb = this.parseSizeToMB(m['persistence.size']);
+          if (mb !== undefined) {
+            // pvcSize = queueMaxSizeMB * 1.2 → queueMaxSizeMB = pvcSize / 1.2
+            this.setQueueMaxSizeMB(Math.max(10, Math.round(mb / 1.2)));
+          }
+        }
+      } finally {
+        this.$nextTick(() => { this._updatingFromYaml = false; });
+      }
+    },
+
+    applyAppText(text) {
+      this._updatingFromYaml = true;
+      try {
+        const m = this.parseYamlToMap(text);
+        if (m['buffer.size'] !== undefined) {
+          const v = this.parseYamlNum(m['buffer.size']);
+          if (v !== undefined) this.bufferMaxSize = v;
+        }
+        if (m['buffer.batch_size'] !== undefined) {
+          const v = this.parseYamlNum(m['buffer.batch_size']);
+          if (v !== undefined) this.bufferBatchSize = v;
+        }
+        if (m['performance.cardinality_mode'] !== undefined) {
+          const v = m['performance.cardinality_mode'];
+          if (['bloom', 'exact', 'hybrid'].includes(v)) this.cardinalityMode = v;
+        }
+        if (m['performance.bloom_fpr'] !== undefined) {
+          const v = this.parseYamlNum(m['performance.bloom_fpr']);
+          if (v !== undefined && v > 0 && v < 1) this.bloomFPR = v;
+        }
+        if (m['queue.type'] !== undefined) {
+          const v = m['queue.type'];
+          if (['memory', 'disk'].includes(v)) this.queueType = v;
+        }
+        if (m['queue.max_bytes'] !== undefined) {
+          const b = this.parseSizeToBytes(m['queue.max_bytes']);
+          if (b !== undefined && !isNaN(b)) this.setQueueMaxSizeMB(Math.max(10, Math.ceil(b / 1048576)));
+        }
+        if (m['queue.compression'] !== undefined) {
+          this.queueCompression = m['queue.compression'] !== 'none';
+        }
+      } finally {
+        this.$nextTick(() => { this._updatingFromYaml = false; });
+      }
+    },
+
+    applyLimitsText(text) {
+      this._updatingFromYaml = true;
+      try {
+        const m = this.parseYamlToMap(text);
+        // Defaults
+        if (m['defaults.max_cardinality'] !== undefined) {
+          const v = this.parseYamlNum(m['defaults.max_cardinality']);
+          if (v !== undefined) this.defaultMaxCardinality = v;
+        }
+        if (m['defaults.max_datapoints_rate'] !== undefined) {
+          const v = this.parseYamlNum(m['defaults.max_datapoints_rate']);
+          if (v !== undefined) this.defaultMaxDpRate = v;
+        }
+        if (m['defaults.action'] !== undefined) {
+          const v = m['defaults.action'];
+          if (['log', 'drop', 'adaptive'].includes(v)) this.defaultAction = v;
+        }
+
+        // Parse rules from raw text (more complex — need array handling)
+        const rulesSection = text.match(/\nrules:\s*\n([\s\S]*?)(?=\n\S|\n*$)/);
+        if (rulesSection) {
+          const rulesText = rulesSection[1];
+          const ruleBlocks = rulesText.split(/\n  - /).filter(b => b.trim());
+          const newRules = [];
+          for (const block of ruleBlocks) {
+            const clean = block.startsWith('- ') ? block.slice(2) : block;
+            const rm = this.parseYamlToMap(clean);
+            const rule = {
+              id: ++this.ruleIdCounter,
+              name: rm['name'] || '',
+              matchMetricName: rm['match.metric_name'] || '',
+              labels: [],
+              maxCardinality: this.parseYamlNum(rm['max_cardinality']) || 50000,
+              maxDpRate: this.parseYamlNum(rm['max_datapoints_rate']) || 500000,
+              action: rm['action'] || 'log',
+              groupBy: [],
+              customGroupBy: '',
+              window: rm['window'] || '60s',
+              expanded: false,
+            };
+            // Parse match labels
+            for (const [k, v] of Object.entries(rm)) {
+              if (k.startsWith('match.labels.')) {
+                rule.labels.push({ key: k.replace('match.labels.', ''), value: v });
+              }
+            }
+            // Parse group_by: [...]
+            const gbMatch = clean.match(/group_by:\s*\[([^\]]*)\]/);
+            if (gbMatch) {
+              rule.groupBy = gbMatch[1].split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+            }
+            newRules.push(rule);
+          }
+          this.rules = newRules;
+        } else if (/rules:\s*\[\s*\]/.test(text)) {
+          this.rules = [];
+        }
+      } finally {
+        this.$nextTick(() => { this._updatingFromYaml = false; });
+      }
+    },
+
+    resetYamlText(tab) {
+      if (tab === 'helm') this.helmText = this.helmYaml;
+      else if (tab === 'app') this.appText = this.appYaml;
+      else if (tab === 'limits') this.limitsText = this.limitsYaml;
+      else if (tab === 'processing') this.procText = this.processingYaml;
+    },
+
+    // ---- YAML validation & semantic linting ----
+    validateYamlSyntax(text) {
+      const issues = [];
+      const lines = text.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.trim() === '' || line.trim().startsWith('#')) continue;
+        if (line.includes('\t')) {
+          issues.push({ type: 'error', msg: `Line ${i + 1}: Tab character found (YAML requires spaces)` });
+        }
+      }
+      // Check balanced quotes
+      let inStr = false, quoteChar = '';
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (!inStr && (c === '"' || c === "'")) { inStr = true; quoteChar = c; }
+        else if (inStr && c === quoteChar && text[i - 1] !== '\\') { inStr = false; }
+      }
+      if (inStr) issues.push({ type: 'error', msg: 'Unclosed string quote' });
+      return issues;
+    },
+
+    lintHelm() {
+      const issues = this.validateYamlSyntax(this.helmText);
+      // Semantic checks
+      if (this.actualPods < 1) issues.push({ type: 'error', msg: 'replicaCount must be >= 1' });
+      if (this.perPodCpuReq <= 0) issues.push({ type: 'error', msg: 'CPU request must be > 0' });
+      if (this.perPodCpuLimit < this.perPodCpuReq) issues.push({ type: 'error', msg: 'CPU limit should be >= CPU request' });
+      if (this.perPodMemReq <= 0) issues.push({ type: 'error', msg: 'Memory request must be > 0' });
+      if (this.perPodMemLimit < this.perPodMemReq) issues.push({ type: 'error', msg: 'Memory limit should be >= memory request' });
+      if (this.bufferBatchSize > this.bufferMaxSize) issues.push({ type: 'warn', msg: 'batchSize exceeds bufferSize - batches will never fill completely' });
+      if (this.queueMaxSizeMB < 10) issues.push({ type: 'warn', msg: 'Queue size < 10 MB may not provide meaningful outage buffering' });
+      if (this.actualPods > 10) issues.push({ type: 'warn', msg: `High pod count (${this.actualPods}) - this may be driven by memory, I/O, or cardinality requirements rather than CPU. Consider adjusting batch size, compression, or cardinality mode` });
+      if (this.cpuUtil > 0.9) issues.push({ type: 'warn', msg: 'CPU utilization > 90% - may experience throttling under load spikes' });
+      if (this.queueType === 'disk' && this.pvcSize > 10240) issues.push({ type: 'warn', msg: 'PVC size > 10 GB - verify cloud storage limits for your tier' });
+      if (issues.length === 0) issues.push({ type: 'ok', msg: 'Valid - no issues found' });
+      return issues;
+    },
+
+    lintApp() {
+      const issues = this.validateYamlSyntax(this.appText);
+      if (this.bufferMaxSize < 100) issues.push({ type: 'warn', msg: 'Buffer size < 100 may cause excessive flush cycles' });
+      if (this.bufferBatchSize > this.bufferMaxSize) issues.push({ type: 'error', msg: 'batch_size exceeds buffer size' });
+      if (this.bloomFPR <= 0 || this.bloomFPR >= 1) issues.push({ type: 'error', msg: 'bloom_fpr must be between 0 and 1 (exclusive)' });
+      if (this.bloomFPR > 0.1) issues.push({ type: 'warn', msg: 'bloom_fpr > 0.1 may cause inaccurate cardinality tracking' });
+      if (this.cardinalityMode === 'exact' && this.totalSeries > 500000) issues.push({ type: 'warn', msg: `Exact mode with ${(this.totalSeries/1000).toFixed(0)}k series uses significant memory - consider bloom or hybrid` });
+      if (issues.length === 0) issues.push({ type: 'ok', msg: 'Valid - no issues found' });
+      return issues;
+    },
+
+    lintLimits() {
+      const issues = this.validateYamlSyntax(this.limitsText);
+      if (this.defaultMaxCardinality <= 0) issues.push({ type: 'error', msg: 'defaults.max_cardinality must be > 0' });
+      if (this.defaultMaxDpRate <= 0) issues.push({ type: 'error', msg: 'defaults.max_datapoints_rate must be > 0' });
+      for (const rule of this.rules) {
+        if (!rule.name.trim()) issues.push({ type: 'error', msg: `Rule #${this.rules.indexOf(rule) + 1}: name is required` });
+        if (rule.name && /["\n\\]/.test(rule.name)) issues.push({ type: 'warn', msg: `Rule "${rule.name}": name contains special characters that may need escaping` });
+        if (rule.action === 'adaptive' && rule.groupBy.length === 0) issues.push({ type: 'warn', msg: `Rule "${rule.name || '#' + (this.rules.indexOf(rule) + 1)}": adaptive action without group_by will not identify offenders` });
+        if (rule.maxCardinality && rule.maxCardinality < 10) issues.push({ type: 'warn', msg: `Rule "${rule.name || '#' + (this.rules.indexOf(rule) + 1)}": max_cardinality < 10 is unusually low` });
+        if (!rule.matchMetricName && rule.labels.filter(l => l.key.trim()).length === 0) issues.push({ type: 'warn', msg: `Rule "${rule.name || '#' + (this.rules.indexOf(rule) + 1)}": no match criteria - rule matches all metrics` });
+        for (const lbl of rule.labels) {
+          if (lbl.key.trim() && !lbl.value.trim()) issues.push({ type: 'warn', msg: `Rule "${rule.name || '#' + (this.rules.indexOf(rule) + 1)}": label "${lbl.key}" has empty value` });
+        }
+      }
+      if (issues.length === 0) issues.push({ type: 'ok', msg: 'Valid - no issues found' });
+      return issues;
+    },
+
+    get helmLint() { return this.lintHelm(); },
+    get appLint() { return this.lintApp(); },
+    get limitsLint() { return this.lintLimits(); },
+    get helmValid() { return !this.helmLint.some(i => i.type === 'error'); },
+    get appValid() { return !this.appLint.some(i => i.type === 'error'); },
+    get limitsValid() { return !this.limitsLint.some(i => i.type === 'error'); },
+    get helmHasWarns() { return this.helmLint.some(i => i.type === 'warn'); },
+    get appHasWarns() { return this.appLint.some(i => i.type === 'warn'); },
+    get limitsHasWarns() { return this.limitsLint.some(i => i.type === 'warn'); },
+
+    // ---- Actions ----
+    copyToClipboard(text, label) {
+      navigator.clipboard.writeText(text).then(() => {
+        this.copyOk = label;
+        setTimeout(() => { this.copyOk = null; }, 2000);
+      });
+    },
+    downloadFile(text, filename) {
+      const blob = new Blob([text], { type: 'text/yaml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+  };
+}
+</script>
+</body>
+</html>
