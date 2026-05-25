@@ -296,7 +296,7 @@ jobs:
           cat pipeline-comment.md
 
       - name: Post pipeline integrity comment
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
